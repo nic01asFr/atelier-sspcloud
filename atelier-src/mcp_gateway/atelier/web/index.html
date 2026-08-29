@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Atelier</title>
+  <link rel="stylesheet" href="/css/app.css?v=20250829-modal4" />
+</head>
+<body>
+  <div id="login" class="screen login hidden" aria-live="polite">
+    <div class="login-panel">
+      <p class="brand">Atelier</p>
+      <p class="tagline">Compte perso — clé owner du pod</p>
+      <form id="login-form">
+        <label class="sr-only" for="owner-key">Clé owner</label>
+        <input id="owner-key" name="key" type="password" autocomplete="off" placeholder="Bearer owner key" required />
+        <button type="submit">Entrer</button>
+      </form>
+      <p id="login-error" class="error" hidden></p>
+    </div>
+  </div>
+
+  <div id="hub" class="screen hub hidden">
+    <header class="app-shell-head">
+      <div class="shell-brand-row">
+        <p class="brand-sm">Atelier</p>
+        <button type="button" id="btn-logout" class="ghost">Quitter</button>
+      </div>
+      <nav id="app-nav" class="app-nav" aria-label="Navigation principale">
+        <button type="button" class="nav-tab" data-view="code">Code</button>
+        <button type="button" class="nav-tab" data-view="assistant">Assistant</button>
+        <button type="button" class="nav-tab" data-view="connecteurs">Connecteurs</button>
+        <button type="button" class="nav-tab" data-view="agent">Agent</button>
+      </nav>
+    </header>
+
+    <div id="view-code" class="view view-shell view-code shell-mode-list">
+      <aside id="sidebar" class="sidebar shell-sidebar">
+        <nav id="project-tree" class="project-tree" aria-label="Projets code et sessions"></nav>
+      </aside>
+      <main class="main shell-main">
+        <button type="button" id="btn-shell-back-code" class="ghost shell-back" data-shell-back="code">← Liste</button>
+        <div id="session-bar" class="session-bar" hidden>
+          <div class="session-bar-main">
+            <strong id="session-title-display" class="session-display-title"></strong>
+            <span id="session-project-label" class="session-project"></span>
+            <label class="sr-only" for="session-project-select">Projet de la conversation</label>
+            <select id="session-project-select" class="session-project-select" hidden></select>
+          </div>
+          <div class="session-bar-actions">
+            <span id="session-meta-display" class="session-meta"></span>
+            <button type="button" id="btn-copy-session" class="ghost" title="Copier l'id de session">Copier l'id</button>
+            <a id="session-vscode-link" class="session-face-link" hidden target="_blank" rel="noopener">VS Code</a>
+            <span id="session-resume-hint" class="session-hint"></span>
+          </div>
+        </div>
+        <div id="banner" class="banner" hidden></div>
+        <div id="thread" class="thread" aria-live="polite"></div>
+        <form id="composer" class="composer">
+          <div class="composer-main">
+            <div class="composer-input-wrap">
+              <div id="composer-mcp-popover" class="composer-mcp-popover" hidden role="menu" aria-label="Connecteurs conversation"></div>
+              <div id="composer-attachments" class="composer-attachments" hidden aria-label="Pièces jointes"></div>
+              <textarea id="composer-input" rows="1" placeholder="Message Claude Code…" disabled></textarea>
+              <div class="composer-input-footer">
+                <button type="button" id="btn-composer-attach" class="composer-tool-btn" title="Ajouter une pièce jointe" aria-label="Ajouter une pièce jointe" disabled>
+                  <span class="composer-tool-icon" aria-hidden="true">📎</span>
+                </button>
+                <input type="file" id="composer-attach-input" class="composer-attach-input" hidden multiple disabled />
+                <div class="composer-mcp-anchor">
+                  <button type="button" id="btn-composer-mcp" class="composer-mcp-btn" title="Connecteurs pour ce fil" aria-label="Connecteurs pour ce fil" disabled aria-expanded="false" aria-haspopup="true">
+                    <span class="composer-mcp-btn-icon" aria-hidden="true">+</span>
+                    <span id="composer-mcp-badge" class="composer-mcp-badge" hidden></span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="composer-actions">
+            <button type="submit" id="btn-send" disabled>Envoyer</button>
+            <button type="button" id="btn-stop" class="composer-stop" hidden>Arrêter</button>
+          </div>
+        </form>
+      </main>
+    </div>
+
+    <div id="view-assistant" class="view view-panel hidden" hidden>
+      <div class="placeholder-panel">
+        <h2 class="placeholder-title">Assistant &amp; mémoire</h2>
+        <p class="placeholder-lead">
+          Chat transverse et repo <code>wikichat-memory</code> — espace dédié, distinct des projets code.
+        </p>
+        <ul class="placeholder-list">
+          <li>Mémoire unifiée Wikichat (<code>.wikichat/</code> central)</li>
+          <li>Consignes assistant (<code>CONSIGNES.md</code>)</li>
+          <li>Pas d’édition du code des projets métier</li>
+        </ul>
+        <p class="placeholder-note">Intégration UI complète : prochaine phase. Les sessions assistant restent accessibles via l’API.</p>
+      </div>
+    </div>
+
+    <div id="view-connecteurs" class="view view-shell view-connecteurs shell-mode-detail hidden" hidden>
+      <aside class="shell-sidebar connectors-sidebar" aria-label="Connecteurs">
+        <header class="agent-sidebar-head">
+          <h2 class="connectors-title" id="connectors-sidebar-title" role="button" tabindex="0" title="Vue d’ensemble">Connecteurs</h2>
+          <button type="button" id="btn-connector-new" class="ghost btn-sm" title="Ajouter un connecteur">+</button>
+        </header>
+        <div id="mcp-pool-summary" class="mcp-pool-summary" aria-live="polite"></div>
+        <details class="conn-group" open>
+          <summary class="connectors-sub">Plateforme</summary>
+          <ul id="mcp-org-list" class="mcp-list agent-list"></ul>
+        </details>
+        <details class="conn-group" open>
+          <summary class="connectors-sub">Mes connecteurs</summary>
+          <ul id="mcp-list" class="mcp-list agent-list"></ul>
+        </details>
+        <button type="button" id="btn-mcp-reprobe" class="ghost btn-sm">Actualiser</button>
+      </aside>
+      <main class="shell-main connectors-main">
+        <button type="button" id="btn-shell-back-connecteurs" class="ghost shell-back" data-shell-back="connecteurs">← Liste</button>
+        <div id="connectors-detail-body" class="connectors-detail-body"></div>
+      </main>
+    </div>
+
+    <div id="view-agent" class="view view-shell view-agent shell-mode-detail hidden" hidden>
+      <aside class="agent-sidebar shell-sidebar" aria-label="Agents planifiés">
+        <header class="agent-sidebar-head">
+          <button type="button" id="btn-agent-to-home" class="ghost shell-back shell-back-list" hidden>← Accueil</button>
+          <h2 class="connectors-title" id="agent-sidebar-title" role="button" tabindex="0" title="Vue d’ensemble">Agents</h2>
+          <button type="button" id="btn-agent-new" class="ghost btn-sm">+</button>
+        </header>
+        <ul id="agent-list" class="agent-list"></ul>
+        <button type="button" id="btn-agent-refresh" class="ghost btn-sm">Actualiser</button>
+      </aside>
+      <main class="agent-main shell-main">
+        <div class="shell-nav-row">
+          <button type="button" id="btn-shell-back-agent" class="ghost shell-back" data-shell-back="agent">← Liste</button>
+          <button type="button" id="btn-shell-forward-agent" class="ghost shell-forward" hidden>Liste →</button>
+        </div>
+        <div id="agent-detail-body" class="agent-detail-body"></div>
+      </main>
+    </div>
+  </div>
+
+  <div id="context-menu" class="context-menu" hidden role="menu"></div>
+
+  <div id="modal-backdrop" class="modal-backdrop hidden" hidden aria-hidden="true">
+    <div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <header class="modal-head">
+        <div class="modal-head-text">
+          <h2 id="modal-title" class="modal-title"></h2>
+          <p id="modal-lead" class="modal-lead" hidden></p>
+        </div>
+        <button type="button" id="modal-close" class="ghost modal-close" aria-label="Fermer">×</button>
+      </header>
+      <form id="modal-form" class="modal-body">
+        <div id="modal-fields"></div>
+        <p id="modal-error" class="error" hidden></p>
+        <footer class="modal-foot">
+          <button type="button" id="modal-cancel" class="ghost">Annuler</button>
+          <button type="submit" id="modal-submit" class="primary modal-submit">Confirmer</button>
+        </footer>
+      </form>
+    </div>
+  </div>
+
+  <script type="module" src="/js/app.js?v=20250829-shell6"></script>
+</body>
+</html>

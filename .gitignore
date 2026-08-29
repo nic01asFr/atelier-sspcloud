@@ -1,0 +1,28 @@
+# Caches Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Scratch de déploiement : découpes base64, payloads MCP, uploads temporaires.
+# Ces fichiers sont régénérés à chaque passe, ils n'ont pas à être versionnés.
+.appchunk*.txt
+.b64_*
+.tmp_*
+.tmp-upload/
+.tmp_gw_upload/
+.deploy-atelier-b64/
+.deploy_gen.py
+.exec_deploy_*
+.mcp_write_*
+
+# Scripts de déploiement jetables. Seul deploy_agent_ui.py est suivi
+# (voir la négation plus bas) : c'est celui qui pousse l'UI sur le pod.
+deploy-patches/*
+!deploy-patches/deploy_agent_ui.py
+
+# État local de wikichat et configuration MCP propre à la machine
+.wikichat/
+.mcp.json
+
+# Divers
+*.log

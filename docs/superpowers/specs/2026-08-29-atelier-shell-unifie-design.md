@@ -1,205 +1,250 @@
 # Design — Shell unifié Atelier
 
-**Date** : 2026-08-29  
-**Statut** : validé (cadrage)  
-**Approche** : shell partagé minimal (pas d’Explorer générique pour l’instant)
+**Date** : 2026-08-29 (maj 12:06)  
+**Statut** : validé  
+**Approche** : shell partagé minimal
 
 ## Objectif
 
-Unifier Code, Assistant, Connecteurs et Agent sur le même pattern de page que Code aujourd’hui : **sidebar (liste) + zone centrale (contexte)**, avec un **modèle de discussion** réutilisable, une UX mobile **liste ↔ détail plein écran**, et des libellés plus explicites pour un usage réel (pas seulement power-user).
+Shell **sidebar + main** partout ; discussion réutilisable ; mobile liste ↔ détail ; copy grand public ; pastilles d’état homogènes.
 
 ## Principes
 
-1. **Même squelette partout** — `.view-shell` = sidebar + main ; Code reste la référence visuelle et comportementale.
-2. **Discussion = composant partagé** — fil + composer (bulles, PJ, connecteurs de fil) réutilisé là où on « parle » (Code, Assistant, détail Agent).
-3. **Atelier relaie, ne réinvente pas** — pool MCP / pilote Wikichat / gateway restent les backends ; l’UI Atelier agrège et présente.
-4. **Mobile d’abord utilisable** — sous 720 px : un seul panneau à la fois (liste ou détail), pas une grille écrasée.
-5. **Jargon en secondaire** — libellés humains en premier ; technique en meta / tooltip.
+1. Même squelette partout (`.view-shell`).
+2. Discussion = composant partagé (Code / Assistant / Agent).
+3. Atelier relaie gateway / pilote — ne réinvente pas.
+4. Mobile &lt; 720 : un panneau à la fois.
+5. Jargon en secondaire ; libellés type outils grand public (GPT / Copilot / Zapier).
+6. **Pastilles d’état** dans toutes les listes (Agent, Code, Assistant, Connecteurs).
+7. **`+` en tête de liste** : nouveau projet / conversation / connecteur / agent.
 
-## Hors scope (cette passe)
+## Agent — trois pages centrales
 
-- Composant Explorer générique abstrait (approche 2).
-- Recoder le backend pilote ou gateway.
-- Branchement réel webmessage / messagerie externe (point d’extension seulement dans Réglages agent).
-- Assistant chat « mémoire riche » au-delà du shell + sessions + discussion de base.
-- Drawer mobile type app native (gestes swipe) — phase ultérieure ; phase 1 = bouton Retour/Liste.
+| Panel | Contenu |
+|-------|---------|
+| **home** | Vue d’ensemble (planificateur + file globale) — **pas** une entrée de la liste |
+| **create** | Formulaire pleine page (pas de modale) |
+| **detail** | Agent sélectionné : Discussion \| À valider \| Réglages |
 
----
+La **sidebar** ne contient que les vrais agents (+ pour créer).  
+L’accueil = main sans sélection (titre « Agents » en sidebar pour y revenir).  
+Ne jamais mettre « Accueil » / « Création » comme fausse carte agent.
 
-## 1. Shell commun
+### Création (pleine page) — champs
 
-```
-┌─ navbar Atelier ────────────────────────────────┐
-│ Code | Assistant | Connecteurs | Agent | Quitter │
-├────────────────┬────────────────────────────────┤
-│  SIDEBAR       │  MAIN                          │
-│  liste + CTA   │  sélection OU accueil          │
-└────────────────┴────────────────────────────────┘
-```
+- Nom, Description  
+- Consignes  
+- Outils (profil Connecteurs — raffiné plus tard)  
+- Projet (optionnel → défaut silencieux)  
+- Quand : presets + **Personnaliser…**  
+- Modèle (liste `/v1/models`)  
 
-| Élément | Rôle |
-|---------|------|
-| `.view-shell` | Grille 2 colonnes (≥ 720 px) |
-| `.shell-sidebar` | Liste scrollable + actions (`+`, actualiser) |
-| `.shell-main` | Contenu contextuel |
-| URL | `?view=` + ids (`session`, `agent`, `connector` selon l’onglet) |
+Vocabulaire : pas « personnalité » — c’est un **outil** ; consignes + outils.
 
-État shell mobile : `shellMode: "list" | "detail"` par vue ; sans sélection → forcer `"list"`.
+### Pastilles Agent (liste)
 
----
+| État | Pastille |
+|------|----------|
+| Actif / en cours | vert |
+| En veille (armé) | ambre |
+| Désactivé / pause | gris |
+| À valider (N&gt;0) | accent + compteur |
 
-## 2. Responsive &lt; 720 px
+## Connecteurs (cadrage)
 
-### Comportement cible (tous les shells)
+- Sidebar Plateforme / Perso + `+` ajouter.
+- Ajout en **étapes dans le détail** : déclaration (JSON/form) → vérif → credentials → test → enregistrement.
+- Services plateforme : credentials dans le détail.
+- Alignement design liste → passe ultérieure.
 
-| Mode | Affichage | Navigation |
-|------|-----------|------------|
-| **list** | Sidebar plein écran | Tap item → `detail` |
-| **detail** | Main plein écran | Contrôle **Retour / Liste** → `list` |
+## Code — la conversation crée le projet
 
-- Remplace le stack actuel Code (sidebar ~38 vh + chat) qui laisse les deux trop étroits.
-- Agent / Connecteurs / Assistant : même contrat.
-- ≥ 720 px : sidebar + main côte à côte (comportement desktop actuel de Code).
+**Principe** : quand l'entité d'une page est une **conversation**, l'accueil *est* le
+formulaire de création. Quand c'est un objet configuré (agent, connecteur), la
+création reste un panel dédié. Code suit la première règle, Agent et Connecteurs
+la seconde.
 
-### Agent / Connecteurs (correctif immédiat)
+### La barre de conversation (haut du panneau)
 
-Supprimer la grille côte-à-côte fixe sous 720 px qui réduisait le main à ~120 px ; appliquer le basculement list/detail ci-dessus.
+Un seul composant, l'actuel `#session-bar`, dans deux états :
 
----
+| État | Titre | Projet | Actions |
+|------|-------|--------|---------|
+| Conversation ouverte | nom de la session | **figé** (nom du projet) | état, copier l'id, VS Code |
+| Accueil (aucune session) | — | **sélecteur** : « Nouveau projet » + projets existants | aucune |
 
-## 3. Code (référence)
+Le projet est figé en conversation parce que `PATCH /v1/sessions/{id}` n'accepte
+que `title` et `archived` : une conversation ne peut pas changer de projet.
 
-Inchangé fonctionnellement ; **alignement mobile** sur list ↔ detail.
+### Les quatre entrées
 
-- Sidebar : projets → sessions.
-- Main : fil + composer (session sélectionnée).
+| Geste | Projet | Session |
+|-------|--------|---------|
+| `+ Nouveau projet` (sidebar) | créé **immédiatement**, nom « Nouveau projet », édition inline ouverte | à l'envoi du 1er message |
+| `+` sur un projet existant | inchangé | à l'envoi du 1er message |
+| Accueil, aucun projet choisi | créé **à l'envoi**, nommé d'après le 1er message | à l'envoi |
+| Accueil, projet choisi | inchangé | à l'envoi |
 
----
+Aucune session n'est créée tant qu'aucun message n'est envoyé : c'est ce qui
+produit aujourd'hui les sessions « created · 0 tour(s) » qui encombrent la liste.
 
-## 4. Assistant
+### Nommage
 
-| Zone | Contenu |
-|------|---------|
-| Sidebar | Liste **plate** des sessions assistant ; section **Épinglés** en tête (favoris) |
-| Main | Même modèle discussion que Code |
+- Depuis `+ Nouveau projet` : « Nouveau projet », éditable immédiatement.
+- Depuis un premier message : les premiers mots du message (tronqués), repli sur
+  « Nouveau projet » si rien d'exploitable.
+- Dans tous les cas le nom reste modifiable ensuite.
 
-- Épinglés phase 1 : `localStorage` (ou meta session si déjà disponible) — pas de backend dédié obligatoire.
-- Pas d’arbre multi-projets : un espace mémoire / transverse.
+### Renommage — inline partout
 
----
+Double-clic sur le nom dans la sidebar : champ inline, Entrée valide, Échap annule.
+`PATCH /v1/projects/{slug}` ne modifie que le **titre** ; le slug reste le nom du
+dossier sur disque. Renommer est donc sans effet de bord, autant de fois qu'on veut.
 
-## 5. Connecteurs
+### Contraintes connues
 
-### Sidebar
+- `ProjectStore.create()` fait `mkdir(exist_ok=True)` : deux projets de même nom
+  réutiliseraient le même dossier. Le slug doit être rendu unique côté client
+  (`nouveau-projet`, `nouveau-projet-2`, …).
+- Il n'existe pas de `DELETE /v1/projects` : un projet créé par `+` puis abandonné
+  reste définitivement dans la liste. C'est le coût assumé de la création immédiate
+  sur ce geste, qui est délibéré ; l'accueil, lui, n'écrit rien sans message.
 
-Deux groupes **collapsibles** :
+### Ce qui disparaît
 
-1. **Plateforme** — services catalogue org / plateforme  
-2. **Mes connecteurs** — registry perso  
+- Modale « Nouveau projet code » et modale « Renommer le projet ».
+- L'écran vide « Choisis ou crée une session code ».
 
-### Compositions
+### À reprendre plus tard (Code)
 
-Une composition **n’est pas** une entrée sidebar séparée.  
-C’est un **service** du pool gateway ; ses **tools** = les compositions.  
-Au détail du service « compositions » (ou équivalent), la liste des tools *est* la liste des compositions.
+- **Ouverture VS Code cassée** — le lien de la barre de conversation ne fait plus
+  son office. À diagnostiquer (proxy VS Code, `vscodeOpenUrl`, workspace).
+- **Page projet** — un écran propre au projet lui-même, distinct de la
+  conversation : revue de projet, fonctions Wikichat (mémoire, closure,
+  capitalisation). À cadrer dans une réflexion plus globale, pas au fil de l'eau.
 
-### Main
+## Profils — la brique partagée entre Connecteurs et Agents
 
-Au clic sur un service :
+**Constat** : la configuration d'outils d'un agent (côté pilote) et le pool de
+connecteurs (côté gateway) décrivent la même chose — *quels services, quels
+outils, avec quelles consignes*. Il ne faut pas deux mécanismes.
 
-- Fiche : statut, activer/désactiver (si perso), liste des tools.
-- Actions globales (re-probe, import JSON) : bandeau main ou pied de sidebar — pas une page pleine largeur isolée comme aujourd’hui.
+### Le profil est cette brique, et il existe déjà
 
-Les outils gateway qui gèrent tools / services / compositions par agent restent la source de vérité ; l’UI les relaie.
+`GET /v1/mcp/profiles` renvoie déjà des profils complets :
 
----
+| Champ | Rôle |
+|-------|------|
+| `org_servers` / `registry_servers` | les services retenus dans le pool |
+| `tool_allowlist` | les outils retenus dans ces services |
+| `meta_tools` | les méta-outils gateway (bundles, recherche, appel) |
+| `mcp_instructions` | les consignes — le pilote les lit comme `mission_prefix` |
+| `bundle_id`, `audience` | rattachement gateway et destination |
 
-## 6. Agent
+Créer, modifier et supprimer un profil personnel est déjà exposé
+(`POST`/`PUT`/`DELETE /v1/mcp/profiles/custom`). **Ce qui manque est l'écran**,
+pas le modèle.
 
-### Sidebar
+### Où chaque chose vit
 
-- Liste des agents (statut humain, prochain run, badge « N à valider »).
-- `+ Nouvel agent`, Actualiser.
+La gateway sert **tout client LLM** : elle a besoin de profils réutilisables,
+définis en amont. L'Atelier est déjà cadré : un agent a un besoin précis, connu
+au moment où on le crée. D'où la répartition :
 
-### Main — aucun agent sélectionné (accueil)
+| Notion | Écran | Archétype |
+|--------|-------|-----------|
+| Déclaration d'un service (JSON) | Connecteurs → **nouveau** | fait |
+| Pool des services et leur état | Connecteurs → **liste** + **détail** | fait |
+| Compositions (assembler des services pour créer un outil) | Connecteurs → **3ᵉ groupe de liste** + détail + nouveau | à construire |
+| Personnalisation d'un outil (paramètres figés) | Connecteurs → détail du service | à construire |
+| **Sélection d'outils d'un agent** | **Agent → création**, sur mesure | à construire |
+| Sélection d'outils d'une conversation | Code → composer MCP | fait |
 
-1. **Guide / onboarding** court (rôle d’un agent, lien vers Connecteurs pour les outils).
-2. **Daemon** : armés / prochain réveil / pause-reprise.
-3. **File globale** : propositions `pending` tous agents, avec agent source + Approuver / Rejeter.
+**Règle** : Connecteurs **fabrique** ce qui n'existe pas encore (services,
+compositions, variantes d'outils). Agent **choisit** parmi ce qui existe, et
+compose sa sélection lui-même plutôt que de piocher un profil préétabli.
+Reprendre un profil existant reste possible — un raccourci, pas le passage obligé.
 
-Pas de chat sur l’accueil.
+Les profils gateway (`/v1/mcp/profiles`) gardent leur rôle : ils servent les
+clients LLM externes et le repiquage, pas la définition d'un agent.
 
-### Main — agent sélectionné (onglets B)
+### Un seul sélecteur d'outils
 
-| Onglet | Contenu |
-|--------|---------|
-| **Discussion** (défaut) | Fil + composer partagés ; conversation avec cet agent |
-| **À valider** | File d’approbation de *cet* agent ; badge compteur sur l’onglet |
-| **Réglages** | Périmètre, cron (avec libellé humain), profil Connecteurs, mission, activer/supprimer/lancer ; **emplacement prévu** pour exposition canaux (messagerie / webmessage) — UI stub ou section « Bientôt » |
+Agent, conversation Code et assistant sélectionnent tous des outils dans le même
+pool. **Le composant de sélection doit être unique**, avec trois stockages
+différents (spec de l'agent, overlay de la conversation, réglage de l'assistant).
+Sinon trois sélecteurs à maintenir en parallèle.
 
-### Création d’agent
+### La sélection d'origine est exposée — fait
 
-- **Projet** : select des projets Code + option **Général** (= cwd espace assistant / mémoire, pas un chemin texte libre).
-- Profil Connecteurs → bindings tools + consignes (`pilote-bindings`).
-- Cron, modèle, mission — copy explicative.
+`handlePiloteCreate` conservait déjà la sélection dans `action.params.servers`,
+mais l'overview ne relayait que `scope.tools`, aux noms nettoyés. `scope.servers`
+expose désormais la sélection brute (`pilote.mjs`, sauvegarde horodatée à côté
+du fichier), ce qui rend un agent relisible donc modifiable.
 
-### Discussion agent & exposition future
+## Discussion agent — reprendre la session plutôt que relancer
 
-Le détail agent est le lieu où l’on **configure** un agent destiné à être rendu disponible depuis d’autres fronts (services de messagerie, webmessage, etc.).  
-Aujourd’hui : discussion dans Atelier.  
-Plus tard : mêmes agents exposés via canaux — sans changer le modèle mental (identité + outils + mission + conversation).
+La conversation d'un agent **est une session Claude Code ordinaire** : le pilote
+la retrouve dans `~/.claude/projects/<slug>/<sessionId>.jsonl`, et l'Atelier sait
+déjà reprendre une session (`harness.py` passe `--resume <claude_session_id>`).
 
-Backend discussion agent : à brancher sur le canal existant le plus proche (session harness liée à l’agent / pilote) dans le plan d’implémentation ; le design impose le **contrat UI**, pas le protocole exact.
+Deux voies, dont une seule permet le dialogue :
 
----
+| Voie | Message libre | Coût |
+|------|---------------|------|
+| `POST /pilote/api/agent/:id/continue` | **non** — prompt fixe, aucun paramètre | aucun, en place |
+| Harness Atelier avec `--resume <claude_session_id>` | **oui** | rattacher une session Atelier à l'agent |
 
-## 7. Modèle de discussion (partagé)
+La seconde voie donne le composer, le streaming SSE et le même rendu que Code,
+sans modifier le pilote. Elle suppose de créer une session Atelier dont le
+`cwd` est le dossier de l'agent et le `claude_session_id` celui de son dernier
+passage.
 
-Comportements attendus partout où le chat apparaît :
+**À trancher avant de l'implémenter** : cette session doit-elle apparaître dans
+la liste des conversations (elle y polluerait Code ou Assistant), rester
+invisible et rattachée à l'agent, ou n'exister que le temps de l'échange ?
 
-- Composer (textarea auto-grow, envoi, stop).
-- Pièces jointes (`@chemin` côté harness, comme Claude Code).
-- Overlay connecteurs de fil (popover `+`) là où pertinent (Code ; Agent si le profil le permet).
-- Rendu bulles user / assistant / outils.
+### Attention aux titres
 
-Code et Assistant : sessions classiques.  
-Agent : conversation **scopée à l’agent** (identité stable), pas une session projet Code générique — même skin UI.
+Les agents de session se déclarent auprès de wikichat avec un nom, et
+`sync_titles` recopie ce nom dans le titre de la conversation. Un titre saisi à
+la main est désormais protégé (`title_source: "user"`), mais **renommer une
+conversation reste sans effet sur le nom déclaré côté wikichat** : les deux
+identités coexistent. Même remarque pour les agents, dont le renommage n'est pas
+exposé (voir plus bas).
 
----
+### Modifier et renommer un agent — fait
 
-## 8. Ordre d’implémentation
+Le remplacement en place (`POST /pilote/api/agent` avec `id`) conserve id,
+historique et session. Vérifié sur un agent ayant tourné : après renommage,
+mêmes id et `fired`, `canResume` toujours vrai, outils inchangés, transcript
+toujours lisible, aucun doublon créé.
 
-1. CSS shell commun + **mobile list ↔ detail** (Code en premier, puis Agent / Connecteurs).
-2. Agent : accueil (guide + daemon + file globale) ; onglets détail ; création projet/Général ; copy.
-3. Agent : onglet Discussion (branchement backend minimal viable).
-4. Connecteurs : layout shell + fiche service (compositions = tools).
-5. Assistant : shell + liste sessions + épinglés + chat de base.
+Accès : « Modifier » dans les Réglages, ou le menu contextuel de la liste.
 
----
+## Pastilles (contrat global)
 
-## 9. Critères d’acceptation
+Même composant `.status-dot` + variante :
 
-- [ ] Sous 720 px, Code : bascule liste ↔ chat plein écran (plus de double panneau étroit).
-- [ ] Sous 720 px, Agent / Connecteurs : même bascule ; détail lisible.
-- [ ] Agent sans sélection : guide + daemon + file globale.
-- [ ] Agent sélectionné : onglets Discussion | À valider | Réglages avec badges.
-- [ ] Création agent : projets + Général, pas d’input chemin libre obligatoire.
-- [ ] Connecteurs : sidebar Plateforme / Perso ; détail service avec tools ; compositions via tools du service dédié.
-- [ ] Assistant : sidebar sessions plates + épinglés ; main = discussion.
-- [ ] Aucune réinvention backend gateway/pilote ; API Atelier = couche d’agrégation.
+| Vue | Signaux |
+|-----|---------|
+| Agent | actif / veille / off / à valider |
+| Code | idle / en réponse / erreur |
+| Assistant | en attente / terminée / erreur |
+| Connecteurs | connecté / local / erreur / off |
 
----
+## Hors scope immédiat
 
-## 10. Décisions tranchées (historique cadrage)
+- Discussion agent backend réelle  
+- Wizard connecteur multi-étapes complet  
+- Pastilles Code / Assistant (contrat posé, UI avec leurs shells)  
+- Raffinement riche des profils  
 
-| Sujet | Décision |
-|-------|----------|
-| Approche shell | Minimal partagé (pas Explorer générique) |
-| Connecteurs sidebar | Groupes Plateforme + Mes connecteurs |
-| Compositions | Service pool ; tools = compositions |
-| Assistant sidebar | Liste plate + épinglés |
-| Création agent cwd | Projets Code + Général |
-| Accueil Agent | Guide + daemon + file globale |
-| Détail Agent | Onglets Discussion \| À valider \| Réglages |
-| Mobile | Liste ↔ détail plein écran &lt; 720 px |
-| Messagerie / webmessage | Point d’extension Réglages ; hors implémentation immédiate |
+## Critères (passe courante)
+
+- [ ] Accueil Agent = overview utile (cartes états)
+- [ ] Création = pleine page, pas modale
+- [ ] Détail = pleine page onglets
+- [ ] Pastilles Agent dans la liste
+- [ ] Fréquence : presets + personnaliser
+- [ ] Modèles depuis `/v1/models`
