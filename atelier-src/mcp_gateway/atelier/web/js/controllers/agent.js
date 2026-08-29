@@ -2,6 +2,7 @@
 
 import * as api from "../api.js?v=modal";
 import * as S from "../state.js";
+import { openModal } from "../ui/modal.js";
 import {
   refreshAgentProfiles,
   refreshMcpOverview,
@@ -360,6 +361,79 @@ export function createAgentActions(ctx) {
     render();
   }
 
+  /**
+   * Fige des paramètres d'un outil pour en faire une variante réutilisable.
+   * La passerelle représente cela comme une composition à une étape : on
+   * suit le même chemin (créer, valider, promouvoir).
+   */
+  async function personnaliserOutil(outil) {
+    let infos;
+    try {
+      infos = await api.mcpToolSchema(state.token, outil.name);
+    } catch (err) {
+      S.setError(state, err.message || String(err));
+      render();
+      return;
+    }
+    const props = infos.schema?.properties || {};
+    const requis = new Set(infos.schema?.required || []);
+    const champs = [
+      { name: "__nom", label: "Nom affiché", placeholder: "Ex. Mémo de projet", required: true },
+      { name: "__desc", label: "Description (optionnel)", placeholder: "Ce que fait cette variante" },
+      { type: "section", label: "Paramètres à figer" },
+    ];
+    for (const [cle, def] of Object.entries(props)) {
+      champs.push({
+        name: cle,
+        label: cle + (requis.has(cle) ? " *" : ""),
+        placeholder: def?.description ? String(def.description).slice(0, 60) : cle,
+        hint: def?.description ? String(def.description).slice(0, 120) : "",
+        full: true,
+      });
+    }
+    if (!Object.keys(props).length) {
+      champs.push({ type: "section", label: "Cet outil ne prend aucun paramètre." });
+    }
+
+    openModal(state, {
+      title: "Personnaliser un outil",
+      lead: `Basé sur : ${infos.short || outil.short} — les champs laissés vides restent libres.`,
+      size: "lg",
+      submitLabel: "Enregistrer et activer",
+      fields: champs,
+      onSubmit: async (data) => {
+        const nom = String(data.__nom || "").trim();
+        if (!nom) throw new Error("Un nom est nécessaire.");
+        const parameters = {};
+        for (const cle of Object.keys(props)) {
+          const v = String(data[cle] ?? "").trim();
+          if (v) parameters[cle] = v;
+        }
+        if (!Object.keys(parameters).length) {
+          throw new Error("Figez au moins un paramètre, sinon la variante n’apporte rien.");
+        }
+        await api.createToolVariant(state.token, {
+          tool: outil.name,
+          name: nom,
+          description: String(data.__desc || "").trim(),
+          parameters,
+        });
+        // La variante est promue : on rafraîchit le pool pour la voir.
+        try {
+          await refreshMcpOverview(state);
+          const cur = state.agentCreateForm || {};
+          S.setAgentCreateForm(state, {
+            ...cur,
+            toolsByService: (await api.mcpTools(state.token)).services || [],
+          });
+        } catch {
+          /* la variante existe même si le rafraîchissement échoue */
+        }
+        renderAgent();
+      },
+    });
+  }
+
   async function applyProfile(valeur) {
     const form = state.agentCreateForm || {};
     const [kind, id] = String(valeur || "").split(":");
@@ -475,6 +549,7 @@ export function createAgentActions(ctx) {
     cancelCreate,
     patchCreate,
     applyProfile,
+    personnaliserOutil,
     openEdit,
     submitCreate,
     refreshAll,

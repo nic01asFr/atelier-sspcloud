@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
@@ -113,6 +115,15 @@ class CustomProfileBody(BaseModel):
     registry_servers: list[str] = Field(default_factory=list)
     tool_allowlist: list[str] | None = None
     meta_tools: list[str] | None = None
+
+
+class ToolVariantBody(BaseModel):
+    """Variante d'outil : le même outil, avec des paramètres déjà remplis."""
+
+    tool: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    description: str = ""
+    parameters: dict[str, Any] = Field(default_factory=dict)
 
 
 class AgentCreateBody(BaseModel):
@@ -627,6 +638,70 @@ def build_app(
         from mcp_gateway.atelier.gateway_tools import build_tools_by_service
 
         return build_tools_by_service(request)
+
+    @router.get("/mcp/tools/schema")
+    def mcp_tool_schema(
+        request: Request,
+        tool: str,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        from mcp_gateway.atelier.gateway_tools import tool_schema
+
+        data = tool_schema(request, tool)
+        if not data:
+            raise HTTPException(404, "outil inconnu du pool")
+        return data
+
+    @router.post("/mcp/tool-variants")
+    def mcp_create_tool_variant(
+        request: Request,
+        body: ToolVariantBody,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """
+        Enregistre une variante d'outil aux paramètres figés.
+
+        La passerelle représente déjà cela comme une composition à une seule
+        étape : on réutilise ce mécanisme plutôt que d'en créer un second.
+        """
+        svc = getattr(request.app.state, "compositions", None)
+        if svc is None:
+            raise HTTPException(503, "compositions indisponibles")
+        # L'identifiant d'une composition est alphanumérique ; le nom saisi
+        # reste le libellé lisible de l'étape.
+        slug = re.sub(r"[^a-z0-9]+", "_", unicodedata.normalize("NFD", body.name)
+                      .encode("ascii", "ignore").decode("ascii").lower()).strip("_")
+        if not slug:
+            slug = re.sub(r"[^a-z0-9]+", "_", body.tool.split("__")[-1].lower()).strip("_")
+        try:
+            cree = svc.create_from_steps(
+                nom=slug,
+                description=body.description or body.name,
+                etapes=[
+                    {
+                        "tool": body.tool,
+                        "label": body.name,
+                        "parameters": body.parameters,
+                    }
+                ],
+            )
+            # Créer ne suffit pas : une variante reste inerte tant qu'elle
+            # n'est pas validée puis promue, comme le fait la passerelle.
+            comp_id = cree.get("id")
+            verdict = svc.validate(comp_id)
+            if not verdict.get("ok", False):
+                raise HTTPException(
+                    400,
+                    "paramètres refusés : " + str(verdict.get("errors") or verdict),
+                )
+            promu = svc.promote(comp_id)
+            return {"id": comp_id, "composition": promu, "validation": verdict}
+        except HTTPException:
+            raise
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     @router.get("/mcp/overview")
     def mcp_overview(request: Request, _owner: str = Depends(require_owner)) -> dict[str, Any]:

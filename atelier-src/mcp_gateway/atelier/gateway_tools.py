@@ -7,10 +7,48 @@ liste qui permet de choisir un outil précis plutôt qu'un service entier.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from typing import Any
 
 from fastapi import Request
+
+
+def tool_schema(request: Request, qualified_name: str) -> dict[str, Any]:
+    """Schéma d'entrée d'un outil, pour proposer ses paramètres à figer."""
+    gw = getattr(request.app.state, "gateway_settings", None)
+    if gw is None:
+        return {}
+    try:
+        conn = sqlite3.connect(f"file:{gw.db_path}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+    except sqlite3.Error:
+        return {}
+    try:
+        row = conn.execute(
+            """SELECT source_key, tool_name, qualified_name, description, schema_json
+               FROM upstream_tool_cache WHERE qualified_name = ? LIMIT 1""",
+            (qualified_name,),
+        ).fetchone()
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+    if not row:
+        return {}
+    schema: dict[str, Any] = {}
+    if row["schema_json"]:
+        try:
+            schema = json.loads(row["schema_json"])
+        except json.JSONDecodeError:
+            schema = {}
+    return {
+        "name": row["qualified_name"],
+        "short": row["tool_name"],
+        "source": row["source_key"],
+        "description": row["description"] or "",
+        "schema": schema,
+    }
 
 
 def build_tools_by_service(request: Request) -> dict[str, Any]:

@@ -1417,6 +1417,26 @@ button:disabled {
   padding: 0 0.6rem 0.55rem 1.9rem;
 }
 
+.tool-chip-perso {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0 0.1rem;
+  opacity: 0;
+}
+
+.tool-chip:hover .tool-chip-perso,
+.tool-chip-perso:focus {
+  opacity: 1;
+}
+
+.tool-chip-perso:hover {
+  color: var(--accent);
+}
+
 .tool-chip-sm {
   padding: 0.2rem 0.45rem;
   font-size: 0.75rem;

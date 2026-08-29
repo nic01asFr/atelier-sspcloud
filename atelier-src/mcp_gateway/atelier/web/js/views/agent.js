@@ -376,6 +376,7 @@ function renderCreate(state, actions) {
     catalog: state.mcpOverview?.catalog,
     toolsByService: form.toolsByService || [],
     selection: form.toolSelection || new Set(),
+    onPersonnaliser: (outil) => actions.personnaliserOutil(outil),
   });
   el.appendChild(fieldRow("Outils", picker));
 

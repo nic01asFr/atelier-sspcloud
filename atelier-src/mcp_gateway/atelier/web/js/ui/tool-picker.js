@@ -37,7 +37,7 @@ export function jetonOutil(qualifiedName) {
  * @param {Set<string>} o.selection valeurs cochées (mutée par le composant)
  * @param {() => void} [o.onChange]
  */
-export function renderToolPicker({ builtins, catalog, toolsByService, selection, onChange }) {
+export function renderToolPicker({ builtins, catalog, toolsByService, selection, onChange, onPersonnaliser }) {
   const wrap = document.createElement("div");
   wrap.className = "tool-picker";
 
@@ -161,6 +161,19 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
         rafraichir();
         notifier();
       });
+      if (onPersonnaliser) {
+        const perso = document.createElement("button");
+        perso.type = "button";
+        perso.className = "tool-chip-perso";
+        perso.textContent = "⚙";
+        perso.title = "Figer des paramètres de cet outil";
+        perso.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          onPersonnaliser(outil);
+        });
+        label.appendChild(perso);
+      }
       cases.push({ box, label, jeton });
       corps.appendChild(label);
     }

@@ -603,6 +603,27 @@ export async function createAgent(token, body) {
   return res.json();
 }
 
+/** Schema d'entree d'un outil, pour proposer ses parametres. */
+export async function mcpToolSchema(token, tool) {
+  const res = await fetch(
+    "/v1/mcp/tools/schema?tool=" + encodeURIComponent(tool),
+    { headers: jsonHeaders(token) }
+  );
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Enregistre une variante d'outil aux parametres figes. */
+export async function createToolVariant(token, body) {
+  const res = await fetch("/v1/mcp/tool-variants", {
+    method: "POST",
+    headers: jsonHeaders(token),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
 /** Outils exposes par chaque service du pool. */
 export async function mcpTools(token) {
   const res = await fetch("/v1/mcp/tools", { headers: jsonHeaders(token) });
