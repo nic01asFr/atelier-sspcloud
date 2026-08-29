@@ -52,6 +52,27 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
   const outilsDe = (cle) => (toolsByService || []).find((s) => s.key === cle)?.tools || [];
   const notifier = () => onChange?.();
 
+  /**
+   * Portée d'un service monté en local : le chemin qu'il expose.
+   *
+   * Les outils intégrés travaillent dans le dossier de la session ; un
+   * serveur de fichiers, lui, ouvre ce qu'on lui a donné au démarrage — la
+   * racine de travail le cas échéant, donc tous les projets. Utile, mais
+   * à savoir avant de cocher.
+   */
+  const porteeDe = (entree) => {
+    const args = entree?.config?.args;
+    if (!Array.isArray(args)) return "";
+    const chemins = args.filter(
+      (a) => typeof a === "string" && a.startsWith("/") && !a.endsWith(".js")
+    );
+    return chemins.length ? chemins[chemins.length - 1] : "";
+  };
+
+  const parCle = new Map();
+  for (const e of catalog?.personal || []) parCle.set(PREFIXE_SERVICE + e.id, e);
+  for (const e of catalog?.org || []) parCle.set(e.id, e);
+
   // ---- Outils intégrés -------------------------------------------------
   if ((builtins || []).length) {
     const bloc = document.createElement("div");
@@ -138,6 +159,16 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
 
     const compteur = document.createElement("span");
     compteur.className = "tool-service-count";
+
+    const portee = porteeDe(parCle.get(cle) || e);
+    let porteeEl = null;
+    if (portee) {
+      porteeEl = document.createElement("span");
+      porteeEl.className = "tool-service-scope";
+      porteeEl.textContent = "accès " + portee;
+      porteeEl.title =
+        "Ce service ouvre ce chemin, au-delà du dossier de travail de l’agent.";
+    }
 
     const actions = document.createElement("span");
     actions.className = "tool-service-actions";
@@ -246,6 +277,7 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
     tete.appendChild(chevron);
     tete.appendChild(boxService);
     tete.appendChild(nom);
+    if (porteeEl) tete.appendChild(porteeEl);
     tete.appendChild(compteur);
     tete.appendChild(actions);
     ligne.appendChild(tete);

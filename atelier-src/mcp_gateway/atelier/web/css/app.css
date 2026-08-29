@@ -529,7 +529,29 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+}
+
+#agent-detail-body:has(.agent-create-form) {
+  max-width: none;
+}
+
+.agent-create-form input,
+.agent-create-form select,
+.agent-create-form textarea {
   max-width: 32rem;
+}
+
+/* Les cases du sélecteur ne sont pas des champs de saisie : la largeur
+   confortable d'un champ texte les étirerait à toute la colonne. */
+.agent-create-form input[type="checkbox"] {
+  width: auto;
+  max-width: none;
+}
+
+/* Le sélecteur d'outils, lui, gagne à s'étaler : il montre des dizaines
+   d'entrées qu'on parcourt du regard. */
+.agent-form-row .tool-picker {
+  max-width: none;
 }
 
 .agent-form-row {
@@ -1403,6 +1425,16 @@ button:disabled {
   white-space: nowrap;
 }
 
+.tool-service-scope {
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-family: ui-monospace, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 18rem;
+}
+
 .tool-service-count {
   color: var(--muted);
   font-size: 0.72rem;
@@ -1416,8 +1448,8 @@ button:disabled {
 }
 
 .tool-service-tools {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
   gap: 0.3rem;
   padding: 0 0.6rem 0.55rem 1.9rem;
 }
