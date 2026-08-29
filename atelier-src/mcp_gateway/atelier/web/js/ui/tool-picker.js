@@ -24,9 +24,17 @@ function sansAccent(t) {
     .replace(/\p{M}/gu, "");
 }
 
-/** Jeton d'un outil précis pour --allowedTools. */
-export function jetonOutil(qualifiedName) {
-  return "mcp__" + qualifiedName;
+/**
+ * Jeton d'un outil précis pour --allowedTools.
+ *
+ * Les outils du pool sont qualifiés « service__outil » et se préfixent ;
+ * les méta-outils de la passerelle et les compositions portent déjà leur
+ * nom complet.
+ */
+export function jetonOutil(nom) {
+  const n = String(nom || "");
+  if (n.startsWith("gateway_") || n.startsWith("composition_")) return n;
+  return "mcp__" + n;
 }
 
 /**
@@ -79,9 +87,21 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
   }
 
   // ---- Services, avec affinage outil par outil -------------------------
+  const declares = new Set((toolsByService || []).map((s) => s.key));
   const services = [
-    ...(catalog?.personal || []).map((e) => ({ e, cle: PREFIXE_SERVICE + e.id, groupe: "Mes connecteurs" })),
-    ...(catalog?.org || []).map((e) => ({ e, cle: e.id, groupe: "Plateforme" })),
+    ...(toolsByService || []).map((s) => ({
+      e: { id: s.key, name: s.label || s.key, tools: s.count },
+      cle: s.key,
+      groupe: s.group || "Mes connecteurs",
+    })),
+    // Connecteurs présents dans le pool mais dont aucun outil n'est en cache
+    // (un service local ne déclare rien tant qu'il n'a pas tourné).
+    ...(catalog?.personal || [])
+      .filter((e) => !declares.has(PREFIXE_SERVICE + e.id))
+      .map((e) => ({ e, cle: PREFIXE_SERVICE + e.id, groupe: "Mes connecteurs" })),
+    ...(catalog?.org || [])
+      .filter((e) => !declares.has(e.id))
+      .map((e) => ({ e, cle: e.id, groupe: "Plateforme" })),
   ];
 
   const recherche = document.createElement("input");
@@ -161,7 +181,10 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
         rafraichir();
         notifier();
       });
-      if (onPersonnaliser) {
+      // On ne fige des paramètres que sur un outil du pool : un méta-outil
+      // pilote la passerelle, et une variante en est déjà une.
+      const personnalisable = groupe !== "Pilotage" && groupe !== "Compositions";
+      if (onPersonnaliser && personnalisable) {
         const perso = document.createElement("button");
         perso.type = "button";
         perso.className = "tool-chip-perso";
@@ -231,7 +254,7 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
     rafraichir();
   }
 
-  for (const groupe of ["Mes connecteurs", "Plateforme"]) {
+  for (const groupe of ["Pilotage", "Compositions", "Mes connecteurs", "Plateforme"]) {
     const dedans = lignes.filter((l) => l.ligne.dataset.groupe === groupe);
     if (!dedans.length) continue;
     const bloc = document.createElement("div");

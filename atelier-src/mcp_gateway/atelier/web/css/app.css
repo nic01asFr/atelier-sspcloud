@@ -1395,7 +1395,12 @@ button:disabled {
 }
 
 .tool-service-name {
+  flex: 1;
+  min-width: 0;
   font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tool-service-count {
