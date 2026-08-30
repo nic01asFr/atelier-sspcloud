@@ -5,8 +5,11 @@ import { $ } from "../core/dom.js";
 
 export function closeModal(state) {
   S.setModal(state, null);
+  porteeCourante = null;
   const backdrop = $("modal-backdrop");
   if (backdrop) {
+    backdrop.style.inset = "";
+    backdrop.classList.remove("modal-backdrop-scoped");
     backdrop.hidden = true;
     backdrop.classList.add("hidden");
     backdrop.setAttribute("aria-hidden", "true");
@@ -39,8 +42,39 @@ export function closeModal(state) {
  *   onSubmit: (data: Record<string, string>) => Promise<void> | void,
  * }} opts
  */
-export function openModal(state, { title, lead, size, submitLabel, fields, onSubmit }) {
-  S.setModal(state, { title, lead, size, submitLabel, fields, onSubmit });
+/**
+ * Circonscrit la modale à la zone d'où elle est ouverte.
+ *
+ * Une question posée depuis une conversation porte sur cette conversation :
+ * couvrir l'écran entier la détacherait de son contexte et masquerait ce
+ * qu'on est en train de lire. Sur mobile, où la conversation occupe déjà
+ * tout, le cadrage n'a plus d'objet.
+ */
+function cadrerModale(portee) {
+  const backdrop = $("modal-backdrop");
+  if (!backdrop) return;
+  const cible = portee ? document.querySelector(portee) : null;
+  if (!cible || window.innerWidth < 720 || cible.offsetParent === null) {
+    backdrop.style.inset = "";
+    backdrop.classList.remove("modal-backdrop-scoped");
+    return;
+  }
+  const r = cible.getBoundingClientRect();
+  backdrop.style.inset = `${Math.round(r.top)}px ${Math.round(
+    window.innerWidth - r.right
+  )}px ${Math.round(window.innerHeight - r.bottom)}px ${Math.round(r.left)}px`;
+  backdrop.classList.add("modal-backdrop-scoped");
+}
+
+let porteeCourante = null;
+
+export function openModal(
+  state,
+  { title, lead, size, submitLabel, fields, onSubmit, scope }
+) {
+  S.setModal(state, { title, lead, size, submitLabel, fields, onSubmit, scope });
+  porteeCourante = scope || null;
+  cadrerModale(porteeCourante);
   $("modal-title").textContent = title;
 
   const modal = $("modal");
@@ -71,6 +105,51 @@ export function openModal(state, { title, lead, size, submitLabel, fields, onSub
       sec.className = "modal-section";
       sec.textContent = field.label || "";
       container.appendChild(sec);
+      continue;
+    }
+
+    if (field.type === "checklist") {
+      // Une liste de cases n'est pas un champ de saisie : elle a son propre
+      // conteneur, et sa valeur se relit dans le DOM au moment d'envoyer.
+      const bloc = document.createElement("div");
+      bloc.className = "field modal-field modal-field-full modal-checklist";
+      const titre = document.createElement("span");
+      titre.className = "modal-label";
+      titre.textContent = field.label || "";
+      bloc.appendChild(titre);
+      if (field.hint) {
+        const hint = document.createElement("span");
+        hint.className = "modal-hint";
+        hint.textContent = field.hint;
+        bloc.appendChild(hint);
+      }
+      const ul = document.createElement("ul");
+      ul.className = "modal-checklist-list";
+      for (const opt of field.options || []) {
+        const li = document.createElement("li");
+        const lab = document.createElement("label");
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = String(opt.value);
+        cb.checked = !!opt.checked;
+        cb.disabled = !!opt.disabled;
+        cb.dataset.checklist = field.name;
+        const nom = document.createElement("span");
+        nom.className = "modal-checklist-name";
+        nom.textContent = opt.label;
+        lab.appendChild(cb);
+        lab.appendChild(nom);
+        li.appendChild(lab);
+        if (opt.hint) {
+          const h = document.createElement("span");
+          h.className = "modal-checklist-hint";
+          h.textContent = opt.hint;
+          li.appendChild(h);
+        }
+        ul.appendChild(li);
+      }
+      bloc.appendChild(ul);
+      container.appendChild(bloc);
       continue;
     }
 
@@ -150,13 +229,19 @@ async function onModalSubmit(state, ev) {
   const data = {};
   for (const field of modal.fields) {
     if (field.type === "section" || !field.name) continue;
+    if (field.type === "checklist") {
+      data[field.name] = [
+        ...form.querySelectorAll(`input[data-checklist="${field.name}"]:checked`),
+      ].map((cb) => cb.value);
+      continue;
+    }
     const el = form.elements[field.name];
     data[field.name] = el?.value?.trim() || "";
   }
   const submit = $("modal-submit");
   if (submit) {
     submit.disabled = true;
-    submit.textContent = "Création…";
+    submit.textContent = "Envoi…";
   }
   try {
     await modal.onSubmit(data);
@@ -172,6 +257,9 @@ async function onModalSubmit(state, ev) {
 }
 
 export function bindModal(state) {
+  window.addEventListener("resize", () => {
+    if (state.modal) cadrerModale(porteeCourante);
+  });
   $("modal-form").addEventListener("submit", (ev) => onModalSubmit(state, ev));
   $("modal-cancel").addEventListener("click", () => closeModal(state));
   $("modal-close").addEventListener("click", () => closeModal(state));

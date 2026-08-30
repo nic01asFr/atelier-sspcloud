@@ -118,6 +118,24 @@ export async function getSessionMcp(token, sessionId) {
   return res.json();
 }
 
+export async function getProjectMcp(token, slug) {
+  const res = await fetch(`/v1/projects/${encodeURIComponent(slug)}/mcp`, {
+    headers: jsonHeaders(token),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+export async function putProjectMcp(token, slug, servers) {
+  const res = await fetch(`/v1/projects/${encodeURIComponent(slug)}/mcp`, {
+    method: "PUT",
+    headers: jsonHeaders(token),
+    body: JSON.stringify({ servers }),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
 export async function patchSessionMcp(token, sessionId, { overlay } = {}) {
   const res = await fetch(`/v1/sessions/${encodeURIComponent(sessionId)}/mcp`, {
     method: "PATCH",

@@ -74,6 +74,12 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
   for (const e of catalog?.org || []) parCle.set(e.id, e);
 
   // ---- Outils intégrés -------------------------------------------------
+  //
+  // Ils ne se cochent pas : mesuré sur le pod, `--allowedTools` ne les
+  // restreint pas — un agent lancé avec « Read » seul exécute quand même
+  // Bash. Les proposer à la sélection promettait un réglage qui n'existe
+  // pas. Ils travaillent dans le dossier de l'agent, et un agent les a
+  // toujours ; c'est cela qu'on dit.
   if ((builtins || []).length) {
     const bloc = document.createElement("div");
     bloc.className = "tool-picker-group";
@@ -81,30 +87,14 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
     titre.className = "tool-picker-title";
     titre.textContent = "Outils intégrés";
     bloc.appendChild(titre);
-    const grille = document.createElement("div");
-    grille.className = "tool-picker-grid";
-    for (const nom of builtins) {
-      const label = document.createElement("label");
-      label.className = "tool-chip";
-      const box = document.createElement("input");
-      box.type = "checkbox";
-      box.checked = selection.has(nom);
-      label.classList.toggle("tool-chip-on", box.checked);
-      box.addEventListener("change", () => {
-        if (box.checked) selection.add(nom);
-        else selection.delete(nom);
-        label.classList.toggle("tool-chip-on", box.checked);
-        notifier();
-      });
-      const t = document.createElement("span");
-      t.className = "tool-chip-name";
-      t.textContent = nom;
-      label.appendChild(box);
-      label.appendChild(t);
-      grille.appendChild(label);
-    }
-    bloc.appendChild(grille);
+    const acquis = document.createElement("p");
+    acquis.className = "tool-picker-acquis";
+    acquis.textContent = `Toujours disponibles, dans le dossier de l’agent : ${builtins.join(", ")}.`;
+    bloc.appendChild(acquis);
     wrap.appendChild(bloc);
+    // La sélection les porte quand même : le harnais attend une liste non
+    // vide, et c'est le socle qu'elle décrit.
+    for (const nom of builtins) selection.add(nom);
   }
 
   // ---- Services, avec affinage outil par outil -------------------------

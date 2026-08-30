@@ -4,6 +4,8 @@ import * as api from "../api.js";
 import * as S from "../state.js";
 import { $ } from "../core/dom.js";
 import { refreshMcpOverview } from "../services/catalog.js";
+import { openModal } from "../ui/modal.js";
+import { ouvrirVariante } from "../ui/tool-variant.js";
 
 /**
  * @param {object} ctx
@@ -114,6 +116,74 @@ export function createConnectorActions(ctx) {
     render();
   }
 
+  /**
+   * Fabriquer une composition depuis la page Connecteurs.
+   *
+   * On commence par l'outil : une composition à une étape n'est rien
+   * d'autre qu'un outil dont on a figé des paramètres. L'enchaînement de
+   * plusieurs étapes viendra s'ajouter ici.
+   */
+  async function newComposition() {
+    if (!state.toolsByService?.length) {
+      try {
+        S.setToolsByService(state, (await api.mcpTools(state.token)).services || []);
+      } catch (err) {
+        S.setError(state, err.message || String(err));
+        return render();
+      }
+    }
+    // Les compositions déjà fabriquées ne sont pas des points de départ :
+    // en composer une sur une autre n'apporterait qu'un niveau d'indirection.
+    const outils = [];
+    for (const svc of state.toolsByService || []) {
+      if (String(svc.key).startsWith("meta:compositions")) continue;
+      for (const t of svc.tools || []) {
+        outils.push({
+          value: t.name,
+          label: `${t.label || t.short} — ${svc.label || svc.key}`,
+        });
+      }
+    }
+    openModal(state, {
+      title: "Nouvelle composition",
+      lead: "Choisissez l’outil de départ. Vous figerez ensuite ce qui doit l’être.",
+      size: "md",
+      submitLabel: "Continuer",
+      fields: [
+        {
+          name: "outil",
+          label: "Outil de départ",
+          hint: "Tapez pour filtrer parmi les outils disponibles.",
+          datalist: outils,
+          placeholder: "nom de l’outil",
+          required: true,
+          full: true,
+        },
+      ],
+      onSubmit: async (data) => {
+        const nom = String(data.outil || "").trim();
+        const connu = outils.find((o) => o.value === nom || o.label === nom);
+        if (!connu) throw new Error("Choisissez un outil de la liste.");
+        // La modale suivante doit s'ouvrir sur une pile vide : celle-ci se
+        // referme d'elle-même dès que ce rappel a rendu la main.
+        setTimeout(
+          () =>
+            ouvrirVariante({
+              state,
+              outil: { name: connu.value, short: connu.label },
+              render,
+              onCreated: async () => {
+                await refreshAll();
+                S.setSelectedConnectorId(state, "atelier:compositions");
+                render();
+              },
+            }),
+          0
+        );
+      },
+    });
+  }
+
   function clearSelection() {
     S.setSelectedConnectorId(state, null);
     S.setConnectorPanel(state, "home");
@@ -222,5 +292,6 @@ export function createConnectorActions(ctx) {
     deleteMcp,
     importMcp,
     reprobePool,
+    newComposition,
   };
 }

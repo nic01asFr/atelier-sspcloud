@@ -219,6 +219,55 @@ function renderDaemonBar(daemon, actions, into) {
   into.appendChild(wrap);
 }
 
+/**
+ * Mécanismes de la plateforme — ce qui agit sans être un agent.
+ *
+ * Le réveil sur mention n'exécute aucune mission : il écoute les messages et
+ * relance un agent hors ligne quand on le nomme. Le ranger parmi les agents
+ * laissait croire à un travail planifié ; sa vraie nature est celle d'un
+ * réglage, à côté du planificateur.
+ */
+function renderMecanismes(ov, actions, into) {
+  const liste = ov?.system_agents || [];
+  if (!liste.length) return;
+
+  const LIBELLES = {
+    "evt-wake-any": {
+      titre: "Réveil sur mention",
+      texte:
+        "Relance un agent hors ligne quand un message le nomme en attendant une réponse.",
+    },
+  };
+
+  for (const m of liste) {
+    const infos = LIBELLES[m.id] || { titre: m.name || m.id, texte: m.description || "" };
+    const wrap = document.createElement("div");
+    wrap.className = "agent-daemon-bar";
+    const inner = document.createElement("div");
+    inner.className = "agent-daemon-bar-inner";
+    const info = document.createElement("div");
+    info.className = "agent-daemon-info";
+    info.appendChild(statusDot(m.enabled ? "ok" : "warn", m.enabled ? "Actif" : "Suspendu"));
+    const text = document.createElement("span");
+    const dernier = m.lastFired
+      ? new Date(m.lastFired).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })
+      : "jamais";
+    text.innerHTML = `<strong>${escapeHtml(infos.titre)}</strong> · ${escapeHtml(
+      infos.texte
+    )} · ${m.fired || 0} fois · dernier : ${escapeHtml(dernier)}`;
+    info.appendChild(text);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = m.enabled ? "ghost btn-sm" : "primary btn-sm";
+    btn.textContent = m.enabled ? "Suspendre" : "Réactiver";
+    btn.addEventListener("click", () => actions.toggleSystemAgent?.(m.id));
+    inner.appendChild(info);
+    inner.appendChild(btn);
+    wrap.appendChild(inner);
+    into.appendChild(wrap);
+  }
+}
+
 function renderHome(ov, actions) {
   const body = $("agent-detail-body");
   if (!body) return;
@@ -242,6 +291,7 @@ function renderHome(ov, actions) {
   body.appendChild(head);
 
   renderDaemonBar(ov?.daemon || {}, actions, body);
+  renderMecanismes(ov, actions, body);
 
   const agents = ov?.agents || [];
 
@@ -789,17 +839,38 @@ export function createAgentView(ctx) {
     const daemon = ov?.daemon || {};
     const panel = state.agentPanel || "home";
 
-    if (!agents.length) {
+    // Ce qui sépare les deux listes, c'est l'origine, pas la besogne. Un
+    // agent que vous créez reste le vôtre même s'il entretient l'Atelier ;
+    // vous pouvez le modifier et le supprimer. Un agent de la plateforme est
+    // installé par elle — wikichat les préfixe « team- » — et ne se règle
+    // que par son interrupteur.
+    const dePlateforme = (a) =>
+      a.kind === "platform" || String(a.id || "").startsWith("team-");
+    const travail = agents.filter((a) => !dePlateforme(a));
+    const plateforme = agents.filter(dePlateforme);
+
+    if (!travail.length) {
       const li = document.createElement("li");
       li.className = "mcp-empty";
       li.textContent = "Aucun agent — utilisez + pour en créer un.";
       ul.appendChild(li);
-      return;
     }
-    for (const agent of agents) {
+    for (const agent of travail) {
       ul.appendChild(
         renderAgentCard(agent, state.selectedAgentId, daemon, actions, panel, state)
       );
+    }
+
+    if (plateforme.length) {
+      const titre = document.createElement("li");
+      titre.className = "agent-list-section";
+      titre.textContent = "Agents de la plateforme";
+      ul.appendChild(titre);
+      for (const agent of plateforme) {
+        ul.appendChild(
+          renderAgentCard(agent, state.selectedAgentId, daemon, actions, panel, state)
+        );
+      }
     }
   }
 

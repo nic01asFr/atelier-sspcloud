@@ -120,7 +120,7 @@ body {
 }
 
 .login-panel input,
-.field input,
+.field input:not([type="checkbox"]):not([type="radio"]),
 .composer textarea {
   width: 100%;
   background: var(--bg-elev);
@@ -627,6 +627,29 @@ button:disabled {
   gap: 0.45rem;
 }
 
+.agent-list-section {
+  margin: 0.9rem 0 0.35rem;
+  padding: 0;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  list-style: none;
+  cursor: default;
+}
+
+/* Un agent de la plateforme ne se sélectionne pas : sa carte le montre en
+   restant sourde au survol, comme une fiche d'information. */
+.agent-card-systeme {
+  cursor: default;
+  border-style: dashed;
+}
+
+.agent-card-systeme:hover {
+  border-color: var(--line);
+}
+
 .agent-card-desc {
   margin: 0.25rem 0 0;
   font-size: 0.8rem;
@@ -1005,6 +1028,23 @@ button:disabled {
   overflow-y: auto;
 }
 
+/* Modale circonscrite : elle assombrit sa zone, pas la page. Le voile est
+   plus léger — il n'a plus à isoler d'un écran entier. */
+.modal-backdrop-scoped {
+  background: rgba(8, 10, 14, 0.55);
+  backdrop-filter: blur(1.5px);
+  border-radius: 0.5rem;
+}
+
+.modal-backdrop-scoped .modal {
+  width: min(420px, 100%);
+  max-height: 100%;
+}
+
+.modal-backdrop-scoped .modal.modal-lg {
+  width: min(640px, 100%);
+}
+
 .modal {
   width: min(420px, 100%);
   max-height: min(92vh, 52rem);
@@ -1100,7 +1140,7 @@ button:disabled {
   margin-bottom: 0.4rem;
 }
 
-.modal-field input,
+.modal-field input:not([type="checkbox"]):not([type="radio"]),
 .modal-field textarea,
 .modal-field select {
   width: 100%;
@@ -1488,6 +1528,121 @@ button:disabled {
 
 /* Une composition est un outil : ligne discrète, subordonnée au groupe,
    et non carte de même rang qu'un service du pool. */
+/* Bouton qui n'a que l'aspect d'un lien : une action secondaire posée au
+   milieu d'un texte n'a pas à peser autant qu'un bouton. */
+.tool-picker-acquis {
+  margin: 0.2rem 0 0.6rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.linklike {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.linklike:disabled {
+  color: var(--muted);
+  cursor: default;
+  text-decoration: none;
+}
+
+.modal-checklist-list {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.modal-checklist-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.modal-checklist-list label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.modal-checklist-list input[type="checkbox"] {
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.modal-checklist-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-checklist-hint {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.composer-mcp-acquis {
+  margin: 0 0 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.composer-mcp-coupe {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  color: var(--warn, #b45309);
+}
+
+.composer-mcp-group {
+  margin: 0.5rem 0 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.composer-mcp-group:first-child {
+  margin-top: 0;
+}
+
+.composer-mcp-scope,
+.composer-mcp-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.68rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 12rem;
+}
+
+.composer-mcp-scope {
+  color: var(--accent);
+}
+
 .composition-item {
   display: flex;
   align-items: center;
@@ -2577,11 +2732,16 @@ button:disabled {
 }
 
 .composer-mcp-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
   padding: 0.45rem 0.75rem 0.25rem;
   border-top: 1px solid var(--line);
 }
 
-.composer-mcp-foot a {
+.composer-mcp-foot a,
+.composer-mcp-foot .linklike {
   font-size: 0.78rem;
 }
 

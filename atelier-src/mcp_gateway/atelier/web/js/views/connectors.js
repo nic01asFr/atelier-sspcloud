@@ -11,12 +11,14 @@ function badgeClass(entry, upstreamKey, upstream) {
   return "mcp-badge mcp-badge-warn";
 }
 
-function badgeLabel(entry, upstreamKey, upstream) {
+function badgeLabel(entry, upstreamKey, upstream, compte) {
   if (entry.enabled === false) return "désactivé";
   const raw = upstream?.[upstreamKey] || "";
-  if (raw === "connected" || entry.online)
-    return `connecté · ${entry.tools ?? 0} outils`;
-  if (raw === "stdio-local") return "local (CLI)";
+  const n = entry.tools || compte || 0;
+  if (raw === "connected" || entry.online) return `connecté · ${n} outils`;
+  // Un serveur lancé par le client final ne se compte pas tout seul : son
+  // nombre d'outils vient du sondage, comme dans le reste de l'application.
+  if (raw === "stdio-local") return n ? `local · ${n} outils` : "local (CLI)";
   if (raw.startsWith("error")) return raw.replace("error: ", "erreur · ");
   if (entry.error) return entry.error;
   return entry.state || "—";
@@ -43,7 +45,7 @@ function isCompositionsService(entry) {
   return /compos/.test(id) || /compos/.test(name);
 }
 
-function renderSidebarItem(entry, { kind, selectedId, upstream, actions }) {
+function renderSidebarItem(entry, { kind, selectedId, upstream, actions, titre, sous, compte }) {
   const li = document.createElement("li");
   const key = upstreamKeyFor(entry, kind);
   const selKey = `${kind}:${entry.id}`;
@@ -60,10 +62,10 @@ function renderSidebarItem(entry, { kind, selectedId, upstream, actions }) {
   dot.className = dotClass(entry, key, upstream);
   const name = document.createElement("strong");
   name.className = "agent-card-name";
-  name.textContent = entry.name || entry.id;
+  name.textContent = titre || entry.name || entry.id;
   const badge = document.createElement("span");
   badge.className = badgeClass(entry, key, upstream);
-  badge.textContent = badgeLabel(entry, key, upstream);
+  badge.textContent = badgeLabel(entry, key, upstream, compte);
   const titleRow = document.createElement("div");
   titleRow.className = "agent-card-title-row";
   titleRow.appendChild(dot);
@@ -73,11 +75,17 @@ function renderSidebarItem(entry, { kind, selectedId, upstream, actions }) {
 
   const meta = document.createElement("div");
   meta.className = "agent-card-meta";
-  const kindLabel =
-    entry.runtime === "stdio" || entry.config?.command
-      ? "stdio"
-      : entry.transport || "http";
-  meta.textContent = `${kindLabel} · ${entry.prefix || entry.id}`;
+  if (sous) {
+    // Un service du socle se nomme par ce qu'il apporte ; son identité
+    // technique reste lisible, mais au second plan.
+    meta.textContent = sous;
+  } else {
+    const kindLabel =
+      entry.runtime === "stdio" || entry.config?.command
+        ? "stdio"
+        : entry.transport || "http";
+    meta.textContent = `${kindLabel} · ${entry.prefix || entry.id}`;
+  }
 
   li.appendChild(head);
   li.appendChild(meta);
@@ -352,6 +360,166 @@ function renderNew(state, actions) {
   body.appendChild(sec);
 }
 
+/**
+ * Fiche du service Compositions.
+ *
+ * Les autres services se contentent de dire ce qu'ils apportent : celui-ci
+ * se gère. C'est ici qu'on voit ce qu'on a fabriqué, ce qui est réellement
+ * appelable, et ce qui n'est encore qu'un brouillon.
+ */
+/**
+ * Fiche « Accès aux outils ».
+ *
+ * Deux outils suffisent à se servir de tous les autres : c'est ce qui permet
+ * de ne pas annoncer soixante-dix outils à un agent pour qu'il en emploie
+ * deux. La fiche dit d'où vient ce qu'il trouvera.
+ */
+function renderFicheAcces(state) {
+  const body = $("connectors-detail-body");
+  if (!body) return;
+  body.innerHTML = "";
+
+  const meta = (state.toolsByService || []).find((x) => x.key === "meta:acces");
+  const head = document.createElement("header");
+  head.className = "agent-detail-head";
+  const h = document.createElement("h2");
+  h.className = "connectors-title";
+  h.textContent = "Accès aux outils";
+  const lead = document.createElement("p");
+  lead.className = "connectors-lead";
+  lead.textContent =
+    "Chercher un outil parmi tous ceux du pod, puis l’appeler. Un agent qui dispose de ces deux outils atteint tout le reste sans qu’on lui annonce chaque outil un par un.";
+  head.appendChild(h);
+  head.appendChild(lead);
+  body.appendChild(head);
+
+  const sec = document.createElement("section");
+  sec.className = "agent-section";
+  const h3 = document.createElement("h3");
+  h3.className = "connectors-sub";
+  h3.textContent = "Les deux outils";
+  sec.appendChild(h3);
+  const ul = document.createElement("ul");
+  ul.className = "agent-queue";
+  for (const t of meta?.tools || []) {
+    const li = document.createElement("li");
+    li.className = "agent-queue-item";
+    const main = document.createElement("div");
+    main.className = "agent-queue-main";
+    const nom = document.createElement("strong");
+    nom.textContent = t.label || t.short || t.name;
+    const sub = document.createElement("span");
+    sub.className = "agent-queue-sub";
+    sub.textContent = t.description || "";
+    main.appendChild(nom);
+    if (sub.textContent) main.appendChild(sub);
+    li.appendChild(main);
+    ul.appendChild(li);
+  }
+  sec.appendChild(ul);
+  body.appendChild(sec);
+
+  const portee = document.createElement("section");
+  portee.className = "agent-section";
+  const h4 = document.createElement("h3");
+  h4.className = "connectors-sub";
+  h4.textContent = "Ce qu’ils atteignent";
+  const p = document.createElement("p");
+  p.className = "agent-section-hint";
+  const total = (state.toolsByService || [])
+    .filter((x) => String(x.key).startsWith("registry:"))
+    .reduce((n, x) => n + (x.count || 0), 0);
+  p.textContent = `Tous les connecteurs branchés à ce pod — ${total} outils aujourd’hui — sans avoir à les annoncer.`;
+  portee.appendChild(h4);
+  portee.appendChild(p);
+  body.appendChild(portee);
+}
+
+function renderCompositionsService(state, actions) {
+  const body = $("connectors-detail-body");
+  if (!body) return;
+  body.innerHTML = "";
+
+  const liste = state.compositions || [];
+  const head = document.createElement("header");
+  head.className = "agent-detail-head";
+  const h = document.createElement("h2");
+  h.className = "connectors-title";
+  h.textContent = "Compositions";
+  const lead = document.createElement("p");
+  lead.className = "connectors-lead";
+  lead.textContent =
+    "Des outils fabriqués ici : un appel aux paramètres figés, ou un enchaînement d’étapes. Une fois active, une composition s’appelle comme n’importe quel outil.";
+  head.appendChild(h);
+  head.appendChild(lead);
+
+  const actionsBar = document.createElement("div");
+  actionsBar.className = "agent-head-actions";
+  const neuf = document.createElement("button");
+  neuf.type = "button";
+  neuf.className = "primary btn-sm";
+  neuf.textContent = "Nouvelle composition";
+  neuf.addEventListener("click", () => actions.newComposition?.());
+  actionsBar.appendChild(neuf);
+  head.appendChild(actionsBar);
+  body.appendChild(head);
+
+  const rangs = [
+    ["production", "Actives", "Appelables comme un outil."],
+    ["tested", "Testées", "Validées, pas encore ouvertes à l’appel."],
+    ["draft", "Brouillons", "Écrites, jamais exécutées."],
+  ];
+  let vide = true;
+  for (const [statut, titre, sous] of rangs) {
+    const dedans = liste.filter((c) => (c.status || "draft") === statut);
+    if (!dedans.length) continue;
+    vide = false;
+    const sec = document.createElement("section");
+    sec.className = "agent-section";
+    const h3 = document.createElement("h3");
+    h3.className = "connectors-sub";
+    h3.textContent = titre;
+    const p = document.createElement("p");
+    p.className = "agent-section-hint";
+    p.textContent = sous;
+    sec.appendChild(h3);
+    sec.appendChild(p);
+    const ul = document.createElement("ul");
+    ul.className = "agent-queue";
+    for (const c of dedans) {
+      const li = document.createElement("li");
+      li.className = "agent-queue-item";
+      li.addEventListener("click", () => actions.selectComposition(c.id));
+      const main = document.createElement("div");
+      main.className = "agent-queue-main";
+      const nom = document.createElement("strong");
+      nom.textContent = c.name || c.id;
+      const sub = document.createElement("span");
+      sub.className = "agent-queue-sub";
+      const n = c.steps ?? 0;
+      sub.textContent =
+        c.description ||
+        (c.variant
+          ? `variante de ${String(c.source_tool || "").split("__").pop()}`
+          : `${n} étape${n > 1 ? "s" : ""}`);
+      main.appendChild(nom);
+      main.appendChild(sub);
+      li.appendChild(main);
+      ul.appendChild(li);
+    }
+    sec.appendChild(ul);
+    body.appendChild(sec);
+  }
+
+  if (vide) {
+    const p = document.createElement("p");
+    p.className = "connectors-lead";
+    p.textContent =
+      "Aucune composition. Figez les paramètres d’un outil pour en créer une, ou enchaînez plusieurs appels.";
+    body.appendChild(p);
+  }
+}
+
 function renderDetail(entry, kind, state, actions) {
   const body = $("connectors-detail-body");
   if (!body) return;
@@ -364,19 +532,34 @@ function renderDetail(entry, kind, state, actions) {
   head.className = "agent-detail-head";
   const h = document.createElement("h2");
   h.className = "connectors-title";
-  h.textContent = entry.name || entry.id;
+  const famille = (state.toolsByService || []).find(
+    (x) => String(x.key).split("#")[0] === key
+  )?.group;
+  const socle =
+    famille === "Coordination et mémoire" || famille === "Accès aux fichiers";
+  h.textContent = socle ? famille : entry.name || entry.id;
   const lead = document.createElement("p");
   lead.className = "connectors-lead";
-  lead.textContent = entry.description || `${kind === "org" ? "Service plateforme" : "Connecteur personnel"}`;
+  lead.textContent = socle
+    ? famille === "Accès aux fichiers"
+      ? "Ce que l’Atelier peut lire et écrire hors du dossier d’un projet."
+      : "Ce qui relie les agents entre eux : messages, mémoire, suivi de projet."
+    : entry.description ||
+      `${kind === "org" ? "Service plateforme" : "Connecteur personnel"}`;
   head.appendChild(h);
   head.appendChild(lead);
 
+  const compteOutils =
+    entry.tools ||
+    (state.toolsByService || [])
+      .filter((x) => String(x.key).split("#")[0] === key)
+      .reduce((n, x) => n + (x.count || 0), 0);
   const badge = document.createElement("span");
   badge.className = badgeClass(entry, key, upstream);
-  badge.textContent = badgeLabel(entry, key, upstream);
+  badge.textContent = badgeLabel(entry, key, upstream, compteOutils);
   head.appendChild(badge);
 
-  if (kind === "registry" || entry.kind === "registry") {
+  if ((kind === "registry" || entry.kind === "registry") && !socle) {
     const toolbar = document.createElement("div");
     toolbar.className = "agent-head-actions";
     const toggle = document.createElement("button");
@@ -420,7 +603,14 @@ function renderDetail(entry, kind, state, actions) {
       ? "stdio"
       : entry.transport || "—"
   );
-  addKv("Outils", String(entry.tools ?? 0));
+  // Un serveur lancé par le client ne se compte pas tout seul : le nombre
+  // vient alors du sondage, comme partout ailleurs dans l'application.
+  const compte =
+    entry.tools ||
+    (state.toolsByService || [])
+      .filter((x) => String(x.key).split("#")[0] === key)
+      .reduce((n, x) => n + (x.count || 0), 0);
+  addKv("Outils", String(compte || 0));
   kvSec.appendChild(ul);
   body.appendChild(kvSec);
 
@@ -492,12 +682,14 @@ export function createConnectorsView(ctx) {
    * d'outils d'un agent : un service ne change pas de nature selon l'écran
    * où on le regarde.
    */
-  const ORDRE_GROUPES = [
-    "Coordination et mémoire",
-    "Accès aux fichiers",
-    "Mes connecteurs",
-    "Plateforme",
-  ];
+  const FAMILLES_SOCLE = ["Coordination et mémoire", "Accès aux fichiers"];
+
+  /** Nombre d'outils d'un service, toutes familles confondues. */
+  function compteDe(cle) {
+    return (state.toolsByService || [])
+      .filter((x) => String(x.key).split("#")[0] === cle)
+      .reduce((n, x) => n + (x.count || 0), 0);
+  }
 
   /** Groupe d'un service, tel que l'agrégation des outils le classe. */
   function groupeDe(cle, defaut) {
@@ -505,6 +697,102 @@ export function createConnectorsView(ctx) {
       (s) => String(s.key).split("#")[0] === cle
     );
     return trouve?.group || defaut;
+  }
+
+  /** Ce qu'un service du socle apporte, dit en clair sous son nom. */
+  function sousTitreSysteme(groupe, entry) {
+    if (groupe === "Accès aux fichiers") {
+      const chemins = (entry.config?.args || []).filter(
+        (a) => typeof a === "string" && a.startsWith("/") && !a.endsWith(".js")
+      );
+      return chemins.length ? `ouvre ${chemins[0]}` : "accès aux dossiers";
+    }
+    return "coordination, mémoire, agents";
+  }
+
+  /**
+   * Compositions : un service au même rang que les autres.
+   *
+   * Ses outils ne viennent d'aucun serveur branché — ils sont fabriqués ici.
+   * C'est ce qui lui vaut sa place dans la liste plutôt qu'un tiroir à part.
+   */
+  function renderServiceCompositions() {
+    const li = document.createElement("li");
+    const sel = state.selectedConnectorId === "atelier:compositions";
+    li.className = "agent-card" + (sel ? " agent-card-selected" : "");
+    li.addEventListener("click", () => actions.select("atelier", "compositions"));
+
+    const liste = state.compositions || [];
+    const actives = liste.filter((c) => c.status === "production").length;
+
+    const head = document.createElement("div");
+    head.className = "agent-card-head";
+    const titleRow = document.createElement("div");
+    titleRow.className = "agent-card-title-row";
+    const dot = document.createElement("span");
+    dot.className = "status-dot " + (actives ? "status-dot-ok" : "status-dot-off");
+    const name = document.createElement("strong");
+    name.className = "agent-card-name";
+    name.textContent = "Compositions";
+    titleRow.appendChild(dot);
+    titleRow.appendChild(name);
+    const badge = document.createElement("span");
+    badge.className = actives ? "mcp-badge mcp-badge-ok" : "mcp-badge mcp-badge-warn";
+    badge.textContent = actives
+      ? `${actives} outil${actives > 1 ? "s" : ""} actif${actives > 1 ? "s" : ""}`
+      : "aucun outil actif";
+    head.appendChild(titleRow);
+    head.appendChild(badge);
+
+    const meta = document.createElement("div");
+    meta.className = "agent-card-meta";
+    meta.textContent = liste.length
+      ? `${liste.length} fabriquée${liste.length > 1 ? "s" : ""} ici`
+      : "outils fabriqués ici";
+
+    li.appendChild(head);
+    li.appendChild(meta);
+    return li;
+  }
+
+  /**
+   * La passerelle de l'Atelier, vue depuis la liste.
+   *
+   * Elle porte la recherche d'outils et l'appel — ce par quoi un agent
+   * atteint tout le reste sans qu'on lui annonce chaque outil. Elle n'est pas
+   * dans le pool : elle ne se branche pas, elle est la maison.
+   */
+  function renderServiceAcces() {
+    const li = document.createElement("li");
+    const sel = state.selectedConnectorId === "atelier:acces";
+    li.className = "agent-card" + (sel ? " agent-card-selected" : "");
+    li.addEventListener("click", () => actions.select("atelier", "acces"));
+
+    const meta = (state.toolsByService || []).find((x) => x.key === "meta:acces");
+    const head = document.createElement("div");
+    head.className = "agent-card-head";
+    const titleRow = document.createElement("div");
+    titleRow.className = "agent-card-title-row";
+    const dot = document.createElement("span");
+    dot.className = "status-dot status-dot-ok";
+    const name = document.createElement("strong");
+    name.className = "agent-card-name";
+    name.textContent = "Accès aux outils";
+    titleRow.appendChild(dot);
+    titleRow.appendChild(name);
+    const badge = document.createElement("span");
+    badge.className = "mcp-badge mcp-badge-ok";
+    badge.textContent = `${meta?.count ?? 2} outils`;
+    head.appendChild(titleRow);
+    head.appendChild(badge);
+
+    const sous = document.createElement("div");
+    sous.className = "agent-card-meta";
+    sous.textContent = "chercher un outil, l’appeler";
+
+    li.appendChild(head);
+    li.appendChild(sous);
+    return li;
   }
 
   function renderGroupes() {
@@ -542,9 +830,42 @@ export function createConnectorsView(ctx) {
       racine.appendChild(d);
     };
 
-    for (const groupe of ORDRE_GROUPES) {
+    // Le socle en premier : coordination, fichiers, compositions. On les
+    // nomme par leur fonction — « wikichat » ne dit rien de ce qu'on y
+    // trouve, et l'identité technique se lit dans la fiche.
+    const systeme = entrees.filter((x) => FAMILLES_SOCLE.includes(x.groupe));
+    bloc("Services de l’Atelier", (ul) => {
+      for (const groupe of FAMILLES_SOCLE) {
+        for (const { e, kind } of systeme.filter((x) => x.groupe === groupe)) {
+          ul.appendChild(
+            renderSidebarItem(e, {
+              kind,
+              selectedId: state.selectedConnectorId,
+              upstream,
+              actions,
+              titre: groupe,
+              sous: sousTitreSysteme(groupe, e),
+              compte: compteDe(kind === "registry" ? "registry:" + e.id : e.id),
+            })
+          );
+        }
+      }
+      ul.appendChild(renderServiceAcces());
+      ul.appendChild(renderServiceCompositions());
+    });
+
+    for (const groupe of ["Mes connecteurs", "Plateforme"]) {
       const dedans = entrees.filter((x) => x.groupe === groupe);
-      if (!dedans.length) continue;
+      if (!dedans.length) {
+        if (groupe !== "Mes connecteurs") continue;
+        bloc(groupe, (ul) => {
+          const li = document.createElement("li");
+          li.className = "mcp-empty";
+          li.textContent = "Aucun — branchez un service pour l’ajouter.";
+          ul.appendChild(li);
+        });
+        continue;
+      }
       bloc(groupe, (ul) => {
         for (const { e, kind } of dedans) {
           ul.appendChild(
@@ -553,29 +874,12 @@ export function createConnectorsView(ctx) {
               selectedId: state.selectedConnectorId,
               upstream,
               actions,
+              compte: compteDe(kind === "registry" ? "registry:" + e.id : e.id),
             })
           );
         }
       });
     }
-
-    // Les compositions ferment la liste : ce sont des outils fabriqués ici,
-    // pas des services déclarés.
-    bloc("Compositions", (ul) => {
-      const liste = state.compositions || [];
-      if (!liste.length) {
-        const li = document.createElement("li");
-        li.className = "mcp-empty";
-        li.textContent = "Aucune — personnalisez un outil pour en créer une.";
-        ul.appendChild(li);
-        return;
-      }
-      for (const comp of liste) {
-        ul.appendChild(
-          renderCompositionItem(comp, state.selectedCompositionId, actions)
-        );
-      }
-    });
   }
 
   function findSelected() {
@@ -603,6 +907,16 @@ export function createConnectorsView(ctx) {
         renderCompositionDetail(state.compositionDetail || comp, state, actions);
         return;
       }
+    }
+
+    if (state.selectedConnectorId === "atelier:acces") {
+      renderFicheAcces(state);
+      return;
+    }
+
+    if (state.selectedConnectorId === "atelier:compositions") {
+      renderCompositionsService(state, actions);
+      return;
     }
 
     const sel = findSelected();
