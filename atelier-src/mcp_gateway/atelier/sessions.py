@@ -336,7 +336,12 @@ class SessionStore:
                 continue
 
             changed = False
-            if claude_sid and claude_sid != rec.claude_session_id:
+            # Une conversation qui a déjà tourné a son identité fixée : c'est
+            # sous celle-là que le CLI la connaît. La réécrire d'après ce que
+            # l'IDE affiche ferait reprendre un fil qui n'existe pas de notre
+            # côté, et le fil entier deviendrait injoignable. Le titre, lui,
+            # continue de suivre.
+            if claude_sid and claude_sid != rec.claude_session_id and rec.turns <= 0:
                 rec.claude_session_id = claude_sid
                 changed = True
 
@@ -373,11 +378,18 @@ class SessionStore:
         return '"type":"stream_event"' in sample or '"subtype":"init"' in sample
 
     def _should_resume_claude(self, rec: SessionRecord) -> bool:
-        if rec.claude_session_id:
-            return True
-        if rec.turns > 0 and self._transcript_has_claude_cli(rec):
-            return True
-        return False
+        """Reprendre suppose qu'une conversation existe déjà côté CLI.
+
+        L'identifiant peut venir de l'IDE plutôt que de nous : on l'adopte
+        pour aligner les titres, mais il ne prouve pas qu'une conversation
+        soit reprenable ici — le CLI de l'Atelier ne lit pas forcément le
+        même dossier de configuration que l'extension. Sans tour déjà joué,
+        on ouvre donc plutôt que de reprendre : un `--resume` sur un
+        identifiant inconnu échoue et emporte le fil entier.
+        """
+        if rec.turns <= 0:
+            return False
+        return bool(rec.claude_session_id) or self._transcript_has_claude_cli(rec)
 
     def send(
         self,
@@ -400,8 +412,14 @@ class SessionStore:
         if rec.turns == 0 and not rec.claude_session_id:
             self.sync_claude_titles()
             rec = self.get(session_id) or rec
-        claude_cli_id = self._claude_cli_id(rec)
         resume = self._should_resume_claude(rec)
+        # Au premier tour, la conversation s'ouvre sous notre propre
+        # identifiant : c'est celui-là qu'il faudra reprendre ensuite.
+        if resume:
+            claude_cli_id = self._claude_cli_id(rec)
+        else:
+            claude_cli_id = rec.session_id
+            rec.claude_session_id = rec.session_id
         rec.state = "running"
         self.save(rec)
         mcp_config_path: Path | None = None
