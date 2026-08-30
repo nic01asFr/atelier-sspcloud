@@ -215,6 +215,10 @@ class ClaudeHarness(Harness):
             cmd.extend(["--session-id", cli_id])
         if model:
             cmd.extend(["--model", model])
+        # Pas de --append-system-prompt : mesuré sur ce pod, le drapeau est
+        # accepté sans erreur mais la consigne n'atteint pas le modèle servi
+        # par la passerelle LLM. Le contexte du projet passe par le CLAUDE.md
+        # du dossier, que Claude Code lit de lui-même (project_context).
 
         log_path.parent.mkdir(parents=True, exist_ok=True)
         transcript_path.parent.mkdir(parents=True, exist_ok=True)

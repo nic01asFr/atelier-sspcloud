@@ -36,6 +36,7 @@ FILES = [
     "mcp_endpoint.py",
     "wikichat_ensure.py",
     "wikichat_projects.py",
+    "project_context.py",
     "pilote_overview.py",
     "harness.py",
     "web/js/app.js",

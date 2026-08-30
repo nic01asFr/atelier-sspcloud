@@ -418,6 +418,13 @@ class SessionStore:
             _normalize_assistant_cwd(self.settings, rec)
             self.save(rec)
         cwd = Path(rec.cwd)
+        # Ce que la conversation ne peut pas deviner — son projet, la portée
+        # de ses notes — est déposé dans le dossier, là où Claude Code le lit
+        # de lui-même. Écrit avant le tour : un projet renommé se corrige au
+        # tour suivant, sans intervention.
+        from mcp_gateway.atelier.project_context import ecrire_contexte
+
+        ecrire_contexte(cwd, rec.slug)
         from mcp_gateway.atelier.session_attachments import enrich_message_with_attachments
 
         full_message = enrich_message_with_attachments(cwd, message, attachment_ids)
