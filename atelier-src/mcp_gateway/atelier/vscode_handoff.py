@@ -94,6 +94,11 @@ def write_vscode_workspace_config(settings: AtelierSettings, slug: str) -> None:
         "claudeCode.disableLoginPrompt": True,
         "claudeCode.preferredLocation": "sidebar",
         "claudeCode.hideOnboarding": True,
+        # C'est l'extension qui doit s'ouvrir sur la conversation, pas un
+        # terminal : ce réglage lui demande de prendre le premier plan au
+        # démarrage. Il valait « false » par défaut, ce qui laissait la vue
+        # fermée et obligeait à la chercher dans la barre d'activité.
+        "claudeCode.focusView": True,
         "claudeCode.environmentVariables": claude_extension_env(settings),
         "security.workspace.trust.enabled": False,
         "task.allowAutomaticTasks": "on",
@@ -113,6 +118,7 @@ def write_user_code_server_settings(settings: AtelierSettings) -> None:
         "claudeCode.disableLoginPrompt": True,
         "claudeCode.preferredLocation": "sidebar",
         "claudeCode.hideOnboarding": True,
+        "claudeCode.focusView": True,
         "claudeCode.environmentVariables": claude_extension_env(settings),
         "security.workspace.trust.enabled": False,
         "task.allowAutomaticTasks": "on",
@@ -212,6 +218,19 @@ def ensure_claude_onboarding(settings: AtelierSettings, slug: str) -> None:
 
     data.setdefault("hasCompletedOnboarding", True)
     data.setdefault("theme", "dark")
+
+    # La clé du modèle vient de l'Atelier : la faire approuver à l'ouverture
+    # n'ajoute aucune garantie, et bloque la reprise. Claude Code retient la
+    # réponse par le suffixe de la clé, jamais la clé entière.
+    cle = _read_llm_key(settings)
+    if cle:
+        reponses = data.setdefault("customApiKeyResponses", {})
+        if isinstance(reponses, dict):
+            approuvees = reponses.setdefault("approved", [])
+            if isinstance(approuvees, list):
+                suffixe = cle[-20:]
+                if suffixe not in approuvees:
+                    approuvees.append(suffixe)
 
     projets = data.setdefault("projects", {})
     if isinstance(projets, dict):
