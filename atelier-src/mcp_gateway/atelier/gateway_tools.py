@@ -463,10 +463,21 @@ def tool_schema(request: Request, qualified_name: str) -> dict[str, Any]:
             schema = json.loads(row["schema_json"])
         except json.JSONDecodeError:
             schema = {}
+    # Ce que la description du connecteur a appris de cet outil : un libellé,
+    # une phrase, et surtout un mot par paramètre. Sans eux, un formulaire ne
+    # peut afficher que le nom brut du champ.
+    settings_atelier = getattr(request.app.state, "settings", None)
+    service = str(row["source_key"] or "").replace("registry:", "")
+    enrichi = charger_enrichissement(settings_atelier, service) if settings_atelier else {}
+    info = (enrichi.get("outils") or {}).get(row["qualified_name"]) or {}
     return {
         "name": row["qualified_name"],
         "short": row["tool_name"],
         "source": row["source_key"],
         "description": row["description"] or "",
+        "label": info.get("libelle") or "",
+        "resume": info.get("resume") or "",
+        "risque": info.get("risque") or "",
+        "hints": info.get("parametres") or {},
         "schema": schema,
     }

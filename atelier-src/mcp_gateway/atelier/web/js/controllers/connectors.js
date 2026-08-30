@@ -250,13 +250,38 @@ export function createConnectorActions(ctx) {
     majBoutonEnvoi();
   }
 
+  /**
+   * Schéma d'un outil, retenu le temps de la fabrique.
+   *
+   * Le formulaire d'une étape en dépend : sans schéma, on ne peut proposer
+   * que du JSON brut. On les garde pour ne pas les redemander à chaque
+   * frappe, et on redessine quand un schéma arrive.
+   */
+  async function chargerSchema(nomOutil) {
+    if (!nomOutil) return;
+    const d = state.compositionDraft;
+    if (!d) return;
+    d.schemas = d.schemas || {};
+    if (d.schemas[nomOutil] !== undefined) return;
+    d.schemas[nomOutil] = null;
+    try {
+      d.schemas[nomOutil] = await api.mcpToolSchema(state.token, nomOutil);
+    } catch {
+      d.schemas[nomOutil] = null;
+    }
+    if (state.connectorPanel === "composer") render();
+  }
+
   function majEtape(i, champs, redessiner = false) {
     const d = state.compositionDraft;
     if (!d?.steps?.[i]) return;
     Object.assign(d.steps[i], champs, { erreur: "" });
     // Un choix dans une liste ne fait pas perdre le curseur, et il change ce
     // que les autres étapes peuvent référencer : on redessine alors.
-    if (redessiner) return render();
+    if (redessiner) {
+      if (champs.tool) chargerSchema(champs.tool);
+      return render();
+    }
     majBoutonEnvoi();
   }
 
@@ -316,6 +341,7 @@ export function createConnectorActions(ctx) {
     S.setConnectorPanel(state, "composer");
     S.setShellMode(state, "connecteurs", "detail");
     render();
+    for (const e of steps) chargerSchema(e.tool);
   }
 
   function retirerEtape(i) {
@@ -514,6 +540,7 @@ export function createConnectorActions(ctx) {
     reprobePool,
     newComposition,
     ouvrirBuilder,
+    chargerSchema,
     editerComposition,
     dupliquerComposition,
     majBrouillon,

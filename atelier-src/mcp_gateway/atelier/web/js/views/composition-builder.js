@@ -107,7 +107,7 @@ function selecteurOutil(etape, i, state, actions) {
 }
 
 /** Références disponibles à cet endroit de l'enchaînement. */
-function pastillesReferences(draft, i, zone, actions) {
+function pastillesReferences(draft, i, zone, actions, ecrire, champCourant) {
   const dispo = [];
   const texte = JSON.stringify(draft.steps || []);
   for (const nom of new Set(texte.match(/\$\{input\.([a-zA-Z0-9_]+)\}/g) || [])) {
@@ -134,15 +134,174 @@ function pastillesReferences(draft, i, zone, actions) {
       ? "Valeur demandée au moment de l’appel"
       : "Résultat d’une étape précédente";
     b.addEventListener("click", () => {
-      const pos = zone.selectionStart ?? zone.value.length;
-      zone.value = zone.value.slice(0, pos) + ref + zone.value.slice(pos);
-      zone.focus();
-      zone.selectionStart = zone.selectionEnd = pos + ref.length;
-      actions.majEtape(i, { parametersTexte: zone.value });
+      const cible = champCourant ? champCourant().saisie : zone;
+      const pos = cible.selectionStart ?? cible.value.length;
+      cible.value = cible.value.slice(0, pos) + ref + cible.value.slice(pos);
+      cible.focus();
+      cible.selectionStart = cible.selectionEnd = pos + ref.length;
+      if (ecrire) ecrire(cible.value);
+      else actions.majEtape(i, { parametersTexte: cible.value });
     });
     barre.appendChild(b);
   }
   return barre;
+}
+
+/** Les paramètres tels que l'étape les a saisis, ou un objet vide. */
+function parametresDe(etape) {
+  try {
+    const o = JSON.parse(etape.parametersTexte || "{}");
+    return o && typeof o === "object" && !Array.isArray(o) ? o : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Un champ par paramètre, plutôt qu'un bloc de JSON.
+ *
+ * Le schéma dit le type, la description du connecteur dit à quoi sert
+ * chaque champ. Sans eux on ne pouvait afficher qu'une zone de texte, en
+ * laissant deviner les noms et la syntaxe. Les valeurs restent des chaînes :
+ * une référence ${…} doit pouvoir s'écrire là où le schéma attend un nombre.
+ */
+function champsTypes(etape, i, draft, schema, actions) {
+  const bloc = document.createElement("div");
+  bloc.className = "composition-step-params";
+  const props = (schema.schema || {}).properties || {};
+  const requis = new Set((schema.schema || {}).required || []);
+  const hints = schema.hints || {};
+  const valeurs = parametresDe(etape);
+
+  const ecrire = (cle, valeur) => {
+    const courant = parametresDe(etape);
+    if (String(valeur).trim()) courant[cle] = valeur;
+    else delete courant[cle];
+    actions.majEtape(i, { parametersTexte: JSON.stringify(courant, null, 2) });
+  };
+
+  // Le champ où insérer une référence : celui qu'on vient de quitter, à
+  // défaut le premier. Sans ce repère, une pastille ne saurait où écrire.
+  let dernierChamp = null;
+
+  const noms = Object.keys(props);
+  if (!noms.length) {
+    const p = document.createElement("p");
+    p.className = "agent-section-hint";
+    p.textContent = "Cet outil ne prend aucun paramètre.";
+    bloc.appendChild(p);
+  }
+
+  for (const cle of noms) {
+    const def = props[cle] || {};
+    const brut = valeurs[cle];
+    const valeur = brut === undefined ? "" : String(brut);
+    const enum_ = Array.isArray(def.enum) ? def.enum : null;
+    const estRef = valeur.includes("${");
+
+    const wrap = document.createElement("label");
+    wrap.className = "field";
+    const span = document.createElement("span");
+    span.textContent = cle + (requis.has(cle) ? " *" : "");
+    wrap.appendChild(span);
+    const aide = hints[cle] || def.description || "";
+    if (aide) {
+      const h = document.createElement("span");
+      h.className = "modal-hint";
+      h.textContent = String(aide).slice(0, 140);
+      wrap.appendChild(h);
+    }
+
+    // Une liste fermée ne peut pas accueillir de référence : dès qu'on en
+    // écrit une, le champ redevient libre plutôt que de perdre la valeur.
+    let saisie;
+    if (enum_ && !estRef) {
+      saisie = document.createElement("select");
+      for (const opt of [""].concat(enum_.map(String))) {
+        const o = document.createElement("option");
+        o.value = opt;
+        o.textContent = opt || "— laisser libre —";
+        if (opt === valeur) o.selected = true;
+        saisie.appendChild(o);
+      }
+      saisie.addEventListener("change", () => ecrire(cle, saisie.value));
+    } else if (def.type === "boolean" && !estRef) {
+      saisie = document.createElement("select");
+      for (const [v, t] of [["", "— laisser libre —"], ["true", "oui"], ["false", "non"]]) {
+        const o = document.createElement("option");
+        o.value = v;
+        o.textContent = t;
+        if (v === valeur) o.selected = true;
+        saisie.appendChild(o);
+      }
+      saisie.addEventListener("change", () => ecrire(cle, saisie.value));
+    } else {
+      saisie = document.createElement("input");
+      saisie.type = "text";
+      saisie.value = valeur;
+      saisie.placeholder =
+        def.type === "number" || def.type === "integer" ? "nombre, ou ${…}" : "";
+      saisie.addEventListener("input", () => ecrire(cle, saisie.value));
+    }
+    wrap.appendChild(saisie);
+    bloc.appendChild(wrap);
+
+    // Une barre de références par champ noierait le formulaire. Une seule,
+    // en bas, qui écrit dans le champ où l'on se trouve.
+    if (saisie.tagName === "INPUT") {
+      saisie.addEventListener("focus", () => {
+        dernierChamp = { saisie, cle };
+      });
+      if (!dernierChamp) dernierChamp = { saisie, cle };
+    }
+  }
+
+  if (dernierChamp) {
+    const barre = pastillesReferences(
+      draft,
+      i,
+      dernierChamp.saisie,
+      actions,
+      () => ecrire(dernierChamp.cle, dernierChamp.saisie.value),
+      () => dernierChamp
+    );
+    bloc.appendChild(barre);
+  }
+
+  const bascule = document.createElement("button");
+  bascule.type = "button";
+  bascule.className = "linklike";
+  bascule.textContent = "Éditer en JSON";
+  bascule.title = "Pour ce qu’un formulaire ne sait pas dire.";
+  bascule.addEventListener("click", () => actions.majEtape(i, { brut: true }, true));
+  bloc.appendChild(bascule);
+  return bloc;
+}
+
+/** La saisie libre : quand le schéma manque, ou quand on la demande. */
+function zoneJson(etape, i, draft, actions, schemaConnu) {
+  const params = document.createElement("div");
+  params.className = "field composition-step-params";
+  const titre = document.createElement("span");
+  titre.textContent = "Paramètres, en JSON";
+  params.appendChild(titre);
+  const zone = document.createElement("textarea");
+  zone.rows = 4;
+  zone.spellcheck = false;
+  zone.placeholder = '{"query": "${input.sujet}"}';
+  zone.value = etape.parametersTexte ?? "{}";
+  zone.addEventListener("input", () => actions.majEtape(i, { parametersTexte: zone.value }));
+  params.appendChild(zone);
+  params.appendChild(pastillesReferences(draft, i, zone, actions));
+  if (schemaConnu) {
+    const retour = document.createElement("button");
+    retour.type = "button";
+    retour.className = "linklike";
+    retour.textContent = "Revenir au formulaire";
+    retour.addEventListener("click", () => actions.majEtape(i, { brut: false }, true));
+    params.appendChild(retour);
+  }
+  return params;
 }
 
 /** Ce que l'étape fait, en une ligne, pour la reconnaître repliée. */
@@ -195,20 +354,12 @@ function renderEtape(etape, i, draft, state, actions) {
 
   if (etape.type === "tool") {
     bloc.appendChild(selecteurOutil(etape, i, state, actions));
-    const params = document.createElement("div");
-    params.className = "field composition-step-params";
-    const titre = document.createElement("span");
-    titre.textContent = "Paramètres, en JSON";
-    params.appendChild(titre);
-    const zone = document.createElement("textarea");
-    zone.rows = 4;
-    zone.spellcheck = false;
-    zone.placeholder = '{"query": "${input.sujet}"}';
-    zone.value = etape.parametersTexte ?? "{}";
-    zone.addEventListener("input", () => actions.majEtape(i, { parametersTexte: zone.value }));
-    params.appendChild(zone);
-    params.appendChild(pastillesReferences(draft, i, zone, actions));
-    bloc.appendChild(params);
+    const schema = (draft.schemas || {})[etape.tool];
+    if (schema && !etape.brut) {
+      bloc.appendChild(champsTypes(etape, i, draft, schema, actions));
+    } else {
+      bloc.appendChild(zoneJson(etape, i, draft, actions, !!schema));
+    }
   } else if (etape.type === "wait_until") {
     bloc.appendChild(
       champTexte(
