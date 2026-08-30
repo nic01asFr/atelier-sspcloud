@@ -122,6 +122,20 @@ class CustomProfileBody(BaseModel):
     meta_tools: list[str] | None = None
 
 
+class CompositionStepBody(BaseModel):
+    """Une étape : un outil, un libellé, des paramètres."""
+
+    tool: str = Field(min_length=1)
+    label: str = ""
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class CompositionBody(BaseModel):
+    name: str = Field(min_length=1)
+    description: str = ""
+    steps: list[CompositionStepBody] = Field(default_factory=list)
+
+
 class ToolVariantBody(BaseModel):
     """Variante d'outil : le même outil, avec des paramètres déjà remplis."""
 
@@ -750,6 +764,44 @@ def build_app(
         _owner: str = Depends(require_owner),
     ) -> dict[str, Any]:
         return {"compositions": _compositions(request).list_compositions(status)}
+
+    @router.post("/compositions")
+    def compositions_create(
+        request: Request,
+        body: CompositionBody,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Enregistre un enchaînement d'appels, en brouillon.
+
+        Ni validée ni promue : une composition à plusieurs étapes se teste
+        avant d'être ouverte à l'appel. C'est ce que fait le bouton
+        « Activer », qui valide puis promeut.
+        """
+        svc = _compositions(request)
+        slug = re.sub(
+            r"[^a-z0-9]+",
+            "_",
+            unicodedata.normalize("NFD", body.name)
+            .encode("ascii", "ignore")
+            .decode("ascii")
+            .lower(),
+        ).strip("_")
+        if not slug:
+            raise HTTPException(400, "un nom utilisable est nécessaire")
+        etapes = [
+            {"tool": e.tool, "label": e.label or e.tool.split("__")[-1], "parameters": e.parameters}
+            for e in body.steps
+        ]
+        if not etapes:
+            raise HTTPException(400, "au moins une étape est nécessaire")
+        try:
+            return svc.create_from_steps(
+                nom=slug,
+                description=body.description or body.name,
+                etapes=etapes,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     @router.get("/compositions/{comp_id}")
     def composition_get(

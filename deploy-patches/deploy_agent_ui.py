@@ -12,6 +12,7 @@ FILES = [
     "web/js/views/agent.js",
     "web/js/controllers/agent.js",
     "web/js/views/connectors.js",
+    "web/js/views/composition-builder.js",
     "web/js/controllers/connectors.js",
     "web/js/views/code-tree.js",
     "web/js/views/code-chat.js",

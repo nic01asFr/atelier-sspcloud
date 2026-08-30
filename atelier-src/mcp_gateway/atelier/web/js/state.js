@@ -88,6 +88,8 @@ export function createState() {
     agentTranscript: null,
     agentTranscriptBusy: false,
     connectorPanel: "home",
+    // Brouillon du builder de compositions : nom, description, étapes.
+    compositionDraft: null,
     // Composition ouverte dans l'onglet Connecteurs.
     compositions: [],
     toolsByService: [],
@@ -248,9 +250,15 @@ export function setSelectedCompositionId(state, id) {
   state.selectedCompositionId = id || null;
 }
 
+export function setCompositionDraft(state, draft) {
+  state.compositionDraft = draft;
+}
+
 export function setConnectorPanel(state, panel) {
   const p = (panel || "").toLowerCase();
-  state.connectorPanel = ["home", "new", "detail"].includes(p) ? p : "home";
+  state.connectorPanel = ["home", "new", "detail", "composer"].includes(p)
+    ? p
+    : "home";
 }
 
 export function setAgentTab(state, tab) {
@@ -282,7 +290,11 @@ export function syncShellModeFromSelection(state) {
       setShellMode(state, "agent", "detail");
     }
   } else if (state.view === "connecteurs") {
-    if (state.selectedConnectorId || state.connectorPanel === "new") {
+    if (
+      state.selectedConnectorId ||
+      state.connectorPanel === "new" ||
+      state.connectorPanel === "composer"
+    ) {
       setShellMode(state, "connecteurs", "detail");
     }
   } else if (state.view === "assistant") {

@@ -1643,6 +1643,47 @@ button:disabled {
   color: var(--accent);
 }
 
+.composition-step {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.85rem;
+  margin: 0 0 0.75rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.composition-step-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.composition-step-actions {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.78rem;
+}
+
+.composition-step-params textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 0.55rem 0.7rem;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.82rem;
+  resize: vertical;
+}
+
+.composition-step-erreur {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  color: var(--err, #f87171);
+}
+
 .composition-item {
   display: flex;
   align-items: center;

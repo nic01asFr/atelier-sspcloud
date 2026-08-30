@@ -6,6 +6,7 @@ import { $ } from "../core/dom.js";
 import { refreshMcpOverview } from "../services/catalog.js";
 import { openModal } from "../ui/modal.js";
 import { ouvrirVariante } from "../ui/tool-variant.js";
+import { etapeVierge } from "../views/composition-builder.js";
 
 /**
  * @param {object} ctx
@@ -184,6 +185,122 @@ export function createConnectorActions(ctx) {
     });
   }
 
+  // ---- Fabrique d'une composition ------------------------------------
+
+  function ouvrirBuilder() {
+    S.setSelectedCompositionId(state, null);
+    S.setSelectedConnectorId(state, null);
+    S.setCompositionDraft(state, {
+      name: "",
+      description: "",
+      steps: [etapeVierge()],
+      erreur: "",
+    });
+    S.setConnectorPanel(state, "composer");
+    S.setShellMode(state, "connecteurs", "detail");
+    render();
+  }
+
+  function majBrouillon(champs) {
+    const d = state.compositionDraft;
+    if (!d) return;
+    Object.assign(d, champs, { erreur: "" });
+    // Pas de rendu ici : réécrire le formulaire à chaque frappe ferait
+    // perdre le curseur. Seul l'état du bouton d'envoi en dépend.
+    majBoutonEnvoi();
+  }
+
+  function majEtape(i, champs) {
+    const d = state.compositionDraft;
+    if (!d?.steps?.[i]) return;
+    Object.assign(d.steps[i], champs, { erreur: "" });
+    majBoutonEnvoi();
+  }
+
+  /** Le seul élément dont l'aspect dépend de la saisie en cours. */
+  function majBoutonEnvoi() {
+    const d = state.compositionDraft;
+    const btn = [...document.querySelectorAll("#connectors-detail-body button")].find(
+      (b) => b.textContent === "Enregistrer en brouillon"
+    );
+    if (!btn || !d) return;
+    btn.disabled =
+      !String(d.name || "").trim() ||
+      !(d.steps || []).some((e) => String(e.tool || "").trim());
+  }
+
+  function ajouterEtape() {
+    state.compositionDraft?.steps.push(etapeVierge());
+    render();
+  }
+
+  function retirerEtape(i) {
+    const d = state.compositionDraft;
+    if (!d || d.steps.length <= 1) return;
+    d.steps.splice(i, 1);
+    render();
+  }
+
+  function deplacerEtape(i, sens) {
+    const d = state.compositionDraft;
+    const j = i + sens;
+    if (!d || j < 0 || j >= d.steps.length) return;
+    [d.steps[i], d.steps[j]] = [d.steps[j], d.steps[i]];
+    render();
+  }
+
+  function annulerComposition() {
+    S.setCompositionDraft(state, null);
+    S.setConnectorPanel(state, "detail");
+    S.setSelectedConnectorId(state, "atelier:compositions");
+    render();
+  }
+
+  async function enregistrerComposition() {
+    const d = state.compositionDraft;
+    if (!d) return;
+    // Les paramètres sont saisis en JSON : on le dit à l'étape fautive
+    // plutôt qu'en bas du formulaire, où l'utilisateur devrait chercher.
+    const steps = [];
+    let fautive = false;
+    d.steps.forEach((e, i) => {
+      if (!String(e.tool || "").trim()) return;
+      let parametres = {};
+      const brut = String(e.parametersTexte ?? "{}").trim() || "{}";
+      try {
+        parametres = JSON.parse(brut);
+        if (parametres === null || typeof parametres !== "object" || Array.isArray(parametres)) {
+          throw new Error("attendu un objet");
+        }
+      } catch (err) {
+        e.erreur = "Paramètres illisibles : " + (err.message || err);
+        fautive = true;
+        return;
+      }
+      steps.push({ tool: e.tool.trim(), label: (e.label || "").trim(), parameters: parametres });
+    });
+    if (fautive) return render();
+    if (!steps.length) {
+      d.erreur = "Aucune étape utilisable : renseignez au moins un outil.";
+      return render();
+    }
+    try {
+      const cree = await api.createComposition(state.token, {
+        name: d.name.trim(),
+        description: d.description.trim(),
+        steps,
+      });
+      S.setCompositionDraft(state, null);
+      S.setConnectorPanel(state, "detail");
+      await refreshAll();
+      if (cree?.id) await selectComposition(cree.id);
+    } catch (err) {
+      if (err.status === 401) return logout("Clé invalide");
+      d.erreur = err.message || String(err);
+      render();
+    }
+  }
+
   function clearSelection() {
     S.setSelectedConnectorId(state, null);
     S.setConnectorPanel(state, "home");
@@ -293,5 +410,13 @@ export function createConnectorActions(ctx) {
     importMcp,
     reprobePool,
     newComposition,
+    ouvrirBuilder,
+    majBrouillon,
+    majEtape,
+    ajouterEtape,
+    retirerEtape,
+    deplacerEtape,
+    annulerComposition,
+    enregistrerComposition,
   };
 }

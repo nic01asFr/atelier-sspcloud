@@ -669,6 +669,17 @@ export async function mcpToolSchema(token, tool) {
   return res.json();
 }
 
+/** Enregistre un enchaînement d'appels, en brouillon. */
+export async function createComposition(token, body) {
+  const res = await fetch("/v1/compositions", {
+    method: "POST",
+    headers: jsonHeaders(token),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
 /** Enregistre une variante d'outil aux parametres figes. */
 export async function createToolVariant(token, body) {
   const res = await fetch("/v1/mcp/tool-variants", {
