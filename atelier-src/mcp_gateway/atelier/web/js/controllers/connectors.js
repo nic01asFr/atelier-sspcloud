@@ -117,9 +117,10 @@ export function createConnectorActions(ctx) {
   async function lancerAvec(comp, inputs) {
     await withErreur(async () => {
       const res = await api.actOnComposition(state.token, comp.id, "execute", { inputs });
-      const etat = res?.status || (res?.ok === false ? "échec" : "terminée");
-      const detail = res?.error ? ` — ${String(res.error).slice(0, 160)}` : "";
-      S.setError(state, `Composition « ${comp.name} » : ${etat}${detail}`);
+      // Le résultat s'affiche sous la composition : un mot d'état en bannière
+      // ne disait ni ce qui était sorti, ni quelle étape avait cédé.
+      S.setCompositionRun(state, { ...res, composition_id: comp.id, inputs });
+      render();
     });
   }
 
@@ -273,6 +274,16 @@ export function createConnectorActions(ctx) {
 
   function ajouterEtape(type) {
     state.compositionDraft?.steps.push(etapeVierge(type));
+    render();
+  }
+
+  /** Repartir d'une composition existante, sans toucher à l'originale. */
+  async function dupliquerComposition(comp) {
+    await editerComposition(comp);
+    const d = state.compositionDraft;
+    if (!d) return;
+    d.id = null;
+    d.name = (d.name || "") + "_copie";
     render();
   }
 
@@ -504,6 +515,7 @@ export function createConnectorActions(ctx) {
     newComposition,
     ouvrirBuilder,
     editerComposition,
+    dupliquerComposition,
     majBrouillon,
     majEtape,
     ajouterEtape,

@@ -145,18 +145,38 @@ function pastillesReferences(draft, i, zone, actions) {
   return barre;
 }
 
-function renderEtape(etape, i, draft, state, actions) {
-  const bloc = document.createElement("div");
-  bloc.className = "composition-step";
+/** Ce que l'étape fait, en une ligne, pour la reconnaître repliée. */
+function resume(etape) {
+  if (etape.type === "tool") {
+    return etape.tool ? etape.tool.split("__").pop() : "outil à choisir";
+  }
+  if (etape.type === "wait_until") return (etape.wait_seconds || 0) + " s";
+  return (etape.message || "").slice(0, 60) || "message à écrire";
+}
 
-  const entete = document.createElement("div");
+function renderEtape(etape, i, draft, state, actions) {
+  const bloc = document.createElement("details");
+  bloc.className = "composition-step";
+  // Une étape à la fois : au-delà de trois, tout déplier rend la page
+  // illisible et oblige à faire défiler pour comparer deux paramètres.
+  bloc.open = etape.ouverte !== false;
+  bloc.addEventListener("toggle", () => {
+    etape.ouverte = bloc.open;
+  });
+
+  const entete = document.createElement("summary");
   entete.className = "composition-step-head";
   const rang = document.createElement("strong");
   rang.textContent = (i + 1) + " · " + (TYPES[etape.type]?.titre || etape.type);
   entete.appendChild(rang);
+  const quoi = document.createElement("span");
+  quoi.className = "composition-step-resume";
+  quoi.textContent = resume(etape);
+  entete.appendChild(quoi);
 
   const barre = document.createElement("div");
   barre.className = "composition-step-actions";
+  barre.addEventListener("click", (e) => e.preventDefault());
   const total = (draft.steps || []).length;
   barre.appendChild(lien("Monter", "Exécuter plus tôt", i > 0, () => actions.deplacerEtape(i, -1)));
   barre.appendChild(

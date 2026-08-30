@@ -131,6 +131,69 @@ function renderCompositionItem(comp, selectedId, actions) {
   return li;
 }
 
+/**
+ * Ce qu'a donné la dernière exécution lancée depuis cet écran.
+ *
+ * On lançait sans rien montrer : un mot d'état en bannière, qui disparaît, et
+ * aucun moyen de savoir ce qui était sorti ni quelle étape avait cédé. Or
+ * c'est précisément ce qu'on veut voir après avoir essayé un enchaînement.
+ */
+function renderDerniereExecution(state, comp, body) {
+  const run = state.compositionRun;
+  if (!run || run.composition_id !== comp.id) return;
+
+  const sec = document.createElement("section");
+  sec.className = "agent-section composition-run";
+  const h3 = document.createElement("h3");
+  h3.className = "connectors-sub";
+  const fini = run.status === "completed";
+  h3.textContent = "Dernière exécution — " + (fini ? "terminée" : run.status || "?");
+  sec.appendChild(h3);
+
+  const entrees = Object.entries(run.inputs || {});
+  if (entrees.length) {
+    const p = document.createElement("p");
+    p.className = "agent-section-hint";
+    p.textContent = "Lancée avec " + entrees.map(([k, v]) => `${k} = ${v}`).join(", ") + ".";
+    sec.appendChild(p);
+  }
+
+  const etapes = run.steps || {};
+  if (Object.keys(etapes).length) {
+    const ul = document.createElement("ul");
+    ul.className = "agent-queue";
+    for (const [nom, etat] of Object.entries(etapes)) {
+      const li = document.createElement("li");
+      li.className = "agent-queue-item";
+      const main = document.createElement("div");
+      main.className = "agent-queue-main";
+      const t = document.createElement("strong");
+      t.textContent = nom;
+      main.appendChild(t);
+      li.appendChild(main);
+      const badge = document.createElement("span");
+      badge.className =
+        "mcp-badge " + (etat === "succeeded" ? "mcp-badge-ok" : "mcp-badge-err");
+      badge.textContent = etat === "succeeded" ? "réussie" : etat;
+      li.appendChild(badge);
+      ul.appendChild(li);
+    }
+    sec.appendChild(ul);
+  }
+
+  const sortie = String(run.error || run.output || "").trim();
+  if (sortie) {
+    const pre = document.createElement("pre");
+    pre.className = "composition-run-sortie";
+    // Une sortie d'outil peut être très longue : on en montre assez pour
+    // juger, le reste se lit dans l'outil lui-même.
+    pre.textContent =
+      sortie.length > 1200 ? sortie.slice(0, 1200) + " […]" : sortie;
+    sec.appendChild(pre);
+  }
+  body.appendChild(sec);
+}
+
 /** Détail d'une composition : ce qu'elle reçoit, ce qu'elle enchaîne. */
 function renderCompositionDetail(comp, state, actions) {
   const body = $("connectors-detail-body");
@@ -175,12 +238,21 @@ function renderCompositionDetail(comp, state, actions) {
   modifier.textContent = "Modifier";
   modifier.title = "Corriger les étapes, sans changer son état.";
   modifier.addEventListener("click", () => actions.editerComposition(comp));
+  const dupliquer = document.createElement("button");
+  dupliquer.type = "button";
+  dupliquer.className = "ghost btn-sm";
+  dupliquer.textContent = "Dupliquer";
+  dupliquer.title = "Repartir de celle-ci sans y toucher.";
+  dupliquer.addEventListener("click", () => actions.dupliquerComposition(comp));
   actionsRow.appendChild(lancer);
   actionsRow.appendChild(modifier);
+  actionsRow.appendChild(dupliquer);
   actionsRow.appendChild(bascule);
   actionsRow.appendChild(del);
   head.appendChild(actionsRow);
   body.appendChild(head);
+
+  renderDerniereExecution(state, comp, body);
 
   const def = comp.definition || comp;
   const entrees = Object.keys(def.input_schema?.properties || {});

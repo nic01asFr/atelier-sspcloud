@@ -90,6 +90,9 @@ export function createState() {
     connectorPanel: "home",
     // Brouillon du builder de compositions : nom, description, étapes.
     compositionDraft: null,
+    // Résultat de la dernière exécution lancée depuis l'écran : on lançait
+    // sans rien montrer d'autre qu'un mot d'état.
+    compositionRun: null,
     // Composition ouverte dans l'onglet Connecteurs.
     compositions: [],
     toolsByService: [],
@@ -248,6 +251,10 @@ export function setCompositions(state, liste) {
 
 export function setSelectedCompositionId(state, id) {
   state.selectedCompositionId = id || null;
+}
+
+export function setCompositionRun(state, run) {
+  state.compositionRun = run;
 }
 
 export function setCompositionDraft(state, draft) {

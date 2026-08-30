@@ -1690,6 +1690,37 @@ button:disabled {
   gap: 0.45rem;
 }
 
+.composition-run-sortie {
+  margin: 0.5rem 0 0;
+  padding: 0.65rem 0.8rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.76rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.composition-step-resume {
+  margin-left: 0.6rem;
+  color: var(--muted);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.76rem;
+}
+
+.composition-step > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.composition-step > summary::-webkit-details-marker {
+  display: none;
+}
+
 .composition-step {
   border: 1px solid var(--line);
   border-radius: var(--radius);
