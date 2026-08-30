@@ -147,13 +147,39 @@ FAMILLES_COORDINATION: dict[str, tuple[str, ...]] = {
         "claim_task", "release_task", "add_idea", "get_idea", "list_ideas",
         "update_idea", "harmonize_ideas",
     ),
-    "Gouvernance de la plateforme": (
-        "register_trigger", "delete_trigger", "set_trigger_enabled", "fire_trigger",
-        "list_triggers", "register_routine", "run_routine", "list_routines",
-        "delete_routine", "spawn_session", "list_spawned", "kill_spawn",
-        "poll_ticket", "respawn_project_agents", "close_project",
-        "scan_projects", "purge_registry", "run_cartography", "run_clustering",
+    # Un agent peut en piloter d'autres : c'est un usage légitime, mais
+    # « créer » et « supprimer » ne doivent pas se cocher du même geste.
+    "Piloter des agents": (
+        "register_trigger", "set_trigger_enabled", "fire_trigger", "list_triggers",
+        "spawn_session", "list_spawned", "poll_ticket", "respawn_project_agents",
     ),
+    "Arrêter et supprimer": ("delete_trigger", "kill_spawn"),
+    "Automatisations": (
+        "register_routine", "run_routine", "list_routines", "delete_routine",
+    ),
+    "Maintenance du registre": (
+        "close_project", "scan_projects", "purge_registry",
+        "run_cartography", "run_clustering",
+    ),
+}
+
+# Libellés en langage Atelier. Le nom technique reste affiché en second :
+# c'est lui que l'agent recevra dans --allowedTools, le renommer ici ne
+# change que ce qu'on lit au moment de choisir.
+LIBELLES_OUTILS: dict[str, str] = {
+    "register_trigger": "Créer un agent",
+    "delete_trigger": "Supprimer un agent",
+    "set_trigger_enabled": "Activer ou désactiver un agent",
+    "fire_trigger": "Lancer un agent maintenant",
+    "list_triggers": "Lister les agents",
+    "spawn_session": "Lancer une session ponctuelle",
+    "list_spawned": "Lister les sessions lancées",
+    "kill_spawn": "Arrêter une session lancée",
+    "poll_ticket": "Suivre une session lancée",
+    "respawn_project_agents": "Relancer les agents d’un projet",
+    "purge_registry": "Purger le registre des projets",
+    "close_project": "Clôturer un projet",
+    "scan_projects": "Recenser les projets de la machine",
 }
 
 FAMILLE_PAR_OUTIL: dict[str, str] = {
@@ -180,13 +206,16 @@ def _outils_du_pool(db_path: str) -> dict[str, list[dict[str, str]]]:
 
     par_source: dict[str, list[dict[str, str]]] = {}
     for row in rows:
-        par_source.setdefault(row["source_key"], []).append(
-            {
-                "name": row["qualified_name"],
-                "short": row["tool_name"],
-                "description": (row["description"] or "")[:220],
-            }
-        )
+        court = row["tool_name"]
+        entree = {
+            "name": row["qualified_name"],
+            "short": court,
+            "description": (row["description"] or "")[:220],
+        }
+        libelle = LIBELLES_OUTILS.get(court)
+        if libelle:
+            entree["label"] = libelle
+        par_source.setdefault(row["source_key"], []).append(entree)
     return par_source
 
 

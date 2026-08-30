@@ -199,12 +199,22 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
       label.title = outil.description || "";
       const box = document.createElement("input");
       box.type = "checkbox";
-      box.dataset.recherche = sansAccent(outil.short + " " + (outil.description || ""));
+      box.dataset.recherche = sansAccent(
+        [outil.label, outil.short, outil.description].filter(Boolean).join(" ")
+      );
       const t = document.createElement("span");
       t.className = "tool-chip-name";
-      t.textContent = outil.short;
+      // Libellé lisible en premier ; le nom technique reste visible, c'est
+      // lui que l'agent recevra dans --allowedTools.
+      t.textContent = outil.label || outil.short;
       label.appendChild(box);
       label.appendChild(t);
+      if (outil.label) {
+        const technique = document.createElement("span");
+        technique.className = "tool-chip-note";
+        technique.textContent = outil.short;
+        label.appendChild(technique);
+      }
       box.addEventListener("change", () => {
         // Un choix fin sort du « service entier » : on éclate la sélection.
         if (cleService && selection.has(cleService)) {
