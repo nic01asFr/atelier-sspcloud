@@ -639,6 +639,11 @@ button:disabled {
   cursor: default;
 }
 
+.agent-list-section:first-child {
+  margin-top: 0;
+}
+
+
 /* Un agent de la plateforme ne se sélectionne pas : sa carte le montre en
    restant sourde au survol, comme une fiche d'information. */
 .agent-card-systeme {
@@ -1760,6 +1765,23 @@ button:disabled {
   margin: 0.35rem 0 0;
   font-size: 0.78rem;
   color: var(--err, #f87171);
+}
+
+.conn-repli > summary {
+  cursor: pointer;
+  padding: 0.3rem 0 0.3rem 0.15rem;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.conn-repli > summary:hover {
+  color: var(--text);
+}
+
+.conn-repli > ul {
+  margin: 0.1rem 0 0.3rem;
+  padding: 0;
+  list-style: none;
 }
 
 .composition-item {

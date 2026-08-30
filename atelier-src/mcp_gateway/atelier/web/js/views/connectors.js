@@ -95,40 +95,63 @@ function renderSidebarItem(entry, { kind, selectedId, upstream, actions, titre, 
 
 
 /**
- * Une composition dans la liste latérale.
+ * Ce qu'un service propose, outil par outil.
  *
- * C'est un outil, pas un service : elle se présente en ligne légère et
- * subordonnée, non en carte de même rang que wikichat ou le serveur de
- * fichiers.
+ * La fiche disait combien d'outils, jamais lesquels : pour le savoir il
+ * fallait ouvrir la sélection d'un agent. Or c'est la première question
+ * qu'on se pose devant un connecteur — ce qu'il sait faire.
+ *
+ * Un service dont les outils sont rangés en familles les garde repliées :
+ * cinquante et un noms d'un bloc ne se lisent pas.
  */
-function renderCompositionItem(comp, selectedId, actions) {
-  const li = document.createElement("li");
-  li.className =
-    "composition-item" + (selectedId === comp.id ? " composition-item-selected" : "");
-  li.addEventListener("click", () => actions.selectComposition(comp.id));
+function renderOutilsDuService(state, cle, body) {
+  const parts = (state.toolsByService || []).filter(
+    (x) => String(x.key).split("#")[0] === cle
+  );
+  if (!parts.length) return;
 
-  const dot = document.createElement("span");
-  dot.className =
-    "status-dot status-dot-" +
-    (comp.status === "production" ? "ok" : comp.status === "tested" ? "pending" : "off");
-  dot.title =
-    comp.status === "production" ? "active" : comp.status === "tested" ? "testée" : "brouillon";
+  const sec = document.createElement("section");
+  sec.className = "agent-section";
+  const h3 = document.createElement("h3");
+  h3.className = "connectors-sub";
+  h3.textContent = "Ce qu’il propose";
+  sec.appendChild(h3);
 
-  const nom = document.createElement("span");
-  nom.className = "composition-item-name";
-  nom.textContent = comp.name;
+  const liste = (outils) => {
+    const ul = document.createElement("ul");
+    ul.className = "agent-queue";
+    for (const t of outils) {
+      const li = document.createElement("li");
+      li.className = "agent-queue-item";
+      const main = document.createElement("div");
+      main.className = "agent-queue-main";
+      const nom = document.createElement("strong");
+      nom.textContent = t.label || t.short || t.name;
+      main.appendChild(nom);
+      const sub = document.createElement("span");
+      sub.className = "agent-queue-sub";
+      sub.textContent = (t.description || "").slice(0, 150);
+      if (sub.textContent) main.appendChild(sub);
+      li.appendChild(main);
+      ul.appendChild(li);
+    }
+    return ul;
+  };
 
-  const meta = document.createElement("span");
-  meta.className = "composition-item-meta";
-  const n = comp.steps ?? 0;
-  meta.textContent = comp.variant
-    ? String(comp.source_tool || "").split("__").pop()
-    : `${n} étape${n > 1 ? "s" : ""}`;
-
-  li.appendChild(dot);
-  li.appendChild(nom);
-  li.appendChild(meta);
-  return li;
+  if (parts.length === 1) {
+    sec.appendChild(liste(parts[0].tools || []));
+  } else {
+    for (const famille of parts) {
+      const repli = document.createElement("details");
+      repli.className = "conn-repli";
+      const sum = document.createElement("summary");
+      sum.textContent = famille.label + " · " + famille.count;
+      repli.appendChild(sum);
+      repli.appendChild(liste(famille.tools || []));
+      sec.appendChild(repli);
+    }
+  }
+  body.appendChild(sec);
 }
 
 /**
@@ -217,6 +240,13 @@ function renderCompositionDetail(comp, state, actions) {
 
   const actionsRow = document.createElement("div");
   actionsRow.className = "agent-head-actions";
+  const retour = document.createElement("button");
+  retour.type = "button";
+  retour.className = "ghost btn-sm";
+  retour.textContent = "← Compositions";
+  retour.title = "Revenir à la liste.";
+  retour.addEventListener("click", () => actions.select("atelier", "compositions"));
+  actionsRow.appendChild(retour);
   const lancer = document.createElement("button");
   lancer.type = "button";
   lancer.className = "primary btn-sm";
@@ -715,6 +745,8 @@ function renderDetail(entry, kind, state, actions) {
   kvSec.appendChild(ul);
   body.appendChild(kvSec);
 
+  renderOutilsDuService(state, key, body);
+
   const comps = state.mcpOverview?.compositions || [];
   const showComps = isCompositionsService(entry) && comps.length;
   if (showComps) {
@@ -952,6 +984,12 @@ export function createConnectorsView(ctx) {
         }
       }
       ul.appendChild(renderServiceAcces());
+    });
+
+    // Les outils qu'on fabrique soi-même, par opposition à ceux qu'un
+    // service fournit. La liste s'en tient aux services : les compositions
+    // se lisent dans la page du service, où elles sont rangées par état.
+    bloc("Créer ses outils", (ul) => {
       ul.appendChild(renderServiceCompositions());
     });
 

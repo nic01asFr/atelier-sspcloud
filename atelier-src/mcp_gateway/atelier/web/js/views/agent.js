@@ -839,20 +839,35 @@ export function createAgentView(ctx) {
     const daemon = ov?.daemon || {};
     const panel = state.agentPanel || "home";
 
-    // Ce qui sépare les deux listes, c'est l'origine, pas la besogne. Un
-    // agent que vous créez reste le vôtre même s'il entretient l'Atelier ;
-    // vous pouvez le modifier et le supprimer. Un agent de la plateforme est
-    // installé par elle — wikichat les préfixe « team- » — et ne se règle
-    // que par son interrupteur.
+    // Deux questions se posaient en même temps, et n'ont pas la même
+    // réponse : qui a créé cet agent — vous, ou la plateforme — et sur quoi
+    // il travaille — un projet, ou l'Atelier lui-même. Les confondre rangeait
+    // mal un agent que vous avez écrit pour entretenir le savoir commun :
+    // il reste le vôtre, modifiable et supprimable, mais il ne sert aucun
+    // livrable. Trois rangs plutôt que deux.
     const dePlateforme = (a) =>
       a.kind === "platform" || String(a.id || "").startsWith("team-");
-    const travail = agents.filter((a) => !dePlateforme(a));
+    const dEntretien = (a) => a.kind === "entretien";
+    const travail = agents.filter((a) => !dePlateforme(a) && !dEntretien(a));
+    const entretien = agents.filter(dEntretien);
     const plateforme = agents.filter(dePlateforme);
+
+    // Le titre est là même quand la plateforme n'a rien installé : sans lui,
+    // rien ne dit que ces agents-là sont les vôtres — ceux que vous pouvez
+    // modifier et supprimer.
+    const titreMiens = document.createElement("li");
+    titreMiens.className = "agent-list-section";
+    titreMiens.textContent = "Mes agents";
+    ul.appendChild(titreMiens);
 
     if (!travail.length) {
       const li = document.createElement("li");
       li.className = "mcp-empty";
-      li.textContent = "Aucun agent — utilisez + pour en créer un.";
+      // « Aucun agent » sonnerait faux quand la liste en montre plus bas :
+      // ce rang-ci est vide, pas la page.
+      li.textContent = agents.length
+        ? "Aucun agent de projet — utilisez + pour en créer un."
+        : "Aucun agent — utilisez + pour en créer un.";
       ul.appendChild(li);
     }
     for (const agent of travail) {
@@ -861,10 +876,25 @@ export function createAgentView(ctx) {
       );
     }
 
+    if (entretien.length) {
+      const titre = document.createElement("li");
+      titre.className = "agent-list-section";
+      titre.textContent = "Entretien de l’Atelier";
+      titre.title =
+        "Les vôtres aussi, mais ils font vivre le savoir commun plutôt qu’un projet.";
+      ul.appendChild(titre);
+      for (const agent of entretien) {
+        ul.appendChild(
+          renderAgentCard(agent, state.selectedAgentId, daemon, actions, panel, state)
+        );
+      }
+    }
+
     if (plateforme.length) {
       const titre = document.createElement("li");
       titre.className = "agent-list-section";
       titre.textContent = "Agents de la plateforme";
+      titre.title = "Installés par la plateforme : ils ne se créent ni ne se suppriment ici.";
       ul.appendChild(titre);
       for (const agent of plateforme) {
         ul.appendChild(

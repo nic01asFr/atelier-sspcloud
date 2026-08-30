@@ -27,6 +27,12 @@ from typing import Any
 
 from fastapi import Request
 
+from mcp_gateway.atelier.enrichissements import (
+    appliquer_a_service as appliquer_enrichissement,
+    charger as charger_enrichissement,
+    familles_declarees,
+)
+
 GROUPE_ACCES = "Accès aux outils"
 GROUPE_COMPOSITIONS = "Compositions"
 GROUPE_COORDINATION = "Coordination et mémoire"
@@ -271,6 +277,7 @@ def build_tools_by_service(request: Request) -> dict[str, Any]:
     gw = getattr(request.app.state, "gateway_settings", None)
     if gw is None:
         return {"services": [], "note": "passerelle indisponible"}
+    settings_atelier = getattr(request.app.state, "settings", None)
 
     services: list[dict[str, Any]] = []
 
@@ -363,7 +370,44 @@ def build_tools_by_service(request: Request) -> dict[str, Any]:
         else:
             groupe = GROUPE_POOL
             libelle = nom
+
+        # Ce que l'Atelier a appris de ce connecteur : libellés lisibles,
+        # regroupements, hints. Écrit dans un fichier à part, jamais ici —
+        # les règles en dur ne valaient que pour le coordinateur.
+        enrichi = charger_enrichissement(settings_atelier, nom) if settings_atelier else {}
+        familles_sup = familles_declarees(enrichi)
+        if familles_sup:
+            par_famille: dict[str, list[dict[str, str]]] = {}
+            appartenance = {
+                o: f for f, outils in familles_sup.items() for o in outils
+            }
+            for outil in tools:
+                famille = appartenance.get(outil["short"]) or appartenance.get(
+                    outil["name"]
+                ) or "Autres outils"
+                par_famille.setdefault(famille, []).append(outil)
+            for famille in list(familles_sup) + ["Autres outils"]:
+                lot = par_famille.get(famille)
+                if not lot:
+                    continue
+                services.append(
+                    appliquer_enrichissement(
+                        {
+                            "key": f"{key}#{famille}",
+                            "label": famille,
+                            "group": groupe,
+                            "scope": chemins,
+                            "count": len(lot),
+                            "tools": lot,
+                        },
+                        enrichi,
+                    )
+                    | {"label": famille}
+                )
+            continue
+
         services.append(
+            appliquer_enrichissement(
             {
                 "key": key,
                 "label": libelle,
@@ -371,7 +415,9 @@ def build_tools_by_service(request: Request) -> dict[str, Any]:
                 "scope": chemins,
                 "count": len(tools),
                 "tools": tools,
-            }
+            },
+            enrichi,
+            )
         )
 
     return {"services": services}
