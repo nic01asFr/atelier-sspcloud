@@ -680,6 +680,17 @@ export async function createComposition(token, body) {
   return res.json();
 }
 
+/** Reecrit une composition existante. */
+export async function updateComposition(token, compId, body) {
+  const res = await fetch(`/v1/compositions/${encodeURIComponent(compId)}`, {
+    method: "PUT",
+    headers: jsonHeaders(token),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
 /** Enregistre une variante d'outil aux parametres figes. */
 export async function createToolVariant(token, body) {
   const res = await fetch("/v1/mcp/tool-variants", {

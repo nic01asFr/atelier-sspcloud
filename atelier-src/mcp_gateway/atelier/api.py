@@ -123,11 +123,20 @@ class CustomProfileBody(BaseModel):
 
 
 class CompositionStepBody(BaseModel):
-    """Une étape : un outil, un libellé, des paramètres."""
+    """Une étape de composition, de l'un des quatre types du moteur.
 
-    tool: str = Field(min_length=1)
+    « tool » appelle un outil ; « elicit » demande une valeur ; « approval »
+    attend un accord ; « wait_until » suspend le temps voulu. Les trois
+    derniers suspendent l'exécution — c'est ce qui distingue un enchaînement
+    d'un simple appel groupé.
+    """
+
+    type: str = "tool"
+    tool: str = ""
     label: str = ""
     parameters: dict[str, Any] = Field(default_factory=dict)
+    message: str = ""
+    wait_seconds: int | None = None
 
 
 class CompositionBody(BaseModel):
@@ -175,6 +184,81 @@ class MetaPatchBody(BaseModel):
     vscode_url: str | None = None
     # write-only : stocké dans .secrets/vscode_password, jamais renvoyé
     vscode_password: str | None = None
+
+
+def _slug_composition(nom: str) -> str:
+    """Identifiant technique tiré du nom saisi."""
+    sans_accent = (
+        unicodedata.normalize("NFD", nom).encode("ascii", "ignore").decode("ascii")
+    )
+    return re.sub(r"[^a-z0-9]+", "_", sans_accent.lower()).strip("_")
+
+
+def _definition_composition(slug: str, body: Any) -> dict[str, Any]:
+    """Traduit ce que l'écran a saisi en définition pour le moteur.
+
+    Les entrées ne sont pas déclarées à part : elles se déduisent des
+    `${input.x}` écrits dans les étapes, pour qu'elles ne puissent pas
+    diverger de ce que ces étapes réclament réellement.
+    """
+    from mcp_gateway.compositions.service import _entrees_referencees, _slug
+
+    steps: list[dict[str, Any]] = []
+    vus: set[str] = set()
+    for i, e in enumerate(body.steps, start=1):
+        type_etape = (e.type or "tool").strip()
+        libelle = (e.label or "").strip()
+        if type_etape == "tool":
+            outil = (e.tool or "").strip()
+            if not outil:
+                raise ValueError(f"Étape {i} : l'outil manque.")
+            libelle = libelle or outil.split("__")[-1]
+        elif not libelle:
+            libelle = {"elicit": "demander", "approval": "approbation"}.get(
+                type_etape, "attendre"
+            )
+        step_id = _slug(libelle) or f"etape{i}"
+        base, n = step_id, 2
+        while step_id in vus:
+            step_id = f"{base}{n}"
+            n += 1
+        vus.add(step_id)
+
+        etape: dict[str, Any] = {"step_id": step_id, "label": libelle, "type": type_etape}
+        if type_etape == "tool":
+            etape["tool"] = (e.tool or "").strip()
+            etape["parameters"] = e.parameters or {}
+        elif type_etape == "elicit":
+            if not (e.message or "").strip():
+                raise ValueError(f"Étape « {libelle} » : la question manque.")
+            etape["elicit"] = {"message": e.message.strip()}
+        elif type_etape == "approval":
+            if not (e.message or "").strip():
+                raise ValueError(f"Étape « {libelle} » : le message d'approbation manque.")
+            etape["approval"] = {"message": e.message.strip()}
+        elif type_etape == "wait_until":
+            secondes = int(e.wait_seconds or 0)
+            if secondes <= 0:
+                raise ValueError(f"Étape « {libelle} » : une durée est nécessaire.")
+            etape["wait_until"] = {"wait_seconds": secondes}
+        else:
+            raise ValueError(f"Étape {i} : type « {type_etape} » inconnu.")
+        steps.append(etape)
+
+    if not steps:
+        raise ValueError("Au moins une étape est nécessaire.")
+    entrees = _entrees_referencees(steps)
+    return {
+        "name": slug,
+        "description": (body.description or body.name).strip(),
+        "status": "temporary",
+        "input_schema": {
+            "type": "object",
+            "properties": {k: {"type": "string", "title": k} for k in entrees},
+            "required": sorted(entrees),
+        },
+        "steps": steps,
+    }
 
 
 def build_app(
@@ -778,28 +862,36 @@ def build_app(
         « Activer », qui valide puis promeut.
         """
         svc = _compositions(request)
-        slug = re.sub(
-            r"[^a-z0-9]+",
-            "_",
-            unicodedata.normalize("NFD", body.name)
-            .encode("ascii", "ignore")
-            .decode("ascii")
-            .lower(),
-        ).strip("_")
+        slug = _slug_composition(body.name)
         if not slug:
             raise HTTPException(400, "un nom utilisable est nécessaire")
-        etapes = [
-            {"tool": e.tool, "label": e.label or e.tool.split("__")[-1], "parameters": e.parameters}
-            for e in body.steps
-        ]
-        if not etapes:
-            raise HTTPException(400, "au moins une étape est nécessaire")
         try:
-            return svc.create_from_steps(
-                nom=slug,
-                description=body.description or body.name,
-                etapes=etapes,
-            )
+            definition = _definition_composition(slug, body)
+            return svc.create_composition(definition)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @router.put("/compositions/{comp_id}")
+    def compositions_update(
+        request: Request,
+        comp_id: str,
+        body: CompositionBody,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Réécrit une composition existante, sans changer son état.
+
+        Une composition se corrige : la première version d'un enchaînement
+        est rarement la bonne, et la refaire de zéro pour déplacer une étape
+        n'aurait pas de sens.
+        """
+        svc = _compositions(request)
+        slug = _slug_composition(body.name)
+        if not slug:
+            raise HTTPException(400, "un nom utilisable est nécessaire")
+        try:
+            return svc.update_composition(comp_id, _definition_composition(slug, body))
+        except KeyError:
+            raise HTTPException(404, "composition inconnue") from None
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 

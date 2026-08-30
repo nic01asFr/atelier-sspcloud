@@ -75,12 +75,51 @@ export function createConnectorActions(ctx) {
   }
 
   async function runComposition(comp) {
+    // Une composition qui attend des valeurs ne peut pas être lancée à vide :
+    // elle échouait alors sans dire ce qui manquait. On les demande.
+    let det = state.compositionDetail;
+    if (!det || det.id !== comp.id) {
+      try {
+        det = await api.getComposition(state.token, comp.id);
+      } catch {
+        det = null;
+      }
+    }
+    const schema = det?.input_schema || {};
+    const attendus = Object.keys(schema.properties || {});
+    if (!attendus.length) return lancerAvec(comp, {});
+
+    const requis = new Set(schema.required || []);
+    openModal(state, {
+      title: `Lancer « ${comp.name} »`,
+      lead: "Ce que cette composition demande à l’appel.",
+      size: "md",
+      submitLabel: "Lancer",
+      fields: attendus.map((cle) => ({
+        name: cle,
+        label: cle + (requis.has(cle) ? " *" : ""),
+        hint: (schema.properties[cle] || {}).description || "",
+        full: true,
+      })),
+      onSubmit: async (data) => {
+        const inputs = {};
+        for (const cle of attendus) {
+          const v = String(data[cle] ?? "").trim();
+          if (v) inputs[cle] = v;
+        }
+        const manquant = [...requis].find((c) => !inputs[c]);
+        if (manquant) throw new Error(`« ${manquant} » est nécessaire.`);
+        await lancerAvec(comp, inputs);
+      },
+    });
+  }
+
+  async function lancerAvec(comp, inputs) {
     await withErreur(async () => {
-      const res = await api.actOnComposition(state.token, comp.id, "execute", {
-        inputs: {},
-      });
+      const res = await api.actOnComposition(state.token, comp.id, "execute", { inputs });
       const etat = res?.status || (res?.ok === false ? "échec" : "terminée");
-      S.setError(state, `Composition « ${comp.name} » : ${etat}`);
+      const detail = res?.error ? ` — ${String(res.error).slice(0, 160)}` : "";
+      S.setError(state, `Composition « ${comp.name} » : ${etat}${detail}`);
     });
   }
 
@@ -210,10 +249,13 @@ export function createConnectorActions(ctx) {
     majBoutonEnvoi();
   }
 
-  function majEtape(i, champs) {
+  function majEtape(i, champs, redessiner = false) {
     const d = state.compositionDraft;
     if (!d?.steps?.[i]) return;
     Object.assign(d.steps[i], champs, { erreur: "" });
+    // Un choix dans une liste ne fait pas perdre le curseur, et il change ce
+    // que les autres étapes peuvent référencer : on redessine alors.
+    if (redessiner) return render();
     majBoutonEnvoi();
   }
 
@@ -229,8 +271,39 @@ export function createConnectorActions(ctx) {
       !(d.steps || []).some((e) => String(e.tool || "").trim());
   }
 
-  function ajouterEtape() {
-    state.compositionDraft?.steps.push(etapeVierge());
+  function ajouterEtape(type) {
+    state.compositionDraft?.steps.push(etapeVierge(type));
+    render();
+  }
+
+  /** Reprendre une composition existante pour la corriger. */
+  async function editerComposition(comp) {
+    let det = state.compositionDetail;
+    if (!det || det.id !== comp.id) {
+      try {
+        det = await api.getComposition(state.token, comp.id);
+      } catch (err) {
+        return S.setError(state, err.message || String(err));
+      }
+    }
+    const steps = (Array.isArray(det.definition?.steps) ? det.definition.steps : []).map((e) => ({
+      type: e.type || "tool",
+      tool: e.tool || "",
+      label: e.label || e.step_id || "",
+      parametersTexte: JSON.stringify(e.parameters || {}, null, 2),
+      message: (e.elicit || e.approval || {}).message || "",
+      wait_seconds: (e.wait_until || {}).wait_seconds || 60,
+    }));
+    S.setCompositionDraft(state, {
+      id: comp.id,
+      name: det.name || comp.name || "",
+      description: det.description || "",
+      steps: steps.length ? steps : [etapeVierge()],
+      erreur: "",
+    });
+    S.setSelectedCompositionId(state, null);
+    S.setConnectorPanel(state, "composer");
+    S.setShellMode(state, "connecteurs", "detail");
     render();
   }
 
@@ -263,7 +336,17 @@ export function createConnectorActions(ctx) {
     // plutôt qu'en bas du formulaire, où l'utilisateur devrait chercher.
     const steps = [];
     let fautive = false;
-    d.steps.forEach((e, i) => {
+    d.steps.forEach((e) => {
+      const type = e.type || "tool";
+      if (type !== "tool") {
+        steps.push({
+          type,
+          label: (e.label || "").trim(),
+          message: (e.message || "").trim(),
+          wait_seconds: Number(e.wait_seconds) || 0,
+        });
+        return;
+      }
       if (!String(e.tool || "").trim()) return;
       let parametres = {};
       const brut = String(e.parametersTexte ?? "{}").trim() || "{}";
@@ -277,7 +360,12 @@ export function createConnectorActions(ctx) {
         fautive = true;
         return;
       }
-      steps.push({ tool: e.tool.trim(), label: (e.label || "").trim(), parameters: parametres });
+      steps.push({
+        type: "tool",
+        tool: e.tool.trim(),
+        label: (e.label || "").trim(),
+        parameters: parametres,
+      });
     });
     if (fautive) return render();
     if (!steps.length) {
@@ -285,15 +373,19 @@ export function createConnectorActions(ctx) {
       return render();
     }
     try {
-      const cree = await api.createComposition(state.token, {
+      const corps = {
         name: d.name.trim(),
         description: d.description.trim(),
         steps,
-      });
+      };
+      const cree = d.id
+        ? await api.updateComposition(state.token, d.id, corps)
+        : await api.createComposition(state.token, corps);
+      const cible = cree?.id || d.id;
       S.setCompositionDraft(state, null);
       S.setConnectorPanel(state, "detail");
       await refreshAll();
-      if (cree?.id) await selectComposition(cree.id);
+      if (cible) await selectComposition(cible);
     } catch (err) {
       if (err.status === 401) return logout("Clé invalide");
       d.erreur = err.message || String(err);
@@ -411,6 +503,7 @@ export function createConnectorActions(ctx) {
     reprobePool,
     newComposition,
     ouvrirBuilder,
+    editerComposition,
     majBrouillon,
     majEtape,
     ajouterEtape,

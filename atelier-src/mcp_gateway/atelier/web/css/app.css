@@ -1643,6 +1643,53 @@ button:disabled {
   color: var(--accent);
 }
 
+.composition-entrees {
+  margin: 0 0 0.9rem;
+  font-size: 0.82rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.composition-entree,
+.composition-ref {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--accent);
+}
+
+.composition-ref {
+  cursor: pointer;
+}
+
+.composition-ref:hover {
+  border-color: var(--accent);
+}
+
+.composition-refs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.composition-refs-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.composition-ajouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
 .composition-step {
   border: 1px solid var(--line);
   border-radius: var(--radius);

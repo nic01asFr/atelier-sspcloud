@@ -169,7 +169,14 @@ function renderCompositionDetail(comp, state, actions) {
   del.className = "ghost btn-sm agent-profile-del";
   del.textContent = "Supprimer";
   del.addEventListener("click", () => actions.deleteComposition(comp));
+  const modifier = document.createElement("button");
+  modifier.type = "button";
+  modifier.className = "ghost btn-sm";
+  modifier.textContent = "Modifier";
+  modifier.title = "Corriger les étapes, sans changer son état.";
+  modifier.addEventListener("click", () => actions.editerComposition(comp));
   actionsRow.appendChild(lancer);
+  actionsRow.appendChild(modifier);
   actionsRow.appendChild(bascule);
   actionsRow.appendChild(del);
   head.appendChild(actionsRow);
@@ -191,7 +198,13 @@ function renderCompositionDetail(comp, state, actions) {
   };
   kv("Entrées", entrees.length ? entrees.join(", ") : "aucune");
   kv("Appelable comme", comp.tool_name || "—");
-  kv("État", comp.status || "—");
+  const ETATS = {
+    production: "active — appelable comme un outil",
+    tested: "testée — validée, pas encore ouverte à l’appel",
+    temporary: "brouillon",
+    draft: "brouillon",
+  };
+  kv("État", ETATS[comp.status] || comp.status || "—");
   infos.appendChild(ul);
   body.appendChild(infos);
 
@@ -478,11 +491,16 @@ function renderCompositionsService(state, actions) {
   const rangs = [
     ["production", "Actives", "Appelables comme un outil."],
     ["tested", "Testées", "Validées, pas encore ouvertes à l’appel."],
-    ["draft", "Brouillons", "Écrites, jamais exécutées."],
+    ["brouillon", "Brouillons", "Écrites, pas encore ouvertes à l’appel."],
   ];
+  // Le moteur nomme « temporary » ce qu'un utilisateur appelle un brouillon.
+  // Ne ranger que « draft » les rendait invisibles : elles existaient sans
+  // apparaître nulle part.
+  const rang = (c) =>
+    c.status === "production" || c.status === "tested" ? c.status : "brouillon";
   let vide = true;
   for (const [statut, titre, sous] of rangs) {
-    const dedans = liste.filter((c) => (c.status || "draft") === statut);
+    const dedans = liste.filter((c) => rang(c) === statut);
     if (!dedans.length) continue;
     vide = false;
     const sec = document.createElement("section");
