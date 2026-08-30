@@ -130,7 +130,7 @@ function renderOutilsDuService(state, cle, body) {
       main.appendChild(nom);
       const sub = document.createElement("span");
       sub.className = "agent-queue-sub";
-      sub.textContent = (t.description || "").slice(0, 150);
+      sub.textContent = (t.resume || t.description || "").slice(0, 150);
       if (sub.textContent) main.appendChild(sub);
       li.appendChild(main);
       ul.appendChild(li);
@@ -526,7 +526,7 @@ function renderFicheAcces(state) {
     nom.textContent = t.label || t.short || t.name;
     const sub = document.createElement("span");
     sub.className = "agent-queue-sub";
-    sub.textContent = t.description || "";
+    sub.textContent = t.resume || t.description || "";
     main.appendChild(nom);
     if (sub.textContent) main.appendChild(sub);
     li.appendChild(main);
@@ -671,11 +671,15 @@ function renderDetail(entry, kind, state, actions) {
   h.textContent = socle ? famille : entry.name || entry.id;
   const lead = document.createElement("p");
   lead.className = "connectors-lead";
+  const decrit = (state.toolsByService || []).find(
+    (x) => String(x.key).split("#")[0] === key
+  );
   lead.textContent = socle
     ? famille === "Accès aux fichiers"
       ? "Ce que l’Atelier peut lire et écrire hors du dossier d’un projet."
       : "Ce qui relie les agents entre eux : messages, mémoire, suivi de projet."
-    : entry.description ||
+    : decrit?.resume ||
+      entry.description ||
       `${kind === "org" ? "Service plateforme" : "Connecteur personnel"}`;
   head.appendChild(h);
   head.appendChild(lead);

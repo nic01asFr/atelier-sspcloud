@@ -186,11 +186,18 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
       const jeton = jetonOutil(outil.name);
       const label = document.createElement("label");
       label.className = "tool-chip tool-chip-sm";
-      label.title = outil.description || "";
+      // Le résumé rédigé pour l'écran prime sur la description d'origine,
+      // écrite pour un modèle et souvent en anglais. L'originale reste en
+      // dessous : elle ne ment pas.
+      label.title = [outil.resume, outil.description]
+        .filter(Boolean)
+        .join(" — ");
       const box = document.createElement("input");
       box.type = "checkbox";
       box.dataset.recherche = sansAccent(
-        [outil.label, outil.short, outil.description].filter(Boolean).join(" ")
+        [outil.label, outil.short, outil.resume, outil.description]
+          .filter(Boolean)
+          .join(" ")
       );
       const t = document.createElement("span");
       t.className = "tool-chip-name";

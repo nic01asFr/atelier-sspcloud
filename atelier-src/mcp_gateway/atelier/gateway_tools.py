@@ -28,6 +28,7 @@ from typing import Any
 from fastapi import Request
 
 from mcp_gateway.atelier.enrichissements import (
+    appliquer_a_outil,
     appliquer_a_service as appliquer_enrichissement,
     charger as charger_enrichissement,
     familles_declarees,
@@ -341,6 +342,17 @@ def build_tools_by_service(request: Request) -> dict[str, Any]:
         if _est_le_pilote(config, wikichat_url):
             # Éclaté par famille : le choix reste lisible, et ce qui engage
             # la plateforme ne se coche pas au milieu du reste.
+            #
+            # Ses familles sont écrites à la main — le coordinateur est trop
+            # central pour dépendre d'une description automatique. Le reste
+            # de l'enrichissement s'applique quand même : sans cela, décrire
+            # ce service produirait un fichier que rien ne lirait.
+            enrichi_pilote = (
+                charger_enrichissement(settings_atelier, key.replace("registry:", ""))
+                if settings_atelier
+                else {}
+            )
+            tools = [appliquer_a_outil(t, enrichi_pilote) for t in tools]
             par_famille: dict[str, list[dict[str, str]]] = {}
             for outil in tools:
                 famille = FAMILLE_PAR_OUTIL.get(outil["short"], "Autres outils")

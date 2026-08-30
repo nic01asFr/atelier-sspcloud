@@ -27,6 +27,8 @@ from mcp_gateway.atelier.mcp_sync import sync_summary
 from mcp_gateway.atelier.projects import ProjectStore
 from mcp_gateway.atelier.sessions import SessionStore
 from mcp_gateway.atelier.ui_settings import (
+    LANGUES,
+    langue as langue_atelier,
     load_ui_settings,
     resolve_vscode_url,
     save_ui_settings,
@@ -184,6 +186,8 @@ class MetaPatchBody(BaseModel):
     vscode_url: str | None = None
     # write-only : stocké dans .secrets/vscode_password, jamais renvoyé
     vscode_password: str | None = None
+    # Langue de l'Atelier : ce que le service fait rédiger la suit.
+    langue: str | None = None
 
 
 def _slug_composition(nom: str) -> str:
@@ -327,6 +331,8 @@ def build_app(
             "assistant_slug": settings.assistant_slug,
             "projects_root": str(settings.projects_dir),
             "ui": load_ui_settings(settings),
+            "langue": langue_atelier(settings),
+            "langues": LANGUES,
             "models": _models_payload(),
         }
 
@@ -404,6 +410,11 @@ def build_app(
         patch: dict[str, Any] = {}
         if body.vscode_url is not None:
             patch["vscode_url"] = body.vscode_url.strip().rstrip("/")
+        if body.langue is not None:
+            code = body.langue.strip().lower()
+            if code and code not in LANGUES:
+                raise HTTPException(400, f"langue inconnue : {code}")
+            patch["langue"] = code
         if patch:
             save_ui_settings(settings, patch)
         if body.vscode_password is not None:
@@ -970,6 +981,58 @@ def build_app(
             raise HTTPException(404, str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(501, str(exc)) from exc
+
+    @router.get("/mcp/servers/a-decrire")
+    def mcp_a_decrire(
+        request: Request,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Connecteurs branchés dont personne n'a encore décrit les outils."""
+        from mcp_gateway.atelier.enrichissements import services_decrits
+        from mcp_gateway.atelier.gateway_tools import build_tools_by_service
+
+        decrits = services_decrits(settings)
+        presents = {
+            str(svc.get("key", "")).split("#")[0].replace("registry:", "")
+            for svc in build_tools_by_service(request).get("services") or []
+            if str(svc.get("key", "")).startswith("registry:")
+        }
+        return {"a_decrire": sorted(presents - decrits), "decrits": sorted(decrits)}
+
+    @router.post("/mcp/servers/{name}/decrire")
+    def mcp_decrire_serveur(
+        request: Request,
+        name: str,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Fait décrire un connecteur pour le rendre lisible à l'écran.
+
+        Le travail se fait ici plutôt que dans un agent : c'est une question
+        fermée, sans session ni outils, et on veut pouvoir la poser au moment
+        où l'on branche le service.
+        """
+        from mcp_gateway.atelier.decrire_connecteur import decrire
+        from mcp_gateway.atelier.gateway_tools import build_tools_by_service, tool_schema
+        from mcp_gateway.atelier.llm import LlmIndisponible
+
+        cle = f"registry:{name}"
+        outils: list[dict[str, Any]] = []
+        for svc in build_tools_by_service(request).get("services") or []:
+            if str(svc.get("key", "")).split("#")[0] != cle:
+                continue
+            for t in svc.get("tools") or []:
+                entree = dict(t)
+                try:
+                    entree["schema"] = (tool_schema(request, t["name"]) or {}).get("schema")
+                except Exception:  # noqa: BLE001 — un schéma manquant n'empêche pas de décrire
+                    entree["schema"] = None
+                outils.append(entree)
+        try:
+            return decrire(settings, name, outils)
+        except LlmIndisponible as exc:
+            raise HTTPException(503, f"modèle injoignable : {exc}") from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     @router.get("/mcp/tools/schema")
     def mcp_tool_schema(
