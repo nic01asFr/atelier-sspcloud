@@ -8,6 +8,7 @@ import httpx
 from mcp_gateway import __version__
 from mcp_gateway.upstream.transports import (
     SseMcpSession,
+    TransportFerme,
     parse_json_rpc_response,
 )
 
@@ -245,19 +246,35 @@ class UpstreamClient:
             raise UpstreamError(str(data["error"]))
         return data.get("result", {})
 
+    async def _sse_call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        data = await self._sse.post(
+            {
+                "jsonrpc": "2.0",
+                "id": self._next_id(),
+                "method": "tools/call",
+                "params": {"name": tool_name, "arguments": arguments},
+            }
+        )
+        if data.get("error"):
+            raise UpstreamError(str(data["error"]))
+        return data.get("result", {})
+
     async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         if self._mode == "sse" and self._sse:
-            data = await self._sse.post(
-                {
-                    "jsonrpc": "2.0",
-                    "id": self._next_id(),
-                    "method": "tools/call",
-                    "params": {"name": tool_name, "arguments": arguments},
-                }
-            )
-            if data.get("error"):
-                raise UpstreamError(str(data["error"]))
-            return data.get("result", {})
+            try:
+                return await self._sse_call_tool(tool_name, arguments)
+            except TransportFerme as exc:
+                # Le service d'en face a redémarré. Rouvrir une session et
+                # rejouer une fois vaut mieux que remonter une panne à
+                # l'utilisateur, qui n'a rien fait de mal et devrait sinon
+                # penser à rafraîchir le pool lui-même.
+                logger.info("Upstream %s : session perdue (%s) — réouverture", self.server_id, exc)
+                await self._reset_sse()
+                if not await self._connect_sse():
+                    raise UpstreamError(
+                        f"{self.server_id} injoignable : {self.error or 'session close'}"
+                    ) from exc
+                return await self._sse_call_tool(tool_name, arguments)
 
         mcp_url = self._mcp_endpoint()
         return await self._streamable_call(

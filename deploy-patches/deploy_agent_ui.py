@@ -52,6 +52,14 @@ HORS_ARBRE = [
         DEPOT / "wikichat-atelier/src/pilote.mjs",
         "/home/onyxia/work/wikichat/src/src/pilote.mjs",
     ),
+    (
+        DEPOT / "atelier-src/mcp_gateway/upstream/transports.py",
+        "/home/onyxia/work/atelier-src/mcp_gateway/upstream/transports.py",
+    ),
+    (
+        DEPOT / "atelier-src/mcp_gateway/upstream/client.py",
+        "/home/onyxia/work/atelier-src/mcp_gateway/upstream/client.py",
+    ),
 ]
 
 

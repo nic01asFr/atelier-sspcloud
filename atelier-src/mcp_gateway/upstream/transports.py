@@ -12,6 +12,14 @@ import httpx
 logger = logging.getLogger("mcp_gateway.upstream")
 
 
+class TransportFerme(RuntimeError):
+    """Le flux d'événements est tombé — la session amont n'existe plus.
+
+    Distincte d'une erreur métier : elle ne se remonte pas à l'appelant mais
+    demande de rouvrir la session, puis de rejouer l'appel.
+    """
+
+
 @dataclass
 class SseEvent:
     event: str = "message"
@@ -107,6 +115,7 @@ class SseMcpSession:
     _open_error: Exception | None = None
     _sse_cm: Any = None
     _sse_response: httpx.Response | None = None
+    ferme: bool = False
 
     async def open(self) -> None:
         self._sse_cm = self.client.stream(
@@ -151,18 +160,30 @@ class SseMcpSession:
                 fut = self._pending.pop(req_id, None)
                 if fut and not fut.done():
                     fut.set_result(data)
+            # Fin normale du flux : le serveur d'en face a fermé, souvent
+            # parce qu'il vient de redémarrer. Sans ce traitement, la boucle
+            # se terminait en silence — la session paraissait vivante et tout
+            # appel suivant expirait au bout d'une minute.
+            self._tomber(TransportFerme(f"Flux SSE clos par {self.sse_url}"))
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.warning("Lecteur SSE interrompu (%s): %s", self.sse_url, exc)
-            self._open_error = exc
-            self._ready.set()
-            for fut in self._pending.values():
-                if not fut.done():
-                    fut.set_exception(exc)
-            self._pending.clear()
+            self._tomber(exc)
+
+    def _tomber(self, cause: Exception) -> None:
+        """Marque la session morte et libère ce qui l'attendait."""
+        self.ferme = True
+        self._open_error = cause
+        self._ready.set()
+        for fut in self._pending.values():
+            if not fut.done():
+                fut.set_exception(cause)
+        self._pending.clear()
 
     async def post(self, payload: dict[str, Any], timeout: float = 60.0) -> dict[str, Any]:
+        if self.ferme:
+            raise TransportFerme(f"Session SSE close ({self.sse_url})")
         if not self.message_url:
             raise RuntimeError("Session SSE non ouverte")
         req_id = payload.get("id")
@@ -172,6 +193,12 @@ class SseMcpSession:
             fut = loop.create_future()
             self._pending[req_id] = fut
         response = await self.client.post(self.message_url, json=payload)
+        # Le serveur ne connaît plus cette session : inutile d'attendre une
+        # réponse qui ne viendra pas sur un flux qu'il a oublié.
+        if response.status_code in (400, 404, 410):
+            self._pending.pop(req_id, None)
+            self._tomber(TransportFerme(f"Session SSE rejetée ({response.status_code})"))
+            raise self._open_error
         if req_id is None:
             response.raise_for_status()
             return {}
