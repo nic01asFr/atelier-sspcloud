@@ -11,7 +11,9 @@ from mcp_gateway.atelier.claude_home import sync_claude_home as sync_claude_home
 
 CLAUDE_CODE_EXTENSION_ID = "anthropic.claude-code"
 
-# Layout par défaut : Claude Code sidebar, sans Welcome ni Copilot Chat.
+# Layout par défaut : ni Welcome ni barre Copilot. L'emplacement de la
+# vue Claude Code est laissé au défaut de l'extension — la conversation
+# s'ouvre en onglet, pas dans un panneau.
 WORKBENCH_LAYOUT_SETTINGS: dict[str, object] = {
     "workbench.startupEditor": "none",
     "workbench.secondarySideBar.defaultVisibility": "hidden",
@@ -92,13 +94,7 @@ def write_vscode_workspace_config(settings: AtelierSettings, slug: str) -> None:
     cfg = {
         **WORKBENCH_LAYOUT_SETTINGS,
         "claudeCode.disableLoginPrompt": True,
-        "claudeCode.preferredLocation": "sidebar",
         "claudeCode.hideOnboarding": True,
-        # C'est l'extension qui doit s'ouvrir sur la conversation, pas un
-        # terminal : ce réglage lui demande de prendre le premier plan au
-        # démarrage. Il valait « false » par défaut, ce qui laissait la vue
-        # fermée et obligeait à la chercher dans la barre d'activité.
-        "claudeCode.focusView": True,
         "claudeCode.environmentVariables": claude_extension_env(settings),
         "security.workspace.trust.enabled": False,
         "task.allowAutomaticTasks": "on",
@@ -116,9 +112,7 @@ def write_user_code_server_settings(settings: AtelierSettings) -> None:
     cfg = {
         **WORKBENCH_LAYOUT_SETTINGS,
         "claudeCode.disableLoginPrompt": True,
-        "claudeCode.preferredLocation": "sidebar",
         "claudeCode.hideOnboarding": True,
-        "claudeCode.focusView": True,
         "claudeCode.environmentVariables": claude_extension_env(settings),
         "security.workspace.trust.enabled": False,
         "task.allowAutomaticTasks": "on",
@@ -137,7 +131,7 @@ def write_resume_sidecar(settings: AtelierSettings, slug: str, session_id: str) 
                 "",
                 f"Session: `{session_id}`",
                 "",
-                "L'extension **Claude Code** s'ouvre dans la barre latérale.",
+                "La conversation s'ouvre d'elle-même dans un onglet.",
                 "",
                 f"CLI : `claude --resume {session_id}`",
                 "",
@@ -163,15 +157,12 @@ def write_resume_sidecar(settings: AtelierSettings, slug: str, session_id: str) 
                     }
                 },
                 "problemMatcher": [],
-                # Le terminal devient la conversation : le montrer est tout
-                # l'intérêt. Un panneau à lui évite qu'un autre travail
-                # vienne s'y mêler.
+                # La conversation s'ouvre dans l'éditeur : cette tâche ne
+                # fait plus que la désigner, elle n'a rien à montrer.
                 "presentation": {
-                    "reveal": "always",
-                    "panel": "dedicated",
-                    "focus": True,
+                    "reveal": "never",
+                    "panel": "shared",
                     "showReuseMessage": False,
-                    "clear": True,
                 },
                 "runOptions": {"runOn": "folderOpen"},
             }

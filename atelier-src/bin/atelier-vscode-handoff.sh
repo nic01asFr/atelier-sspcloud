@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
-# Reprend dans VS Code la conversation qu'on lisait dans l'Atelier.
+# Désigne la conversation que VS Code doit rouvrir.
 #
-# VS Code s'ouvre sur un dossier, pas sur une conversation : sans ce relais,
-# passer de l'Atelier à l'éditeur perd le fil, et il faut le retrouver à la
-# main dans la liste des sessions.
+# VS Code s'ouvre sur un dossier, pas sur une conversation. L'extension
+# Claude Code sait rouvrir « la dernière » du dossier : ce script fait donc
+# de celle qu'on lisait dans l'Atelier la plus récente, et s'arrête là.
 #
-# On a d'abord essayé de piloter l'interface — ouvrir la barre latérale de
-# l'extension, y sélectionner la session. Aucune de ces voies ne fonctionne
-# en mode web : `code-server --open-url` s'adresse à une instance de bureau,
-# et ni `?payload=`, ni `?command=` n'exécutent de commande. Seul `openFile`
-# passe, ce qui ne suffit pas.
-#
-# On reprend donc la conversation là où c'est possible : dans un terminal.
-# C'est la même session, reprise, et elle s'affiche d'emblée.
+# Il n'ouvre rien lui-même — c'est le travail de l'extension
+# `atelier-ouvre-claude`, qui s'exécute dans VS Code et n'a besoin d'aucun
+# détour. Les tentatives depuis le pod ont toutes échoué : `--open-url` a
+# disparu de code-server, et ni `?command=` ni `?payload=` n'exécutent de
+# commande en mode web.
 #
 # Lancé par une tâche « folderOpen » que l'Atelier écrit dans le projet au
 # moment du passage de relais (voir vscode_handoff.py).
@@ -40,38 +37,15 @@ resolve_claude_bin() {
 
 cd "${WORK}/projects/${SLUG}" 2>/dev/null || cd "${WORK}" || exit 0
 
-# Ouvrir la vue de l'extension, plutôt que de se contenter du terminal.
-#
-# `code-server --open-url` a disparu de la version installée. Le CLI distant
-# de VS Code, lui, sait parler à la fenêtre ouverte — mais seulement depuis
-# un terminal de cette fenêtre, ce que cette tâche est précisément. Sans
-# cela, la conversation se reprend ici sans que la barre latérale s'ouvre.
-ouvrir_extension() {
-  local cli
-  cli="$(ls -d "${WORK}/.tools/code-server-"*"/lib/vscode/bin/remote-cli/code-server" 2>/dev/null | tail -1)"
-  if [ -z "$cli" ] || [ -z "${VSCODE_IPC_HOOK_CLI:-}" ]; then
-    return 1
-  fi
-  "$cli" --open-external "vscode://vscode.runCommands?command=claude-vscode.sidebar.open"     >/dev/null 2>&1 || return 1
-  "$cli" --open-external "vscode://vscode.runCommands?command=claude-vscode.editor.openLast"     >/dev/null 2>&1 || true
-  return 0
-}
-
-if ouvrir_extension; then
-  echo "Atelier : barre latérale Claude Code ouverte."
-else
-  echo "Atelier : la barre latérale n'a pas pu être ouverte — reprise ici."
-fi
-
 if [ -z "$SESSION" ] || ! resolve_claude_bin; then
-  echo "Atelier : aucune conversation à reprendre ici."
   exit 0
 fi
 
-echo "Atelier — reprise de la conversation ${SESSION}"
-echo "Ctrl+C pour rendre la main ; la barre latérale Claude Code garde la liste."
-echo
+# Faire de cette conversation la plus récente du dossier, sans l'afficher
+# ici : c'est elle que la vue reprendra. Un tour sans conséquence, dont on
+# ne lit qu'un octet — le terminal n'a pas à devenir la conversation, c'est
+# le travail de l'extension.
+(
+  "${WORK}/bin/claude" --resume "$SESSION" -p "Continue la session Atelier."     --permission-mode bypassPermissions --output-format text 2>/dev/null     | head -c 1 >/dev/null
+) || true
 
-# `exec` : ce terminal devient la conversation. Sans lui, le shell resterait
-# entre l'utilisateur et Claude, et Ctrl+C fermerait le mauvais processus.
-exec "${WORK}/bin/claude" --resume "$SESSION"
