@@ -40,6 +40,7 @@ FILES = [
     "project_context.py",
     "enrichissements.py",
     "ui_settings.py",
+    "vscode_proxy.py",
     "decrire_connecteur.py",
     "llm.py",
     "pilote_overview.py",

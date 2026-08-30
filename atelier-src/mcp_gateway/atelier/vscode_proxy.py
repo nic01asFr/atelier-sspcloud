@@ -162,15 +162,21 @@ class VscodeUpstream:
         }
         body = await request.body()
         cookies = None if self._auth_none else self._client_or_new().cookies
+        # Le client ne peut pas être refermé avant que la réponse ait été
+        # lue : elle est diffusée en flux, et fermer le client coupe la
+        # connexion au milieu. Les gros fichiers de VS Code arrivaient donc
+        # tronqués — workbench.js s'arrêtait à 34 Ko, en plein code, et la
+        # page restait blanche.
+        client = httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=httpx.Timeout(120.0),
+            cookies=cookies,
+        )
         try:
-            async with httpx.AsyncClient(
-                follow_redirects=True,
-                timeout=httpx.Timeout(120.0),
-                cookies=cookies,
-            ) as client:
-                req = client.build_request(request.method, url, headers=headers, content=body)
-                resp = await client.send(req, stream=True)
+            req = client.build_request(request.method, url, headers=headers, content=body)
+            resp = await client.send(req, stream=True)
         except httpx.HTTPError as exc:
+            await client.aclose()
             raise HTTPException(502, f"upstream code-server: {exc}") from exc
 
         out_headers = {
@@ -180,9 +186,16 @@ class VscodeUpstream:
         }
 
         async def stream() -> Any:
-            async for chunk in resp.aiter_bytes():
-                yield chunk
-            await resp.aclose()
+            # Octets bruts : on retransmet l'en-tête `content-encoding` du
+            # serveur, donc le corps doit rester tel qu'il l'a envoyé.
+            # `aiter_bytes` décompresse, ce qui donnait au navigateur un
+            # contenu clair annoncé comme compressé.
+            try:
+                async for chunk in resp.aiter_raw():
+                    yield chunk
+            finally:
+                await resp.aclose()
+                await client.aclose()
 
         return StreamingResponse(
             stream(),
