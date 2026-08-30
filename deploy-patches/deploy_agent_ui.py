@@ -26,6 +26,7 @@ FILES = [
     "projects.py",
     "sessions.py",
     "gateway_tools.py",
+    "stdio_probe.py",
     "web/js/app.js",
     "web/css/app.css",
     "web/index.html",

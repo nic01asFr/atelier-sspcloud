@@ -1388,9 +1388,11 @@ button:disabled {
 
 .tool-service-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.35rem 0.5rem;
   padding: 0.4rem 0.6rem;
+  min-width: 0;
 }
 
 .tool-service-on {

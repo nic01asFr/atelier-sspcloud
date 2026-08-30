@@ -108,7 +108,11 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
   }
 
   // ---- Services, avec affinage outil par outil -------------------------
-  const declares = new Set((toolsByService || []).map((s) => s.key));
+  // Un service éclaté en familles porte des clés « service#famille » : on
+  // compare sur la racine, sinon il réapparaîtrait en doublon.
+  const declares = new Set(
+    (toolsByService || []).map((s) => String(s.key).split("#")[0])
+  );
   const services = [
     ...(toolsByService || []).map((s) => ({
       e: { id: s.key, name: s.label || s.key, tools: s.count },
@@ -203,8 +207,8 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
       label.appendChild(t);
       box.addEventListener("change", () => {
         // Un choix fin sort du « service entier » : on éclate la sélection.
-        if (selection.has(cle)) {
-          selection.delete(cle);
+        if (cleService && selection.has(cleService)) {
+          selection.delete(cleService);
           for (const c of cases) if (c.box !== box) selection.add(c.jeton);
         }
         if (box.checked) selection.add(jeton);
@@ -232,9 +236,13 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
       corps.appendChild(label);
     }
 
+    // Un regroupement (famille d'un service) n'a pas de jeton utilisable :
+    // le cocher revient à cocher chacun de ses outils.
+    const cleService = cle.includes("#") ? null : cle;
+
     /** Réaligne l'état visuel sur la sélection réelle. */
     function rafraichir() {
-      const entier = selection.has(cle);
+      const entier = cleService ? selection.has(cleService) : false;
       for (const c of cases) {
         c.box.checked = entier || selection.has(c.jeton);
         c.label.classList.toggle("tool-chip-on", c.box.checked);
@@ -251,13 +259,18 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
     }
 
     const toutCocher = () => {
-      for (const c of cases) selection.delete(c.jeton);
-      selection.add(cle);
+      if (cleService) {
+        // Un service entier se note d'un seul jeton, plus lisible.
+        for (const c of cases) selection.delete(c.jeton);
+        selection.add(cleService);
+      } else {
+        for (const c of cases) selection.add(c.jeton);
+      }
       rafraichir();
       notifier();
     };
     const toutDecocher = () => {
-      selection.delete(cle);
+      if (cleService) selection.delete(cleService);
       for (const c of cases) selection.delete(c.jeton);
       rafraichir();
       notifier();
@@ -286,7 +299,15 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
     rafraichir();
   }
 
-  for (const groupe of ["Pilotage", "Compositions", "Mes connecteurs", "Plateforme"]) {
+  const ORDRE_GROUPES = [
+    "Coordination et mémoire",
+    "Accès aux outils",
+    "Compositions",
+    "Accès aux fichiers",
+    "Mes connecteurs",
+    "Plateforme",
+  ];
+  for (const groupe of ORDRE_GROUPES) {
     const dedans = lignes.filter((l) => l.ligne.dataset.groupe === groupe);
     if (!dedans.length) continue;
     const bloc = document.createElement("div");

@@ -639,6 +639,45 @@ def build_app(
 
         return build_tools_by_service(request)
 
+    @router.post("/mcp/servers/{name}/probe")
+    async def mcp_probe_server(
+        name: str,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """
+        Sonde un serveur lancé en local pour connaître ses outils.
+
+        Le pool ne connecte pas les serveurs stdio : leurs outils resteraient
+        inconnus, et on ne pourrait proposer que le service entier. On lance
+        donc le serveur le temps d'un `tools/list`, on met en cache, on ferme.
+        """
+        if app.state.use_fake or not hasattr(app.state, "db"):
+            raise HTTPException(503, "gateway not available")
+        from mcp_gateway.atelier.stdio_probe import (
+            commande_depuis_config,
+            probe_stdio_tools,
+        )
+        from mcp_gateway.registry import list_registry_servers
+        from mcp_gateway.tool_cache import save_upstream_tools
+
+        entree = next(
+            (e for e in list_registry_servers(app.state.db) if e.server_id == name),
+            None,
+        )
+        if entree is None:
+            raise HTTPException(404, "connecteur inconnu")
+        commande, args, env = commande_depuis_config(entree.config)
+        if not commande:
+            raise HTTPException(
+                400, "ce connecteur n'est pas lancé en local : rien à sonder"
+            )
+        try:
+            outils = await probe_stdio_tools(commande, args, env)
+        except RuntimeError as exc:
+            raise HTTPException(502, f"sondage impossible : {exc}") from exc
+        save_upstream_tools(app.state.db, f"registry:{name}", name, outils)
+        return {"server": name, "tools": len(outils)}
+
     @router.get("/mcp/tools/schema")
     def mcp_tool_schema(
         request: Request,
@@ -714,7 +753,34 @@ def build_app(
         if app.state.use_fake or not hasattr(app.state, "pool"):
             raise HTTPException(503, "gateway not available")
         app.state.upstream_status = await app.state.pool.startup()
-        return {"upstream": app.state.upstream_status}
+
+        # Le pool ne connecte pas les serveurs lancés en local : sans ce
+        # passage, leurs outils resteraient inconnus et on ne pourrait
+        # proposer que le service entier.
+        sondes: dict[str, Any] = {}
+        if hasattr(app.state, "db"):
+            from mcp_gateway.atelier.stdio_probe import (
+                commande_depuis_config,
+                probe_stdio_tools,
+            )
+            from mcp_gateway.registry import list_registry_servers
+            from mcp_gateway.tool_cache import save_upstream_tools
+
+            for entree in list_registry_servers(app.state.db):
+                commande, args, env = commande_depuis_config(entree.config)
+                if not commande:
+                    continue
+                try:
+                    outils = await probe_stdio_tools(commande, args, env)
+                except RuntimeError as exc:
+                    sondes[entree.server_id] = f"erreur : {exc}"
+                    continue
+                save_upstream_tools(
+                    app.state.db, f"registry:{entree.server_id}", entree.server_id, outils
+                )
+                sondes[entree.server_id] = len(outils)
+
+        return {"upstream": app.state.upstream_status, "sondes": sondes}
 
     @router.put("/mcp/servers/{name}")
     def mcp_upsert_server(
