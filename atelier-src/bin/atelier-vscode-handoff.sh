@@ -40,6 +40,29 @@ resolve_claude_bin() {
 
 cd "${WORK}/projects/${SLUG}" 2>/dev/null || cd "${WORK}" || exit 0
 
+# Ouvrir la vue de l'extension, plutôt que de se contenter du terminal.
+#
+# `code-server --open-url` a disparu de la version installée. Le CLI distant
+# de VS Code, lui, sait parler à la fenêtre ouverte — mais seulement depuis
+# un terminal de cette fenêtre, ce que cette tâche est précisément. Sans
+# cela, la conversation se reprend ici sans que la barre latérale s'ouvre.
+ouvrir_extension() {
+  local cli
+  cli="$(ls -d "${WORK}/.tools/code-server-"*"/lib/vscode/bin/remote-cli/code-server" 2>/dev/null | tail -1)"
+  if [ -z "$cli" ] || [ -z "${VSCODE_IPC_HOOK_CLI:-}" ]; then
+    return 1
+  fi
+  "$cli" --open-external "vscode://vscode.runCommands?command=claude-vscode.sidebar.open"     >/dev/null 2>&1 || return 1
+  "$cli" --open-external "vscode://vscode.runCommands?command=claude-vscode.editor.openLast"     >/dev/null 2>&1 || true
+  return 0
+}
+
+if ouvrir_extension; then
+  echo "Atelier : barre latérale Claude Code ouverte."
+else
+  echo "Atelier : la barre latérale n'a pas pu être ouverte — reprise ici."
+fi
+
 if [ -z "$SESSION" ] || ! resolve_claude_bin; then
   echo "Atelier : aucune conversation à reprendre ici."
   exit 0
