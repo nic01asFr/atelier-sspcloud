@@ -106,6 +106,7 @@ function createApp() {
     render,
     writeQuery,
     sessionActions,
+    connectorActions,
   });
   logout = auth.logout;
 
@@ -122,6 +123,7 @@ function createApp() {
     writeQuery();
     render();
     if (state.view === "connecteurs" && state.token) {
+      connectorActions.chargerCompositions().then(render);
       refreshMcpOverview(state).then(() => {
         if (!state.selectedConnectorId) {
           S.setShellMode(state, "connecteurs", "detail");
@@ -194,7 +196,11 @@ function createApp() {
     });
     $("btn-shell-back-connecteurs")?.addEventListener("click", () => {
       if (state.connectorPanel === "new") connectorActions.cancelNew();
-      else if (state.selectedConnectorId) connectorActions.clearSelection();
+      else if (state.selectedCompositionId) {
+        S.setSelectedCompositionId(state, null);
+        S.setShellMode(state, "connecteurs", "list");
+        render();
+      } else if (state.selectedConnectorId) connectorActions.clearSelection();
       else {
         S.setShellMode(state, "connecteurs", "list");
         render();

@@ -88,6 +88,10 @@ export function createState() {
     agentTranscript: null,
     agentTranscriptBusy: false,
     connectorPanel: "home",
+    // Composition ouverte dans l'onglet Connecteurs.
+    compositions: [],
+    toolsByService: [],
+    selectedCompositionId: null,
     /** @type {"home" | "create" | "detail"} */
     agentPanel: "home",
     agentTab: "discussion",
@@ -230,6 +234,18 @@ export function setModelsCatalog(state, catalog) {
 
 export function setSelectedConnectorId(state, id) {
   state.selectedConnectorId = id || null;
+}
+
+export function setToolsByService(state, services) {
+  state.toolsByService = Array.isArray(services) ? services : [];
+}
+
+export function setCompositions(state, liste) {
+  state.compositions = Array.isArray(liste) ? liste : [];
+}
+
+export function setSelectedCompositionId(state, id) {
+  state.selectedCompositionId = id || null;
 }
 
 export function setConnectorPanel(state, panel) {

@@ -678,6 +678,96 @@ def build_app(
         save_upstream_tools(app.state.db, f"registry:{name}", name, outils)
         return {"server": name, "tools": len(outils)}
 
+    def _compositions(request: Request):
+        svc = getattr(request.app.state, "compositions", None)
+        if svc is None:
+            raise HTTPException(503, "compositions indisponibles")
+        return svc
+
+    @router.get("/compositions")
+    def compositions_list(
+        request: Request,
+        status: str | None = None,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        return {"compositions": _compositions(request).list_compositions(status)}
+
+    @router.get("/compositions/{comp_id}")
+    def composition_get(
+        request: Request,
+        comp_id: str,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        comp = _compositions(request).get_composition(comp_id)
+        if not comp:
+            raise HTTPException(404, "composition introuvable")
+        return comp
+
+    @router.post("/compositions/{comp_id}/promote")
+    def composition_promote(
+        request: Request,
+        comp_id: str,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        try:
+            return _compositions(request).promote(comp_id)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @router.post("/compositions/{comp_id}/demote")
+    def composition_demote(
+        request: Request,
+        comp_id: str,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        try:
+            return _compositions(request).demote(comp_id)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @router.post("/compositions/{comp_id}/validate")
+    def composition_validate(
+        request: Request,
+        comp_id: str,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        try:
+            return _compositions(request).validate(comp_id)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @router.delete("/compositions/{comp_id}")
+    def composition_delete(
+        request: Request,
+        comp_id: str,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        if not _compositions(request).delete_composition(comp_id):
+            raise HTTPException(404, "composition introuvable")
+        return {"deleted": comp_id}
+
+    @router.post("/compositions/{comp_id}/execute")
+    async def composition_execute(
+        request: Request,
+        comp_id: str,
+        body: dict[str, Any] | None = None,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """
+        Exécute une composition depuis l'Atelier.
+
+        Contrairement aux méta-outils, cela ne dépend pas d'une exposition
+        MCP : le service est branché sur l'appelant d'outils de la passerelle.
+        """
+        try:
+            return await _compositions(request).execute(comp_id, (body or {}).get("inputs") or {})
+        except KeyError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(501, str(exc)) from exc
+
     @router.get("/mcp/tools/schema")
     def mcp_tool_schema(
         request: Request,

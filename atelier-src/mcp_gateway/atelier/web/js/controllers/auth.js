@@ -17,7 +17,7 @@ import {
  * @param {object} ctx
  */
 export function createAuthController(ctx) {
-  const { state, render, writeQuery, sessionActions } = ctx;
+  const { state, render, writeQuery, sessionActions, connectorActions } = ctx;
 
   function logout(msg) {
     S.setToken(state, "");
@@ -55,6 +55,12 @@ export function createAuthController(ctx) {
       if (state.view === "connecteurs") {
         await refreshMcp(state);
         await refreshMcpOverview(state);
+        // Les compositions font partie du pool : les charger avec lui.
+        try {
+          await connectorActions?.chargerCompositions?.();
+        } catch {
+          /* la liste restera vide */
+        }
       }
       // Arriver directement sur ?view=agent doit charger la liste, comme un
       // clic sur l'onglet le ferait.

@@ -603,6 +603,44 @@ export async function createAgent(token, body) {
   return res.json();
 }
 
+/** Compositions enregistrees dans la passerelle de l'Atelier. */
+export async function listCompositions(token) {
+  const res = await fetch("/v1/compositions", { headers: jsonHeaders(token) });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+export async function getComposition(token, id) {
+  const res = await fetch(`/v1/compositions/${encodeURIComponent(id)}`, {
+    headers: jsonHeaders(token),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** action : promote | demote | validate | execute */
+export async function actOnComposition(token, id, action, body) {
+  const res = await fetch(
+    `/v1/compositions/${encodeURIComponent(id)}/${action}`,
+    {
+      method: "POST",
+      headers: jsonHeaders(token),
+      body: body ? JSON.stringify(body) : undefined,
+    }
+  );
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+export async function deleteComposition(token, id) {
+  const res = await fetch(`/v1/compositions/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    headers: jsonHeaders(token),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
 /** Schema d'entree d'un outil, pour proposer ses parametres. */
 export async function mcpToolSchema(token, tool) {
   const res = await fetch(
