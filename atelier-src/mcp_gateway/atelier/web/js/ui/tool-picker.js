@@ -223,15 +223,18 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
         rafraichir();
         notifier();
       });
-      // On ne fige des paramètres que sur un outil du pool : un méta-outil
-      // pilote la passerelle, et une variante en est déjà une.
+      // Spécialiser un outil pour cet agent : lui donner « retenir sous
+      // telle clé » plutôt que « retenir » tout court. On ne le fait que sur
+      // un outil du pool — un méta-outil pilote la passerelle, et une
+      // variante est déjà une spécialisation.
       const personnalisable = groupe !== "Pilotage" && groupe !== "Compositions";
       if (onPersonnaliser && personnalisable) {
         const perso = document.createElement("button");
         perso.type = "button";
         perso.className = "tool-chip-perso";
         perso.textContent = "⚙";
-        perso.title = "Figer des paramètres de cet outil";
+        perso.title =
+          "Spécialiser cet outil pour cet agent : figer certains paramètres.";
         perso.addEventListener("click", (ev) => {
           ev.preventDefault();
           ev.stopPropagation();

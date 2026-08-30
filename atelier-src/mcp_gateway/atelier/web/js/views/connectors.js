@@ -571,21 +571,16 @@ function renderCompositionsService(state, actions) {
 
   const actionsBar = document.createElement("div");
   actionsBar.className = "agent-head-actions";
-  // Deux façons d'en fabriquer une, et elles ne servent pas la même chose :
-  // figer les paramètres d'un outil, ou enchaîner plusieurs appels.
-  const variante = document.createElement("button");
-  variante.type = "button";
-  variante.className = "ghost btn-sm";
-  variante.textContent = "Figer un outil";
-  variante.title = "Un seul appel, avec des paramètres déjà remplis.";
-  variante.addEventListener("click", () => actions.newComposition?.());
+  // Pas de « figer un outil » ici : spécialiser un outil se fait en
+  // choisissant les outils d'un agent, là où l'on sait pour qui on le
+  // spécialise. Le résultat vient s'ajouter à cette liste, mais l'endroit
+  // où on le fabrique n'est pas celui-ci.
   const neuf = document.createElement("button");
   neuf.type = "button";
   neuf.className = "primary btn-sm";
   neuf.textContent = "Nouvelle composition";
   neuf.title = "Un enchaînement d’appels, où une étape nourrit la suivante.";
   neuf.addEventListener("click", () => actions.ouvrirBuilder?.());
-  actionsBar.appendChild(variante);
   actionsBar.appendChild(neuf);
   head.appendChild(actionsBar);
   body.appendChild(head);
