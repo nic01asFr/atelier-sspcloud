@@ -22,15 +22,36 @@ FILES = [
     "web/js/state.js",
     "web/js/api.js",
     "web/js/ui/tool-picker.js",
+    "web/js/ui/tool-variant.js",
     "web/js/ui/modal.js",
+    "web/js/views/composer-mcp.js",
+    "web/js/controllers/composer-mcp.js",
     "api.py",
     "projects.py",
     "sessions.py",
     "gateway_tools.py",
+    "session_mcp.py",
+    "mcp_sync.py",
     "stdio_probe.py",
+    "mcp_endpoint.py",
+    "wikichat_ensure.py",
+    "wikichat_projects.py",
+    "pilote_overview.py",
+    "harness.py",
     "web/js/app.js",
     "web/css/app.css",
     "web/index.html",
+]
+
+# Notre version de wikichat (voir wikichat-atelier/README.md) : elle vit hors
+# de l'arbre du service, mais se deploie avec lui — sinon elle ne survivrait
+# pas a une recreation du pod.
+DEPOT = pathlib.Path(__file__).resolve().parent.parent
+HORS_ARBRE = [
+    (
+        DEPOT / "wikichat-atelier/src/pilote.mjs",
+        "/home/onyxia/work/wikichat/src/src/pilote.mjs",
+    ),
 ]
 
 
@@ -67,10 +88,12 @@ def text_result(r: dict) -> str:
 
 def main() -> None:
     rid = 1
-    for rel in FILES:
-        raw = (ROOT / rel).read_bytes()
+    cibles = [(ROOT / rel, f"{BASE}/{rel}") for rel in FILES]
+    cibles += [(src, dest) for src, dest in HORS_ARBRE]
+    for source, dest in cibles:
+        rel = source.name
+        raw = source.read_bytes()
         b64 = base64.b64encode(raw).decode("ascii")
-        dest = f"{BASE}/{rel}"
         chunk = 8000
         chunks = [b64[i : i + chunk] for i in range(0, len(b64), chunk)]
         r = mcp_call(

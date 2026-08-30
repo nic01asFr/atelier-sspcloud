@@ -24,5 +24,13 @@ async def build_pilote_overview(settings: AtelierSettings) -> dict[str, Any]:
             "paused": bool(daemon.get("paused")),
         },
         "agents": agents,
+        # Déclencheurs installés par la plateforme : ils n'apparaissent pas
+        # dans « agents » côté coordinateur, qui ne retient que les tâches
+        # planifiées. Ils agissent pourtant, d'où leur place à l'écran.
+        "system_agents": (
+            data.get("system_agents")
+            if isinstance(data.get("system_agents"), list)
+            else []
+        ),
         "wikichat_origin": settings.wikichat_url,
     }
