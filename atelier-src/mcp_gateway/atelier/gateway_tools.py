@@ -113,14 +113,31 @@ def _outils_compositions(request: Request) -> list[dict[str, str]]:
         promus = svc.promoted_tools()
     except Exception:  # noqa: BLE001 — une composition cassée ne doit rien bloquer
         return []
-    return [
-        {
-            "name": t["name"],
-            "short": t["name"].replace("composition_", ""),
+
+    # Le service distingue déjà une variante d'un enchaînement, et connaît
+    # son outil d'origine : on s'appuie dessus plutôt que de le redéduire.
+    meta: dict[str, dict] = {}
+    try:
+        for comp in svc.list_compositions("production"):
+            meta[comp.get("tool_name", "")] = comp
+    except Exception:  # noqa: BLE001
+        pass
+
+    sortie = []
+    for t in promus:
+        nom = t["name"]
+        court = nom.replace("composition_", "")
+        entree = {
+            "name": nom,
+            "short": court,
             "description": t.get("description") or "",
         }
-        for t in promus
-    ]
+        info = meta.get(nom) or {}
+        if info.get("variant"):
+            base = str(info.get("source_tool") or "").split("__")[-1]
+            entree["label"] = f"{court} — variante de {base}" if base else court
+        sortie.append(entree)
+    return sortie
 
 
 # Familles du coordinateur, dans le vocabulaire de l'Atelier.
@@ -163,6 +180,10 @@ FAMILLES_COORDINATION: dict[str, tuple[str, ...]] = {
     ),
 }
 
+FAMILLE_PAR_OUTIL: dict[str, str] = {
+    outil: famille for famille, outils in FAMILLES_COORDINATION.items() for outil in outils
+}
+
 # Libellés en langage Atelier. Le nom technique reste affiché en second :
 # c'est lui que l'agent recevra dans --allowedTools, le renommer ici ne
 # change que ce qu'on lit au moment de choisir.
@@ -180,10 +201,6 @@ LIBELLES_OUTILS: dict[str, str] = {
     "purge_registry": "Purger le registre des projets",
     "close_project": "Clôturer un projet",
     "scan_projects": "Recenser les projets de la machine",
-}
-
-FAMILLE_PAR_OUTIL: dict[str, str] = {
-    outil: famille for famille, outils in FAMILLES_COORDINATION.items() for outil in outils
 }
 
 
@@ -238,17 +255,30 @@ def build_tools_by_service(request: Request) -> dict[str, Any]:
             }
         )
 
-    # Les outils qui pilotent les compositions vont avec ce qu'ils pilotent :
-    # un même groupe rassemble ce qui fabrique et ce qui est fabriqué.
-    compositions = _meta(OUTILS_COMPOSITION) + _outils_compositions(request)
-    if compositions:
+    # Gérer les compositions et s'en servir sont deux choses : « lancer une
+    # composition » est un outil de pilotage, une composition promue est un
+    # outil à part entière.
+    gestion = _meta(OUTILS_COMPOSITION)
+    if gestion:
+        services.append(
+            {
+                "key": "meta:gestion-compositions",
+                "label": "Gérer les compositions",
+                "group": GROUPE_COMPOSITIONS,
+                "count": len(gestion),
+                "tools": gestion,
+            }
+        )
+
+    disponibles = _outils_compositions(request)
+    if disponibles:
         services.append(
             {
                 "key": "meta:compositions",
-                "label": "Compositions",
+                "label": "Compositions disponibles",
                 "group": GROUPE_COMPOSITIONS,
-                "count": len(compositions),
-                "tools": compositions,
+                "count": len(disponibles),
+                "tools": disponibles,
             }
         )
 

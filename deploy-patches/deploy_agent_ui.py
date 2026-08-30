@@ -22,6 +22,7 @@ FILES = [
     "web/js/state.js",
     "web/js/api.js",
     "web/js/ui/tool-picker.js",
+    "web/js/ui/modal.js",
     "api.py",
     "projects.py",
     "sessions.py",

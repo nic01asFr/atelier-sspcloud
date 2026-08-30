@@ -367,6 +367,15 @@ export function createAgentActions(ctx) {
    * suit le même chemin (créer, valider, promouvoir).
    */
   async function personnaliserOutil(outil) {
+    // Les suggestions viennent de l'état : si la liste des agents n'a pas
+    // encore été chargée, le champ retomberait en saisie libre.
+    if (!state.piloteOverview) {
+      try {
+        await refreshPiloteOverview(state);
+      } catch {
+        /* on proposera la saisie libre */
+      }
+    }
     let infos;
     try {
       infos = await api.mcpToolSchema(state.token, outil.name);
@@ -377,23 +386,90 @@ export function createAgentActions(ctx) {
     }
     const props = infos.schema?.properties || {};
     const requis = new Set(infos.schema?.required || []);
+
+    // Ce que l'Atelier sait déjà : inutile de faire taper un identifiant
+    // d'agent ou un nom de projet qu'il a sous la main.
+    const suggestions = {
+      projets: (state.projects || [])
+        .filter((p) => p.kind !== "assistant")
+        .map((p) => ({ value: p.slug, label: p.title || p.slug })),
+      chemins: (state.projects || []).map((p) => ({ value: p.path, label: p.title || p.slug })),
+      agents: (state.piloteOverview?.agents || []).map((a) => ({
+        value: a.id,
+        label: `${a.name || a.id} (${a.id})`,
+      })),
+    };
+
+    /** Contrôle adapté à un paramètre : liste fermée, nombre, oui/non, suggestions. */
+    const champPour = (cle, def) => {
+      const base = {
+        name: cle,
+        label: cle + (requis.has(cle) ? " *" : ""),
+        hint: def?.description ? String(def.description).slice(0, 120) : "",
+        full: true,
+      };
+      if (Array.isArray(def?.enum) && def.enum.length) {
+        return {
+          ...base,
+          type: "select",
+          options: [{ value: "", label: "— laisser libre —" }].concat(
+            def.enum.map((v) => ({ value: String(v), label: String(v) }))
+          ),
+        };
+      }
+      if (def?.type === "boolean") {
+        return {
+          ...base,
+          type: "select",
+          options: [
+            { value: "", label: "— laisser libre —" },
+            { value: "true", label: "oui" },
+            { value: "false", label: "non" },
+          ],
+        };
+      }
+      if (def?.type === "number" || def?.type === "integer") {
+        return { ...base, type: "number", placeholder: "nombre" };
+      }
+      if (/^(project|current_project)$/.test(cle)) {
+        return { ...base, datalist: suggestions.projets, placeholder: "projet" };
+      }
+      if (/^(repo_path|repo)$/.test(cle)) {
+        return { ...base, datalist: suggestions.chemins, placeholder: "dossier du projet" };
+      }
+      if (cle === "id" && /trigger/.test(infos.short || "")) {
+        return { ...base, datalist: suggestions.agents, placeholder: "agent" };
+      }
+      if (def?.type === "array") {
+        return { ...base, placeholder: "valeurs séparées par des virgules" };
+      }
+      return { ...base, placeholder: cle };
+    };
+
     const champs = [
       { name: "__nom", label: "Nom affiché", placeholder: "Ex. Mémo de projet", required: true },
       { name: "__desc", label: "Description (optionnel)", placeholder: "Ce que fait cette variante" },
       { type: "section", label: "Paramètres à figer" },
+      ...Object.entries(props).map(([cle, def]) => champPour(cle, def)),
     ];
-    for (const [cle, def] of Object.entries(props)) {
-      champs.push({
-        name: cle,
-        label: cle + (requis.has(cle) ? " *" : ""),
-        placeholder: def?.description ? String(def.description).slice(0, 60) : cle,
-        hint: def?.description ? String(def.description).slice(0, 120) : "",
-        full: true,
-      });
-    }
     if (!Object.keys(props).length) {
       champs.push({ type: "section", label: "Cet outil ne prend aucun paramètre." });
     }
+
+    /** Le JSON attend des types, pas des chaînes. */
+    const valeurTypee = (cle, brut) => {
+      const def = props[cle] || {};
+      if (def.type === "boolean") return brut === "true";
+      if (def.type === "number" || def.type === "integer") {
+        const n = Number(brut);
+        return Number.isFinite(n) ? n : undefined;
+      }
+      if (def.type === "array") {
+        const items = brut.split(",").map((v) => v.trim()).filter(Boolean);
+        return items.length ? items : undefined;
+      }
+      return brut;
+    };
 
     openModal(state, {
       title: "Personnaliser un outil",
@@ -407,17 +483,25 @@ export function createAgentActions(ctx) {
         const parameters = {};
         for (const cle of Object.keys(props)) {
           const v = String(data[cle] ?? "").trim();
-          if (v) parameters[cle] = v;
+          if (!v) continue;
+          const valeur = valeurTypee(cle, v);
+          if (valeur !== undefined) parameters[cle] = valeur;
         }
         if (!Object.keys(parameters).length) {
           throw new Error("Figez au moins un paramètre, sinon la variante n’apporte rien.");
         }
-        await api.createToolVariant(state.token, {
+        const creee = await api.createToolVariant(state.token, {
           tool: outil.name,
           name: nom,
           description: String(data.__desc || "").trim(),
           parameters,
         });
+        // On vient de la fabriquer depuis ce formulaire : la cocher évite
+        // de la créer puis d'oublier de s'en servir.
+        if (creee?.tool) {
+          const form = state.agentCreateForm || {};
+          form.toolSelection?.add(creee.tool);
+        }
         // La variante est promue : on rafraîchit le pool pour la voir.
         try {
           await refreshMcpOverview(state);

@@ -734,7 +734,16 @@ def build_app(
                     "paramètres refusés : " + str(verdict.get("errors") or verdict),
                 )
             promu = svc.promote(comp_id)
-            return {"id": comp_id, "composition": promu, "validation": verdict}
+            from mcp_gateway.compositions.executor import tool_name_for_composition
+
+            return {
+                "id": comp_id,
+                # Nom sous lequel la variante devient appelable : l'appelant
+                # en a besoin pour la cocher aussitôt.
+                "tool": tool_name_for_composition(slug),
+                "composition": promu,
+                "validation": verdict,
+            }
         except HTTPException:
             raise
         except KeyError as exc:

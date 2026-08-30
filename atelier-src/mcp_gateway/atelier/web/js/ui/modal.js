@@ -106,6 +106,20 @@ export function openModal(state, { title, lead, size, submitLabel, fields, onSub
     } else {
       input = document.createElement("input");
       input.type = field.type || "text";
+      // Liste de suggestions : on propose ce qui existe sans interdire de
+      // saisir autre chose — taper un identifiant de mémoire n'a pas de sens.
+      if (Array.isArray(field.datalist) && field.datalist.length) {
+        const dl = document.createElement("datalist");
+        dl.id = `modal-list-${field.name}`;
+        for (const opt of field.datalist) {
+          const o = document.createElement("option");
+          o.value = String(opt.value ?? opt);
+          if (opt.label && opt.label !== opt.value) o.label = opt.label;
+          dl.appendChild(o);
+        }
+        input.setAttribute("list", dl.id);
+        wrap.appendChild(dl);
+      }
     }
     input.id = `modal-field-${field.name}`;
     input.name = field.name;
