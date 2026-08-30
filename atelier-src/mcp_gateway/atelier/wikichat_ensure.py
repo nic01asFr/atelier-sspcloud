@@ -57,6 +57,13 @@ def ensure_wikichat_mcp_connector(settings: AtelierSettings) -> dict[str, Any]:
     from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
 
     url = (settings.wikichat_url or "").strip() or "http://127.0.0.1:3777/sse"
+    # Le coordinateur veut savoir à qui il parle. Sans identité, il répond
+    # bien à `tools/list` — d'où un connecteur qui paraît sain — mais laisse
+    # les appels sans réponse : soixante secondes, puis un délai dépassé.
+    # C'est par cette voie que passent gateway_call_tool et les compositions,
+    # donc rien de ce qui touche wikichat ne fonctionnait au-delà de la liste.
+    if "agent=" not in url:
+        url += ("&" if "?" in url else "?") + "agent=atelier"
     raw: dict[str, Any] = {"type": "sse", "url": url, "enabled": True}
     conn = connect(settings.gateway_db_path)
     try:

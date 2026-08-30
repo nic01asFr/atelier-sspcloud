@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp_gateway.atelier.config import AtelierSettings
+from mcp_gateway.atelier.gateway_tools import nature_service
 from mcp_gateway.atelier.mcp_sync import apply_mcp_overlay, compute_binding_merged
 
 
@@ -34,6 +35,12 @@ def build_session_mcp_payload(
     for name in sorted(binding.keys()):
         pool_key = f"registry:{name}"
         health = upstream.get(pool_key) or upstream.get(name) or ""
+        config = binding.get(name)
+        nature = nature_service(
+            config if isinstance(config, dict) else {},
+            settings.wikichat_url,
+            nom=name,
+        )
         connectors.append(
             {
                 "id": name,
@@ -41,6 +48,9 @@ def build_session_mcp_payload(
                 "bound": True,
                 "active": name in effective,
                 "health": health,
+                "group": nature["group"],
+                "system": nature["system"],
+                "scope": nature["scope"],
             }
         )
     return {

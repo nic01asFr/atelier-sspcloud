@@ -1,19 +1,34 @@
-# Catalogue minimal pod Atelier — services org ajoutés via sync ultérieur.
+# Catalogue de l'Atelier.
+#
+# Le bundle garde l'identifiant « tout » : c'est lui qui met l'ensemble des
+# connecteurs du pod dans le périmètre de recherche. Ce qui change, c'est ce
+# qu'on en annonce — `discover` n'expose que les méta-outils et les
+# compositions. Republier les outils de wikichat ou de datagouv n'aurait pas
+# de sens ici : ces serveurs sont déjà branchés directement au projet, et un
+# agent les verrait deux fois.
 version: 1
 enforce_envelope: false
 default_bundle: tout
 mcp_default_bundle: tout
 bundles:
   tout:
-    label: Connecteurs du pod
-    description: Connecteurs personnels et méta-outils gateway.
+    label: Atelier
+    description: Chercher et appeler un outil, fabriquer et lancer des compositions.
+    mcp_instructions: >-
+      Cette passerelle est celle de l'Atelier. Elle n'annonce pas les outils
+      des connecteurs un par un : utilisez gateway_find_tools pour trouver ce
+      dont vous avez besoin, puis gateway_call_tool pour l'appeler. Les
+      compositions promues sont exposées directement, sous composition_*.
     audience: catalog
     servers: []
     registry_servers: []
+    tool_exposure: discover
     meta_tools:
-      - gateway_status
-      - gateway_list_bundles
-      - gateway_use_bundle
       - gateway_find_tools
       - gateway_call_tool
+      - gateway_list_compositions
+      - gateway_save_composition
+      - gateway_run_composition
+      - gateway_composition_run_status
+      - gateway_resume_composition
 servers: {}

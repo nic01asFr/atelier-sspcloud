@@ -135,6 +135,15 @@ class ClaudeHarness(Harness):
         except OSError:
             pass
         env["PATH"] = str(self.settings.work_dir / "bin") + os.pathsep + env.get("PATH", "")
+        # Clé de la porte MCP de l'Atelier. Elle passe par l'environnement du
+        # processus plutôt que par le `.mcp.json` : le fichier vit dans le
+        # dossier du projet, qu'on partage et qu'on versionne.
+        try:
+            cle = self.settings.owner_key_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            cle = ""
+        if cle:
+            env["ATELIER_MCP_KEY"] = cle
         return env
 
     def _resolve_claude_bin(self) -> Path:

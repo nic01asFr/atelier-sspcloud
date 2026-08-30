@@ -20,6 +20,7 @@ from mcp_gateway.atelier.events import AtelierEvent
 from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
 from mcp_gateway.atelier.gateway_overview import build_mcp_overview
 from mcp_gateway.atelier.gateway_runtime import gateway_shutdown, gateway_startup
+from mcp_gateway.atelier.mcp_endpoint import register_mcp_endpoint
 from mcp_gateway.atelier.harness import ClaudeHarness, FakeHarness, Harness
 from mcp_gateway.atelier.mcp_registry import mask_server_entry
 from mcp_gateway.atelier.mcp_sync import sync_summary
@@ -73,6 +74,10 @@ class CreateProjectBody(BaseModel):
 class PatchProjectBody(BaseModel):
     title: str | None = None
     archived: bool | None = None
+
+
+class ProjectMcpBody(BaseModel):
+    servers: list[str] = []
 
 
 class SendMessageBody(BaseModel):
@@ -137,6 +142,9 @@ class AgentCreateBody(BaseModel):
     tools: list[str] = Field(default_factory=list)
     profile_kind: str = ""
     profile_id: str = ""
+    # "platform" pour un agent qui entretient l'Atelier lui-même ; vide pour
+    # un agent de travail. Sert au classement dans la liste.
+    kind: str = ""
 
 
 class AgentDecideBody(BaseModel):
@@ -316,7 +324,8 @@ def build_app(
         return {"projects": [p.to_dict() for p in items]}
 
     @router.post("/projects")
-    def create_project(
+    async def create_project(
+        request: Request,
         body: CreateProjectBody,
         _owner: str = Depends(require_owner),
     ) -> dict[str, Any]:
@@ -325,7 +334,25 @@ def build_app(
             rec = projects.create(body.slug, kind=kind, title=body.title)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
+        # Un projet de l'Atelier est un projet du réseau : le coordinateur
+        # doit le connaître, sinon le suivi, l'audit et la clôture porteraient
+        # sur un ensemble vide. L'échec ne remonte pas — créer un projet ne
+        # dépend pas de la disponibilité du coordinateur.
+        if rec.kind != "assistant":
+            from mcp_gateway.atelier.wikichat_projects import declarer_projet
+
+            await declarer_projet(request.app, rec)
         return rec.to_dict()
+
+    @router.post("/projects/sync-wikichat")
+    async def sync_projects_wikichat(
+        request: Request,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Rattrape les projets créés avant que l'alignement existe."""
+        from mcp_gateway.atelier.wikichat_projects import synchroniser
+
+        return await synchroniser(request.app, projects.list_projects())
 
     @router.patch("/projects/{slug}")
     def patch_project(
@@ -340,6 +367,38 @@ def build_app(
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         return rec.to_dict()
+
+    def _project_path(slug: str) -> Path:
+        for rec in projects.list_projects(include_archived=True):
+            if rec.slug == slug:
+                return Path(rec.path)
+        raise HTTPException(404, "project not found")
+
+    @router.get("/projects/{slug}/mcp")
+    def get_project_mcp(
+        slug: str,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        from mcp_gateway.atelier.mcp_sync import project_binding_state
+
+        chemin = _project_path(slug)
+        return {
+            "slug": slug,
+            "inherits_pool": not (chemin / ".mcp.json").is_file(),
+            "connectors": project_binding_state(settings, chemin),
+        }
+
+    @router.put("/projects/{slug}/mcp")
+    def put_project_mcp(
+        slug: str,
+        body: ProjectMcpBody,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        from mcp_gateway.atelier.mcp_sync import write_project_binding
+
+        chemin = _project_path(slug)
+        etat = write_project_binding(settings, chemin, list(body.servers))
+        return {"slug": slug, "inherits_pool": False, "connectors": etat}
 
     @router.delete("/projects/{slug}")
     def delete_project(
@@ -802,6 +861,25 @@ def build_app(
                       .encode("ascii", "ignore").decode("ascii").lower()).strip("_")
         if not slug:
             slug = re.sub(r"[^a-z0-9]+", "_", body.tool.split("__")[-1].lower()).strip("_")
+        # Ce qu'on ne fige pas doit rester demandable. Sans cela, une variante
+        # qui ne fixe qu'une partie des paramètres requis part en production
+        # et échoue à chaque appel : l'outil réclame un argument que rien ne
+        # fournit. Le schéma d'entrée de la composition se déduit des
+        # ${input.x}, donc c'est ici qu'on les écrit.
+        from mcp_gateway.atelier.gateway_tools import tool_schema
+
+        parametres = dict(body.parameters or {})
+        try:
+            infos = tool_schema(request, body.tool)
+            requis = [
+                str(c)
+                for c in (infos.get("schema") or {}).get("required") or []
+                if str(c) not in parametres
+            ]
+        except Exception:  # noqa: BLE001 — sans schéma, on fige ce qui est donné
+            requis = []
+        for cle in requis:
+            parametres[cle] = "${input." + cle + "}"
         try:
             cree = svc.create_from_steps(
                 nom=slug,
@@ -810,7 +888,7 @@ def build_app(
                     {
                         "tool": body.tool,
                         "label": body.name,
-                        "parameters": body.parameters,
+                        "parameters": parametres,
                     }
                 ],
             )
@@ -1227,6 +1305,11 @@ def build_app(
         return await pilote_delete(settings, f"/pilote/api/agent/{agent_id}")
 
     app.include_router(router)
+
+    # La porte MCP de l'Atelier : ce que l'interface sait faire devient
+    # appelable par un agent (voir mcp_endpoint).
+    if not use_fake:
+        register_mcp_endpoint(app, auth)
 
     register_vscode_proxy(app, settings, require_owner_nav)
 

@@ -15,6 +15,9 @@ log = logging.getLogger("atelier.mcp_sync")
 
 WorkspaceKind = Literal["assistant", "code"]
 
+# La passerelle de l'Atelier, telle qu'un projet la désigne.
+SERVICE_ATELIER = "atelier"
+
 
 def _load_json_object(path: Path) -> dict[str, Any] | None:
     if not path.is_file():
@@ -117,11 +120,18 @@ def merge_session_mcp_servers(
         merged = dict(pool_enabled)
     else:
         merged: dict[str, dict[str, Any]] = {}
+        declarations = binding.get("mcpServers")
+        declarations = declarations if isinstance(declarations, dict) else {}
         for name, enabled in _binding_selection(binding).items():
             if not enabled:
                 continue
             if name in pool_enabled:
                 merged[name] = pool_enabled[name]
+            elif name == SERVICE_ATELIER and isinstance(declarations.get(name), dict):
+                # L'Atelier ne figure pas dans son propre pool : sa
+                # déclaration fait foi, sinon il serait filtré comme un
+                # serveur inconnu et le projet perdrait ce qu'il a choisi.
+                merged[name] = declarations[name]
             else:
                 log.debug("binding server %s absent du pool enabled — ignoré", name)
 
@@ -133,6 +143,105 @@ def merge_session_mcp_servers(
                 del merged[name]
 
     return merged
+
+
+def declaration_atelier(settings: AtelierSettings) -> dict[str, Any]:
+    """Comment un agent joint la passerelle de l'Atelier.
+
+    Elle n'est pas dans le pool : l'y mettre ferait sonder l'Atelier par
+    lui-même au démarrage. Elle est proposée directement au binding d'un
+    projet, comme un service que la maison fournit.
+
+    La clé passe par l'environnement du processus agent, jamais par ce
+    fichier — il vit dans le dossier du projet.
+    """
+    return {
+        "type": "http",
+        "url": f"http://127.0.0.1:{settings.port}/mcp",
+        "headers": {"Authorization": "Bearer ${ATELIER_MCP_KEY}"},
+    }
+
+
+def project_binding_state(
+    settings: AtelierSettings,
+    cwd: Path,
+) -> list[dict[str, Any]]:
+    """Ce que le pool propose au projet, et ce que le projet en retient.
+
+    Sans fichier de binding, un projet hérite du pool entier : c'est
+    l'absence de choix, pas un choix vide. On l'expose tel quel plutôt que
+    d'écrire un fichier que personne n'a demandé.
+    """
+    pool = _pool_enabled(settings)
+    binding = _load_json_object(cwd / ".mcp.json")
+    selection = _binding_selection(binding) if binding is not None else {}
+    herite = binding is None
+    from mcp_gateway.atelier.gateway_tools import nature_service
+
+    etat: list[dict[str, Any]] = []
+    for name in sorted(pool.keys()):
+        nature = nature_service(pool[name], settings.wikichat_url, nom=name)
+        etat.append(
+            {
+                "id": name,
+                "name": nature["group"] if nature["system"] else name,
+                "id_technique": name,
+                "active": True if herite else selection.get(name, False),
+                "group": nature["group"],
+                "system": nature["system"],
+                "scope": nature["scope"],
+            }
+        )
+    # La passerelle de l'Atelier n'est pas dans le pool, mais elle se propose
+    # comme les autres : sans elle, un agent ne peut ni chercher un outil ni
+    # lancer une composition.
+    etat.insert(
+        0,
+        {
+            "id": SERVICE_ATELIER,
+            "name": "Accès aux outils",
+            "id_technique": SERVICE_ATELIER,
+            "active": True if herite else selection.get(SERVICE_ATELIER, False),
+            "group": "Accès aux outils",
+            "system": True,
+            "scope": [],
+        },
+    )
+    return etat
+
+
+def write_project_binding(
+    settings: AtelierSettings,
+    cwd: Path,
+    actifs: list[str],
+) -> list[dict[str, Any]]:
+    """Fixe les services d'un projet, en conservant leur déclaration du pool.
+
+    On recopie la config plutôt qu'un simple nom : le fichier reste lisible
+    par Claude Code seul, sans l'Atelier pour l'interpréter.
+    """
+    pool = _pool_enabled(settings)
+    chemin = cwd / ".mcp.json"
+    existant = _load_json_object(chemin) or {}
+    deja = existant.get("mcpServers")
+    deja = deja if isinstance(deja, dict) else {}
+    # La déclaration du projet prime sur celle du pool : elle porte souvent
+    # ce que le pool ignore — un jeton, un helper d'en-têtes, une variable
+    # d'environnement. La reprendre du pool reviendrait à la casser.
+    retenus: dict[str, Any] = {}
+    for nom in actifs:
+        if nom == SERVICE_ATELIER:
+            # Toujours reconstruite : son adresse suit le port du service.
+            retenus[nom] = declaration_atelier(settings)
+        elif nom in deja and isinstance(deja[nom], dict):
+            config = dict(deja[nom])
+            config.pop("enabled", None)
+            retenus[nom] = config
+        elif nom in pool:
+            retenus[nom] = pool[nom]
+    existant["mcpServers"] = retenus
+    _atomic_write_json(chemin, existant)
+    return project_binding_state(settings, cwd)
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:

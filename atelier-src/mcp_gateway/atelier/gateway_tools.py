@@ -70,6 +70,30 @@ def _repertoires_autorises(config: dict[str, Any]) -> list[str]:
     ]
 
 
+def nature_service(
+    config: dict[str, Any], wikichat_url: str, *, nom: str = ""
+) -> dict[str, Any]:
+    """Ce qu'est un service, indépendamment de l'écran qui le regarde.
+
+    Deux services n'ont pas le même statut. Le pilote et un serveur de
+    fichiers sont l'infrastructure de l'Atelier : un agent en dispose du seul
+    fait d'exister, comme il dispose de son dossier de travail. Les autres
+    sont des branchements qu'on a faits et qu'on peut défaire — ce sont
+    ceux-là, et eux seuls, qu'on propose de cocher.
+    """
+    if nom == "atelier":
+        # La maison elle-même : elle porte la recherche d'outils et les
+        # compositions, et ne se retire pas comme un connecteur qu'on aurait
+        # branché.
+        return {"group": GROUPE_ACCES, "system": True, "scope": []}
+    if _est_le_pilote(config, wikichat_url):
+        return {"group": GROUPE_COORDINATION, "system": True, "scope": []}
+    repertoires = _repertoires_autorises(config)
+    if repertoires:
+        return {"group": GROUPE_FICHIERS, "system": True, "scope": repertoires}
+    return {"group": GROUPE_POOL, "system": False, "scope": []}
+
+
 # Ce qu'un agent peut réellement employer parmi les méta-outils.
 #
 # Les outils de profils en sont exclus : le périmètre d'un agent est fixé à
@@ -155,14 +179,16 @@ FAMILLES_COORDINATION: dict[str, tuple[str, ...]] = {
         "create_channel", "share_artifact",
     ),
     "Mémoire et savoir partagé": ("remember", "recall", "forget", "search_knowledge"),
+    # Les projets de l'Atelier sont ceux du coordinateur : ils y sont
+    # déclarés à leur création. Ces outils portent donc sur les mêmes
+    # dossiers que la page Code, et non sur un registre parallèle.
     "Suivi de projet": (
         "declare_project", "list_projects", "set_project_meta",
-        "add_project_note", "audit_project", "audit_all_projects",
-        "list_project_agents",
+        "add_project_note", "audit_project", "list_project_agents",
     ),
     "Tâches et idées": (
         "claim_task", "release_task", "add_idea", "get_idea", "list_ideas",
-        "update_idea", "harmonize_ideas",
+        "update_idea",
     ),
     # Un agent peut en piloter d'autres : c'est un usage légitime, mais
     # « créer » et « supprimer » ne doivent pas se cocher du même geste.
@@ -170,13 +196,18 @@ FAMILLES_COORDINATION: dict[str, tuple[str, ...]] = {
         "register_trigger", "set_trigger_enabled", "fire_trigger", "list_triggers",
         "spawn_session", "list_spawned", "poll_ticket", "respawn_project_agents",
     ),
-    "Arrêter et supprimer": ("delete_trigger", "kill_spawn"),
+    "Arrêter et supprimer": ("delete_trigger", "kill_spawn", "purge_registry"),
     "Automatisations": (
         "register_routine", "run_routine", "list_routines", "delete_routine",
     ),
-    "Maintenance du registre": (
-        "close_project", "scan_projects", "purge_registry",
-        "run_cartography", "run_clustering",
+    # Le savoir transverse ne se produit pas tout seul : recensement,
+    # cartographie, regroupement, audit d'ensemble, capitalisation à la
+    # clôture. Ce sont des passes de fond, longues et rarement déclenchées à
+    # la main — leur place est chez un agent d'entretien, pas au milieu d'un
+    # échange.
+    "Entretien du savoir": (
+        "scan_projects", "run_cartography", "run_clustering",
+        "audit_all_projects", "harmonize_ideas", "close_project",
     ),
 }
 
@@ -322,14 +353,20 @@ def build_tools_by_service(request: Request) -> dict[str, Any]:
                     }
                 )
             continue
+        nom = key.replace("registry:", "")
         if chemins:
+            # Un service de fichiers est seul de sa famille : répéter son nom
+            # technique sous l'intitulé du groupe n'apprend rien. Ce qui
+            # compte, c'est jusqu'où il ouvre.
             groupe = GROUPE_FICHIERS
+            libelle = "Lire et écrire des fichiers"
         else:
             groupe = GROUPE_POOL
+            libelle = nom
         services.append(
             {
                 "key": key,
-                "label": key.replace("registry:", ""),
+                "label": libelle,
                 "group": groupe,
                 "scope": chemins,
                 "count": len(tools),
