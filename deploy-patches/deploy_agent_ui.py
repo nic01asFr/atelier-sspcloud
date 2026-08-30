@@ -41,6 +41,7 @@ FILES = [
     "enrichissements.py",
     "ui_settings.py",
     "vscode_proxy.py",
+    "vscode_handoff.py",
     "decrire_connecteur.py",
     "llm.py",
     "pilote_overview.py",
@@ -58,6 +59,10 @@ HORS_ARBRE = [
     (
         DEPOT / "wikichat-atelier/src/pilote.mjs",
         "/home/onyxia/work/wikichat/src/src/pilote.mjs",
+    ),
+    (
+        DEPOT / "atelier-src/bin/atelier-vscode-handoff.sh",
+        "/home/onyxia/work/bin/atelier-vscode-handoff.sh",
     ),
     (
         DEPOT / "atelier-src/mcp_gateway/upstream/transports.py",

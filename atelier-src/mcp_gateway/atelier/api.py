@@ -1432,7 +1432,16 @@ def build_app(
         from mcp_gateway.atelier.pilote_client import pilote_post
 
         payload = body.model_dump(exclude_none=True)
-        return await pilote_post(settings, "/pilote/api/agent", payload)
+        cree = await pilote_post(settings, "/pilote/api/agent", payload)
+        # Le dossier d'un agent n'est pas un projet : on le marque pour qu'il
+        # cesse d'encombrer la liste de Code, où l'on n'ouvrira jamais de
+        # conversation dessus.
+        if body.dir:
+            try:
+                projects.marquer_dossier_agent(Path(body.dir), body.name)
+            except OSError:
+                pass
+        return cree
 
     @router.get("/agent/tools")
     async def agent_tools(_owner: str = Depends(require_owner)) -> dict[str, Any]:

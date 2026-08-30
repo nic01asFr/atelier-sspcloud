@@ -14,6 +14,13 @@ WorkspaceKind = Literal["assistant", "code"]
 
 _SKIP_DIRS = frozenset({".git", ".wikichat", ".claude", ".vscode", "node_modules"})
 
+# Un agent travaille dans un dossier à lui, sous la même racine que les
+# projets. Ce n'en est pas un pour autant : on n'y ouvre pas de conversation,
+# et le voir dans la liste de Code laisse croire à un travail en cours. Le
+# marqueur est un fichier, donc visible et réversible — l'effacer suffit à
+# faire réapparaître le dossier.
+MARQUEUR_AGENT = ".atelier-agent"
+
 
 @dataclass
 class ProjectRecord:
@@ -90,6 +97,8 @@ class ProjectStore:
                 if not child.is_dir() or child.name.startswith("."):
                     continue
                 if child.name in _SKIP_DIRS:
+                    continue
+                if (child / MARQUEUR_AGENT).is_file():
                     continue
                 slug = child.name
                 if slug in seen:
@@ -197,6 +206,32 @@ class ProjectStore:
             created_at=str(entry.get("created_at") or ""),
             updated_at=str(entry.get("updated_at") or ""),
         )
+
+    def marquer_dossier_agent(self, chemin: Path, agent: str = "") -> bool:
+        """Signale qu'un dossier sert de plan de travail à un agent.
+
+        Retourne False si le dossier n'est pas sous la racine des projets :
+        un agent peut très bien travailler ailleurs, il n'y a alors rien à
+        marquer.
+        """
+        try:
+            chemin = chemin.resolve()
+            racine = self.settings.projects_dir.resolve()
+            chemin.relative_to(racine)
+        except (OSError, ValueError):
+            return False
+        if chemin == racine or not chemin.is_dir():
+            return False
+        lignes = [
+            f"Dossier de travail de l'agent {agent}.",
+            "Tenu par l'Atelier : ce dossier n'apparaît pas dans la liste des "
+            "projets de Code.",
+            "",
+        ]
+        (chemin / MARQUEUR_AGENT).write_text(
+            "\n".join(lignes), encoding="utf-8"
+        )
+        return True
 
     def is_empty(self, slug: str) -> bool:
         """Vrai si le dossier du projet ne contient rien."""
