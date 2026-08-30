@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from urllib.parse import quote
 from typing import Any, Literal
 
 from mcp_gateway.db import connect
@@ -125,7 +126,16 @@ def merge_session_mcp_servers(
         for name, enabled in _binding_selection(binding).items():
             if not enabled:
                 continue
-            if name in pool_enabled:
+            if isinstance(declarations.get(name), dict) and declarations[name]:
+                # Le projet a sa propre déclaration : elle prime. Elle porte
+                # ce que le pool ignore — l'identité de la session dans
+                # l'adresse, un helper d'en-têtes — et le pool, lui, ne sert
+                # ici qu'à dire ce qui est autorisé. Les confondre faisait
+                # parler toutes les conversations sous un même nom.
+                config = dict(declarations[name])
+                config.pop("enabled", None)
+                merged[name] = config
+            elif name in pool_enabled:
                 merged[name] = pool_enabled[name]
             elif name == SERVICE_ATELIER and isinstance(declarations.get(name), dict):
                 # L'Atelier ne figure pas dans son propre pool : sa
@@ -160,6 +170,54 @@ def declaration_atelier(settings: AtelierSettings) -> dict[str, Any]:
         "url": f"http://127.0.0.1:{settings.port}/mcp",
         "headers": {"Authorization": "Bearer ${ATELIER_MCP_KEY}"},
     }
+
+
+def _avec_identite(config: dict[str, Any], nom: str, wikichat_url: str) -> dict[str, Any]:
+    """Inscrit l'identité de la session dans l'adresse du coordinateur.
+
+    Le fichier de projet porte `?agent=${WIKICHAT_AGENT:-}`, à charge pour le
+    client d'y substituer la variable. On ne s'y fie pas : le fichier
+    effectif est reconstruit à chaque tour et nous connaissons alors le nom.
+    L'écrire résolu enlève une dépendance à un détail d'implémentation, et
+    un agent qui se présente sans nom perd sa mémoire et son courrier.
+    """
+    if not nom:
+        return config
+    url = str(config.get("url") or "")
+    if not url or not _est_le_coordinateur(url, wikichat_url):
+        return config
+    base, _, requete = url.partition("?")
+    garde = [
+        p
+        for p in requete.split("&")
+        if p and not p.startswith("agent=")
+    ]
+    garde.insert(0, f"agent={quote(nom, safe='')}")
+    sortie = dict(config)
+    sortie["url"] = base + "?" + "&".join(garde)
+    return sortie
+
+
+# La même machine s'écrit de plusieurs façons. Comparer les adresses sans le
+# savoir fait manquer une correspondance pourtant évidente : le binding d'un
+# projet dit « localhost », la configuration du service dit « 127.0.0.1 ».
+_HOTES_LOCAUX = {"localhost", "127.0.0.1", "[::1]", "::1", "0.0.0.0"}
+
+
+def _hote_normalise(url: str) -> str:
+    autorite = url.split("://", 1)[-1].split("/", 1)[0]
+    hote, _, port = autorite.rpartition(":")
+    if not hote:
+        hote, port = autorite, ""
+    if hote.lower() in _HOTES_LOCAUX:
+        hote = "local"
+    return f"{hote.lower()}:{port}"
+
+
+def _est_le_coordinateur(url: str, wikichat_url: str) -> bool:
+    if not wikichat_url or not url:
+        return False
+    return _hote_normalise(url) == _hote_normalise(wikichat_url)
 
 
 def project_binding_state(
@@ -267,10 +325,16 @@ def materialize_session_mcp(
     kind: WorkspaceKind,
     cwd: Path,
     mcp_overlay: dict[str, Any] | None = None,
+    agent_name: str = "",
 ) -> Path:
     """Merge binding + overlay → `effective/<session_id>.json`."""
     binding_merged = compute_binding_merged(settings, kind=kind, cwd=cwd)
     merged = apply_mcp_overlay(binding_merged, mcp_overlay)
+    if agent_name:
+        merged = {
+            nom: _avec_identite(cfg, agent_name, settings.wikichat_url)
+            for nom, cfg in merged.items()
+        }
     cfg_path = settings.mcp_effective_dir / f"{session_id}.json"
     _atomic_write_json(cfg_path, {"mcpServers": merged})
     log.info(

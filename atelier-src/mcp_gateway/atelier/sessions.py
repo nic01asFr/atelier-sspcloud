@@ -363,6 +363,18 @@ class SessionStore:
 
         return {"updated": updated, "count": len(updated)}
 
+    def _nom_wikichat(self, rec: SessionRecord) -> str:
+        """Nom sous lequel une conversation se présente au coordinateur.
+
+        Le projet en préfixe pour qu'on sache d'où vient le message, un
+        fragment de l'identifiant pour distinguer deux fils ouverts sur le
+        même dossier. La mémoire du projet, elle, ne dépend pas de ce nom :
+        le coordinateur rattache une session à son canal-projet d'après son
+        dossier de travail.
+        """
+        slug = (rec.slug or "atelier").strip() or "atelier"
+        return f"{slug}-{rec.session_id[:6]}"
+
     def _claude_cli_id(self, rec: SessionRecord) -> str:
         """ID passé à `claude --resume` / `--session-id` (peut ≠ session_id Atelier)."""
         return (rec.claude_session_id or rec.session_id).strip()
@@ -432,6 +444,7 @@ class SessionStore:
                 kind=rec.kind,
                 cwd=Path(rec.cwd),
                 mcp_overlay=rec.mcp_overlay or None,
+                agent_name=self._nom_wikichat(rec),
             )
         except OSError as exc:
             rec.cause = f"mcp_materialize: {exc}"
@@ -447,6 +460,7 @@ class SessionStore:
                 log_path=Path(rec.log_path),
                 timeout_s=self.settings.turn_timeout_s,
                 mcp_config_path=mcp_config_path,
+                agent_name=self._nom_wikichat(rec),
             )
         except Exception as exc:  # noqa: BLE001 — surface cause to API
             rec.state = "failed"

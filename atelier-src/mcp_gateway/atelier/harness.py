@@ -44,6 +44,7 @@ class Harness(ABC):
         timeout_s: int,
         claude_session_id: str | None = None,
         mcp_config_path: Path | None = None,
+        agent_name: str = "",
     ) -> TurnResult: ...
 
     @abstractmethod
@@ -70,6 +71,7 @@ class FakeHarness(Harness):
         timeout_s: int,
         claude_session_id: str | None = None,
         mcp_config_path: Path | None = None,
+        agent_name: str = "",
     ) -> TurnResult:
         self._running[session_id] = True
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,7 +126,7 @@ class ClaudeHarness(Harness):
         self.settings = settings
         self._procs: dict[str, subprocess.Popen[Any]] = {}
 
-    def _env(self) -> dict[str, str]:
+    def _env(self, agent_name: str = "") -> dict[str, str]:
         env = os.environ.copy()
         env["ANTHROPIC_BASE_URL"] = self.settings.anthropic_base_url
         key_path = self.settings.llm_key_path
@@ -144,6 +146,18 @@ class ClaudeHarness(Harness):
             cle = ""
         if cle:
             env["ATELIER_MCP_KEY"] = cle
+        # Identité de la session auprès du coordinateur. Le `.mcp.json` la
+        # relaie dans l'adresse SSE (`?agent=`). Sans elle, la session se
+        # présente sans nom : sa mémoire s'écrit dans un sac anonyme et son
+        # courrier n'a pas de destinataire.
+        #
+        # Une identité par conversation, pas par projet : deux fils ouverts
+        # sur le même dossier doivent pouvoir se parler et recevoir chacun
+        # leur réponse. Ce qu'ils partagent — la mémoire du projet — passe
+        # par leur canal-projet commun, que le coordinateur retrouve depuis
+        # leur dossier de travail.
+        if agent_name:
+            env["WIKICHAT_AGENT"] = agent_name
         return env
 
     def _resolve_claude_bin(self) -> Path:
@@ -179,6 +193,7 @@ class ClaudeHarness(Harness):
         timeout_s: int,
         claude_session_id: str | None = None,
         mcp_config_path: Path | None = None,
+        agent_name: str = "",
     ) -> TurnResult:
         claude = self._resolve_claude_bin()
         cli_id = (claude_session_id or session_id).strip()
@@ -225,7 +240,7 @@ class ClaudeHarness(Harness):
         proc = subprocess.Popen(
             cmd,
             cwd=str(cwd),
-            env=self._env(),
+            env=self._env(agent_name),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
