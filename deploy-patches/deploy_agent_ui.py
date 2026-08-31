@@ -61,8 +61,12 @@ HORS_ARBRE = [
         "/home/onyxia/work/wikichat/src/src/pilote.mjs",
     ),
     (
-        DEPOT / "atelier-src/bin/atelier-vscode-handoff.sh",
-        "/home/onyxia/work/bin/atelier-vscode-handoff.sh",
+        DEPOT / "atelier-src/vscode-extension/atelier-ouvre-claude/package.json",
+        "/home/onyxia/.local/share/code-server/extensions/atelier-ouvre-claude/package.json",
+    ),
+    (
+        DEPOT / "atelier-src/vscode-extension/atelier-ouvre-claude/extension.js",
+        "/home/onyxia/.local/share/code-server/extensions/atelier-ouvre-claude/extension.js",
     ),
     (
         DEPOT / "atelier-src/mcp_gateway/upstream/transports.py",
@@ -161,12 +165,21 @@ def main() -> None:
         rid += 1
         print("OK", text_result(r)[:160])
 
-    # touch no restart needed for static; verify app.js contains shell3
+    # Contrôle d'arrivée : quelques marqueurs des derniers correctifs, pour
+    # que le déploiement dise s'il a vraiment posé ce qu'on croit.
     verify = (
         "from pathlib import Path\n"
-        "p=Path('/home/onyxia/work/atelier-src/mcp_gateway/atelier/web/js/app.js')\n"
-        "t=p.read_text()\n"
-        "print('shell3' in t, 'openCreate' in Path('/home/onyxia/work/atelier-src/mcp_gateway/atelier/web/js/controllers/agent.js').read_text(), p.stat().st_size)\n"
+        "r = Path('/home/onyxia/work/atelier-src/mcp_gateway/atelier')\n"
+        "w = Path('/home/onyxia/.local/share/code-server/extensions/atelier-ouvre-claude')\n"
+        "for nom, chemin, marqueur in (\n"
+        "    ('handoff', r / 'vscode_handoff.py', 'MOTIF_MARQUE'),\n"
+        "    ('sessions', r / 'sessions.py', 'adopter_conversations_claude'),\n"
+        "    ('harness', r / 'harness.py', 'enregistrement_utilisateur'),\n"
+        "    ('api.js', r / 'web/js/api.js', 'toolOutputText'),\n"
+        "    ('extension', w / 'extension.js', 'primaryEditor.open'),\n"
+        "):\n"
+        "    ok = chemin.is_file() and marqueur in chemin.read_text(encoding='utf-8', errors='replace')\n"
+        "    print(('OK   ' if ok else 'MANQUE '), nom)\n"
     )
     r = mcp_call("exec", {"session_id": SESSION, "lang": "python", "code": verify}, rid)
     print("VERIFY", text_result(r))

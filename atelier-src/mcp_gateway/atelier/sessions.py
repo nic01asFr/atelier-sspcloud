@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -11,6 +13,16 @@ from typing import Any, Literal
 
 from mcp_gateway.atelier.config import AtelierSettings
 from mcp_gateway.atelier.harness import Harness, TurnResult, new_session_id
+from mcp_gateway.atelier.projects import ProjectStore
+from mcp_gateway.atelier.vscode_handoff import (
+    PROGRAMMATIQUE,
+    dossier_transcripts_claude,
+    marque_origine,
+    nommer_pour_l_extension,
+    rendre_visible_a_l_extension,
+)
+
+log = logging.getLogger("atelier.sessions")
 
 SessionState = Literal[
     "idle",
@@ -53,6 +65,26 @@ def _cwd_for_new_session(
     return _project_cwd(settings, slug)
 
 
+def _deplacer_transcript_claude(ancien: Path, nouveau: Path, cli_id: str) -> bool:
+    """Emmene l'historique quand la conversation change de dossier.
+
+    Claude Code range ses transcripts par repertoire de travail : deplacer une
+    conversation sans deplacer son journal revient a la perdre — au tour
+    suivant le CLI ne la trouve plus la ou il la cherche et en ouvre une
+    neuve, les echanges precedents devenant injoignables.
+    """
+    source = dossier_transcripts_claude(ancien) / f"{cli_id}.jsonl"
+    if not source.is_file():
+        return False
+    cible = dossier_transcripts_claude(nouveau) / f"{cli_id}.jsonl"
+    if cible.exists():
+        return False
+    cible.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(source, cible)
+    log.info("transcript %s suivi de %s vers %s", cli_id[:8], ancien, nouveau)
+    return True
+
+
 def _normalize_assistant_cwd(settings: AtelierSettings, rec: SessionRecord) -> Path:
     """Sessions assistant legacy (cwd = racine mémoire) → sous-dossier session."""
     if rec.kind != "assistant":
@@ -62,6 +94,9 @@ def _normalize_assistant_cwd(settings: AtelierSettings, rec: SessionRecord) -> P
     expected = _assistant_session_cwd(settings, rec.session_id).resolve()
     if current == root:
         expected.mkdir(parents=True, exist_ok=True)
+        _deplacer_transcript_claude(
+            current, expected, (rec.claude_session_id or rec.session_id).strip()
+        )
         rec.cwd = str(expected)
         if not rec.overlay_path:
             rec.overlay_path = str(expected)
@@ -84,6 +119,26 @@ def _is_auto_title(title: str, slug: str, session_id: str) -> bool:
     if re.match(r"^[a-f0-9]{8}$", t):
         return True
     return False
+
+
+def _est_un_tour(message: dict[str, Any]) -> bool:
+    """Vrai si ce message vient de quelqu'un, et non d'un outil.
+
+    Les retours d'outils voyagent dans des enregistrements « user ».
+    Les compter comme des tours ferait annoncer trente-deux echanges la
+    ou il y en a eu deux.
+    """
+    contenu = message.get("content")
+    if isinstance(contenu, str):
+        return bool(contenu.strip())
+    if not isinstance(contenu, list):
+        return False
+    return any(
+        isinstance(b, dict)
+        and b.get("type") != "tool_result"
+        and str(b.get("text") or "").strip()
+        for b in contenu
+    )
 
 
 def _claude_name_rank(data: dict[str, Any]) -> int:
@@ -158,12 +213,21 @@ class SessionStore:
         return datetime.now(timezone.utc).isoformat()
 
     def save(self, rec: SessionRecord) -> None:
+        """Ecrit la fiche d'un seul geste.
+
+        Deux onglets suffisent a croiser une ecriture et une lecture : ecrire
+        en place laisserait voir un fichier a moitie ecrit, et la liste des
+        conversations tomberait dessus.
+        """
         rec.updated_at = self._now()
         path = self._path(rec.session_id)
-        path.write_text(
-            json.dumps(rec.to_dict(), indent=2, ensure_ascii=False) + "\n",
+        path.parent.mkdir(parents=True, exist_ok=True)
+        provisoire = path.with_name(path.name + ".en-cours")
+        provisoire.write_text(
+            json.dumps(rec.to_dict(), ensure_ascii=False, indent=2) + chr(10),
             encoding="utf-8",
         )
+        os.replace(provisoire, path)
 
     def get(self, session_id: str) -> SessionRecord | None:
         path = self._path(session_id)
@@ -179,7 +243,13 @@ class SessionStore:
     ) -> list[SessionRecord]:
         out: list[SessionRecord] = []
         for p in sorted(self.settings.sessions_dir.glob("*.json")):
-            rec = SessionRecord.from_dict(json.loads(p.read_text(encoding="utf-8")))
+            # Une fiche illisible — écriture interrompue, fichier étranger —
+            # ne doit pas emporter la liste entière avec elle.
+            try:
+                rec = SessionRecord.from_dict(json.loads(p.read_text(encoding="utf-8")))
+            except (json.JSONDecodeError, OSError, TypeError, ValueError):
+                log.warning("fiche de session illisible, ignorée : %s", p.name)
+                continue
             if slug is not None and rec.slug != slug:
                 continue
             if not include_archived and rec.state == "archived":
@@ -240,6 +310,10 @@ class SessionStore:
                 raise ValueError("title cannot be empty")
             rec.title = t
             rec.title_source = "user"
+            # Le nom qu'on donne ici doit être celui qu'on lit dans VS Code :
+            # une conversation ne peut pas porter deux noms selon la fenêtre.
+            if rec.cwd:
+                nommer_pour_l_extension(Path(rec.cwd), self._claude_cli_id(rec), t)
         if archived is not None:
             if archived:
                 rec.state = "archived"
@@ -249,6 +323,9 @@ class SessionStore:
         return rec
 
     def delete(self, session_id: str, *, remove_files: bool = True) -> None:
+        rec_avant = self.get(session_id)
+        if rec_avant is not None:
+            self._refuser_adoption(self._claude_cli_id(rec_avant))
         rec = self.get(session_id)
         if not rec:
             raise KeyError(session_id)
@@ -261,8 +338,190 @@ class SessionStore:
                 if p.is_file():
                     p.unlink()
 
+    def _journal_refus(self) -> Path:
+        # Hors du dossier des fiches : celui-ci est lu au lance-pierre, tout
+        # « .json » qui s'y trouve est pris pour une conversation.
+        return self.settings.work_dir / ".atelier" / "adoptions-refusees.json"
+
+    def _refuser_adoption(self, identifiant: str) -> None:
+        """Retient qu'on ne veut plus de cette conversation.
+
+        Supprimer une fiche n'efface pas le transcript que Claude Code garde
+        de son cote. Sans cette trace, la passe d'alignement le retrouverait
+        orphelin et l'adopterait a nouveau dans la seconde : la conversation
+        reviendrait sous un autre identifiant, aussitot supprimee, aussitot
+        revenue.
+        """
+        if not identifiant:
+            return
+        chemin = self._journal_refus()
+        refuses = self._adoptions_refusees()
+        refuses.add(identifiant)
+        chemin.parent.mkdir(parents=True, exist_ok=True)
+        chemin.write_text(json.dumps(sorted(refuses), indent=2) + chr(10), encoding="utf-8")
+
+    def _adoptions_refusees(self) -> set[str]:
+        try:
+            data = json.loads(self._journal_refus().read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return set()
+        return {str(x) for x in data} if isinstance(data, list) else set()
+
+    def _ids_revendiques(self) -> set[str]:
+        """Tous les identifiants qu'une fiche reclame, ou qu'on a ecartes."""
+        pris: set[str] = self._adoptions_refusees()
+        for rec in self.list_sessions(include_archived=True):
+            pris.add(rec.session_id)
+            if rec.claude_session_id:
+                pris.add(rec.claude_session_id)
+        return pris
+
+    def _convertir_transcript_claude(self, source: Path) -> tuple[list[str], int]:
+        """Recopie une conversation de Claude Code au format que l'Atelier lit.
+
+        Les deux journaux disent la meme chose autrement : meme enregistrements
+        `user` et `assistant`, meme objet `message`. Claude y ajoute de quoi
+        reconstituer un arbre — parents, repertoire, branche git — dont
+        l'affichage n'a pas l'usage, et nomme la session `sessionId` la ou le
+        flux du CLI ecrit `session_id`.
+
+        On ne garde donc que ce qui se lit, et on rend les lignes avec le
+        nombre de tours — sans rien écrire, pour pouvoir renoncer avant
+        d'avoir créé quoi que ce soit.
+        """
+        tours = 0
+        lignes: list[str] = []
+        try:
+            brut = source.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return [], 0
+        for ligne in brut.split("\n"):
+            ligne = ligne.strip()
+            if not ligne.startswith("{"):
+                continue
+            try:
+                enr = json.loads(ligne)
+            except json.JSONDecodeError:
+                continue
+            if enr.get("type") not in ("user", "assistant") or enr.get("isSidechain"):
+                continue
+            message = enr.get("message")
+            if not isinstance(message, dict):
+                continue
+            if enr["type"] == "user" and not enr.get("isMeta") and _est_un_tour(message):
+                tours += 1
+            lignes.append(
+                json.dumps(
+                    {
+                        "type": enr["type"],
+                        "message": message,
+                        "session_id": enr.get("sessionId") or "",
+                        "uuid": enr.get("uuid") or "",
+                        "timestamp": enr.get("timestamp") or "",
+                        "parent_tool_use_id": None,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+        return lignes, tours
+
+    def _titre_depuis_claude(self, source: Path) -> str:
+        """Le premier mot de quelqu'un, qui vaut mieux qu'un identifiant."""
+        try:
+            with source.open(encoding="utf-8", errors="replace") as f:
+                tete = f.read(65536)
+        except OSError:
+            return ""
+        for ligne in tete.split("\n"):
+            ligne = ligne.strip()
+            if not ligne.startswith("{") or '"type":"user"' not in ligne:
+                continue
+            try:
+                enr = json.loads(ligne)
+            except json.JSONDecodeError:
+                continue
+            if enr.get("isMeta") or enr.get("isSidechain"):
+                continue
+            contenu = (enr.get("message") or {}).get("content")
+            if isinstance(contenu, str):
+                texte = contenu
+            elif isinstance(contenu, list):
+                texte = " ".join(
+                    b.get("text", "") for b in contenu if isinstance(b, dict) and b.get("type") == "text"
+                )
+            else:
+                continue
+            texte = " ".join(texte.split())
+            if texte:
+                return texte[:60]
+        return ""
+
+    def adopter_conversations_claude(self) -> list[str]:
+        """Fait entrer dans l'Atelier les conversations nees dans VS Code.
+
+        L'alignement etait a sens unique : ce que l'Atelier connaissait,
+        l'extension pouvait le rouvrir, mais une discussion ouverte depuis
+        l'extension restait invisible cote Code. Les deux listes doivent
+        montrer la meme chose.
+
+        On adopte exactement ce que l'extension elle-meme accepte de montrer :
+        un transcript pose dans le dossier d'un projet connu, que reclame
+        aucune fiche, et qui n'est pas marque comme programmatique. Ce dernier
+        point ecarte de lui-meme les restes d'essais du harnais, qui portent
+        cette marque et que personne ne veut voir remonter.
+        """
+        pris = self._ids_revendiques()
+        adoptees: list[str] = []
+        projets = ProjectStore(self.settings)
+        # Y compris les projets archives : une conversation ouverte dans
+        # VS Code sur l'un d'eux doit remonter tout de suite, plutot que
+        # d'arriver en bloc le jour ou on le desarchive.
+        for projet in projets.list_projects(include_archived=True):
+            if projet.kind == "assistant":
+                continue
+            cwd = Path(projet.path)
+            dossier = dossier_transcripts_claude(cwd)
+            if not dossier.is_dir():
+                continue
+            for source in sorted(dossier.glob("*.jsonl")):
+                sid = source.stem
+                if sid in pris:
+                    continue
+                try:
+                    with source.open(encoding="utf-8", errors="replace") as f:
+                        tete = f.read(65536)
+                except OSError:
+                    continue
+                marque = marque_origine(tete)
+                if not marque or marque in PROGRAMMATIQUE:
+                    continue
+                if '"isSidechain":true' in tete.split(chr(10))[0]:
+                    continue
+                # Juger avant de créer : une conversation ouverte dans
+                # l'extension et laissée vide reviendrait sinon à chaque
+                # passage, le temps d'une fiche aussitôt détruite.
+                reprises, tours = self._convertir_transcript_claude(source)
+                if tours <= 0:
+                    continue
+                rec = self.create(slug=projet.slug, title=self._titre_depuis_claude(source))
+                rec.claude_session_id = sid
+                rec.cwd = str(cwd)
+                rec.turns = tours
+                journal = Path(rec.transcript_path)
+                journal.parent.mkdir(parents=True, exist_ok=True)
+                journal.write_text(chr(10).join(reprises) + chr(10), encoding="utf-8")
+                rec.state = "ready"
+                rec.updated_at = self._now()
+                self.save(rec)
+                pris.add(sid)
+                adoptees.append(rec.session_id)
+        return adoptees
+
     def sync_claude_titles(self) -> dict[str, Any]:
         """Aligne title depuis ~/.claude/sessions (extension / CLI Claude Code)."""
+        # D'abord faire entrer ce qui manque : une conversation ouverte dans
+        # VS Code n'a pas de fiche, et sans fiche rien ne l'aligne.
+        self.adopter_conversations_claude()
         updated: list[str] = []
         claude_by_id: dict[str, dict[str, Any]] = {}
         claude_by_cwd: dict[str, list[dict[str, Any]]] = {}
@@ -293,6 +552,16 @@ class SessionStore:
         )
 
         for rec in records:
+            # Les deux listes doivent montrer la même chose : ce que l'Atelier
+            # connaît, l'extension doit pouvoir le rouvrir. Elle écarte les
+            # conversations marquées « sdk-cli », marque que le CLI pose à
+            # chaque tour de l'Atelier — on la corrige ici, une fois par
+            # conversation. Les transcripts qu'aucune fiche ne réclame restent
+            # masqués, et c'est bien : ce sont des restes, pas des
+            # conversations.
+            if rec.cwd:
+                rendre_visible_a_l_extension(Path(rec.cwd), self._claude_cli_id(rec))
+
             data = claude_by_id.get(rec.session_id)
             if not data and rec.claude_session_id:
                 data = claude_by_id.get(rec.claude_session_id)
@@ -315,7 +584,12 @@ class SessionStore:
                         data = by_name[0]
                     elif len(pool) == 1:
                         data = pool[0]
-                    else:
+                    elif rec.turns > 0:
+                        # Rapprochement au juge : acceptable pour reprendre un
+                        # titre, jamais pour decider de quelle conversation il
+                        # s'agit. Une fiche qui n'a pas encore parle n'a pas
+                        # d'identite a defendre — lui en preter une reviendrait
+                        # a ouvrir la conversation de quelqu'un d'autre.
                         data = max(
                             pool,
                             key=lambda d: (
@@ -374,6 +648,14 @@ class SessionStore:
         """
         slug = (rec.slug or "atelier").strip() or "atelier"
         return f"{slug}-{rec.session_id[:6]}"
+
+    def identifiant_claude(self, rec: SessionRecord) -> str:
+        """L'identifiant sous lequel Claude Code connaît cette conversation.
+
+        Public, parce que la porte VS Code en a besoin : elle reçoit
+        l'identifiant Atelier et doit confier celui du CLI.
+        """
+        return self._claude_cli_id(rec)
 
     def _claude_cli_id(self, rec: SessionRecord) -> str:
         """ID passé à `claude --resume` / `--session-id` (peut ≠ session_id Atelier)."""

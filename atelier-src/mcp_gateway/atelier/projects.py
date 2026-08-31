@@ -35,6 +35,21 @@ class ProjectRecord:
         return asdict(self)
 
 
+# Ce que l'Atelier depose lui-meme dans un projet : reglages VS Code, consigne
+# de conversation, declaration de connecteurs. Rien que l'utilisateur ait ecrit.
+NOS_TRACES = frozenset({".vscode", ".atelier", ".mcp.json", ".claude", "CLAUDE.md"})
+
+
+def _effacer_arbre(chemin: Path) -> None:
+    """Efface un fichier ou un dossier depose par l'Atelier."""
+    if chemin.is_dir():
+        for enfant in chemin.iterdir():
+            _effacer_arbre(enfant)
+        chemin.rmdir()
+        return
+    chemin.unlink(missing_ok=True)
+
+
 class ProjectStore:
     def __init__(self, settings: AtelierSettings) -> None:
         self.settings = settings
@@ -252,8 +267,14 @@ class ProjectStore:
             raise ValueError("le projet assistant ne peut pas être supprimé")
         path = self.settings.projects_dir / slug
         if path.is_dir():
-            if any(path.iterdir()):
+            reste = [p for p in path.iterdir() if p.name not in NOS_TRACES]
+            if reste:
                 raise ValueError("le dossier du projet n'est pas vide")
+            # Ce que l'Atelier y a depose lui-meme ne compte pas comme du
+            # travail : sans cela, un projet ouvert une fois dans VS Code
+            # devenait indestructible.
+            for p in path.iterdir():
+                _effacer_arbre(p)
             path.rmdir()
         meta = self._load_meta()
         meta.setdefault("projects", {}).pop(slug, None)

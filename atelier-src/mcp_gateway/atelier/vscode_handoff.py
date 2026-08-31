@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -11,15 +12,18 @@ from mcp_gateway.atelier.claude_home import sync_claude_home as sync_claude_home
 
 CLAUDE_CODE_EXTENSION_ID = "anthropic.claude-code"
 
-# Layout par défaut : ni Welcome ni barre Copilot. L'emplacement de la
-# vue Claude Code est laissé au défaut de l'extension — la conversation
-# s'ouvre en onglet, pas dans un panneau.
+# Layout par défaut : Claude Code sidebar, sans Welcome ni Copilot Chat.
 WORKBENCH_LAYOUT_SETTINGS: dict[str, object] = {
     "workbench.startupEditor": "none",
     "workbench.secondarySideBar.defaultVisibility": "hidden",
     "chat.disableAIFeatures": True,
     "workbench.welcomePage.walkthroughs.openOnInstall": False,
     "extensions.ignoreRecommendations": True,
+    # Le pod expose des services sur des ports que VS Code découvre seul, et
+    # il annonce chacun d'eux par une bulle au-dessus de la conversation. Le
+    # suivi reste utile ; c'est l'annonce qui gêne, en plein milieu de ce
+    # qu'on lisait.
+    "remote.otherPortsAttributes": {"onAutoForward": "silent"},
 }
 
 
@@ -30,15 +34,34 @@ def _read_llm_key(settings: AtelierSettings) -> str:
     return ""
 
 
-def claude_extension_env(settings: AtelierSettings) -> list[dict[str, str]]:
+def claude_extension_env(
+    settings: AtelierSettings, *, avec_secrets: bool = True
+) -> list[dict[str, str]]:
+    """Ce que l'extension doit donner au `claude` qu'elle lance.
+
+    Les secrets ne vont que dans les réglages utilisateur, hors du projet :
+    un dossier de projet se partage et se versionne, et c'est pour cette
+    raison que le harnais passe déjà sa clé par l'environnement plutôt que
+    par un fichier qui y vit.
+    """
     env: list[dict[str, str]] = [
         {"name": "ANTHROPIC_BASE_URL", "value": settings.anthropic_base_url.strip()},
     ]
-    key = _read_llm_key(settings)
-    if key:
-        env.append({"name": "ANTHROPIC_API_KEY", "value": key})
-        # Certains gateways lisent AUTH_TOKEN plutôt que API_KEY.
-        env.append({"name": "ANTHROPIC_AUTH_TOKEN", "value": key})
+    if avec_secrets:
+        key = _read_llm_key(settings)
+        if key:
+            env.append({"name": "ANTHROPIC_API_KEY", "value": key})
+            # Certains gateways lisent AUTH_TOKEN plutôt que API_KEY.
+            env.append({"name": "ANTHROPIC_AUTH_TOKEN", "value": key})
+        # Sans elle, une conversation reprise dans VS Code ne peut plus
+        # atteindre la porte MCP de l'Atelier : le serveur répond, mais
+        # refuse faute d'authentification.
+        try:
+            cle = settings.owner_key_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            cle = ""
+        if cle:
+            env.append({"name": "ATELIER_MCP_KEY", "value": cle})
     model = (settings.default_model or "").strip()
     if model:
         env.append({"name": "ANTHROPIC_MODEL", "value": model})
@@ -88,16 +111,37 @@ def sync_claude_home(settings: AtelierSettings, slug: str) -> None:
             shutil.copy2(settings_file, home_claude / "settings.json")
 
 
-def write_vscode_workspace_config(settings: AtelierSettings, slug: str) -> None:
-    vscode_dir = settings.projects_dir / slug / ".vscode"
+def _titre_du_projet(settings: AtelierSettings, slug: str) -> str:
+    """Le nom que l'Atelier donne au projet, ou son identifiant a defaut."""
+    from mcp_gateway.atelier.projects import ProjectStore
+
+    try:
+        for projet in ProjectStore(settings).list_projects(include_archived=True):
+            if projet.slug == slug:
+                return (projet.title or "").strip() or slug
+    except OSError:
+        pass
+    return slug
+
+
+def write_vscode_workspace_config(
+    settings: AtelierSettings, slug: str, cwd: Path | None = None
+) -> None:
+    vscode_dir = (cwd or settings.projects_dir / slug) / ".vscode"
     vscode_dir.mkdir(parents=True, exist_ok=True)
     cfg = {
         **WORKBENCH_LAYOUT_SETTINGS,
         "claudeCode.disableLoginPrompt": True,
+        "claudeCode.preferredLocation": "sidebar",
         "claudeCode.hideOnboarding": True,
-        "claudeCode.environmentVariables": claude_extension_env(settings),
+        "claudeCode.environmentVariables": claude_extension_env(settings, avec_secrets=False),
         "security.workspace.trust.enabled": False,
         "task.allowAutomaticTasks": "on",
+        # VS Code nomme la fenetre d'apres le dossier, donc d'apres
+        # l'identifiant technique du projet. On lui dicte le nom que l'Atelier
+        # affiche : la fenetre, c'est le projet, et plusieurs conversations y
+        # tiennent — leur nom se lit sur leur onglet, pas au-dessus.
+        "window.title": _titre_du_projet(settings, slug),
     }
     (vscode_dir / "settings.json").write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
     (vscode_dir / "extensions.json").write_text(
@@ -112,6 +156,7 @@ def write_user_code_server_settings(settings: AtelierSettings) -> None:
     cfg = {
         **WORKBENCH_LAYOUT_SETTINGS,
         "claudeCode.disableLoginPrompt": True,
+        "claudeCode.preferredLocation": "sidebar",
         "claudeCode.hideOnboarding": True,
         "claudeCode.environmentVariables": claude_extension_env(settings),
         "security.workspace.trust.enabled": False,
@@ -120,9 +165,139 @@ def write_user_code_server_settings(settings: AtelierSettings) -> None:
     (user_dir / "settings.json").write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
 
 
-def write_resume_sidecar(settings: AtelierSettings, slug: str, session_id: str) -> Path:
-    root = settings.projects_dir / slug / ".atelier"
+PROGRAMMATIQUE = frozenset({"sdk-cli", "sdk-ts", "sdk-py"})
+# La marque d'origine, telle que l'extension la lit. Le CLI ecrit sans
+# espace, mais elle accepte les deux ecritures : on ne veut pas rater une
+# marque pour une virgule d'espacement. Le motif sert au texte comme aux
+# octets — on ne l'ecrit qu'une fois.
+MOTIF_MARQUE = r'"entrypoint":(\s*)"([^"]*)"'
+MARQUE = re.compile(MOTIF_MARQUE.encode("ascii"))
+# L'extension lit les 65536 premiers octets du transcript et s'arrete a la
+# premiere marque qu'elle y trouve. Une correction en tete vaut donc pour
+# toute la suite, quels que soient les tours qu'on ajoute ensuite.
+TETE = 65536
+
+
+def dossier_transcripts_claude(cwd: Path) -> Path:
+    """Le dossier ou Claude Code range les transcripts d'un repertoire.
+
+    Meme encodage que le CLI : tout ce qui n'est ni lettre ni chiffre
+    devient un tiret.
+    """
+    return Path.home() / ".claude" / "projects" / re.sub(r"[^a-zA-Z0-9]", "-", str(cwd))
+
+
+def marque_origine(tete: str) -> str:
+    """Ce que la conversation declare de son origine, ou rien.
+
+    Meme lecture que l'extension : la premiere marque rencontree decide,
+    et l'espacement autour du deux-points ne compte pas.
+    """
+    trouve = re.search(MOTIF_MARQUE, tete)
+    return trouve.group(2) if trouve else ""
+
+
+def rendre_visible_a_l_extension(cwd: Path, session_id: str) -> bool:
+    """Fait entrer la conversation dans la liste que l'extension propose.
+
+    L'extension Claude Code ecarte de sa liste les sessions marquees
+    « sdk-cli », et refuse ensuite de les rouvrir : elle repond
+    « restore_declined » et ouvre une conversation neuve a la place, sans rien
+    dire. Le marquage vient du CLI, qui pose « sdk-cli » des qu'on l'appelle en
+    -p — ce que l'Atelier fait a chaque tour, y compris pour une discussion
+    tenue par quelqu'un. Le filtre vise l'automatisation, pas nos
+    conversations.
+
+    La correction se fait sur place et a longueur egale : « sdk-cli » devient
+    « cli » suivi de quatre espaces, que JSON tolere entre deux jetons. Ni
+    troncature ni reecriture, donc rien a perdre si `claude` ecrit dans le
+    meme fichier au meme instant — il n'ajoute qu'en fin, et on ne touche que
+    la tete.
+
+    Seule la premiere marque compte : l'extension lit les 65536 premiers
+    octets et s'arrete a la premiere qu'elle y trouve. Les tours suivants
+    reposeront « sdk-cli » en queue, sans consequence.
+
+    Rend vrai si le fichier a ete corrige.
+    """
+    fichier = dossier_transcripts_claude(cwd) / f"{session_id}.jsonl"
+    try:
+        with fichier.open("r+b") as f:
+            tete = f.read(TETE)
+            # La premiere marque, et elle seule : c'est celle que
+            # l'extension lira. Corriger les suivantes ne servirait a rien et
+            # ferait rouvrir le fichier a chaque passage.
+            trouve = MARQUE.search(tete)
+            if not trouve or trouve.group(2).decode("ascii", "replace") not in PROGRAMMATIQUE:
+                return False
+            # Meme longueur, donc meme decoupage du fichier : on complete par
+            # des espaces, que JSON tolere entre deux jetons.
+            corrige = b'"entrypoint":' + trouve.group(1) + b'"cli"'
+            f.seek(trouve.start())
+            f.write(corrige.ljust(trouve.end() - trouve.start()))
+        return True
+    except OSError:
+        return False
+
+
+def nommer_pour_l_extension(cwd: Path, session_id: str, titre: str) -> bool:
+    """Donne a la conversation, cote Claude Code, le nom qu'on lui a donne ici.
+
+    Sans cela l'extension continue d'afficher un titre derive du
+    transcript — souvent une phrase de passage — et la meme conversation
+    porte deux noms selon la fenetre ou on la regarde.
+
+    On emploie le format de l'extension elle-meme : une ligne ajoutee en
+    fin de journal, que sa relecture prend pour un renommage. Rien n'est
+    reecrit, et la derniere ligne posee l'emporte.
+    """
+    titre = titre.strip()
+    if not titre:
+        return False
+    fichier = dossier_transcripts_claude(cwd) / f"{session_id}.jsonl"
+    if not fichier.is_file():
+        return False
+    try:
+        with fichier.open("rb") as f:
+            f.seek(max(0, fichier.stat().st_size - TETE))
+            queue = f.read().decode("utf-8", "replace")
+    except OSError:
+        return False
+    # Deja ce nom-la : ne pas rallonger le journal a chaque passage.
+    deja = re.findall(r'"customTitle":\s*"([^"]*)"', queue)
+    if deja and deja[-1] == titre.replace('"', "'"):
+        return False
+    # Format compact, celui de l'extension : elle sait relire les deux,
+    # mais autant écrire comme elle.
+    ligne = json.dumps(
+        {"type": "custom-title", "sessionId": session_id, "customTitle": titre},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    try:
+        with fichier.open("a", encoding="utf-8") as f:
+            f.write(ligne + chr(10))
+    except OSError:
+        return False
+    return True
+
+
+def write_resume_sidecar(
+    settings: AtelierSettings, slug: str, session_id: str, cwd: Path | None = None
+) -> Path:
+    """Désigne au projet la conversation que l'Atelier lui confie.
+
+    Un seul fichier, que la petite extension « atelier-ouvre-claude » lit à
+    l'ouverture du dossier pour ouvrir Claude Code dessus. Le Markdown à côté
+    ne sert qu'à la lecture humaine.
+    """
+    dossier = cwd or settings.projects_dir / slug
+    root = dossier / ".atelier"
     root.mkdir(parents=True, exist_ok=True)
+    (root / "session.json").write_text(
+        json.dumps({"session_id": session_id, "slug": slug}, indent=2) + "\n",
+        encoding="utf-8",
+    )
     path = root / "OPEN_CLAUDE_SESSION.md"
     path.write_text(
         "\n".join(
@@ -139,36 +314,23 @@ def write_resume_sidecar(settings: AtelierSettings, slug: str, session_id: str) 
         ),
         encoding="utf-8",
     )
-    handoff = settings.work_dir / "bin" / "atelier-vscode-handoff.sh"
-    vscode_dir = settings.projects_dir / slug / ".vscode"
-    vscode_dir.mkdir(parents=True, exist_ok=True)
-    tasks = {
-        "version": "2.0.0",
-        "tasks": [
-            {
-                "label": "Atelier — conversation",
-                "type": "shell",
-                "command": str(handoff),
-                "args": [session_id, slug],
-                "options": {
-                    "env": {
-                        "ATELIER_SESSION": session_id,
-                        "ATELIER_SLUG": slug,
-                    }
-                },
-                "problemMatcher": [],
-                # La conversation s'ouvre dans l'éditeur : cette tâche ne
-                # fait plus que la désigner, elle n'a rien à montrer.
-                "presentation": {
-                    "reveal": "never",
-                    "panel": "shared",
-                    "showReuseMessage": False,
-                },
-                "runOptions": {"runOn": "folderOpen"},
-            }
-        ],
-    }
-    (vscode_dir / "tasks.json").write_text(json.dumps(tasks, indent=2) + "\n", encoding="utf-8")
+    # Une version précédente passait par une tâche « folderOpen » qui appelait
+    # un script. Il ne pouvait rien ouvrir — seule une extension peut appeler
+    # la commande — et il laissait des onglets vides derrière lui. Les projets
+    # déjà visités en gardent une copie : on l'efface plutôt que de la laisser
+    # tourner à chaque ouverture.
+    ancienne_tache = dossier / ".vscode" / "tasks.json"
+    if ancienne_tache.is_file():
+        try:
+            data = json.loads(ancienne_tache.read_text(encoding="utf-8"))
+            taches = data.get("tasks") if isinstance(data, dict) else None
+            est_notre = isinstance(taches, list) and all(
+                str(t.get("label", "")).startswith("Atelier") for t in taches
+            )
+        except (json.JSONDecodeError, OSError, AttributeError):
+            est_notre = False
+        if est_notre:
+            ancienne_tache.unlink(missing_ok=True)
     return path
 
 
@@ -245,14 +407,24 @@ def ensure_claude_onboarding(settings: AtelierSettings, slug: str) -> None:
     )
 
 
-def prepare_vscode_handoff(settings: AtelierSettings, slug: str, session_id: str) -> None:
+def prepare_vscode_handoff(
+    settings: AtelierSettings, slug: str, session_id: str, cwd: Path | None = None
+) -> None:
+    """Prepare le dossier que VS Code va ouvrir, et lui confie la conversation.
+
+    Le dossier n'est pas toujours celui du projet : une conversation
+    « assistant » travaille dans son propre repertoire. Tout ce qu'on depose —
+    reglages de la fenetre, consigne d'ouverture — doit atterrir la ou
+    code-server ouvrira, sinon l'extension ne trouve rien et n'ouvre rien.
+    """
     slug_v = (slug or settings.default_slug).strip() or settings.default_slug
-    project = settings.projects_dir / slug_v
-    project.mkdir(parents=True, exist_ok=True)
+    dossier = cwd or settings.projects_dir / slug_v
+    dossier.mkdir(parents=True, exist_ok=True)
     sync_claude_home(settings, slug_v)
     write_claude_settings_env(settings)
-    write_vscode_workspace_config(settings, slug_v)
+    write_vscode_workspace_config(settings, slug_v, dossier)
     write_user_code_server_settings(settings)
     ensure_claude_onboarding(settings, slug_v)
-    write_resume_sidecar(settings, slug_v, session_id)
+    write_resume_sidecar(settings, slug_v, session_id, dossier)
+    rendre_visible_a_l_extension(dossier, session_id)
 

@@ -535,16 +535,28 @@ def build_app(
         _owner: str = Depends(require_owner_nav),
     ) -> Response:
         """Handoff hub → face VS Code intégrée (/vscode proxy, auth Atelier)."""
-        slug_v = (slug or settings.default_slug).strip() or settings.default_slug
-        if session:
-            try:
-                prepare_vscode_handoff(settings, slug_v, session)
-            except OSError:
-                pass
         from urllib.parse import quote
 
-        folder = quote(folder_abs(settings, slug_v), safe="")
-        q = f"folder={folder}"
+        slug_v = (slug or settings.default_slug).strip() or settings.default_slug
+        # La page désigne la conversation par son identifiant Atelier ; le CLI
+        # la connaît parfois sous un autre — c'est le cas de celles nées dans
+        # VS Code, que l'Atelier a adoptées. Confier le mauvais identifiant
+        # revient à demander une conversation qui n'existe pas, et l'extension
+        # en ouvre une neuve sans rien dire. La correspondance ne se lit qu'ici.
+        rec = store.get(session) if session else None
+        if rec is not None:
+            slug_v = rec.slug or slug_v
+            session = store.identifiant_claude(rec)
+        # Et le dossier de la fiche fait foi : une conversation « assistant »
+        # travaille dans son propre répertoire, pas dans projects/<slug>. Tout
+        # ce qu'on dépose pour VS Code doit atterrir là où il ouvrira.
+        dossier = str(rec.cwd) if rec is not None and rec.cwd else folder_abs(settings, slug_v)
+        if session:
+            try:
+                prepare_vscode_handoff(settings, slug_v, session, Path(dossier))
+            except OSError:
+                pass
+        q = f"folder={quote(dossier, safe='')}"
         if session:
             q += f"&atelier_session={quote(session, safe='')}"
         return RedirectResponse(url=f"/vscode/?{q}", status_code=302)

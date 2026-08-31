@@ -1,0 +1,11 @@
+{
+  "name": "atelier-ouvre-claude",
+  "displayName": "Atelier — ouvrir la conversation",
+  "description": "Ouvre l'extension Claude Code sur la conversation que l'Atelier vient de confier a VS Code.",
+  "publisher": "atelier",
+  "version": "1.1.0",
+  "engines": { "vscode": "^1.90.0" },
+  "main": "./extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {}
+}

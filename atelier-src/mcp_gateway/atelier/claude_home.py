@@ -76,14 +76,8 @@ def _sync_dir_recursive(src: Path, dst: Path) -> None:
         if not path.is_file():
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
-        if not target.is_file() or path.stat().st_mtime >= target.stat().st_mtime:
+        # Strictement plus recent : a date egale les deux copies disent la
+        # meme chose, et le test large refaisait tout l'arbre a chaque tour,
+        # deux fois.
+        if not target.is_file() or path.stat().st_mtime > target.stat().st_mtime:
             shutil.copy2(path, target)
-
-
-def claude_project_dir_for_cwd(cwd: Path) -> Path:
-    """Chemin encodé Claude pour un cwd (même convention que le CLI)."""
-    abs_cwd = cwd.resolve().as_posix()
-    encoded = abs_cwd.replace("/", "-")
-    if not encoded.startswith("-"):
-        encoded = "-" + encoded
-    return home_claude_dir() / "projects" / encoded
