@@ -20,6 +20,9 @@ __pycache__/
 deploy-patches/*
 !deploy-patches/deploy_agent_ui.py
 
+# Réglages Claude Code propres à la machine : ni suivis, ni ignorés jusqu'ici.
+.claude/settings.local.json
+
 # État local de wikichat et configuration MCP propre à la machine
 .wikichat/
 .mcp.json

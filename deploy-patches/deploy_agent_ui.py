@@ -1,11 +1,17 @@
 """Deploy changed Agent UI files to proj-claude-code via MCP Onyxia."""
 import base64
 import json
+import os
 import pathlib
 import urllib.request
 
-MCP_URL = "https://user-nic01asfr-passerelle-mcp.user.lab.sspcloud.fr/mcp"
-SESSION = "proj-claude-code"
+# Le pod visé et la façon de l'atteindre. Ces valeurs décrivent une
+# installation, pas le produit : elles se donnent par l'environnement, avec
+# un repli sur celle de l'auteur pour que le script reste utilisable tel quel.
+MCP_URL = os.environ.get(
+    "ATELIER_MCP_URL", "https://user-nic01asfr-passerelle-mcp.user.lab.sspcloud.fr/mcp"
+)
+SESSION = os.environ.get("ATELIER_MCP_SESSION", "proj-claude-code")
 ROOT = pathlib.Path(__file__).resolve().parent.parent / "atelier-src/mcp_gateway/atelier"
 BASE = "/home/onyxia/work/atelier-src/mcp_gateway/atelier"
 # Tous les fichiers du service, sans exception : une liste tenue à la main
@@ -152,10 +158,22 @@ HORS_ARBRE = [
 
 
 def token() -> str:
-    mcp_json = pathlib.Path(r"C:\Users\Omen\.cursor\mcp.json").read_text(encoding="utf-8")
-    return json.loads(mcp_json)["mcpServers"]["Onyxia nic01asfr"]["headers"]["Authorization"].replace(
-        "Bearer ", ""
-    )
+    """Le jeton d'accès au MCP Onyxia.
+
+    Il vient de l'environnement quand il y est. Sinon on le lit dans la
+    configuration MCP du poste — un chemin de machine, qui n'a rien à faire
+    en dur dans un dépôt public, mais qui garde le script utilisable sans
+    réglage préalable.
+    """
+    depuis_env = os.environ.get("ATELIER_MCP_TOKEN", "").strip()
+    if depuis_env:
+        return depuis_env
+    defaut = pathlib.Path.home() / ".cursor" / "mcp.json"
+    chemin = pathlib.Path(os.environ.get("ATELIER_MCP_CONFIG", "") or defaut)
+    serveur = os.environ.get("ATELIER_MCP_SERVER", "Onyxia nic01asfr")
+    config = json.loads(chemin.read_text(encoding="utf-8"))
+    entete = config["mcpServers"][serveur]["headers"]["Authorization"]
+    return entete.replace("Bearer ", "")
 
 
 def mcp_call(name: str, arguments: dict, req_id: int = 1) -> dict:
