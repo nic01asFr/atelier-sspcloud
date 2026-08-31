@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import re
+import secrets
 import unicodedata
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -47,6 +49,8 @@ from mcp_gateway.atelier.vscode_proxy import (
     VscodeUpstream,
 )
 from mcp_gateway.atelier.wikichat_pilote_proxy import proxy_wikichat_pilote
+
+log = logging.getLogger("atelier.api")
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -345,14 +349,40 @@ def build_app(
     def list_models(_owner: str = Depends(require_owner)) -> dict[str, Any]:
         return _models_payload()
 
+    def _lire_secret_interne() -> str:
+        """Le secret partagé, ou une chaîne vide s'il n'a pas été posé."""
+        try:
+            return settings.internal_secret_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+
     @router.put("/internal/vscode-password")
     def register_vscode_password_internal(
         request: Request,
         password: Annotated[str, Header(alias="X-Code-Server-Password")] = "",
+        secret: Annotated[str, Header(alias="X-Atelier-Internal-Secret")] = "",
     ) -> dict[str, str]:
-        """Pod VS Code → Atelier (réseau cluster) : enregistre $PASSWORD sans action utilisateur."""
-        if not is_internal_request(request):
-            raise HTTPException(403, "cluster only")
+        """code-server → Atelier : enregistre $PASSWORD sans action utilisateur.
+
+        Cet appel écrit sur le PVC et réinitialise le client amont. Il était
+        gardé par l'adresse d'origine seule, ce qui ne protégeait rien :
+        derrière l'ingress, uvicorn voit celle du contrôleur — dans une plage
+        privée — et non celle du visiteur. Mesuré depuis Internet, la requête
+        passait la garde et n'échouait que sur la validation du corps.
+
+        Un secret partagé décide désormais. L'adresse ne sert plus qu'à
+        renseigner le journal.
+        """
+        attendu = _lire_secret_interne()
+        if not attendu:
+            raise HTTPException(503, "internal secret not configured")
+        if not secrets.compare_digest(secret.strip(), attendu):
+            log.warning(
+                "secret interne refusé pour %s (depuis %s)",
+                request.url.path,
+                "cluster" if is_internal_request(request) else "hors cluster",
+            )
+            raise HTTPException(403, "invalid internal secret")
         pw = password.strip()
         if not pw:
             raise HTTPException(400, "X-Code-Server-Password required")

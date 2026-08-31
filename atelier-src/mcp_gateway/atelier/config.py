@@ -102,6 +102,16 @@ class AtelierSettings(BaseSettings):
         return self.secrets_dir / "llm_api_key"
 
     @property
+    def internal_secret_path(self) -> Path:
+        """Secret partagé entre l'Atelier et ce qui s'annonce comme interne.
+
+        L'adresse d'origine ne prouve rien : derrière un ingress, uvicorn voit
+        celle du contrôleur, qui est dans une plage privée. Toute requête venue
+        d'Internet passerait pour une requête du cluster.
+        """
+        return self.secrets_dir / "atelier_internal_secret"
+
+    @property
     def claude_bin(self) -> Path:
         return self.work_dir / "bin" / "claude"
 

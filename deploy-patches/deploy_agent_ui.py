@@ -8,6 +8,9 @@ MCP_URL = "https://user-nic01asfr-passerelle-mcp.user.lab.sspcloud.fr/mcp"
 SESSION = "proj-claude-code"
 ROOT = pathlib.Path(__file__).resolve().parent.parent / "atelier-src/mcp_gateway/atelier"
 BASE = "/home/onyxia/work/atelier-src/mcp_gateway/atelier"
+# Tous les fichiers du service, sans exception : une liste tenue à la main
+# laissait quinze modules hors déploiement, dont les changements ne
+# partaient jamais — en silence, ce qui est le pire des cas.
 FILES = [
     "web/js/views/agent.js",
     "web/js/controllers/agent.js",
@@ -49,6 +52,32 @@ FILES = [
     "web/js/app.js",
     "web/css/app.css",
     "web/index.html",
+    "__init__.py",
+    "app.py",
+    "auth.py",
+    "claude_home.py",
+    "config.py",
+    "events.py",
+    "gateway_mcp.py",
+    "gateway_overview.py",
+    "gateway_runtime.py",
+    "mcp_registry.py",
+    "models_catalog.py",
+    "pilote_client.py",
+    "session_attachments.py",
+    "vscode_bridge.py",
+    "web/js/controllers/composer-input.js",
+    "web/js/core/dom.js",
+    "web/js/core/router.js",
+    "web/js/services/catalog.js",
+    "web/js/services/vscode.js",
+    "web/js/ui/auto-grow-textarea.js",
+    "web/js/ui/code-highlight.js",
+    "web/js/ui/context-menu.js",
+    "web/js/ui/markdown.js",
+    "web/js/ui/message-render.js",
+    "web/js/views/shell.js",
+    "wikichat_pilote_proxy.py",
 ]
 
 # Notre version de wikichat (voir wikichat-atelier/README.md) : elle vit hors

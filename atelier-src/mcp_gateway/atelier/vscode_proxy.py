@@ -77,12 +77,22 @@ class VscodeUpstream:
         return self._client
 
     def reset(self, password: str = "") -> None:
+        """Repart sur un client neuf, appelable depuis n'importe où.
+
+        La fermeture était confiée à `asyncio.create_task`, qui exige une
+        boucle en cours. Appelée depuis une route synchrone — FastAPI les
+        exécute dans un fil séparé — elle levait « no running event loop » et
+        rendait 500. L'enregistrement du mot de passe échouait donc en silence,
+        le script appelant terminant par `|| true`.
+
+        On lâche le client sans l'attendre : httpx ferme ses connexions à la
+        collecte, et la route qui appelle n'a pas à savoir si une boucle
+        tourne.
+        """
         self.password = password
         self._ready = False
         self._auth_none = False
-        if self._client is not None:
-            asyncio.create_task(self._client.aclose())
-            self._client = None
+        self._client = None
 
     async def close(self) -> None:
         if self._client is not None:
