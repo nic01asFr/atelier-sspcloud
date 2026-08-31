@@ -255,6 +255,10 @@ export function streamEvents(sessionId, message, { token, onEvent, attachmentIds
 
 function toolOutputText(block) {
   const content = block?.content;
+  // Claude écrit la sortie tantôt en blocs, tantôt d'une seule pièce. Ne
+  // reconnaître que la première forme laissait l'outil affiché « terminé »
+  // avec une sortie vide.
+  if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   return content
     .filter((c) => c && c.type === "text" && c.text)
@@ -359,6 +363,36 @@ export function messagesFromTranscript(transcriptText) {
           }
         }
       }
+    } else if (type === "user") {
+      // Les retours d'outils voyagent dans les enregistrements user : sans
+      // les lire, chaque outil s'affiche « terminé » avec une sortie vide dès
+      // qu'on recharge la conversation. Le texte, lui, n'est présent que dans
+      // les transcripts repris de Claude Code — l'Atelier passe le sien en
+      // argument, il n'apparaît pas dans le flux.
+      const content = obj.message?.content;
+      const dits = [];
+      if (typeof content === "string") {
+        if (content.trim()) dits.push(content);
+      } else if (Array.isArray(content)) {
+        for (const block of content) {
+          if (!block || typeof block !== "object") continue;
+          if (block.type === "tool_result") {
+            const tool = findToolBlock(blocks, block.tool_use_id || "");
+            if (tool) {
+              tool.output = toolOutputText(block);
+              tool.status = block.is_error ? "denied" : "done";
+            }
+          } else if (block.type === "text" && block.text) {
+            dits.push(block.text);
+          }
+        }
+      }
+      const dit = dits.join("\n\n").trim();
+      if (dit && !obj.isMeta) {
+        // Un mot de l'utilisateur clôt la réponse en cours.
+        pushAssistant();
+        messages.push({ role: "user", text: dit });
+      }
     } else if (type === "result") {
       const denials = Array.isArray(obj.permission_denials) ? obj.permission_denials : [];
       for (const d of denials) {
@@ -409,6 +443,16 @@ export function messagesFromTranscript(transcriptText) {
 
 /** Fusionne messages user (sessionStorage) + transcript (assistant). */
 export function mergeChatMessages(stored, parsed) {
+  // Un transcript qui porte lui-même les messages de l'utilisateur se suffit,
+  // et son ordre est le vrai : c'est le cas des conversations reprises de
+  // Claude Code. Le sessionStorage reste la source pour les autres, où le
+  // flux ne renvoie pas ce qu'on a écrit. On ne lui préfère le transcript que
+  // s'il en dit au moins autant, pour ne rien perdre.
+  const ditsTranscript = (parsed || []).filter((m) => m.role === "user");
+  const ditsStockes = (stored || []).filter((m) => m.role === "user");
+  if (ditsTranscript.length && ditsTranscript.length >= ditsStockes.length) {
+    return parsed;
+  }
   const users = (stored || []).filter((m) => m.role === "user");
   const assistantSide = (parsed || []).filter(
     (m) => m.role === "assistant" || m.role === "error"

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import signal
 import subprocess
 import time
@@ -17,6 +19,46 @@ from mcp_gateway.atelier.claude_home import sync_claude_home
 from mcp_gateway.atelier.config import AtelierSettings
 from mcp_gateway.atelier.events import AtelierEvent, parse_stream_json_line
 from mcp_gateway.atelier.mcp_sync import materialize_mcp_config
+
+
+# Le lecteur de l'interface ne se sert que de ces enregistrements. Le flux
+# du CLI en contient bien d'autres — chaque fragment de texte arrive en
+# `stream_event` — qui ne servent qu'a l'affichage en direct, deja assure
+# par le canal SSE. Les garder gonflait le journal d'un facteur dix, que le
+# navigateur retelechargeait et relisait a chaque ouverture.
+TYPES_UTILES = frozenset({"assistant", "user", "result"})
+_TYPE = re.compile(r'"type"\s*:\s*"([a-z_-]+)"')
+
+
+def ligne_a_conserver(ligne: str) -> bool:
+    trouve = _TYPE.search(ligne)
+    return bool(trouve) and trouve.group(1) in TYPES_UTILES
+
+
+def enregistrement_utilisateur(message: str, session_id: str, horodatage: str) -> str:
+    """Ce que quelqu'un vient d'ecrire, tel que le journal doit le garder.
+
+    Le CLI recoit la question en argument et ne la reemet pas dans son flux :
+    sans cette ligne, une conversation relue ailleurs n'a plus que les
+    reponses, et les messages de la personne restent dans le navigateur qui
+    les a tapes.
+    """
+    return (
+        json.dumps(
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": message}],
+                },
+                "session_id": session_id,
+                "timestamp": horodatage,
+                "parent_tool_use_id": None,
+            },
+            ensure_ascii=False,
+        )
+        + chr(10)
+    )
 
 
 @dataclass
@@ -98,6 +140,11 @@ class FakeHarness(Harness):
             % __import__("json").dumps(text)
         )
         with transcript_path.open("a", encoding="utf-8") as tf:
+            tf.write(
+                enregistrement_utilisateur(
+                    message, session_id, datetime.now(timezone.utc).isoformat()
+                )
+            )
             tf.write(line)
             tf.write(
                 '{"type":"result","subtype":"success","result":%s}\n'
@@ -262,6 +309,8 @@ class ClaudeHarness(Harness):
             with transcript_path.open("a", encoding="utf-8") as tf, log_path.open(
                 "a", encoding="utf-8"
             ) as lf:
+                tf.write(enregistrement_utilisateur(message, cli_id, stamp))
+                tf.flush()
                 while True:
                     if time.monotonic() > deadline:
                         proc.send_signal(signal.SIGTERM)
@@ -279,8 +328,9 @@ class ClaudeHarness(Harness):
                         break
                     line = proc.stdout.readline()
                     if line:
-                        tf.write(line)
-                        tf.flush()
+                        if ligne_a_conserver(line):
+                            tf.write(line)
+                            tf.flush()
                         for ev in parse_stream_json_line(session_id, line):
                             events.append(ev)
                             if ev.kind == "texte" and ev.text and ev.raw_type not in (
