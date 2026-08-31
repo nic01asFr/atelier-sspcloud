@@ -136,7 +136,7 @@ async def lifespan(app: FastAPI):
 
 def create_app(cfg: Settings | None = None) -> FastAPI:
     cfg = cfg or settings
-    app = FastAPI(title="Cerema Gateway", version=__version__, lifespan=lifespan)
+    app = FastAPI(title="Atelier Gateway", version=__version__, lifespan=lifespan)
     app.state.settings = cfg
 
     @app.middleware("http")

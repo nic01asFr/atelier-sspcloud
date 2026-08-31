@@ -98,7 +98,7 @@ _SUFFIXES_SECRETS = ("_KEY", "_TOKEN", "_SECRET", "_BEARER", "_PASSWORD")
 def variable_permise(nom: str) -> bool:
     if nom in VARIABLES_PERMISES:
         return True
-    if nom.startswith(("GATEWAY_", "CEREMA_")):
+    if nom.startswith("GATEWAY_"):
         return False
     return not nom.endswith(_SUFFIXES_SECRETS)
 
