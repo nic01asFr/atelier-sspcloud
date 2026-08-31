@@ -93,7 +93,7 @@ wikichat-memory/
 ├── .claude/settings.json     # mode assistant (permissions légères)
 ├── .wikichat/
 │   ├── context.json
-│   ├── knowledge/            # axes compilés (grist, cerema, …)
+│   ├── knowledge/            # axes compilés (grist, sig, …)
 │   └── registry/             # métadonnées projets connus
 └── assistant/sessions/
     └── <uuid>/
@@ -448,7 +448,7 @@ Pour cadrer avec l’agent dev Wikichat via Wikichat MCP :
 - Plan implémentation : [`atelier-mcp-implementation-plan.md`](./atelier-mcp-implementation-plan.md).
 - Skill Wikichat : `search_knowledge`, `close_project`, chemins `~/.wikichat/` et `<projet>/.wikichat/`.
 - Atelier pod : `~/work/atelier-src/mcp_gateway/atelier/`.
-- Gateway Cerema : `Gateway_cerema/src/mcp_gateway/`.
+- Passerelle amont : `<passerelle-amont>/src/mcp_gateway/`.
 - Handoff VS Code : `~/work/bin/atelier-vscode-handoff.sh`, `vscode_handoff.py`.
 - Hub : `https://<user>-atelier.user.lab.sspcloud.fr/`.
 

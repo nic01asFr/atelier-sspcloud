@@ -6,7 +6,7 @@ Document **opérationnel** : décisions à figer, périmètre exact de chaque ph
 
 **Alignement Wikichat / workspaces** : [`atelier-wikichat-alignment.md`](./atelier-wikichat-alignment.md).
 
-**Code gateway** : repo `Gateway_cerema` (`src/mcp_gateway/`). **Hub Atelier** : `atelier-src/mcp_gateway/atelier/` (slice partielle — voir §2).
+**Code gateway** : le dépôt amont de la passerelle (`src/mcp_gateway/`). **Hub Atelier** : `atelier-src/mcp_gateway/atelier/` (slice partielle — voir §2).
 
 ---
 
@@ -27,13 +27,13 @@ Document **opérationnel** : décisions à figer, périmètre exact de chaque ph
 | Zone | Emplacement | État |
 |------|-------------|------|
 | Hub Atelier (API, harness, UI shell) | `Claude Code sspcloud/atelier-src/` | Partiel — **pas** `mcp_registry.py`, `mcp_sync.py` sur disque local (déployés sur pod via tarball) |
-| Package complet `mcp_gateway` | `Gateway_cerema/src/mcp_gateway/` | Gateway + pool + compositions + profils + **atelier** |
+| Package complet `mcp_gateway` | `<passerelle-amont>/src/mcp_gateway/` | Gateway + pool + compositions + profils + **atelier** |
 | Registre actuel pod | `~/work/mcp/registry.json` + `claude-mcp.json` | Flat JSON, materialize global |
 | Harness | `materialize_mcp_config()` → `--strict-mcp-config` | Ignore `.mcp.json` projet |
 | API MCP hub | `/v1/mcp/servers` (McpRegistry JSON) | Pas gateway API |
 | Passerelle plateforme | `passerelle-mcp.user.lab…` | Déploiement Helm séparé — **pas** le registre pod cible |
 
-**Décision figée (D10)** : **intégration** du code gateway dans le stack Atelier — on ne déploie pas Gateway Cerema « tel quel » (pas de second service Helm, pas de clone `gateway-src` sur le pod, pas de proxy vers une passerelle distante comme registre user).
+**Décision figée (D10)** : **intégration** du code gateway dans le stack Atelier — on ne déploie pas la passerelle « telle quelle » (pas de second service Helm, pas de clone `gateway-src` sur le pod, pas de proxy vers une passerelle distante comme registre user).
 
 ---
 
@@ -53,10 +53,10 @@ Document **opérationnel** : décisions à figer, périmètre exact de chaque ph
 
 **On fait** :
 
-- Merger / vendre le package `mcp_gateway` (pool, catalog, compositions, profils) **dans** `atelier-src/` — source amont : repo `Gateway_cerema`, adapté au contexte pod Atelier.
+- Merger / vendre le package `mcp_gateway` (pool, catalog, compositions, profils) **dans** `atelier-src/` — source amont : le dépôt de la passerelle, adapté au contexte pod Atelier.
 - Un seul processus **uvicorn** `:8787` : `build_app()` initialise le **lifespan gateway** (DB, catalog, pool, compositions) + routes hub + routes MCP API + endpoint `/mcp` SSE si requis en loopback.
 - Routes API unifiées sous le hub (ex. `/v1/mcp/*` = handlers gateway, pas proxy HTTP externe).
-- Widget Connecteurs : assets gateway intégrés sous `/connecteurs/…` ou réutilisation progressive du widget Cerema **rebrandé** Atelier.
+- Widget Connecteurs : assets gateway intégrés sous `/connecteurs/…` ou réutilisation progressive du widget amont **rebrandé** Atelier.
 
 **On ne fait pas** :
 
@@ -69,7 +69,7 @@ Document **opérationnel** : décisions à figer, périmètre exact de chaque ph
 
 - Chemins PVC : `ATELIER_WORK/mcp/` pour `db` + `catalog.yaml`.
 - Auth : une seule couche `OwnerAuth` Atelier ; pas de middleware gateway dupliqué.
-- UI Cerema standalone / routes widget publiques hors hub : retirées ou remplacées par onglets Atelier.
+- UI amont autonome / routes widget publiques hors hub : retirées ou remplacées par onglets Atelier.
 - `main.py` gateway standalone : **non utilisé** sur le pod — logique reprise dans `atelier/app.py` + module `gateway_runtime.py` (lifespan partagé).
 
 ### 3.3 Modèle de processus sur le pod
@@ -145,7 +145,7 @@ Ne pas maintenir deux clés propriétaire.
 
 **IN**
 
-- [ ] Package `mcp_gateway` intégré dans `atelier-src/` (merge depuis `Gateway_cerema`, adapté)
+- [ ] Package `mcp_gateway` intégré dans `atelier-src/` (merge depuis la passerelle amont, adapté)
 - [ ] `build_app()` : lifespan gateway (DB, catalog, pool, compositions) dans le même process `:8787`
 - [ ] `catalog.yaml` seed minimal (wikichat local, filesystem stdio)
 - [ ] Migration `registry.json` → `gateway.db` (`import_registry`)
@@ -162,7 +162,7 @@ Ne pas maintenir deux clés propriétaire.
 - Merge harness `.mcp.json` / `effective/` (M3)
 - `mcp_overlay` session (M5)
 - Onglet Agent (M6–M7)
-- Déploiement Gateway Cerema standalone / chart Helm sur pod
+- Déploiement de la passerelle en service séparé / chart Helm sur pod
 - Import catalogue org depuis passerelle distante automatique
 
 **Critères d’acceptation M1**
@@ -263,7 +263,7 @@ Ne pas couper harness en M1 sans bridge.
 
 | Action | Repo | Cible pod |
 |--------|------|-----------|
-| Package `mcp_gateway` intégré | `Claude Code sspcloud/atelier-src/` (merge `Gateway_cerema`) | `~/work/atelier-src/` |
+| Package `mcp_gateway` intégré | `Claude Code sspcloud/atelier-src/` (merge de la passerelle amont) | `~/work/atelier-src/` |
 | Deploy | `deploy-patches/deploy_shell_ui.py` | tarball + restart **un** process |
 
 **M1 livrable deploy** : tarball inclut gateway intégré + `catalog.yaml` seed + migration one-shot — **pas** second service.
@@ -275,7 +275,7 @@ Ne pas couper harness en M1 sans bridge.
 | Risque | Mitigation |
 |--------|------------|
 | Merge gateway complexe (lifespan) | Module `gateway_runtime.py` isolé ; tests FakeHarness + pool mock |
-| Divergence amont `Gateway_cerema` | Porter fixes dans atelier-src ; cherry-pick documenté |
+| Divergence avec la passerelle amont | Porter fixes dans atelier-src ; cherry-pick documenté |
 | Harness cassé pendant migration | Bridge materialize M1 |
 | Catalogue org vide | `catalog.yaml` seed minimal pod-local |
 | Wikichat down | Pool status visible ; harness sans wikichat si disabled |
@@ -297,7 +297,7 @@ Ne pas couper harness en M1 sans bridge.
 ## 12. Ordre d’exécution M1 (checklist dev)
 
 1. Trancher Q1 (URL wikichat)
-2. Merger modules gateway dans `atelier-src/mcp_gateway/` depuis `Gateway_cerema`
+2. Merger modules gateway dans `atelier-src/mcp_gateway/` depuis la passerelle amont
 3. `gateway_runtime.py` + lifespan dans `build_app()`
 4. Seed `catalog.yaml` + migration `registry.json`
 5. Remplacer `McpRegistry` JSON par handlers SQLite dans `api.py`

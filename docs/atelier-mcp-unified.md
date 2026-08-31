@@ -1,6 +1,6 @@
 # Atelier — Registre MCP unifié (Gateway = Pool)
 
-Document de référence pour la **fusion Gateway Cerema + pool MCP sur le pod**, les **quatre onglets** du hub (Code / Assistant / Connecteurs / Agent), et la **configuration MCP en trois niveaux**.
+Document de référence pour la **fusion de la passerelle et du pool MCP sur le pod**, les **quatre onglets** du hub (Code / Assistant / Connecteurs / Agent), et la **configuration MCP en trois niveaux**.
 
 **Statut** : cadrage validé — implémentation partielle (voir § État actuel).
 
@@ -8,7 +8,7 @@ Document de référence pour la **fusion Gateway Cerema + pool MCP sur le pod**,
 
 **Implémentation (avant code)** : [`atelier-mcp-implementation-plan.md`](./atelier-mcp-implementation-plan.md) — décisions M1, périmètres IN/OUT, critères d’acceptation.
 
-**Code** : `atelier-src/mcp_gateway/atelier/` + stack Gateway Cerema (`Gateway_cerema/src/mcp_gateway/`).
+**Code** : `atelier-src/mcp_gateway/atelier/` + stack de la passerelle amont (`<passerelle-amont>/src/mcp_gateway/`).
 
 ---
 
@@ -187,14 +187,15 @@ POST   /v1/agents/proposed-actions/{id}/decide
 
 | Élément | Actuel | Cible |
 |---------|--------|-------|
-| Registre | ✅ M1 — `gateway.db` intégré dans hub `:8787` | Gateway SQLite + pool sur pod |
-| Harness MCP | `claude-mcp.json` global, tous enabled | Merge projet + overlay → `effective/<id>.json` |
-| Connecteurs UI | toggles globaux JSON | UI gateway complète |
-| Composer `+` MCP | absent | overlay conversation (niveau 3) |
-| `.mcp.json` projet code | absent / ignoré (strict) | binding partagé sessions |
-| Assistant cwd | racine mémoire (doc ancienne) | sous-dossier session |
-| Agent onglet | stub | profils + pilote |
-| Wikichat `/pilote` | service séparé | migré vers onglet Agent |
+| Registre | ✅ `gateway.db` intégré dans hub `:8787` | Gateway SQLite + pool sur pod |
+| Harness MCP | ✅ merge projet + overlay, recalculé à chaque message | Merge projet + overlay → `effective/<id>.json` |
+| Connecteurs UI | ✅ familles, socle non cochable, compositions | UI gateway complète |
+| Composer `+` MCP | ✅ overlay par conversation | overlay conversation (niveau 3) |
+| `.mcp.json` projet code | ✅ écrit et pris en compte | binding partagé sessions |
+| Assistant cwd | ✅ sous-dossier session ; les anciennes fiches migrent au tour suivant, journal compris | sous-dossier session |
+| Agent onglet | ✅ agents systèmes et personnels, discussion, sélection d'outils | profils + pilote |
+| Wikichat `/pilote` | pilote déployé avec le service, `/pilote` encore en place | migré vers onglet Agent |
+| Passage de main VS Code | ✅ dans les deux sens, voir [`atelier-vscode-passage-de-main.md`](./atelier-vscode-passage-de-main.md) | — |
 
 ---
 
@@ -226,4 +227,4 @@ Détail opérationnel (IN/OUT, critères M1, décisions processus) : [`atelier-m
 
 ---
 
-*Dernière mise à jour : cadrage registre MCP unifié, trois niveaux, bindings par kind, profils Agent.*
+*Dernière mise à jour : état repris après la mise en service du passage de main VS Code — conversations alignées dans les deux sens, journaux de conversation allégés, sous-dossiers assistant.*

@@ -106,9 +106,11 @@ dossier sur disque. Renommer est donc sans effet de bord, autant de fois qu'on v
 - `ProjectStore.create()` fait `mkdir(exist_ok=True)` : deux projets de même nom
   réutiliseraient le même dossier. Le slug doit être rendu unique côté client
   (`nouveau-projet`, `nouveau-projet-2`, …).
-- Il n'existe pas de `DELETE /v1/projects` : un projet créé par `+` puis abandonné
-  reste définitivement dans la liste. C'est le coût assumé de la création immédiate
-  sur ce geste, qui est délibéré ; l'accueil, lui, n'écrit rien sans message.
+- `DELETE /v1/projects/{slug}` existe désormais, et refuse tant qu'une conversation
+  subsiste ou que le dossier contient du travail. Ce que l'Atelier y a lui-même
+  déposé — réglages VS Code, consigne d'ouverture, déclaration de connecteurs — ne
+  compte pas comme du travail : sans cela, un projet ouvert une fois dans VS Code
+  devenait indestructible.
 
 ### Ce qui disparaît
 
@@ -117,8 +119,10 @@ dossier sur disque. Renommer est donc sans effet de bord, autant de fois qu'on v
 
 ### À reprendre plus tard (Code)
 
-- **Ouverture VS Code cassée** — le lien de la barre de conversation ne fait plus
-  son office. À diagnostiquer (proxy VS Code, `vscodeOpenUrl`, workspace).
+- ~~**Ouverture VS Code cassée**~~ — réparée, et étendue : l'extension Claude Code
+  s'ouvre sur la conversation courante, et une conversation née dans l'extension
+  remonte comme session du projet. Mécanisme et faits mesurés dans
+  [`atelier-vscode-passage-de-main.md`](../../atelier-vscode-passage-de-main.md).
 - **Page projet** — un écran propre au projet lui-même, distinct de la
   conversation : revue de projet, fonctions Wikichat (mémoire, closure,
   capitalisation). À cadrer dans une réflexion plus globale, pas au fil de l'eau.
