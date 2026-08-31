@@ -132,6 +132,19 @@ def owner_session_valid(conn: sqlite3.Connection, sid: str) -> bool:
     return bool(row and row["expires_at"] > time.time())
 
 
+def close_owner_session(conn: sqlite3.Connection, sid: str) -> bool:
+    """Ferme une session côté serveur, et pas seulement dans le navigateur.
+
+    Sans cela, se déconnecter n'enlevait qu'un cookie : le même identifiant
+    rejoué depuis ailleurs restait valable jusqu'à son expiration.
+    """
+    if not sid:
+        return False
+    curseur = conn.execute("DELETE FROM oauth_sessions WHERE sid = ?", (sid,))
+    conn.commit()
+    return curseur.rowcount > 0
+
+
 def remember_grant(conn: sqlite3.Connection, client_id: str, redirect_uri: str) -> None:
     conn.execute(
         """INSERT INTO oauth_grants (client_id, redirect_uri) VALUES (?, ?)

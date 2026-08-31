@@ -84,6 +84,49 @@ FILES = [
 # de l'arbre du service, mais se deploie avec lui — sinon elle ne survivrait
 # pas a une recreation du pod.
 DEPOT = pathlib.Path(__file__).resolve().parent.parent
+# Le reste du paquet : passerelle, catalogue, authentification. Il n'était
+# pas déployé du tout — les corrections qu'on y portait restaient sur la
+# machine, sans que rien ne le signale.
+PAQUET = [
+    "__init__.py",
+    "api.py",
+    "auth.py",
+    "bundles.py",
+    "catalog.py",
+    "catalog_sync.py",
+    "compositions/__init__.py",
+    "compositions/executor.py",
+    "compositions/refs.py",
+    "compositions/service.py",
+    "compositions/validate.py",
+    "config.py",
+    "credentials.py",
+    "db.py",
+    "main.py",
+    "mcp/__init__.py",
+    "mcp/gateway.py",
+    "mcp/instructions.py",
+    "mcp/tools_registry.py",
+    "mcp_fields.py",
+    "meta_tools_defs.py",
+    "notifications.py",
+    "oauth.py",
+    "profile_tools.py",
+    "profiles.py",
+    "registry.py",
+    "server_enable.py",
+    "tool_cache.py",
+    "tool_hints.py",
+    "tool_search.py",
+    "tools_exposure.py",
+    "tools_hub.py",
+    "upstream/__init__.py",
+    "upstream/client.py",
+    "upstream/pool.py",
+    "upstream/transports.py",
+    "upstream_hints.py",
+]
+
 HORS_ARBRE = [
     (
         DEPOT / "wikichat-atelier/src/pilote.mjs",
@@ -142,6 +185,9 @@ def text_result(r: dict) -> str:
 def main() -> None:
     rid = 1
     cibles = [(ROOT / rel, f"{BASE}/{rel}") for rel in FILES]
+    cibles += [
+        (ROOT.parent / rel, f"{BASE.rsplit(chr(47), 1)[0]}/{rel}") for rel in PAQUET
+    ]
     cibles += [(src, dest) for src, dest in HORS_ARBRE]
     for source, dest in cibles:
         rel = source.name

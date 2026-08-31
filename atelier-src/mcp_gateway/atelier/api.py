@@ -318,9 +318,10 @@ def build_app(
         return auth.require(authorization)
 
     def require_owner_nav(request: Request, authorization: Annotated[str | None, Header()] = None) -> str:
-        """Bearer ou cookie HttpOnly (navigation /v1/vscode/open)."""
-        token = bearer_from_header(authorization) or request.cookies.get(COOKIE_NAME)
-        return auth.check_token(token)
+        """Clé au porteur, ou session de navigation (liens /v1/vscode/open)."""
+        return auth.check_navigation(
+            bearer_from_header(authorization), request.cookies.get(COOKIE_NAME)
+        )
 
     def _meta_payload() -> dict[str, Any]:
         from mcp_gateway.atelier.vscode_bridge import bridge_status
@@ -414,17 +415,36 @@ def build_app(
         response: Response,
         _owner: str = Depends(require_owner),
     ) -> dict[str, str]:
-        """Pose le cookie de navigation pour les liens VS Code (même onglet / nouvel onglet)."""
+        """Ouvre une session de navigation, pour les liens VS Code.
+
+        Le cookie portait la clé propriétaire elle-même, trente jours durant.
+        Or cette clé ouvre tout — le harnais lance `claude` en
+        `bypassPermissions` — et rien ne permettait de la révoquer sans se
+        connecter au pod. Il porte désormais un identifiant de session, sans
+        pouvoir propre, daté et révocable.
+        """
+        sid = auth.ouvrir_session()
         response.set_cookie(
             key=COOKIE_NAME,
-            value=auth.owner_key,
+            value=sid,
             httponly=True,
             secure=True,
             samesite="lax",
-            max_age=60 * 60 * 24 * 30,
+            max_age=auth.DUREE_SESSION,
             path="/",
         )
         return {"status": "ok"}
+
+    @router.delete("/auth/cookie")
+    def clear_auth_cookie(request: Request, response: Response) -> dict[str, str]:
+        """Ferme la session, côté serveur et côté navigateur.
+
+        Effacer le cookie seul ne suffirait pas : l'identifiant rejoué depuis
+        ailleurs resterait valable jusqu'à son expiration.
+        """
+        ferme = auth.fermer_session(request.cookies.get(COOKIE_NAME))
+        response.delete_cookie(key=COOKIE_NAME, path="/")
+        return {"status": "ok", "session_fermee": "oui" if ferme else "non"}
 
     @router.get("/meta")
     def meta(_owner: str = Depends(require_owner)) -> dict[str, Any]:

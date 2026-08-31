@@ -20,6 +20,10 @@ export function createAuthController(ctx) {
   const { state, render, writeQuery, sessionActions, connectorActions } = ctx;
 
   function logout(msg) {
+    // La session de navigation vit côté serveur : l'oublier ici ne
+    // l'invaliderait pas. On la ferme sans attendre — se déconnecter ne doit
+    // pas dépendre du réseau.
+    api.clearAuthCookie();
     S.setToken(state, "");
     S.setSessionId(state, null);
     S.setProjects(state, []);

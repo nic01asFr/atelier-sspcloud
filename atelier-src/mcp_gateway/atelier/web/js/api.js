@@ -522,6 +522,16 @@ export async function setAuthCookie(token) {
   return res.json();
 }
 
+/** Ferme la session de navigation côté serveur, pas seulement le cookie. */
+export async function clearAuthCookie() {
+  try {
+    await fetch("/v1/auth/cookie", { method: "DELETE" });
+  } catch {
+    // Se déconnecter ne doit jamais échouer faute de réseau : l'état local
+    // est nettoyé de toute façon, et la session expirera d'elle-même.
+  }
+}
+
 export function vscodeOpenUrl(slug, sessionId) {
   const q = new URLSearchParams();
   if (slug) q.set("slug", slug);

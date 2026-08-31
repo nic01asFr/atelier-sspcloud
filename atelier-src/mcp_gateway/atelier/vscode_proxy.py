@@ -12,7 +12,11 @@ from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSock
 from starlette.responses import Response, StreamingResponse
 
 from mcp_gateway.atelier.config import AtelierSettings
-from mcp_gateway.atelier.vscode_bridge import load_vscode_password, save_vscode_password
+from mcp_gateway.atelier.vscode_bridge import (
+    COOKIE_NAME,
+    load_vscode_password,
+    save_vscode_password,
+)
 
 log = logging.getLogger("atelier.vscode_proxy")
 
@@ -270,10 +274,13 @@ def register_vscode_proxy(
     @app.websocket(f"{prefix}")
     @app.websocket(f"{prefix}/{{path:path}}")
     async def vscode_ws_proxy(websocket: WebSocket, path: str = "") -> None:
-        token = websocket.cookies.get("atelier_owner") or websocket.query_params.get("token")
+        # Même règle que les routes de navigation : la clé au porteur, ou la
+        # session que le cookie désigne. Le cookie ne porte plus la clé.
         auth = app.state.auth
         try:
-            auth.check_token(token)
+            auth.check_navigation(
+                websocket.query_params.get("token"), websocket.cookies.get(COOKIE_NAME)
+            )
         except HTTPException:
             await websocket.close(code=4401)
             return
