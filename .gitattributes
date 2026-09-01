@@ -1,0 +1,15 @@
+# Ce dépôt se développe sous Windows et se déploie sur un pod Linux. Sans
+# consigne, git rend l'arbre de travail en CRLF, et le script de déploiement
+# pousse ces octets tels quels. Python et JavaScript s'en accommodent ; un
+# script shell, non — il échoue sur un « \r » invisible en fin de shebang.
+#
+# On fixe donc la fin de ligne à l'unix pour tout ce qui part sur le pod.
+
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.tgz binary
