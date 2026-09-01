@@ -27,6 +27,16 @@ inchangé** : ce dossier est un fork assumé, pas une modification en amont.
 service, et le vérifie par empreinte. Le service wikichat charge le pilote au
 démarrage : un redémarrage est nécessaire pour qu'un changement prenne effet.
 
+## Origine et licence
+
+wikichat est du même auteur que l'Atelier ; ce dossier n'est donc pas la reprise
+du travail d'un tiers, mais une version de travail tenue à côté du service qui
+s'en sert. Le dépôt wikichat d'origine reste inchangé : les ajouts décrits
+ci-dessus ne remontent pas en amont.
+
+Ce dossier est couvert par la licence du dépôt — Apache-2.0, voir
+[`LICENSE`](../LICENSE).
+
 ## Reprendre une version d'origine plus récente
 
 Repartir du `src/pilote.mjs` d'origine et rejouer les trois ajouts ci-dessus.
