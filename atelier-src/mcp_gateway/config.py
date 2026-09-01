@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     upstream_probe_on_startup: bool = True
     mcp_default_bundle: str = ""
     gitlab_catalog_url: str = ""
+    bearer_ceremadoc: str = ""
     gitlab_catalog_token: str = ""
     catalog_sync_write_local: bool = False
 

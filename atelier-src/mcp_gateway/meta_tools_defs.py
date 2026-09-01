@@ -87,7 +87,7 @@ META_TOOLS = [
                 "org_servers": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "Ids serveurs org catalogue (qgis, compute, wikichat…)",
+                    "description": "Ids serveurs org catalogue (ceremadoc, qgis, compute…)",
                 },
                 "registry_servers": {
                     "type": "array",
@@ -268,7 +268,7 @@ META_TOOLS = [
                 },
                 "server": {
                     "type": "string",
-                    "description": "Filtre par service d'origine (qgis, compute, wikichat…).",
+                    "description": "Filtre par service d'origine (qgis, compute, ceremadoc…).",
                 },
                 "limit": {
                     "type": "integer",
