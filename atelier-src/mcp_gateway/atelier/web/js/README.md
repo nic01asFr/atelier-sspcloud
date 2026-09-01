@@ -36,7 +36,7 @@ js/
 | `?view=` | Rôle |
 |----------|------|
 | `code` (défaut) | Projets `kind=code`, chat Claude Code |
-| `assistant` | Stub — mémoire `wikichat-memory` |
+| `assistant` | Panneau d'attente — la vue reste à écrire |
 | `connecteurs` | Admin pool MCP (niveau 1 — catalogue, perso, compositions) |
 | `agent` | Profils gateway + agents planifiés (pilote) |
 
@@ -50,10 +50,16 @@ js/
 
 Références : `docs/atelier-mcp-unified.md`, `docs/atelier-wikichat-alignment.md` (§11.2 mobile).
 
-## Responsive mobile (à venir — R1–R4)
+## Responsive mobile
 
-Cible : expérience type apps Anthropic / Cursor sur téléphone. Voir `docs/atelier-wikichat-alignment.md` §11.2 et §13.3.
+La bascule liste ↔ détail est en place, contrairement à ce que ce fichier
+annonçait. Vérifié à 501 px : la vue prend `shell-mode-detail`, la barre
+latérale se replie à zéro, le panneau principal occupe toute la largeur, sans
+débordement horizontal ; le bouton « ← Liste » ramène en `shell-mode-list`, où
+c'est l'inverse.
 
-Implémentation actuelle : breakpoint `720px` (sidebar empilée). Composer / popovers / onglets admin : desktop-first.
+Reste desktop-first : le composeur, les popovers et les onglets
+d'administration. Cible d'ensemble : `docs/atelier-wikichat-alignment.md`
+§11.2 et §13.3.
 
 **PJ** : upload → `cwd/.atelier/uploads/` ; le message harness utilise la syntaxe native Claude Code `@chemin/relatif` (pas d’inline custom).

@@ -237,18 +237,55 @@ Même composant `.status-dot` + variante :
 | Assistant | en attente / terminée / erreur |
 | Connecteurs | connecté / local / erreur / off |
 
+## Sollicitation d'un agent — deux choses à trancher
+
+### Reprendre la session, ou en ouvrir une neuve
+
+Les deux comportements existent déjà côté pilote : `continue` relance avec
+`resumeSessionId`, `fire` ouvre une session neuve. Mais **c'est le bouton pressé
+qui décide** — il n'y a pas de réglage par agent. Sollicité autrement que par ce
+bouton, cron ou réveil sur mention, un agent repart systématiquement sur une
+session neuve.
+
+Ce n'est pas un détail : un agent de veille qui reprend son fil sait ce qu'il a
+déjà signalé ; le même agent relancé à neuf le resignale. À l'inverse, une tâche
+qui doit repartir propre ne veut surtout pas traîner le contexte du passage
+précédent.
+
+Le réglage appartient donc à l'agent, pas à celui qui le déclenche : *à chaque
+sollicitation, reprendre mon fil* ou *ouvrir un fil neuf*. Avec une limite à
+poser — une session qu'on reprend indéfiniment finit par saturer son contexte,
+il faut décider ce qui la clôt (âge, nombre de tours, ou décision de l'agent).
+
+### Un service de messagerie associé
+
+Aujourd'hui l'onglet Réglages d'un agent porte une phrase, et rien d'autre :
+« Canaux de messagerie : configuration à venir ici. »
+
+L'idée : associer à un agent un canal — Tchap, Telegram — pour pouvoir **le
+déclencher par message**, et lui répondre par le même chemin. C'est le
+prolongement naturel des déclencheurs : le cron réveille l'agent à heure dite,
+la mention le réveille depuis le réseau wikichat, un message le réveillerait
+depuis l'extérieur.
+
+À regarder avant de concevoir : comment Colaig s'y prend pour ce même besoin.
+
+Trois questions à trancher : où vivent les jetons du canal (pas dans le dossier
+de projet, qui se partage) ; qui a le droit de déclencher un agent par message —
+un canal ouvert est une porte d'entrée ; et si la réponse revient dans le canal
+ou reste dans l'Atelier.
+
 ## Hors scope immédiat
 
-- Discussion agent backend réelle  
 - Wizard connecteur multi-étapes complet  
 - Pastilles Code / Assistant (contrat posé, UI avec leurs shells)  
 - Raffinement riche des profils  
 
 ## Critères (passe courante)
 
-- [ ] Accueil Agent = overview utile (cartes états)
-- [ ] Création = pleine page, pas modale
-- [ ] Détail = pleine page onglets
-- [ ] Pastilles Agent dans la liste
-- [ ] Fréquence : presets + personnaliser
-- [ ] Modèles depuis `/v1/models`
+- [x] Accueil Agent = overview utile (cartes états)
+- [x] Création = pleine page, pas modale
+- [x] Détail = pleine page onglets
+- [x] Pastilles Agent dans la liste
+- [x] Fréquence : presets + personnaliser
+- [x] Modèles depuis `/v1/models`

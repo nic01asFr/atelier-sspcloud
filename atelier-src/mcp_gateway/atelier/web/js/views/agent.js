@@ -1,6 +1,6 @@
 /** Vue Agent — accueil / création pleine page / détail onglets. */
 
-import { $ } from "../core/dom.js";
+import { $, rendreActivable } from "../core/dom.js";
 import { showContextMenu } from "../ui/context-menu.js";
 import { renderToolPicker } from "../ui/tool-picker.js";
 
@@ -75,7 +75,7 @@ function renderAgentCard(agent, selected, daemon, actions, panel, state) {
   const li = document.createElement("li");
   const onDetail = panel === "detail" && agent.id === selected;
   li.className = "agent-card" + (onDetail ? " agent-card-selected" : "");
-  li.addEventListener("click", () => actions.select(agent.id));
+  rendreActivable(li, () => actions.select(agent.id));
   li.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     showContextMenu(state, e.clientX, e.clientY, [

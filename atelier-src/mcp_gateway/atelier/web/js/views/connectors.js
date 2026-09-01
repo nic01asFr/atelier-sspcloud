@@ -1,6 +1,6 @@
 /** Vue Connecteurs — shell sidebar (Plateforme / Perso) + fiche service. */
 
-import { $ } from "../core/dom.js";
+import { $, rendreActivable } from "../core/dom.js";
 import { renderCompositionBuilder } from "./composition-builder.js";
 
 function badgeClass(entry, upstreamKey, upstream) {
@@ -52,8 +52,9 @@ function renderSidebarItem(entry, { kind, selectedId, upstream, actions, titre, 
   const selKey = `${kind}:${entry.id}`;
   li.className =
     "agent-card" + (selectedId === selKey ? " agent-card-selected" : "");
-  li.addEventListener("click", (e) => {
-    if (e.target.closest("input,button")) return;
+  rendreActivable(li, (e) => {
+    // La carte porte ses propres commandes : un clic dessus leur revient.
+    if (e.target?.closest?.("input,button")) return;
     actions.select(kind, entry.id);
   });
 
@@ -407,7 +408,7 @@ function renderHome(state, actions) {
       const key = upstreamKeyFor(entry, kind);
       const li = document.createElement("li");
       li.className = "agent-queue-item";
-      li.addEventListener("click", () => actions.select(kind, entry.id));
+      rendreActivable(li, () => actions.select(kind, entry.id));
       const main = document.createElement("div");
       main.className = "agent-queue-main";
       const titre = document.createElement("strong");

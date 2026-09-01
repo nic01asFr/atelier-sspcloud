@@ -636,6 +636,28 @@ function findSessionFile(sessionId) {
   return null;
 }
 
+// Ce qu'un outil a rendu, tel qu'on peut le montrer.
+//
+// Le fil ne disait que « résultat » : le contenu était jeté ici même, si bien
+// qu'on voyait qu'un agent avait appelé un outil sans jamais savoir ce qu'il
+// en avait obtenu — la seule chose qu'on cherche en relisant son travail.
+//
+// Claude écrit ce retour tantôt d'une pièce, tantôt en blocs. On accepte les
+// deux, et on borne : un fil de discussion n'a pas à porter un dump entier.
+const SORTIE_MAX = 600;
+
+function sortieOutil(bloc) {
+  const c = bloc && bloc.content;
+  let texte = "";
+  if (typeof c === "string") texte = c;
+  else if (Array.isArray(c)) {
+    texte = c.filter((x) => x && x.type === "text" && x.text).map((x) => x.text).join("\n");
+  }
+  texte = String(texte || "").trim();
+  if (!texte) return "résultat";
+  return texte.length > SORTIE_MAX ? texte.slice(0, SORTIE_MAX) + " […]" : texte;
+}
+
 export function handlePiloteTranscript(req, res) {
   const t = getTrigger(req.params.id);
   if (!t) return res.status(404).json({ ok: false, error: "trigger introuvable" });
@@ -661,7 +683,7 @@ export function handlePiloteTranscript(req, res) {
       else if (Array.isArray(c)) {
         text = c.map((b) => b && b.type === "text" ? b.text
           : (b && b.type === "tool_use" ? "→ " + b.name
-          : (b && b.type === "tool_result" ? "← résultat" : ""))).filter(Boolean).join("\n");
+          : (b && b.type === "tool_result" ? "← " + sortieOutil(b) : ""))).filter(Boolean).join("\n");
       }
       text = String(text || "").trim();
       if (text) turns.push({ role, text: text.slice(0, 1200) });
