@@ -253,9 +253,19 @@ qui doit repartir propre ne veut surtout pas traîner le contexte du passage
 précédent.
 
 Le réglage appartient donc à l'agent, pas à celui qui le déclenche : *à chaque
-sollicitation, reprendre mon fil* ou *ouvrir un fil neuf*. Avec une limite à
-poser — une session qu'on reprend indéfiniment finit par saturer son contexte,
-il faut décider ce qui la clôt (âge, nombre de tours, ou décision de l'agent).
+sollicitation, reprendre mon fil* ou *ouvrir un fil neuf*.
+
+La saturation du contexte n'est pas un obstacle : la compaction automatique de
+Claude Code est déjà active pour toutes les sessions que l'Atelier lance —
+`autoCompactEnabled: true`, `autoCompactWindow: 50000`, dans `~/.claude` comme
+dans la copie durable du PVC. Un fil repris longtemps se compacte tout seul.
+Aucun de nos transcripts n'en porte encore la trace, faute d'avoir atteint le
+seuil, mais le mécanisme est en place et ne demande rien.
+
+Reste une question, d'un autre ordre : la compaction résume, donc elle oublie
+ce qu'elle juge secondaire. Un agent de veille qui reprend un fil compacté peut
+resignaler ce qu'il avait déjà signalé. Si cela devait compter, la mémoire
+appartiendrait à wikichat — une note de projet — plutôt qu'au fil.
 
 ### Un service de messagerie associé
 
@@ -274,6 +284,25 @@ Trois questions à trancher : où vivent les jetons du canal (pas dans le dossie
 de projet, qui se partage) ; qui a le droit de déclencher un agent par message —
 un canal ouvert est une porte d'entrée ; et si la réponse revient dans le canal
 ou reste dans l'Atelier.
+
+## Git, dépôts et GitHub — à cadrer à part
+
+Point relevé comme crucial, et laissé pour plus tard délibérément : la relation
+de l'Atelier avec git.
+
+Aujourd'hui elle n'existe qu'en creux. Un projet est un dossier ; rien ne dit
+s'il est un dépôt, ni où il pousse, ni qui l'a cloné. L'agent « Veille des
+dépôts Git » en donne la mesure : il tourne dans un dossier qui n'est pas un
+dépôt et rapporte « OK » à chaque passage. Le passage de main vers VS Code, lui,
+écrit dans le dossier du projet — `.vscode`, `.atelier`, `.mcp.json` — sans se
+demander si ce dossier est versionné ni ce qui devrait l'être.
+
+Les questions à poser ensemble, pas au fil de l'eau : ce qu'un projet Atelier
+est vis-à-vis d'un dépôt (le même objet, ou un dossier qui en contient un) ;
+qui clone, qui pousse, avec quelles identités ; ce que l'Atelier dépose dans un
+dossier versionné et ce qui doit rester dehors ; et si les agents ont le droit
+de commiter. La note d'alignement wikichat porte déjà un § « Politique Git (à
+figer) » — c'est là qu'il faut reprendre.
 
 ## Hors scope immédiat
 
