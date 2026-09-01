@@ -392,23 +392,41 @@ def build_app(
         return {"status": "ok"}
 
     @app.get("/health")
-    def health() -> dict[str, Any]:
+    def health(
+        request: Request, authorization: Annotated[str | None, Header()] = None
+    ) -> dict[str, Any]:
+        """Sonde de vie. Le détail n'est rendu qu'à qui s'est authentifié.
+
+        Ce point d'entrée reste ouvert : une sonde Kubernetes n'a pas
+        d'identifiant. Mais il rendait aussi le nom des connecteurs branchés et
+        le chemin absolu de la base — depuis Internet, à qui le demandait.
+        Rien de secret, rien d'utile non plus à un visiteur : de la
+        reconnaissance offerte.
+        """
         payload: dict[str, Any] = {
             "status": "ok",
             "service": "atelier",
             "version": __version__,
-            "harness": type(harness).__name__,
-            "gateway_integrated": not use_fake,
         }
+        try:
+            auth.check_navigation(
+                bearer_from_header(authorization), request.cookies.get(COOKIE_NAME)
+            )
+        except HTTPException:
+            return payload
+        payload["harness"] = type(harness).__name__
+        payload["gateway_integrated"] = not use_fake
         if not use_fake and hasattr(app.state, "upstream_status"):
             payload["gateway_pool"] = app.state.upstream_status
             payload["gateway_db"] = str(settings.gateway_db_path)
         return payload
 
     @router.get("/health")
-    def health_v1() -> dict[str, Any]:
+    def health_v1(
+        request: Request, authorization: Annotated[str | None, Header()] = None
+    ) -> dict[str, Any]:
         """Alias sous /v1 pour les recettes / clients."""
-        return health()
+        return health(request, authorization)
 
     @router.post("/auth/cookie")
     def set_auth_cookie(
