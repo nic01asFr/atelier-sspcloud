@@ -1,9 +1,14 @@
 """Un Atelier jetable, monté sur un répertoire de travail temporaire.
 
-Toute la configuration découle de `ATELIER_WORK`, que les réglages relisent
-à chaque instanciation : il suffit donc de le déplacer pour qu'un test ne
-touche ni au PVC ni à l'installation de qui lance la suite. Le harnais
-factice évite en plus de démarrer la passerelle et d'appeler un modèle.
+Le répertoire est passé au constructeur, pas par l'environnement. La variable
+`ATELIER_WORK` est lue à l'import du module de configuration, et le champ
+`work_dir` répond de son côté à `ATELIER_WORK_DIR` : poser l'une pendant que
+le code attend l'autre donne un Atelier qui croit être ailleurs et écrit dans
+le vrai dossier de travail de qui lance la suite. C'est arrivé. Le passage
+explicite ne laisse pas cette place au doute, et l'assertion la referme.
+
+Le harnais factice évite en plus de démarrer la passerelle et d'appeler un
+modèle.
 """
 
 from __future__ import annotations
@@ -19,9 +24,15 @@ from mcp_gateway.atelier.config import AtelierSettings
 
 
 @pytest.fixture()
-def atelier(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
-    monkeypatch.setenv("ATELIER_WORK", str(tmp_path / "work"))
-    with TestClient(build_app(settings=AtelierSettings(), use_fake=True)) as client:
+def reglages(tmp_path: Path) -> AtelierSettings:
+    settings = AtelierSettings(work_dir=tmp_path / "work")
+    assert tmp_path in settings.work_dir.parents or settings.work_dir.parent == tmp_path
+    return settings
+
+
+@pytest.fixture()
+def atelier(reglages: AtelierSettings) -> Iterator[TestClient]:
+    with TestClient(build_app(settings=reglages, use_fake=True)) as client:
         yield client
 
 
