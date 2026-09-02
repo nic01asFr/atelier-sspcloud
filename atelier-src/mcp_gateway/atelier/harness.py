@@ -371,6 +371,18 @@ class ClaudeHarness(Harness):
                         )
             code = proc.wait(timeout=5)
         finally:
+            # Un tour abandonné en cours de route — l'appelant qui raccroche,
+            # une exception dans la boucle — laissait le `claude` vivre seul,
+            # sans personne pour lire sa sortie ni faire jouer l'échéance :
+            # elle ne vaut que tant que la boucle tourne. Quinze processus
+            # s'étaient ainsi accumulés. On ne sort pas d'ici sans l'avoir
+            # refermé.
+            if proc.poll() is None:
+                proc.send_signal(signal.SIGTERM)
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
             self._procs.pop(session_id, None)
             try:
                 sync_claude_home(self.settings)
