@@ -60,3 +60,16 @@ def test_un_message_ordinaire_n_emet_rien() -> None:
     """La prise de parole de quelqu'un n'est pas la fin d'un outil."""
     assert parse_stream_json_line(SESSION, _ligne("bonjour")) == []
     assert parse_stream_json_line(SESSION, _ligne([{"type": "text", "text": "bonjour"}])) == []
+
+
+def test_un_tour_coupe_au_plafond_est_dit() -> None:
+    """Sortie 0, `result` d'apparence normale : ça se lisait comme une fin."""
+    ligne = json.dumps({"type": "result", "subtype": "error_max_turns", "result": ""})
+    evenements = parse_stream_json_line(SESSION, ligne)
+    assert [e.kind for e in evenements] == ["erreur"]
+    assert "plafond de tours" in evenements[0].cause
+
+
+def test_un_tour_qui_aboutit_reste_une_fin() -> None:
+    ligne = json.dumps({"type": "result", "subtype": "success", "result": "voila"})
+    assert [e.kind for e in parse_stream_json_line(SESSION, ligne)] == ["texte", "fin"]

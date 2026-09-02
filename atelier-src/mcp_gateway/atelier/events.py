@@ -113,7 +113,21 @@ def parse_stream_json_line(session_id: str, line: str) -> list[AtelierEvent]:
                     )
     elif t == "result":
         subtype = obj.get("subtype") or ""
-        if obj.get("is_error") or subtype == "error_during_execution":
+        # Un tour qui épuise ses tours d'outils sort avec le code 0 et un
+        # `result` d'apparence normale : il se lisait comme une fin ordinaire,
+        # alors que le modèle s'est arrêté au milieu de son travail sans rien
+        # conclure. Le dire est le minimum — sinon on lit un silence comme une
+        # réponse.
+        if subtype == "error_max_turns":
+            events.append(
+                AtelierEvent(
+                    kind="erreur",
+                    session_id=session_id,
+                    cause="plafond de tours atteint : la réponse est incomplète",
+                    raw_type=t,
+                )
+            )
+        elif obj.get("is_error") or subtype == "error_during_execution":
             errs = obj.get("errors") or []
             if isinstance(errs, list) and errs:
                 cause = "; ".join(str(x) for x in errs if x)

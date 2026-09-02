@@ -259,25 +259,42 @@ function triggerToAgent(t, registry, now) {
   // On affiche la sélection lisible (serveurs), pas les dizaines de tokens granulaires.
   const scopeSel = (Array.isArray(p.servers) && p.servers.length) ? p.servers
     : (Array.isArray(p.allowedTools) ? p.allowedTools : []);
-  const scoped = Array.isArray(p.servers) && p.servers.length; // créé avec le split lecture/écriture
+  // Le libellé disait « lecture seule » de tout outil MCP dès qu'un agent
+  // avait une sélection — y compris de `remember` ou `add_project_note`, qui
+  // écrivent. Une fausse assurance à l'écran est pire que pas d'indication :
+  // on dit maintenant ce que la sélection garantit vraiment.
+  const permission = (n) => {
+    if (n.indexOf("mcp__") !== 0) return "intégré";
+    if (MCP_TOOL_SCOPES[n]) return "lecture seule";
+    // mcp__serveur__outil : l'agent n'a que cet outil-là, quoi qu'il fasse.
+    return n.split("__").length >= 3 ? "outil nommé" : "accès complet";
+  };
   const tools = scopeSel.length
     ? scopeSel.map((n) => ({
         name: n.indexOf("mcp__") === 0 ? n.replace(/^mcp__/, "").replace(/^claude_ai_/, "") : n,
-        perm: n.indexOf("mcp__") === 0 ? (scoped ? "lecture seule" : "accès complet") : "intégré"
+        perm: permission(n)
       }))
     : [{ name: "hérités du dossier", perm: ".mcp.json" }];
 
+  // Vingt lignes suffisaient à l'affichage — mais le formulaire d'édition se
+  // remplit depuis ce même champ, et le renvoie tel quel : toute retouche
+  // d'un agent amputait donc sa mission de ce qui dépassait, sans un mot.
+  // La consigne part entière ; le plafond n'est là que contre l'aberration.
   const mission = String(p.initial_task || p.prompt || "(mission définie dans la SOP du dossier)")
-    .split("\n").map((s) => s).slice(0, 20);
+    .split(String.fromCharCode(10)).slice(0, 400);
 
   const history = spawns.slice(0, 6).map((e) => {
     let text = "run · " + (e.status || "?");
     if (e.status === "done") text = "run terminé · OK";
     else if (e.status === "failed") text = "run échoué · exit " + (e.exit_code != null ? e.exit_code : "?");
     else if (e.status === "timeout") text = "run interrompu · timeout";
+    // Un run qui épuise ses tours sort avec le code 0 : il se lisait « OK »
+    // alors qu'il s'était arrêté au milieu, sans avoir rien rapporté.
+    else if (e.status === "max_turns") text = "run coupé · plafond de tours atteint";
     else if (e.status === "error") text = "run en erreur";
     else if (e.status === "starting" || e.status === "running") text = "en cours…";
-    return { date: fmtDate(e.spawned_at), text, err: ((e.exit_code && e.exit_code !== 0) || e.status === "error" || e.status === "timeout") ? 1 : 0 };
+    const rate = e.status === "error" || e.status === "timeout" || e.status === "max_turns";
+    return { date: fmtDate(e.spawned_at), text, err: ((e.exit_code && e.exit_code !== 0) || rate) ? 1 : 0 };
   });
 
   return {
