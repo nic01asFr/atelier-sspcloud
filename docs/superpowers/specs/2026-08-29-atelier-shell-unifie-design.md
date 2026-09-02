@@ -237,6 +237,53 @@ Même composant `.status-dot` + variante :
 | Assistant | en attente / terminée / erreur |
 | Connecteurs | connecté / local / erreur / off |
 
+## Le fil de conversation — ce qui le clôt
+
+Les mécanismes sont en place : envoi au clavier et au bouton, composeur qui
+grandit, pièces jointes, sélection MCP par conversation, arrêt en cours de tour,
+rendu du raisonnement, des appels d'outils et de leurs sorties. Le flux est
+réel — mesuré, 269 fragments étalés sur 1,7 s.
+
+Trois manques d'usage restent, et ce sont eux qui séparent « ça marche » de
+« c'est fini ». Ils valent d'être traités maintenant : l'onglet Assistant
+réutilisera ce fil tel quel, et l'onglet Agent y viendra ensuite.
+
+### Le défilement doit s'ancrer, pas se recoller
+
+`renderThread` reconstruit le fil à chaque rendu et termine par
+`thread.scrollTop = thread.scrollHeight`. Pendant qu'une réponse s'écrit —
+plusieurs centaines de fragments — remonter pour relire est impossible : chaque
+fragment ramène en bas.
+
+Règle : ne recoller au bas que si l'on y était déjà, à une marge près. Sinon
+rendre la position telle qu'elle était. C'est ce que fait tout fil qui se
+respecte, et cela ne se remarque que quand ça manque.
+
+### Un message doit pouvoir être repris
+
+On ne peut rien faire d'un message : ni le copier, ni renvoyer sa question.
+Copier une réponse est le geste le plus attendu d'une interface
+conversationnelle.
+
+Deux gestes, discrets, sur la ligne du message : **copier** le texte, et pour un
+message de l'utilisateur, **renvoyer** la même question — utile quand un tour a
+échoué ou qu'on veut une seconde réponse.
+
+Hors périmètre, et pour une raison de fond : **corriger** un message déjà envoyé.
+Une session Claude ne se rembobine pas ; il faudrait la forker. Tant que l'API
+ne l'expose pas, proposer une correction serait mentir sur ce qui se passe.
+
+### L'attente doit se lire
+
+Le modèle met plusieurs secondes avant son premier mot — mesuré à 7,9 s sur la
+passerelle du pod. Pendant ce temps la bulle est muette : une pastille, rien
+d'autre. Rien ne distingue « le modèle réfléchit » de « c'est bloqué ».
+
+Or les événements arrivent bien avant le texte : `systeme` dès l'ouverture, puis
+les fragments de raisonnement. La bulle en cours doit dire où l'on en est —
+en attente, puis en réflexion — et s'effacer dès que le texte commence. Sans
+inventer d'étapes : on n'affiche que ce que les événements disent réellement.
+
 ## Sollicitation d'un agent — deux choses à trancher
 
 ### Reprendre la session, ou en ouvrir une neuve

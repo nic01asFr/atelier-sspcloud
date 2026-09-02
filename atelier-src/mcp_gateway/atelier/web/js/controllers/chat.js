@@ -46,6 +46,7 @@ function pushStreamToUi(state, stream) {
   S.updateLastAssistant(state, {
     text: stream.text.trim(),
     blocks: buildStreamBlocks(stream),
+    phase: stream.phase,
   });
 }
 
@@ -127,6 +128,12 @@ export function createChatController(ctx) {
       thinking: "",
       text: "",
       tools: [],
+      // Le modèle met plusieurs secondes avant son premier mot — mesuré à
+      // près de huit sur la passerelle du pod. Pendant ce temps la bulle
+      // était muette, et rien ne distinguait « il réfléchit » de « c'est
+      // bloqué ». On dit donc où l'on en est, d'après ce que les événements
+      // disent réellement.
+      phase: "attente",
     };
 
     try {
@@ -135,6 +142,7 @@ export function createChatController(ctx) {
         attachmentIds,
         onEvent: (ev) => {
           if (ev.kind === "texte" && ev.text) {
+            stream.phase = api.isThinkingRawType(ev.raw_type) ? "reflexion" : "reponse";
             if (api.isThinkingRawType(ev.raw_type)) {
               stream.thinking = api.mergeAssistantText(
                 stream.thinking,
@@ -151,6 +159,7 @@ export function createChatController(ctx) {
             pushStreamToUi(state, stream);
             views.codeChat.renderThread();
           } else if (ev.kind === "outil_debut") {
+            stream.phase = "outil";
             const toolId = ev.tool_id || ev.cause || "";
             if (ev.raw_type === "input_json_delta") {
               const tool = findStreamTool(stream, toolId);

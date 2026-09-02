@@ -3072,3 +3072,48 @@ button:disabled {
     font-size: 16px; /* évite zoom auto iOS */
   }
 }
+
+/* Ce que la bulle dit avant d'avoir du texte : le modèle met plusieurs
+   secondes avant son premier mot, et une pastille muette ne distingue pas la
+   réflexion d'un blocage. */
+.msg-attente {
+  margin: 0;
+  color: var(--muted, #8b93a7);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* Les gestes qu'on peut faire d'un message. Discrets : ils ne se montrent
+   qu'au survol, et gardent leur place pour ne pas faire sauter le fil. */
+.msg-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+  min-height: 1.25rem;
+  opacity: 0;
+  transition: opacity 120ms ease-in-out;
+}
+
+.msg:hover .msg-actions,
+.msg:focus-within .msg-actions {
+  opacity: 1;
+}
+
+.msg-action {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--muted, #8b93a7);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.msg-action:hover:not(:disabled) {
+  color: var(--text, #e6e9f0);
+  text-decoration: underline;
+}
+
+.msg-action:disabled {
+  cursor: default;
+  opacity: 0.5;
+}

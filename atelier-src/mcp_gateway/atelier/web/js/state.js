@@ -355,6 +355,11 @@ export function updateLastAssistant(state, payload) {
         ...msgs[i],
         text,
         ...(blocks ? { blocks: [...blocks] } : {}),
+        // Où en est le tour, pour que la bulle le dise tant qu'elle n'a rien
+        // d'autre à montrer.
+        ...(typeof payload === "object" && payload?.phase
+          ? { phase: payload.phase }
+          : {}),
       };
       state.messages = msgs;
       return;
