@@ -3177,3 +3177,55 @@ button:disabled {
 .md-table tbody tr:hover td {
   background: rgba(255, 255, 255, 0.02);
 }
+
+/* Le reste du vocabulaire markdown : règle, citation, tâches, image, barré. */
+.md-rule {
+  margin: 0.9rem 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.md-quote {
+  margin: 0.5rem 0;
+  padding: 0.1rem 0 0.1rem 0.7rem;
+  border-left: 3px solid var(--line);
+  opacity: 0.85;
+}
+
+.md-quote > .md-p:first-child {
+  margin-top: 0;
+}
+
+.md-quote > .md-p:last-child {
+  margin-bottom: 0;
+}
+
+/* Une sous-liste se serre contre son parent : elle en fait partie. */
+.md-list .md-list {
+  margin-top: 0.15rem;
+  margin-bottom: 0.15rem;
+}
+
+.md-task {
+  list-style: none;
+  margin-left: -1.1rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+}
+
+.md-task input {
+  margin: 0;
+  flex: none;
+}
+
+.md-image {
+  max-width: 100%;
+  height: auto;
+  margin: 0.4rem 0;
+  border-radius: 6px;
+}
+
+.md-root del {
+  opacity: 0.65;
+}
