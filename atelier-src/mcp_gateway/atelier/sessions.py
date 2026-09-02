@@ -522,6 +522,114 @@ class SessionStore:
                 adoptees.append(rec.session_id)
         return adoptees
 
+    def _tours_de_lutilisateur(self, enregistrements: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Les prises de parole de quelqu'un, dans l'ordre.
+
+        Même règle que le comptage des tours, pour que l'interface et le
+        serveur désignent le même message quand ils parlent du n-ième.
+        """
+        return [
+            enr
+            for enr in enregistrements
+            if enr.get("type") == "user"
+            and not enr.get("isMeta")
+            and not enr.get("isSidechain")
+            and _est_un_tour(enr.get("message") or {})
+        ]
+
+    def forker(self, session_id: str, rang: int, *, titre: str = "") -> SessionRecord:
+        """Ouvre une conversation qui reprend celle-ci jusqu'avant le n-ième message.
+
+        Une session Claude ne se rembobine pas. Pour corriger une question déjà
+        posée, on repart donc d'avant elle : le transcript est recopié jusqu'au
+        message qui la précède, sous une nouvelle identité, et la suite s'écrit
+        à partir de là. L'originale reste intacte.
+
+        Le fork hérite de tout ce qui fait la conversation — même dossier de
+        travail, même projet, mêmes connecteurs : ce sont des propriétés du
+        dossier, pas de la session.
+
+        On remonte la chaîne `parentUuid`, qui est complète et porte aussi les
+        pièces jointes. Les enregistrements annexes — file d'attente, dernier
+        prompt, titre — n'appartiennent pas à cette chaîne et se reconstruisent
+        d'eux-mêmes : les recopier ferait référence à une session qui n'est
+        plus la bonne.
+        """
+        rec = self.get(session_id)
+        if not rec:
+            raise KeyError(session_id)
+        source = dossier_transcripts_claude(Path(rec.cwd)) / f"{self._claude_cli_id(rec)}.jsonl"
+        try:
+            brut = source.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            raise ValueError(f"transcript introuvable : {exc}") from exc
+
+        enregistrements: list[dict[str, Any]] = []
+        for ligne in brut.split(chr(10)):
+            ligne = ligne.strip()
+            if not ligne.startswith("{"):
+                continue
+            try:
+                enregistrements.append(json.loads(ligne))
+            except json.JSONDecodeError:
+                continue
+
+        tours = self._tours_de_lutilisateur(enregistrements)
+        if rang < 0 or rang >= len(tours):
+            raise ValueError(f"message {rang} introuvable ({len(tours)} tours)")
+
+        par_uuid = {e["uuid"]: e for e in enregistrements if e.get("uuid")}
+        depart = par_uuid.get(str(tours[rang].get("parentUuid") or ""))
+        gardes: set[str] = set()
+        courant = depart
+        while courant is not None:
+            uid = str(courant.get("uuid") or "")
+            if not uid or uid in gardes:
+                break
+            gardes.add(uid)
+            courant = par_uuid.get(str(courant.get("parentUuid") or ""))
+
+        nouvel_id = new_session_id()
+        lignes = []
+        for enr in enregistrements:
+            if str(enr.get("uuid") or "") not in gardes:
+                continue
+            copie = dict(enr)
+            # L'enregistrement dit de quelle session il vient : sans cela le
+            # fork porterait l'identité de son aîné.
+            copie["sessionId"] = nouvel_id
+            lignes.append(json.dumps(copie, ensure_ascii=False))
+
+        destination = dossier_transcripts_claude(Path(rec.cwd)) / f"{nouvel_id}.jsonl"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(
+            (chr(10).join(lignes) + chr(10)) if lignes else "", encoding="utf-8"
+        )
+
+        nom = (titre or "").strip() or f"{rec.title} (reprise)"
+        fork = self.create(slug=rec.slug, model=rec.model or None, title=nom, kind=rec.kind)
+        fork.claude_session_id = nouvel_id
+        fork.cwd = rec.cwd
+        fork.mcp_overlay = dict(rec.mcp_overlay or {})
+        fork.title_source = "user"
+        reprises, tours_repris = self._convertir_transcript_claude(destination)
+        journal = Path(fork.transcript_path)
+        journal.parent.mkdir(parents=True, exist_ok=True)
+        journal.write_text(
+            (chr(10).join(reprises) + chr(10)) if reprises else "", encoding="utf-8"
+        )
+        fork.turns = tours_repris
+        fork.state = "idle" if reprises else "created"
+        self.save(fork)
+        log.info(
+            "conversation %s forkée au message %d -> %s (%d enregistrements)",
+            session_id[:8],
+            rang,
+            fork.session_id[:8],
+            len(lignes),
+        )
+        return fork
+
     def sync_claude_titles(self) -> dict[str, Any]:
         """Aligne title depuis ~/.claude/sessions (extension / CLI Claude Code)."""
         # D'abord faire entrer ce qui manque : une conversation ouverte dans

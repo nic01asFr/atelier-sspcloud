@@ -1,5 +1,6 @@
 /** Point d'entrée — assemble modules et démarre l'app. */
 
+import * as api from "./api.js";
 import * as S from "./state.js";
 import { $ } from "./core/dom.js";
 import { readQuery, writeQuery as writeQueryState } from "./core/router.js";
@@ -62,7 +63,16 @@ function createApp() {
     actions: treeActions,
   });
   const composerInput = createComposerInputController({ state, render });
-  const codeChat = createCodeChatView({ state, render, composerInput });
+  // Rempli une fois le contrôleur de conversation créé : la vue doit
+  // pouvoir reprendre un fil, ce qui demande d'envoyer, donc de connaître
+  // un contrôleur qui n'existe pas encore ici.
+  const filActions = {};
+  const codeChat = createCodeChatView({
+    state,
+    render,
+    composerInput,
+    actions: filActions,
+  });
 
   const composerMcpHolder = {};
   const composerMcp = createComposerMcpView({
@@ -99,6 +109,25 @@ function createApp() {
     logout: (msg) => logout(msg),
   });
   Object.assign(agentActionsHolder, agentActions);
+
+  // « Reprendre ici » : on ne corrige pas un message — une session Claude ne
+  // se rembobine pas — on repart d'avant lui dans une conversation qui garde
+  // tout l'acquis, puis on envoie la version corrigée.
+  filActions.reprendreIci = async (rang, texte) => {
+    try {
+      S.setError(state, "");
+      const fork = await api.forkSession(state.token, state.sessionId, rang);
+      await sessionActions.selectSession(fork.session_id);
+      const champ = $("composer-input");
+      if (!champ) return;
+      champ.value = texte;
+      champ.dispatchEvent(new Event("input", { bubbles: true }));
+      $("composer").requestSubmit();
+    } catch (err) {
+      S.setError(state, err.message || String(err));
+      render();
+    }
+  };
 
   ctx.views = { codeTree, codeChat, connectors, composerMcp, agent };
 

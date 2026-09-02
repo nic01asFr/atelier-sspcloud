@@ -69,6 +69,18 @@ class PatchSessionBody(BaseModel):
     archived: bool | None = None
 
 
+class ForkBody(BaseModel):
+    """Où reprendre une conversation.
+
+    `rang` désigne le n-ième message de l'utilisateur, compté comme le
+    serveur compte les tours — c'est ce que l'interface sait dire d'un
+    message qu'on veut corriger.
+    """
+
+    rang: int = Field(..., ge=0)
+    titre: str = ""
+
+
 class PatchSessionMcpBody(BaseModel):
     overlay: dict[str, bool] = Field(default_factory=dict)
 
@@ -878,6 +890,27 @@ def build_app(
                 yield ev.as_sse()
 
         return StreamingResponse(gen(), media_type="text/event-stream")
+
+    @router.post("/sessions/{session_id}/fork")
+    def fork_session(
+        session_id: str,
+        body: ForkBody,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Reprend la conversation d'avant le n-ième message, sous une nouvelle identité.
+
+        C'est la seule façon honnête de corriger une question déjà posée : une
+        session Claude ne se rembobine pas. On repart d'avant, l'originale
+        reste intacte, et le fork hérite du dossier — donc du projet et des
+        connecteurs.
+        """
+        try:
+            fork = store.forker(session_id, body.rang, titre=body.titre)
+        except KeyError:
+            raise HTTPException(404, "session not found") from None
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        return fork.to_dict()
 
     @router.post("/sessions/{session_id}/interrupt")
     def interrupt(

@@ -11,12 +11,62 @@ import { appendMessageBody } from "../ui/message-render.js";
  * @param {() => void} ctx.render
  */
 export function createCodeChatView(ctx) {
-  const { state, render, composerInput } = ctx;
+  const { state, render, composerInput, actions } = ctx;
 
   // Marge sous laquelle on considère que le lecteur est « en bas ». Assez
   // large pour absorber une ligne qui s'ajoute, assez étroite pour ne pas
   // rattraper quelqu'un qui a délibérément remonté.
   const MARGE_BAS = 80;
+
+  /**
+   * Corriger une question, puis repartir d'elle.
+   *
+   * On ne réécrit pas le passé : une session Claude ne se rembobine pas. Le
+   * serveur ouvre une conversation qui reprend celle-ci jusqu'avant ce
+   * message, et la version corrigée y est envoyée. L'originale reste intacte,
+   * et le fil qu'on lit continue bien à partir d'ici.
+   */
+  function ouvrirEdition(div, m, texte) {
+    if (div.querySelector(".msg-edition")) return;
+    const zone = document.createElement("div");
+    zone.className = "msg-edition";
+    const champ = document.createElement("textarea");
+    champ.className = "msg-edition-champ";
+    champ.value = texte;
+    champ.rows = Math.min(8, texte.split("\n").length + 1);
+    const barre = document.createElement("div");
+    barre.className = "msg-actions";
+
+    const valider = document.createElement("button");
+    valider.type = "button";
+    valider.className = "msg-action";
+    valider.textContent = "Reprendre ici";
+    valider.addEventListener("click", () => {
+      const nouveau = champ.value.trim();
+      if (!nouveau) return;
+      actions?.reprendreIci?.(m.rang, nouveau);
+    });
+
+    const annuler = document.createElement("button");
+    annuler.type = "button";
+    annuler.className = "msg-action";
+    annuler.textContent = "Annuler";
+    annuler.addEventListener("click", () => zone.remove());
+
+    champ.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") zone.remove();
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        valider.click();
+      }
+    });
+
+    barre.append(valider, annuler);
+    zone.append(champ, barre);
+    div.appendChild(zone);
+    champ.focus();
+    champ.select();
+  }
 
   /**
    * Les gestes qu'on peut faire d'un message, discrètement.
@@ -56,21 +106,15 @@ export function createCodeChatView(ctx) {
     });
     barre.appendChild(copier);
 
-    if (role === "user" && texte) {
-      const renvoyer = document.createElement("button");
-      renvoyer.type = "button";
-      renvoyer.className = "msg-action";
-      renvoyer.textContent = "Renvoyer";
-      renvoyer.title = "Reposer cette question dans un nouveau tour";
-      renvoyer.disabled = !!state.busy;
-      renvoyer.addEventListener("click", () => {
-        const champ = $("composer-input");
-        if (!champ) return;
-        champ.value = texte;
-        champ.dispatchEvent(new Event("input", { bubbles: true }));
-        champ.focus();
-      });
-      barre.appendChild(renvoyer);
+    if (role === "user" && texte && typeof m.rang === "number") {
+      const modifier = document.createElement("button");
+      modifier.type = "button";
+      modifier.className = "msg-action";
+      modifier.textContent = "Modifier";
+      modifier.title = "Corriger cette question et repartir d’ici";
+      modifier.disabled = !!state.busy;
+      modifier.addEventListener("click", () => ouvrirEdition(div, m, texte));
+      barre.appendChild(modifier);
     }
 
     div.appendChild(barre);

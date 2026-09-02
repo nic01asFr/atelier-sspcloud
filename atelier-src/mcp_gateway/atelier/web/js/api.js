@@ -288,6 +288,10 @@ export function messagesFromTranscript(transcriptText) {
   const blocks = [];
   let textAcc = "";
   let thinkAcc = "";
+  // Rang du message dans les prises de parole de l'utilisateur. C'est par lui
+  // que l'interface et le serveur désignent le même message quand on demande
+  // de reprendre la conversation à cet endroit.
+  let rangUser = 0;
 
   const flushText = () => {
     const t = textAcc.trim();
@@ -391,7 +395,8 @@ export function messagesFromTranscript(transcriptText) {
       if (dit && !obj.isMeta) {
         // Un mot de l'utilisateur clôt la réponse en cours.
         pushAssistant();
-        messages.push({ role: "user", text: dit });
+        messages.push({ role: "user", text: dit, rang: rangUser });
+        rangUser += 1;
       }
     } else if (type === "result") {
       const denials = Array.isArray(obj.permission_denials) ? obj.permission_denials : [];
@@ -530,6 +535,20 @@ export async function clearAuthCookie() {
     // Se déconnecter ne doit jamais échouer faute de réseau : l'état local
     // est nettoyé de toute façon, et la session expirera d'elle-même.
   }
+}
+
+/**
+ * Reprend une conversation d'avant son n-ième message, sous une nouvelle
+ * identité. L'originale reste intacte.
+ */
+export async function forkSession(token, sessionId, rang, titre = "") {
+  const res = await fetch(`/v1/sessions/${sessionId}/fork`, {
+    method: "POST",
+    headers: jsonHeaders(token),
+    body: JSON.stringify({ rang, titre }),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
 }
 
 export function vscodeOpenUrl(slug, sessionId) {

@@ -265,13 +265,28 @@ On ne peut rien faire d'un message : ni le copier, ni renvoyer sa question.
 Copier une réponse est le geste le plus attendu d'une interface
 conversationnelle.
 
-Deux gestes, discrets, sur la ligne du message : **copier** le texte, et pour un
-message de l'utilisateur, **renvoyer** la même question — utile quand un tour a
-échoué ou qu'on veut une seconde réponse.
+Deux gestes, discrets, sur la ligne du message : **copier** le texte, et pour une
+question, **la corriger et repartir d'elle**.
 
-Hors périmètre, et pour une raison de fond : **corriger** un message déjà envoyé.
-Une session Claude ne se rembobine pas ; il faudrait la forker. Tant que l'API
-ne l'expose pas, proposer une correction serait mentir sur ce qui se passe.
+J'avais d'abord écarté la correction : une session Claude ne se rembobine pas.
+C'était vrai, et la conclusion était fausse — on ne rembobine pas, on **forke**.
+Le transcript porte une chaîne `parentUuid` complète : on recopie la conversation
+jusqu'au message qui précède, sous une nouvelle identité, et la version corrigée
+s'y envoie. L'originale reste intacte.
+
+Le fork hérite de tout ce qui fait la conversation — dossier de travail, projet,
+connecteurs — parce que ce sont des propriétés du dossier, pas de la session.
+Vérifié : interrogé, un fork restitue la première question de son aînée ; le
+transcript tronqué est donc valide pour `--resume`.
+
+Ce qui a été écarté, en revanche : recopier les enregistrements annexes — file
+d'attente, dernier prompt, titre. Ils n'appartiennent pas à la chaîne des
+messages et désignent une session qui n'est plus la bonne ; ils se
+reconstruisent d'eux-mêmes.
+
+À noter pour plus tard : `--fork-session` existe côté CLI, mais il repart de la
+fin. Pour reprendre à un endroit choisi il faut écrire le préfixe soi-même,
+comme le fait l'extension Claude Code.
 
 ### L'attente doit se lire
 
