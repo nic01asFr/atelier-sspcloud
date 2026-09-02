@@ -106,6 +106,15 @@ compositions sont en service. Le passage de main vers VS Code fonctionne dans le
 deux sens : une conversation de l'Atelier s'ouvre dans l'extension Claude Code,
 et une conversation ouverte depuis l'extension remonte comme session du projet.
 
-Il n'y a pas de tests automatisés : les mécanismes sont validés à la main et par
-mesure sur le pod. Les limites connues de chaque brique sont notées dans son
-document.
+La suite de tests commence : elle couvre pour l'instant les trois points où une
+régression serait silencieuse — la garde du point d'entrée interne, ce que la
+sonde de vie consent à dire à un inconnu, et la fin des appels d'outils.
+
+```bash
+cd atelier-src
+pip install -e ".[dev]"
+pytest
+```
+
+Le reste des mécanismes est validé à la main et par mesure sur le pod. Les
+limites connues de chaque brique sont notées dans son document.

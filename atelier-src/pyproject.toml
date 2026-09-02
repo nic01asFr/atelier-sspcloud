@@ -23,3 +23,12 @@ include = ["mcp_gateway*"]
 
 [project.scripts]
 atelier = "mcp_gateway.atelier.app:main"
+
+[project.optional-dependencies]
+# De quoi lancer la suite : `pip install -e ".[dev]"` puis `pytest`.
+dev = ["pytest>=8.0", "httpx>=0.27"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Les tests importent le paquet depuis l'arbre, sans installation préalable.
+pythonpath = ["."]
