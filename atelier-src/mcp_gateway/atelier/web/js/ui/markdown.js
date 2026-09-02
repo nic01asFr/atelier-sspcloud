@@ -26,6 +26,77 @@ function inlineMarkdown(escaped) {
   return s;
 }
 
+// Une ligne de tableau : au moins une barre, et rien d'autre qu'elle pour la
+// reconnaitre. On n'exige pas la barre finale — les modeles l'omettent.
+const LIGNE_TABLEAU = /^\s*\|.*$/;
+// La ligne de separation, qui seule distingue un tableau d'un texte a barres :
+// des tirets, des deux-points d'alignement, et des barres.
+const SEPARATEUR = /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/;
+
+function cellules(ligne) {
+  return ligne
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|\s*$/, "")
+    .split(/(?<!\\)\|/)
+    .map((c) => c.trim().replace(/\\\|/g, "|"));
+}
+
+function alignements(ligne) {
+  return cellules(ligne).map((c) => {
+    const gauche = c.startsWith(":");
+    const droite = c.endsWith(":");
+    if (gauche && droite) return "center";
+    if (droite) return "right";
+    return gauche ? "left" : "";
+  });
+}
+
+function remplirLigne(tr, valeurs, aligns, balise) {
+  valeurs.forEach((valeur, n) => {
+    const cell = document.createElement(balise);
+    if (aligns[n]) cell.style.textAlign = aligns[n];
+    cell.innerHTML = inlineMarkdown(escapeHtml(valeur));
+    tr.appendChild(cell);
+  });
+}
+
+/**
+ * Construit le tableau qui commence a `depart`, et rend l'indice de la ligne
+ * qui le suit. Les lignes plus courtes que l'en-tete sont completees : une
+ * cellule manquante vaut mieux qu'un tableau qui se decale.
+ */
+function construireTableau(lines, depart) {
+  const entetes = cellules(lines[depart]);
+  const aligns = alignements(lines[depart + 1]);
+  const table = document.createElement("table");
+  table.className = "md-table";
+
+  const thead = document.createElement("thead");
+  const trh = document.createElement("tr");
+  remplirLigne(trh, entetes, aligns, "th");
+  thead.appendChild(trh);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  let i = depart + 2;
+  while (i < lines.length && LIGNE_TABLEAU.test(lines[i]) && lines[i].trim()) {
+    const valeurs = cellules(lines[i]);
+    while (valeurs.length < entetes.length) valeurs.push("");
+    const tr = document.createElement("tr");
+    remplirLigne(tr, valeurs.slice(0, entetes.length), aligns, "td");
+    tbody.appendChild(tr);
+    i += 1;
+  }
+  table.appendChild(tbody);
+
+  // Un tableau large doit defiler dans sa boite, pas pousser la conversation.
+  const boite = document.createElement("div");
+  boite.className = "md-table-wrap";
+  boite.appendChild(table);
+  return { el: boite, suivant: i };
+}
+
 function renderProse(text) {
   const frag = document.createDocumentFragment();
   const lines = text.split("\n");
@@ -69,8 +140,30 @@ function renderProse(text) {
       frag.appendChild(ol);
       continue;
     }
+    // Le tableau se reconnait a sa ligne de separation, jamais a la premiere
+    // ligne seule : un texte qui commence par une barre n'est pas un tableau.
+    if (
+      LIGNE_TABLEAU.test(line) &&
+      i + 1 < lines.length &&
+      SEPARATEUR.test(lines[i + 1]) &&
+      lines[i + 1].includes("|")
+    ) {
+      const { el, suivant } = construireTableau(lines, i);
+      frag.appendChild(el);
+      i = suivant;
+      continue;
+    }
     const pLines = [];
-    while (i < lines.length && lines[i].trim() && !/^#{1,3}\s+/.test(lines[i]) && !/^[-*]\s+/.test(lines[i]) && !/^\d+\.\s+/.test(lines[i])) {
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      !/^#{1,3}\s+/.test(lines[i]) &&
+      !/^[-*]\s+/.test(lines[i]) &&
+      !/^\d+\.\s+/.test(lines[i]) &&
+      // Sans cette condition, le paragraphe avalait le tableau qui le suit et
+      // le rendait tel quel, barres comprises. C'est ce qu'on voyait a l'ecran.
+      !(LIGNE_TABLEAU.test(lines[i]) && i + 1 < lines.length && SEPARATEUR.test(lines[i + 1]) && lines[i + 1].includes("|"))
+    ) {
       pLines.push(lines[i]);
       i += 1;
     }

@@ -3139,3 +3139,41 @@ button:disabled {
 .msg-edition .msg-actions {
   opacity: 1;
 }
+
+/* Tableaux dans les messages. Ils arrivaient tels quels, barres comprises,
+   avalés par le paragraphe fourre-tout du rendu. */
+.md-table-wrap {
+  margin: 0.5rem 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.md-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.md-table th,
+.md-table td {
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--line);
+}
+
+.md-table thead th {
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.md-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.md-table tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
