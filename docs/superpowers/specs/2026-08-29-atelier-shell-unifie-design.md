@@ -347,24 +347,130 @@ de projet, qui se partage) ; qui a le droit de déclencher un agent par message 
 un canal ouvert est une porte d'entrée ; et si la réponse revient dans le canal
 ou reste dans l'Atelier.
 
-## Git, dépôts et GitHub — à cadrer à part
+## Git, dépôts et GitHub — fait, et ce qui reste
 
-Point relevé comme crucial, et laissé pour plus tard délibérément : la relation
-de l'Atelier avec git.
+Le point relevé comme crucial est traité. Un projet de code est un dépôt dès sa
+naissance, sur `main`, avec un premier commit qui fait exister l'histoire même
+sur un projet vide — sans quoi il n'y a pas de branche et rien à lire. Le
+dossier de l'assistant reste à l'écart : ce qu'il contient est de la mémoire de
+session, tenue par wikichat, pas du travail dont on suit les versions.
 
-Aujourd'hui elle n'existe qu'en creux. Un projet est un dossier ; rien ne dit
-s'il est un dépôt, ni où il pousse, ni qui l'a cloné. L'agent « Veille des
-dépôts Git » en donne la mesure : il tourne dans un dossier qui n'est pas un
-dépôt et rapporte « OK » à chaque passage. Le passage de main vers VS Code, lui,
-écrit dans le dossier du projet — `.vscode`, `.atelier`, `.mcp.json` — sans se
-demander si ce dossier est versionné ni ce qui devrait l'être.
+La publication sur GitHub existe, projet par projet, privée par défaut. Elle
+n'est pas automatique et ne doit pas le devenir : ouvrir un projet est un geste
+de travail, le publier en est un autre, et c'est celui-là qui ne se rattrape
+pas. Le jeton vit dans `~/work/.secrets/github_token` ; il ne passe ni par
+l'URL du remote, que tout clone emporterait, ni par la ligne de commande, où un
+`ps` le lirait.
 
-Les questions à poser ensemble, pas au fil de l'eau : ce qu'un projet Atelier
-est vis-à-vis d'un dépôt (le même objet, ou un dossier qui en contient un) ;
-qui clone, qui pousse, avec quelles identités ; ce que l'Atelier dépose dans un
-dossier versionné et ce qui doit rester dehors ; et si les agents ont le droit
-de commiter. La note d'alignement wikichat porte déjà un § « Politique Git (à
-figer) » — c'est là qu'il faut reprendre.
+Deux gardes ont été apprises en cassant. Le premier `git init` a versionné un
+`.env` qui portait une clé et disait « ne pas committer » sur sa première
+ligne : le `.gitignore` écarte désormais ce qui annonce un secret. Et la
+publication regarde **l'histoire**, pas l'état du jour — un secret retiré du
+suivi hier est toujours dans le commit qui l'a introduit, et c'est l'histoire
+que `push` emporte.
+
+Ce qui reste ouvert, et se décide en une fois :
+
+- **Qui commite.** Aujourd'hui personne : l'Atelier pose le dépôt, les sessions
+  y travaillent, rien ne fige. Sans commits, la veille n'a toujours rien à
+  lire au-delà du premier. Faut-il un geste dans l'interface, une fin de tour
+  qui propose, ou laisser l'agent le faire lui-même ?
+- **L'identité.** `ATELIER_GIT_USER_NAME` / `ATELIER_GIT_USER_EMAIL`, par
+  défaut `Atelier <atelier@localhost>`. C'est elle qui partira sur GitHub.
+- **Les dépôts déjà là.** `nouveau-projet` est un clone amont : ses commits
+  sont ceux d'autrui, et son identité locale porte une adresse d'emprunt.
+  Un projet cloné et un projet né ici ne se traitent pas pareil.
+
+## MCP Apps — afficher une interface dans le fil
+
+L'extension existe et elle est arrêtée : SEP-1865, close, étiquetée `final` et
+`extension`, dernière révision le 4 juin 2026. Elle ne fait pas partie du
+protocole de base. Documentation de référence :
+`apps.extensions.modelcontextprotocol.io`.
+
+### Ce que la spec prévoit
+
+La description d'un outil porte `_meta.ui.resourceUri`, qui désigne une
+ressource `ui://`. L'hôte lit cette ressource — une page HTML, généralement
+livrée avec son JS et son CSS — et peut la précharger avant même l'appel. Il la
+rend dans une iframe en bac à sable, dans le fil. `_meta.ui.csp` déclare les
+origines externes que l'app a le droit de charger ; `_meta.ui.permissions`
+demande micro, caméra, etc. L'app et l'hôte dialoguent en JSON-RPC par
+`postMessage` : un dialecte de MCP, où certaines méthodes sont communes
+(`tools/call`) et d'autres nouvelles, préfixées `ui/` (`ui/initialize`).
+
+### Pourquoi rien n'arrivera tout seul
+
+Mesuré, pas supposé. Dans le binaire du CLI 2.1.248 : aucune occurrence de
+`ui://`, `ui/initialize` ni `resourceUri`. Or dans l'Atelier c'est le CLI qui
+est le client MCP — il ne rend qu'un résultat texte. Rien ne passera par ce
+chemin, quoi qu'on branche en amont.
+
+Et la passerelle jette ce qu'il faudrait, sur deux points :
+
+- le client amont ne parle que `tools/list` et `tools/call`, jamais
+  `resources/read` — donc pas moyen d'aller chercher la ressource `ui://` ;
+- les outils sont rangés en base réduits à nom, description et schéma : le
+  `_meta` disparaît au passage.
+
+### Ce que ça implique
+
+**C'est l'Atelier qui doit devenir l'hôte, pas le CLI.** Il en a la place : il
+tient déjà la passerelle, le fil, et le chemin d'envoi.
+
+Dans l'ordre, du plus utile au plus lourd :
+
+1. **Le passe-plat.** Garder `_meta` sur les outils, et apprendre
+   `resources/read` au client amont. Utile en soi, même sans rendu : c'est ce
+   qui permet de *savoir* qu'un connecteur propose une interface.
+2. **Le rendu.** Un bloc iframe dans le fil, à côté du résultat d'outil dont il
+   dépend, avec la CSP annoncée par le serveur.
+3. **Le dialecte `ui/`** sur `postMessage`, avec une liste blanche explicite de
+   ce que l'app a le droit de demander.
+
+### Le point d'architecture à trancher
+
+Dans la spec, l'hôte **est** le client de l'agent : quand l'app appelle un
+outil, le résultat revient dans la conversation du modèle. Ici l'agent est un
+sous-processus CLI et la page est une surface séparée. Un appel venu de l'app
+passerait par la passerelle **sans que le modèle le sache**, et le fil
+raconterait une histoire fausse.
+
+Trois issues, à choisir avant d'écrire la moindre ligne :
+
+- réinjecter le résultat comme un tour de l'utilisateur — l'Atelier tient le
+  chemin d'envoi, c'est faisable, mais ça pollue le fil ;
+- traiter l'app comme un panneau **en lecture seule**, sans `tools/call` : on
+  affiche, on n'agit pas. Le plus simple, et suffisant pour un tableau de bord ;
+- accepter la divergence et l'assumer, en marquant à l'écran ce qui vient de
+  l'app et n'est pas passé par le modèle.
+
+### Sécurité — l'inverse exact du rendu markdown, et c'est voulu
+
+Le rendu des messages ne doit **jamais** exécuter de contenu étranger. Une MCP
+App **est** du contenu étranger exécuté exprès, et le bac à sable est tout
+l'objet. Les deux règles ne se contredisent pas, elles se répondent.
+
+Ce qui ne doit pas être raté :
+
+- `sandbox="allow-scripts"` **sans** `allow-same-origin`. Avec les deux,
+  l'iframe s'échappe — et l'origine de l'Atelier porte la clé propriétaire dans
+  son `localStorage`.
+- Servir les apps depuis une **origine distincte**, si on peut en obtenir une.
+- Aucune capacité par défaut : `_meta.ui.permissions` est une *demande*, pas un
+  droit.
+- La liste blanche des méthodes `ui/` est côté hôte, jamais négociée avec l'app.
+
+### L'usage qui justifierait de s'y mettre
+
+`nouveau-projet` est un service Chrome headful. Le voir dans la conversation
+plutôt que par noVNC est exactement ce pour quoi cette extension existe. C'est
+le premier cas à viser — pas un tableau de bord générique.
+
+### Quand
+
+Après l'onglet Assistant et la messagerie des agents. Le passe-plat (§1) peut
+partir avant, il ne coûte presque rien et ne s'engage sur rien.
 
 ## Hors scope immédiat
 

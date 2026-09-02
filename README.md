@@ -106,9 +106,19 @@ compositions sont en service. Le passage de main vers VS Code fonctionne dans le
 deux sens : une conversation de l'Atelier s'ouvre dans l'extension Claude Code,
 et une conversation ouverte depuis l'extension remonte comme session du projet.
 
-La suite de tests commence : elle couvre pour l'instant les trois points où une
-régression serait silencieuse — la garde du point d'entrée interne, ce que la
-sonde de vie consent à dire à un inconnu, et la fin des appels d'outils.
+Un projet de code est un dépôt git dès sa création. La publication sur GitHub
+existe côté service — `POST /v1/projects/{slug}/git/publish` —, projet par
+projet et privée par défaut : ouvrir un projet est un geste de travail, le
+publier en est un autre. Elle demande un jeton dans
+`~/work/.secrets/github_token` et un `ATELIER_GITHUB_OWNER` ; sans eux le dépôt
+reste local, et la route dit qu'elle ne peut rien faire. **L'interface ne
+l'expose pas encore** : il n'y a pas de bouton, seulement l'API.
+
+La suite de tests couvre les endroits où une régression serait silencieuse : la
+garde du point d'entrée interne, ce que la sonde de vie consent à dire à un
+inconnu, la fin des appels d'outils, les dépôts de projet, et le rendu des
+messages — celui-ci par un banc d'essai en JavaScript que la suite Python lance
+avec le `node` de la machine.
 
 ```bash
 cd atelier-src

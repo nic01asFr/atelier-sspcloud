@@ -284,12 +284,51 @@ ainsi, sans écran de login. Ne pas rétablir `env.ANTHROPIC_API_KEY` pour
 
 ---
 
-## 10. Politique Git (à figer)
+## 10. Politique Git
 
-| Repo | Branches | Push agents |
-|------|----------|-------------|
-| `wikichat-memory` | `main` (+ politique merge ingestion) | Commit mémoire ; merge via Librarian / règles Wikichat |
-| Projet code | `main` + `agent/<session>/<id>` | Push branche agent ; pas de push direct `main` sans politique |
+Figée pour la partie qui l'est, et ce qui reste ouvert est nommé comme tel.
+
+**Ce qui est en service.** Un projet de code est un dépôt dès sa création, sur
+`main`, avec un commit d'ouverture — sans lui il n'y a pas de branche, et rien
+à lire pour la veille. Le dossier de l'assistant en est exclu : son contenu est
+de la mémoire de session, tenue par wikichat, pas du travail versionné. La
+publication sur GitHub est un geste par projet, **privé par défaut**, jamais
+automatique.
+
+| Dépôt | Branche | Qui écrit |
+|-------|---------|-----------|
+| Projet code | `main` | L'Atelier au commit d'ouverture ; les sessions travaillent, rien ne fige encore |
+| `wikichat-memory` | — | Pas un dépôt, et à dessein |
+
+**Ce que l'Atelier dépose et ce qui reste dehors.** Le `.gitignore` posé à
+l'initialisation écarte l'état de la machine (`.claude/settings.local.json`,
+`.atelier/`, `.wikichat/`) et tout ce dont le nom annonce un secret (`.env*`
+hors `.example`, `*.pem`, `*.key`, `*_token`, `*_secret`, `credentials*`). Le
+reste — `CLAUDE.md`, `.mcp.json`, `.vscode/` — dit ce qu'est le projet et se
+versionne.
+
+**Secrets.** La publication refuse de partir si un fichier dont le nom annonce
+un secret figure dans **l'histoire** du dépôt, pas seulement dans son état du
+jour : le retirer du suivi ne le retire pas du commit qui l'a introduit, et
+c'est l'histoire que `push` emporte. Le jeton GitHub vit dans
+`~/work/.secrets/github_token` et n'entre ni dans l'URL du remote ni dans une
+ligne de commande — `git` le lit par un script `GIT_ASKPASS`.
+
+**Ce qui reste à trancher :**
+
+- **Qui commite.** Personne aujourd'hui au-delà du commit d'ouverture. Sans
+  commits, la veille n'a rien à lire. Geste dans l'interface, proposition en
+  fin de tour, ou l'agent lui-même ?
+- **Les branches d'agent.** La cible portait `agent/<session>/<id>` et
+  l'interdiction de pousser `main` directement. Rien ne l'applique : la
+  publication pousse la branche courante. À reprendre avec la question
+  précédente.
+- **L'identité des commits.** `ATELIER_GIT_USER_NAME` /
+  `ATELIER_GIT_USER_EMAIL`, par défaut `Atelier <atelier@localhost>`, posée
+  localement à chaque dépôt.
+- **Les dépôts clonés.** Un projet cloné de l'amont ne se traite pas comme un
+  projet né ici : ses commits sont ceux d'autrui et son identité locale est
+  celle du clone.
 
 ---
 
@@ -307,12 +346,12 @@ ainsi, sans écran de login. Ne pas rétablir `env.ANTHROPIC_API_KEY` pour
 | `.mcp.json` projet / assistant | ❌ | binding niveau 2 (voir MCP doc) |
 | Overlay MCP conversation (composer `+`) | ❌ | niveau 3 — visibilité seule |
 | Onglet Agent (profils + pilote) | stub | profils gateway + instances |
-| Modal création projet | ✅ | + GitHub clone |
+| Modal création projet | ✅ dépôt git à la création | + clone GitHub |
 | Menu session ⋯ visible | ✅ | — |
 | Tout dans `projects/default` | ❌ | Slug par projet |
-| `wikichat-memory` repo | ❌ | Provisionné auto |
-| Service Wikichat `:3777` | ❌ souvent down | Toujours up avec Atelier |
-| Auth GitHub service | ❌ | OAuth + credential helper |
+| `wikichat-memory` repo | ❌ et à dessein — mémoire de session | Règle de sync, pas un dépôt |
+| Service Wikichat `:3777` | ⚠️ démarre (script réparé), non supervisé | Relancé avec l'Atelier |
+| Auth GitHub service | ✅ jeton + `GIT_ASKPASS` | OAuth si plusieurs comptes |
 | `kind` assistant / code | ✅ API + filtre UI | — |
 | Noms de session hub | ⚠️ titres sync Claude | Titre fiable + overlay |
 | Overlay consignes session | ❌ | Fichiers ou API |
