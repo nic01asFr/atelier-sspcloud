@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import queue
 import re
 import secrets
+import threading
 import unicodedata
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -829,21 +831,50 @@ def build_app(
 
         if not store.get(session_id):
             raise HTTPException(404, "session not found")
-        if not message and not attachment_ids:
-            raise HTTPException(400, "message or attachments required")
-
+        # Les pièces jointes se lisent avant d'être exigées : le test les
+        # employait une ligne trop tôt, et un message vide accompagné d'un
+        # fichier levait un UnboundLocalError rendu en 500.
         attachment_ids = [
             x.strip() for x in (attachments or "").split(",") if x.strip()
         ]
+        if not message and not attachment_ids:
+            raise HTTPException(400, "message or attachments required")
 
         def gen():
-            try:
-                result = store.send(session_id, message, attachment_ids=attachment_ids)
-            except Exception as exc:  # noqa: BLE001
-                ev = AtelierEvent(kind="erreur", session_id=session_id, cause=str(exc))
-                yield ev.as_sse()
-                return
-            for ev in result.events:
+            """Relaie les événements du tour à mesure qu'ils arrivent.
+
+            Le tour était joué en entier avant qu'une seule ligne ne parte :
+            la liste d'événements ne revenait qu'à la fin, si bien qu'on
+            regardait une bulle vide pendant des minutes, puis que toute la
+            réponse — texte, appels d'outils, résultats — tombait d'un bloc.
+
+            Le tour part donc dans un fil, et dépose ses événements dans une
+            file que cette fonction vide au fur et à mesure. La sentinelle dit
+            que le fil a fini, quoi qu'il lui soit arrivé.
+            """
+            file: queue.Queue = queue.Queue()
+            SENTINELLE = object()
+
+            def travail() -> None:
+                try:
+                    store.send(
+                        session_id,
+                        message,
+                        attachment_ids=attachment_ids,
+                        on_event=file.put,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    file.put(
+                        AtelierEvent(kind="erreur", session_id=session_id, cause=str(exc))
+                    )
+                finally:
+                    file.put(SENTINELLE)
+
+            threading.Thread(target=travail, daemon=True).start()
+            while True:
+                ev = file.get()
+                if ev is SENTINELLE:
+                    return
                 yield ev.as_sse()
 
         return StreamingResponse(gen(), media_type="text/event-stream")

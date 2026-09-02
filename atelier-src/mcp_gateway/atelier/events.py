@@ -33,6 +33,25 @@ class AtelierEvent:
         return f"event: {self.kind}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def sortie_outil(block: dict[str, Any]) -> str:
+    """Ce qu'un outil a rendu, quelle qu'en soit la forme.
+
+    Claude écrit ce retour tantôt d'une pièce, tantôt en blocs. Ne
+    reconnaître que la seconde forme laissait la sortie vide.
+    """
+    contenu = block.get("content")
+    if isinstance(contenu, str):
+        return contenu
+    if not isinstance(contenu, list):
+        return ""
+    morceaux = [
+        str(c["text"])
+        for c in contenu
+        if isinstance(c, dict) and c.get("type") == "text" and c.get("text")
+    ]
+    return chr(10).join(morceaux)
+
+
 def parse_stream_json_line(session_id: str, line: str) -> list[AtelierEvent]:
     """Convertit une ligne stream-json CLI en événements typés."""
     line = line.strip()
@@ -83,18 +102,12 @@ def parse_stream_json_line(session_id: str, line: str) -> list[AtelierEvent]:
                         )
                     )
                 elif bt == "tool_result":
-                    content = block.get("content") or []
-                    out_parts: list[str] = []
-                    if isinstance(content, list):
-                        for c in content:
-                            if isinstance(c, dict) and c.get("type") == "text" and c.get("text"):
-                                out_parts.append(str(c["text"]))
                     events.append(
                         AtelierEvent(
                             kind="outil_fin",
                             session_id=session_id,
                             tool_id=str(block.get("tool_use_id") or ""),
-                            text="\n".join(out_parts),
+                            text=sortie_outil(block),
                             raw_type="tool_result",
                         )
                     )
@@ -137,6 +150,26 @@ def parse_stream_json_line(session_id: str, line: str) -> list[AtelierEvent]:
                     )
                 )
             events.append(AtelierEvent(kind="fin", session_id=session_id, cause=str(subtype), raw_type=t))
+    elif t == "user":
+        # Le CLI renvoie les résultats d'outils dans des messages « user ».
+        # Faute de cette branche, aucun « outil_fin » n'était émis : à l'écran
+        # les outils restaient « en cours » jusqu'à ce qu'on recharge la page,
+        # alors même que le tour était terminé.
+        msg = obj.get("message") or {}
+        content = msg.get("content") or []
+        if isinstance(content, list):
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") != "tool_result":
+                    continue
+                events.append(
+                    AtelierEvent(
+                        kind="outil_fin",
+                        session_id=session_id,
+                        tool_id=str(block.get("tool_use_id") or ""),
+                        text=sortie_outil(block),
+                        raw_type="tool_result",
+                    )
+                )
     elif t == "stream_event":
         ev = obj.get("event") or {}
         et = ev.get("type") if isinstance(ev, dict) else ""
@@ -180,18 +213,12 @@ def parse_stream_json_line(session_id: str, line: str) -> list[AtelierEvent]:
                     )
                 )
             elif block.get("type") == "tool_result":
-                content = block.get("content") or []
-                out_parts: list[str] = []
-                if isinstance(content, list):
-                    for c in content:
-                        if isinstance(c, dict) and c.get("type") == "text" and c.get("text"):
-                            out_parts.append(str(c["text"]))
                 events.append(
                     AtelierEvent(
                         kind="outil_fin",
                         session_id=session_id,
                         tool_id=str(block.get("tool_use_id") or ""),
-                        text="\n".join(out_parts),
+                        text=sortie_outil(block),
                         raw_type="tool_result",
                     )
                 )

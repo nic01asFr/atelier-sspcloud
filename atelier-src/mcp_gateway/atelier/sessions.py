@@ -9,10 +9,15 @@ import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 from mcp_gateway.atelier.config import AtelierSettings
-from mcp_gateway.atelier.harness import Harness, TurnResult, new_session_id
+from mcp_gateway.atelier.harness import (
+    AtelierEvent,
+    Harness,
+    TurnResult,
+    new_session_id,
+)
 from mcp_gateway.atelier.projects import ProjectStore
 from mcp_gateway.atelier.vscode_handoff import (
     PROGRAMMATIQUE,
@@ -690,6 +695,7 @@ class SessionStore:
         session_id: str,
         message: str,
         attachment_ids: list[str] | None = None,
+        on_event: Callable[[AtelierEvent], None] | None = None,
     ) -> TurnResult:
         rec = self.get(session_id)
         if not rec:
@@ -750,6 +756,7 @@ class SessionStore:
                 timeout_s=self.settings.turn_timeout_s,
                 mcp_config_path=mcp_config_path,
                 agent_name=self._nom_wikichat(rec),
+                on_event=on_event,
             )
         except Exception as exc:  # noqa: BLE001 — surface cause to API
             rec.state = "failed"

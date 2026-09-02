@@ -13,7 +13,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from mcp_gateway.atelier.claude_home import sync_claude_home
 from mcp_gateway.atelier.config import AtelierSettings
@@ -87,6 +87,7 @@ class Harness(ABC):
         claude_session_id: str | None = None,
         mcp_config_path: Path | None = None,
         agent_name: str = "",
+        on_event: Callable[[AtelierEvent], None] | None = None,
     ) -> TurnResult: ...
 
     @abstractmethod
@@ -114,6 +115,7 @@ class FakeHarness(Harness):
         claude_session_id: str | None = None,
         mcp_config_path: Path | None = None,
         agent_name: str = "",
+        on_event: Callable[[AtelierEvent], None] | None = None,
     ) -> TurnResult:
         self._running[session_id] = True
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -135,6 +137,9 @@ class FakeHarness(Harness):
             AtelierEvent(kind="texte", session_id=session_id, text=text, raw_type="fake"),
             AtelierEvent(kind="fin", session_id=session_id, cause="fake", raw_type="fake"),
         ]
+        for ev in events:
+            if on_event is not None:
+                on_event(ev)
         line = (
             '{"type":"assistant","message":{"content":[{"type":"text","text":%s}]}}\n'
             % __import__("json").dumps(text)
@@ -241,6 +246,7 @@ class ClaudeHarness(Harness):
         claude_session_id: str | None = None,
         mcp_config_path: Path | None = None,
         agent_name: str = "",
+        on_event: Callable[[AtelierEvent], None] | None = None,
     ) -> TurnResult:
         claude = self._resolve_claude_bin()
         cli_id = (claude_session_id or session_id).strip()
@@ -300,6 +306,20 @@ class ClaudeHarness(Harness):
         self._procs[session_id] = proc
 
         events: list[AtelierEvent] = []
+
+        def emettre(ev: AtelierEvent) -> AtelierEvent:
+            """Retient l'événement, et le donne aussitôt à qui écoute.
+
+            Sans ce rappel, l'appelant ne voyait rien avant la fin du tour :
+            la liste ne lui revenait qu'une fois le processus terminé, si bien
+            que toute la réponse — texte, appels d'outils, résultats —
+            apparaissait d'un bloc après une attente muette.
+            """
+            events.append(ev)
+            if on_event is not None:
+                on_event(ev)
+            return ev
+
         texts: list[str] = []
         deadline = time.monotonic() + timeout_s
         assert proc.stdout is not None
@@ -318,7 +338,7 @@ class ClaudeHarness(Harness):
                             proc.wait(timeout=5)
                         except subprocess.TimeoutExpired:
                             proc.kill()
-                        events.append(
+                        emettre(
                             AtelierEvent(
                                 kind="erreur",
                                 session_id=session_id,
@@ -332,7 +352,7 @@ class ClaudeHarness(Harness):
                             tf.write(line)
                             tf.flush()
                         for ev in parse_stream_json_line(session_id, line):
-                            events.append(ev)
+                            emettre(ev)
                             if ev.kind == "texte" and ev.text and ev.raw_type not in (
                                 "thinking",
                                 "thinking_delta",
@@ -346,7 +366,7 @@ class ClaudeHarness(Harness):
                 if err:
                     lf.write(err)
                     if "[claude-code:unrecognized_model]" not in err and "Error:" in err:
-                        events.append(
+                        emettre(
                             AtelierEvent(kind="erreur", session_id=session_id, cause=err[-500:])
                         )
             code = proc.wait(timeout=5)
@@ -358,9 +378,9 @@ class ClaudeHarness(Harness):
                 pass
 
         if not any(e.kind == "fin" for e in events) and code == 0:
-            events.append(AtelierEvent(kind="fin", session_id=session_id, cause="exit_0"))
+            emettre(AtelierEvent(kind="fin", session_id=session_id, cause="exit_0"))
         if code not in (0, None) and not any(e.kind == "erreur" for e in events):
-            events.append(
+            emettre(
                 AtelierEvent(kind="erreur", session_id=session_id, cause=f"exit_{code}")
             )
 
