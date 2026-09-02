@@ -38,6 +38,7 @@ FILES = [
     "web/js/controllers/composer-mcp.js",
     "api.py",
     "projects.py",
+    "git_repos.py",
     "sessions.py",
     "gateway_tools.py",
     "session_mcp.py",

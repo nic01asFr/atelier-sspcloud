@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import json
+import logging
+import subprocess
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+from mcp_gateway.atelier import git_repos
 from mcp_gateway.atelier.config import AtelierSettings
+
+log = logging.getLogger("atelier.projects")
+
 
 WorkspaceKind = Literal["assistant", "code"]
 
@@ -157,6 +163,21 @@ class ProjectStore:
         else:
             path = self.settings.projects_dir / slug
         path.mkdir(parents=True, exist_ok=True)
+
+        # Un projet de code est un dépôt dès sa naissance. Sans cela son
+        # travail ne laisse aucune trace datée, et l'agent de veille — dont
+        # c'est tout le métier — n'a rien à lire. L'échec n'empêche pas
+        # d'ouvrir le projet : on préfère un projet sans historique à pas de
+        # projet.
+        #
+        # Le dossier de l'assistant reste à l'écart : ce qu'il contient est
+        # de la mémoire de session, tenue par wikichat, pas du travail dont
+        # on suit les versions.
+        if resolved_kind != "assistant":
+            try:
+                git_repos.initialiser(self.settings, path)
+            except (git_repos.ErreurDepot, OSError, subprocess.SubprocessError) as exc:
+                log.warning("dépôt non initialisé pour %s : %s", slug, exc)
 
         meta = self._load_meta()
         projects = meta.setdefault("projects", {})

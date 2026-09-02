@@ -34,6 +34,13 @@ class AtelierSettings(BaseSettings):
     vscode_upstream_auth: str = "atelier"
     # Legacy repli uniquement si upstream_auth=password
     vscode_password: str = ""
+    # Identite portee par les commits que l'Atelier fait dans un projet.
+    # Locale a chaque depot, jamais globale : le pod porte d'autres depots.
+    git_user_name: str = "Atelier"
+    git_user_email: str = "atelier@localhost"
+    # Compte ou organisation GitHub sous lequel publier un projet. Vide =
+    # la publication n'est pas proposee, et le depot reste local.
+    github_owner: str = ""
 
     @property
     def sessions_dir(self) -> Path:
@@ -100,6 +107,11 @@ class AtelierSettings(BaseSettings):
     @property
     def llm_key_path(self) -> Path:
         return self.secrets_dir / "llm_api_key"
+
+    @property
+    def github_token_path(self) -> Path:
+        """Jeton GitHub, en 0600. Absent = pas de publication possible."""
+        return self.secrets_dir / "github_token"
 
     @property
     def internal_secret_path(self) -> Path:

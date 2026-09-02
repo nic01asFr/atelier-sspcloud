@@ -17,7 +17,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from mcp_gateway.atelier import __version__
+from mcp_gateway.atelier import __version__, git_repos
 from mcp_gateway.atelier.auth import OwnerAuth, bearer_from_header
 from mcp_gateway.atelier.config import AtelierSettings, get_settings
 from mcp_gateway.atelier.events import AtelierEvent
@@ -89,6 +89,22 @@ class CreateProjectBody(BaseModel):
     slug: str = Field(min_length=1)
     kind: str | None = None
     title: str | None = None
+
+
+class CommitBody(BaseModel):
+    message: str = ""
+
+
+class PublishBody(BaseModel):
+    """Nom du dépôt distant, et s'il doit être visible.
+
+    Privé par défaut : ouvrir un projet est un geste de travail, le publier
+    en est un autre, et c'est celui-là qui ne se rattrape pas.
+    """
+
+    name: str = ""
+    private: bool = True
+    description: str = ""
 
 
 class PatchProjectBody(BaseModel):
@@ -188,6 +204,16 @@ class AgentCreateBody(BaseModel):
     # "platform" pour un agent qui entretient l'Atelier lui-même ; vide pour
     # un agent de travail. Sert au classement dans la liste.
     kind: str = ""
+    # Ces quatre-là étaient absents, et donc silencieusement perdus en route :
+    # le pilote appliquait ses valeurs par défaut sans que rien ne le dise.
+    # Le plafond de tours surtout — c'est lui qui coupait un agent au milieu
+    # de son travail, et on ne pouvait pas le relever depuis l'Atelier.
+    # Laissés à None, ils ne sont pas transmis et le pilote décide, comme avant.
+    max_turns: int | None = None
+    tz: str | None = None
+    cooldown_s: int | None = None
+    max_per_day: int | None = None
+    enabled: bool | None = None
 
 
 class AgentDecideBody(BaseModel):
@@ -544,6 +570,77 @@ def build_app(
         from mcp_gateway.atelier.wikichat_projects import synchroniser
 
         return await synchroniser(request.app, projects.list_projects())
+
+    def _chemin_projet(slug: str) -> Path:
+        """Le dossier d'un projet, ou 404 s'il n'existe pas."""
+        for projet in projects.list_projects(include_archived=True):
+            if projet.slug == slug:
+                return Path(projet.path)
+        raise HTTPException(404, "unknown project")
+
+    @router.get("/projects/{slug}/git")
+    def project_git_state(
+        slug: str,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """L'état du dépôt, et si la publication est seulement possible."""
+        etat = git_repos.etat(_chemin_projet(slug))
+        return {
+            **etat.to_dict(),
+            "can_publish": git_repos.publication_possible(settings),
+            "owner": settings.github_owner.strip(),
+        }
+
+    @router.post("/projects/{slug}/git/init")
+    def project_git_init(
+        slug: str,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Rattrape un projet créé avant que les projets soient des dépôts."""
+        try:
+            return git_repos.initialiser(settings, _chemin_projet(slug)).to_dict()
+        except (git_repos.ErreurDepot, OSError) as exc:
+            raise HTTPException(500, str(exc)) from exc
+
+    @router.post("/projects/{slug}/git/commit")
+    def project_git_commit(
+        slug: str,
+        body: CommitBody,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        try:
+            etat = git_repos.enregistrer(settings, _chemin_projet(slug), body.message)
+        except (git_repos.ErreurDepot, OSError) as exc:
+            raise HTTPException(500, str(exc)) from exc
+        return etat.to_dict()
+
+    @router.post("/projects/{slug}/git/publish")
+    def project_git_publish(
+        slug: str,
+        body: PublishBody,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Crée le dépôt distant, le relie, et pousse.
+
+        Tournée vers l'extérieur, donc jamais automatique : c'est une route
+        qu'on appelle, pas un effet de bord de la création d'un projet.
+        """
+        chemin = _chemin_projet(slug)
+        nom = (body.name or slug).strip()
+        try:
+            etat = git_repos.publier(
+                settings,
+                chemin,
+                nom,
+                description=body.description,
+                prive=body.private,
+            )
+        except git_repos.ErreurDepot as exc:
+            raise HTTPException(502, str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(500, str(exc)) from exc
+        return etat.to_dict()
+
 
     @router.patch("/projects/{slug}")
     def patch_project(
