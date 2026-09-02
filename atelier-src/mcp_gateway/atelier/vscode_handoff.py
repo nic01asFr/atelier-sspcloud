@@ -39,23 +39,20 @@ def claude_extension_env(
 ) -> list[dict[str, str]]:
     """Ce que l'extension doit donner au `claude` qu'elle lance.
 
-    Les secrets ne vont que dans les réglages utilisateur, hors du projet :
-    un dossier de projet se partage et se versionne, et c'est pour cette
-    raison que le harnais passe déjà sa clé par l'environnement plutôt que
-    par un fichier qui y vit.
+    Le seul secret qui reste ici est la clé de la porte MCP de l'Atelier,
+    et elle ne va que dans les réglages utilisateur, hors du projet : un
+    dossier de projet se partage et se versionne.
     """
     env: list[dict[str, str]] = [
         {"name": "ANTHROPIC_BASE_URL", "value": settings.anthropic_base_url.strip()},
     ]
     if avec_secrets:
-        key = _read_llm_key(settings)
-        if key:
-            env.append({"name": "ANTHROPIC_API_KEY", "value": key})
-            # Certains gateways lisent AUTH_TOKEN plutôt que API_KEY.
-            env.append({"name": "ANTHROPIC_AUTH_TOKEN", "value": key})
-        # Sans elle, une conversation reprise dans VS Code ne peut plus
-        # atteindre la porte MCP de l'Atelier : le serveur répond, mais
-        # refuse faute d'authentification.
+        # La clé du modèle ne passe plus par ici : le CLI la lit lui-même
+        # via `apiKeyHelper`, si bien qu'aucun fichier de réglages — ni
+        # celui de VS Code, ni celui de Claude — n'a plus à la porter.
+        # Sans la clé de l'Atelier, en revanche, une conversation reprise
+        # dans VS Code ne peut plus atteindre sa porte MCP : le serveur
+        # répond, mais refuse faute d'authentification.
         try:
             cle = settings.owner_key_path.read_text(encoding="utf-8").strip()
         except OSError:
@@ -69,21 +66,39 @@ def claude_extension_env(
 
 
 def _merge_claude_settings_file(path: Path, settings: AtelierSettings) -> None:
-    """Injecte la clé LLM dans settings.json (partagé CLI + extension VS Code)."""
-    key = _read_llm_key(settings)
-    if not key:
+    """Donne au CLI de quoi s'authentifier, sans y écrire le secret.
+
+    Ce fichier portait la clé du modèle en clair. Or n'importe quelle session
+    Claude Code peut le lire — c'est même une lecture banale quand on demande
+    à un agent d'inspecter sa configuration — et la clé se retrouve alors dans
+    son transcript, puis partout où ce transcript est relu. C'est arrivé.
+
+    Le CLI accepte `apiKeyHelper` : une commande dont il lit la sortie. Le
+    fichier ne porte donc plus qu'un `cat` du fichier de secrets, resté en
+    0600. Le secret ne quitte pas `~/work/.secrets`.
+    """
+    # On vérifie que le coffre existe, sans en lire le contenu : la valeur
+    # ne sert plus à rien ici, et ne pas la charger est le plus sûr moyen
+    # qu'elle ne réapparaisse pas dans le fichier.
+    if not settings.llm_key_path.is_file():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     data: dict[str, object] = {}
     if path.is_file():
-        data = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            data = {}
     env = data.setdefault("env", {})
     if not isinstance(env, dict):
         env = {}
         data["env"] = env
     env["ANTHROPIC_BASE_URL"] = settings.anthropic_base_url.strip()
-    env["ANTHROPIC_API_KEY"] = key
-    env["ANTHROPIC_AUTH_TOKEN"] = key
+    # Les clés déjà écrites en clair sont retirées, pas seulement remplacées :
+    # un fichier existant garderait sinon l'ancienne indéfiniment.
+    env.pop("ANTHROPIC_API_KEY", None)
+    env.pop("ANTHROPIC_AUTH_TOKEN", None)
+    data["apiKeyHelper"] = f"cat {settings.llm_key_path}"
     model = (settings.default_model or "").strip()
     if model:
         env["ANTHROPIC_MODEL"] = model

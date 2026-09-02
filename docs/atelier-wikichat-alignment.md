@@ -236,7 +236,7 @@ Handoff script : fermer Welcome / barre Copilot, ouvrir sidebar Claude Code, `cl
 
 **Causes connues** :
 
-1. `~/.claude/settings.json` sans `env.ANTHROPIC_API_KEY` (l’extension ignore `disableLoginPrompt` si pas de clé).
+1. `~/.claude/settings.json` sans source d’identification (l’extension ignore `disableLoginPrompt` si le CLI n’a aucun moyen de s’authentifier).
 2. code-server lancé **sans** variables d’environnement (webview ne hérite pas du shell).
 3. Bug extension : `claudeCode.environmentVariables` peut être **effacé** au reload (cf. anthropic/claude-code#10217).
 
@@ -244,11 +244,19 @@ Handoff script : fermer Welcome / barre Copilot, ouvrir sidebar Claude Code, `cl
 
 | Couche | Fichier / action |
 |--------|------------------|
-| 1 | `~/.claude/settings.json` + `~/work/.claude/settings.json` → `env.ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` |
+| 1 | `~/.claude/settings.json` + `~/work/.claude/settings.json` → `apiKeyHelper` (une commande qui rend la clé) + `env.ANTHROPIC_BASE_URL` |
 | 2 | `claudeCode.disableLoginPrompt: true` + `claudeCode.environmentVariables` (workspace + User code-server) |
 | 3 | `start-code-server.sh` source `claude-env.sh` avant le process (env du host extension) |
 
 `prepare_vscode_handoff()` appelle `write_claude_settings_env()` après sync `.claude`.
+
+**La clé elle-même ne s’écrit dans aucun de ces fichiers.** Elle y était, en
+clair, et un agent à qui l’on demandait d’inspecter sa configuration la
+recopiait dans son transcript. Les réglages ne portent plus qu’un
+`apiKeyHelper` — un `cat` du fichier de secrets, resté en 0600 — dont le CLI
+lit la sortie. Vérifié sur le pod : le CLI comme l’extension s’authentifient
+ainsi, sans écran de login. Ne pas rétablir `env.ANTHROPIC_API_KEY` pour
+« sécuriser » une reprise qui échoue : chercher la cause ailleurs.
 
 **Si le login réapparaît** : redémarrer code-server après mise à jour secrets ; vérifier que `llm_api_key` est présent dans `~/work/.secrets/`.
 

@@ -52,6 +52,16 @@ correctif.
 - **Le cookie de navigation** portait la clé propriétaire elle-même, trente
   jours durant. Il porte un identifiant de session sans pouvoir propre, daté et
   révocable côté serveur.
+- **`~/.claude/settings.json`** recevait la clé du modèle en clair, pour que le
+  CLI et l'extension VS Code s'authentifient sans passer par un compte
+  Claude.ai. Or ce fichier se lit sans effort — c'est même une lecture banale
+  quand on demande à un agent d'inspecter sa configuration — et la clé se
+  retrouve alors dans son transcript, puis partout où ce transcript est relu.
+  C'est arrivé. Le CLI accepte `apiKeyHelper` : une *commande* dont il lit la
+  sortie. Les fichiers de réglages ne portent plus qu'un `cat` du fichier de
+  secrets, et la clé ne quitte pas `~/work/.secrets/`. Une clé écrite avant ce
+  correctif doit être renouvelée : le correctif l'empêche de fuir, il ne la
+  déclasse pas.
 
 ## Ce qui reste ouvert
 
