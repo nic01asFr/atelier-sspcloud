@@ -373,13 +373,60 @@ Ce qui reste ouvert, et se décide en une fois :
 
 - **Qui commite.** Aujourd'hui personne : l'Atelier pose le dépôt, les sessions
   y travaillent, rien ne fige. Sans commits, la veille n'a toujours rien à
-  lire au-delà du premier. Faut-il un geste dans l'interface, une fin de tour
-  qui propose, ou laisser l'agent le faire lui-même ?
+  lire au-delà du premier. C'est la question qui décide si le travail de la
+  passe git sert à quelque chose. Voir la section suivante : le mécanisme
+  existe déjà ailleurs dans la maison, il n'y a pas à l'inventer.
 - **L'identité.** `ATELIER_GIT_USER_NAME` / `ATELIER_GIT_USER_EMAIL`, par
   défaut `Atelier <atelier@localhost>`. C'est elle qui partira sur GitHub.
 - **Les dépôts déjà là.** `nouveau-projet` est un clone amont : ses commits
   sont ceux d'autrui, et son identité locale porte une adresse d'emprunt.
   Un projet cloné et un projet né ici ne se traitent pas pareil.
+
+### Qui commite — reprendre ce que wikichat fait déjà
+
+Avant d'écrire quoi que ce soit : **wikichat porte déjà le motif**, éprouvé et
+en service. Deux briques à regarder plutôt qu'à refaire.
+
+**`scripts/publish-memory.mjs` + `src/memory-publish-hook.mjs`** — commiter sur
+événement, sans y penser. Le script est idempotent : il ne commite que si un
+hash de contenu a changé, fait `git add -A` puis lit `status --porcelain` pour
+ne rien faire s'il n'y a rien, écrit un message généré, et pousse en option
+(`--no-push`). Le hook le lance **détaché** — la réponse de l'outil appelant
+n'attend jamais le push — et il est **opt-in** : sans `WIKICHAT_MEMORY_REPO`,
+no-op silencieux, aucun couplage forcé. Il est déclenché depuis
+`close_project`. `scripts/ingest-inbox.mjs` reprend la même forme avec un
+`git add` limité à un sous-dossier, et un `pull --ff-only` d'abord.
+
+**`src/repo-audit.mjs`, exposé en `audit_project` / `audit_all_projects`** — la
+mesure existe aussi. Il rend, par projet : dépôt ou non, branche, dernier
+commit et son âge, **nombre de fichiers non commités**, distant, avance et
+retard sur lui, un score sur 100 et des avertissements en clair. Son score
+**pénalise déjà le travail non commité** — `uncommitted === 0` vaut 15 points,
+`≤ 5` en vaut 8, au-delà rien. Wikichat tient donc depuis le début qu'un
+travail qui ne se fige pas est un défaut de santé ; il lui manquait seulement
+des dépôts à auditer. Il résout le chemin par le `path` que l'Atelier déclare
+déjà à la création : mesuré sur le pod, il fonctionne sans rien brancher —
+`default` 58/100, `claude-code` 65/100.
+
+**Ce qu'il reste à décider**, donc, n'est plus le mécanisme mais l'événement et
+le garde-fou :
+
+- **L'événement.** `close_project` convient à une mémoire qui bouge peu. Pour
+  du travail, la fin de tour est la bonne granularité — c'est l'unité qui a un
+  sens, et le message de l'utilisateur fait un sujet de commit honnête.
+- **Le garde-fou.** Opt-in par projet, sur le modèle de la variable
+  d'environnement de wikichat. Un projet d'essai n'a pas à se remplir de
+  commits.
+- **Ce qu'on ne refait pas.** Ni la détection « y a-t-il quelque chose à
+  figer » (`status --porcelain`, déjà dans les deux scripts), ni la mesure de
+  ce qui traîne (`audit_all_projects`). L'Atelier garde son `git_repos.etat()`
+  — lecture locale, sans dépendance, pour une pastille d'interface — mais
+  c'est un doublon assumé, pas un oubli.
+
+Corollaire déjà appliqué : la mission de l'agent de veille part de
+`audit_all_projects` au lieu d'une boucle `git` écrite à la main, et **écrit
+son compte rendu avant de déposer ses notes** — une passe s'était arrêtée juste
+avant de conclure, sur un « laisse-moi ajouter les dernières notes ».
 
 ## MCP Apps — afficher une interface dans le fil
 
