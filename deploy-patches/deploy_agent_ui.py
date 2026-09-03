@@ -201,6 +201,21 @@ def text_result(r: dict) -> str:
         return json.dumps(r)
 
 
+def sortie(r: dict) -> str:
+    """La sortie standard d'un `exec`, et rien d'autre.
+
+    L'outil rend un objet JSON encodé dans du texte — `{"rc":…, "stdout":…}`.
+    Le lire comme du texte brut donne une accolade là où on attendait un
+    résultat : c'est ce qui a fait dire au contrôle que le service était
+    arrêté alors qu'il tournait.
+    """
+    brut = text_result(r)
+    try:
+        return str(json.loads(brut).get("stdout") or "")
+    except Exception:
+        return brut
+
+
 def main() -> None:
     rid = 1
     cibles = [(ROOT / rel, f"{BASE}/{rel}") for rel in FILES]
@@ -281,36 +296,38 @@ def main() -> None:
 
     # Le script copie des fichiers, il ne redémarre rien. Un module Python
     # déposé après le démarrage du service n'est donc pas chargé : le
-    # déploiement annonce « OK » et le pod continue de tourner sur l'ancien
-    # code. C'est arrivé, et ça ne se voit pas. On le dit ici plutôt que de le
-    # découvrir plus tard.
-    etat = "\n".join(
-        [
-            "import glob, os, subprocess",
-            "ps = subprocess.run(['ps','-eo','pid,args'], capture_output=True, text=True).stdout",
-            "pid = None",
-            "for ligne in ps.split(chr(10)):",
-            "    if 'mcp_gateway.atelier.app' in ligne and 'grep' not in ligne:",
-            "        pid = ligne.split()[0]",
-            "        break",
-            "if not pid:",
-            "    print('SERVICE ARRETE — a demarrer')",
-            "else:",
-            "    t0 = os.path.getmtime('/proc/' + pid)",
-            "    motif = '/home/onyxia/work/atelier-src/**/*.py'",
-            "    retard = [f for f in glob.glob(motif, recursive=True)",
-            "              if '__pycache__' not in f and os.path.getmtime(f) > t0]",
-            "    if retard:",
-            "        print('REDEMARRAGE REQUIS — %d module(s) plus recents que le service' % len(retard))",
-            "        print('  pkill -f atelier[.]app ; cd ~/work/atelier-src &&' )",
-            "        print('  setsid nohup python -m mcp_gateway.atelier.app --host 0.0.0.0 \\\\')",
-            "        print('    --port 8787 >>~/work/logs/atelier-uvicorn.log 2>&1 </dev/null &')",
-            "    else:",
-            "        print('service a jour — les fichiers de l interface ne demandent rien')",
-        ]
+    # déploiement annonce « OK », le contrôle d'arrivée trouve ses marqueurs
+    # sur le disque, et le pod continue de tourner sur l'ancien code. Rien ne
+    # le signalait, et je m'y suis laissé prendre.
+    #
+    # Le script sait ce qu'il vient de poser : s'il y a du Python, il faut
+    # relancer, point. Comparer des dates de fichiers ne dirait rien de plus —
+    # elles sont toutes fraîches puisqu'on vient de tout réécrire.
+    python_pose = [
+        f
+        for f in list(FILES) + list(PAQUET) + [str(d) for _, d in HORS_ARBRE]
+        if str(f).endswith(".py")
+    ]
+    r = mcp_call(
+        "exec",
+        {
+            "session_id": SESSION,
+            "lang": "bash",
+            "code": "ps -eo pid,args | grep -F 'atelier.app' | grep -v grep | awk '{print $1}'",
+        },
+        rid,
     )
-    r = mcp_call("exec", {"session_id": SESSION, "lang": "python", "code": etat}, rid)
-    print("ETAT", text_result(r))
+    tourne = sortie(r).strip().splitlines()
+    if not tourne or not tourne[0].strip().isdigit():
+        print("ETAT service arrêté — à démarrer")
+    elif python_pose:
+        print(f"ETAT {len(python_pose)} module(s) Python posés — RELANCER le service :")
+        print("       kill $(pgrep -f mcp_gateway[.]atelier[.]app) ; sleep 3")
+        print("       cd ~/work/atelier-src && setsid nohup \\")
+        print("         python -m mcp_gateway.atelier.app --host 0.0.0.0 --port 8787 \\")
+        print("         >>~/work/logs/atelier-uvicorn.log 2>&1 </dev/null &")
+    else:
+        print("ETAT interface seule — rien à relancer")
 
 
 if __name__ == "__main__":
