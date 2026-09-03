@@ -277,6 +277,40 @@ def main() -> None:
     )
     r = mcp_call("exec", {"session_id": SESSION, "lang": "python", "code": verify}, rid)
     print("VERIFY", text_result(r))
+    rid += 1
+
+    # Le script copie des fichiers, il ne redémarre rien. Un module Python
+    # déposé après le démarrage du service n'est donc pas chargé : le
+    # déploiement annonce « OK » et le pod continue de tourner sur l'ancien
+    # code. C'est arrivé, et ça ne se voit pas. On le dit ici plutôt que de le
+    # découvrir plus tard.
+    etat = "\n".join(
+        [
+            "import glob, os, subprocess",
+            "ps = subprocess.run(['ps','-eo','pid,args'], capture_output=True, text=True).stdout",
+            "pid = None",
+            "for ligne in ps.split(chr(10)):",
+            "    if 'mcp_gateway.atelier.app' in ligne and 'grep' not in ligne:",
+            "        pid = ligne.split()[0]",
+            "        break",
+            "if not pid:",
+            "    print('SERVICE ARRETE — a demarrer')",
+            "else:",
+            "    t0 = os.path.getmtime('/proc/' + pid)",
+            "    motif = '/home/onyxia/work/atelier-src/**/*.py'",
+            "    retard = [f for f in glob.glob(motif, recursive=True)",
+            "              if '__pycache__' not in f and os.path.getmtime(f) > t0]",
+            "    if retard:",
+            "        print('REDEMARRAGE REQUIS — %d module(s) plus recents que le service' % len(retard))",
+            "        print('  pkill -f atelier[.]app ; cd ~/work/atelier-src &&' )",
+            "        print('  setsid nohup python -m mcp_gateway.atelier.app --host 0.0.0.0 \\\\')",
+            "        print('    --port 8787 >>~/work/logs/atelier-uvicorn.log 2>&1 </dev/null &')",
+            "    else:",
+            "        print('service a jour — les fichiers de l interface ne demandent rien')",
+        ]
+    )
+    r = mcp_call("exec", {"session_id": SESSION, "lang": "python", "code": etat}, rid)
+    print("ETAT", text_result(r))
 
 
 if __name__ == "__main__":
