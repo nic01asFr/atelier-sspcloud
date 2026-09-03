@@ -76,17 +76,44 @@ correctif.
 
 ## Ce qui reste ouvert
 
-Suivi en issues sur le dépôt. Un projet public qui porte des issues de sécurité
-ouvertes sur un service mono-utilisateur est un projet tenu, pas un projet
-fautif.
+Un projet qui porte des défauts connus, nommés et situés est un projet tenu.
+Ceux-ci viennent d'une revue externe ; l'état donné est celui du code, vérifié,
+pas celui de la note d'origine.
 
-- La clé propriétaire circule encore en paramètre d'URL pour le flux
-  d'événements et le WebSocket : une URL traverse les journaux d'ingress,
-  l'historique du navigateur et le `Referer`.
-- Rien ne permet de faire tourner la clé propriétaire depuis l'interface.
-- Le proxy `/vscode` retransmet les en-têtes du client, `Authorization` et
-  `Cookie` compris, vers code-server. Même pod, risque faible, mais un proxy ne
-  devrait pas faire cela.
+### Ouvert
+
+- **La clé propriétaire circule en paramètre d'URL.** `streamEvents` la place
+  dans l'URL du flux SSE à chaque message envoyé, et la route l'y accepte
+  (`request.query_params.get("token")`). Une URL traverse les journaux
+  d'ingress, l'historique du navigateur et le `Referer`. Fermable sans grand
+  travail : le cookie de session existe, et `EventSource` l'envoie de lui-même
+  en même origine — il reste à ce que la route l'accepte et que le front cesse
+  d'écrire la clé dans l'adresse.
+- **Rien ne permet de faire tourner la clé propriétaire.** `ensure_owner_key`
+  lit le fichier ou en génère un ; aucune route ne révoque ni ne renouvelle,
+  alors que la passerelle sait révoquer ses jetons OAuth. Un
+  `POST /v1/auth/rotate` qui réécrit le fichier et invalide les sessions
+  ouvertes.
+- **Le proxy `/vscode` relaie les identifiants de sa propre porte.** Il
+  retransmet les en-têtes du client, `Authorization` et `Cookie` compris, vers
+  code-server : la clé propriétaire part donc en amont. Même pod, risque
+  faible, mais un proxy ne devrait jamais faire cela. `HOP_BY_HOP` ne les
+  contient pas.
+
+### Déclassé
+
+- **`is_internal_request` accepte toute adresse en `172.`**, alors que la plage
+  privée s'arrête à 172.31. Depuis que le point d'entrée interne est gardé par
+  un secret partagé, cette fonction ne décide plus d'aucun accès : elle ne
+  qualifie plus qu'une ligne de journal. À corriger pour la justesse, plus pour
+  la sûreté.
+
+### Fermé
+
+- **`attachment_ids` était utilisé avant d'être défini** dans `stream_events` :
+  un message vide levait un `UnboundLocalError` et rendait un 500. Corrigé.
+- **Aucun test automatisé.** La suite existe, et couvre en premier lieu ce que
+  la revue réclamait : le point d'entrée interne refusé depuis l'extérieur.
 
 ## Signaler une faille
 

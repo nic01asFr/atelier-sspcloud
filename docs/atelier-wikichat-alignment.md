@@ -338,24 +338,24 @@ ligne de commande — `git` le lit par un script `GIT_ASKPASS`.
 |---------|--------|-------|
 | VS Code proxy + extension | ✅ | — |
 | Layout VS Code par défaut | ✅ | — |
-| Handoff session | ⚠️ partiel | Resume + titre fiable |
+| Handoff session | ✅ dans les deux sens, titres concordants | — |
 | Shell multi-vues (Code / Assistant / Connecteurs / Agent) | ✅ stub UI | Assistant + Agent complets |
 | Arbre projets code (sans assistant) | ✅ | — |
 | Panneau MCP hors sidebar Code | ✅ onglet Connecteurs | UI gateway complète (pool) |
-| Registre MCP unifié (Gateway = pool) | ❌ `registry.json` flat | `~/work/mcp/` gateway.db + pool |
+| Registre MCP unifié (Gateway = pool) | ✅ `gateway.db` + pool (3 amonts, 0 en erreur) | — |
 | `.mcp.json` projet / assistant | ❌ | binding niveau 2 (voir MCP doc) |
-| Overlay MCP conversation (composer `+`) | ❌ | niveau 3 — visibilité seule |
-| Onglet Agent (profils + pilote) | stub | profils gateway + instances |
+| Overlay MCP conversation (composer `+`) | mécanisme en place (`mcp_overlay` par session, route `/sessions/{id}/mcp`) — usage non mesuré | vérifier à la revue Connecteurs |
+| Onglet Agent (profils + pilote) | ✅ 4 agents en service, cron + relance | revue de la page à faire |
 | Modal création projet | ✅ dépôt git à la création | + clone GitHub |
 | Menu session ⋯ visible | ✅ | — |
-| Tout dans `projects/default` | ❌ | Slug par projet |
+| Tout dans `projects/default` | ✅ un slug par projet, chacun un dépôt git | — |
 | `wikichat-memory` repo | ❌ et à dessein — mémoire de session | Règle de sync, pas un dépôt |
 | Service Wikichat `:3777` | ⚠️ démarre (script réparé), non supervisé | Relancé avec l'Atelier |
 | Auth GitHub service | ✅ jeton + `GIT_ASKPASS` | OAuth si plusieurs comptes |
 | `kind` assistant / code | ✅ API + filtre UI | — |
 | Noms de session hub | ⚠️ titres sync Claude | Titre fiable + overlay |
 | Overlay consignes session | ❌ | Fichiers ou API |
-| Sync `~/.wikichat` ↔ repo mémoire | ❌ | Règle explicite |
+| Sync `~/.wikichat` ↔ repo mémoire | ❌ jamais armé — `WIKICHAT_MEMORY_REPO` absent | dépôt dans le dossier assistant, `--no-push` d'abord |
 
 ### 11.1 Shell UI (implémenté)
 

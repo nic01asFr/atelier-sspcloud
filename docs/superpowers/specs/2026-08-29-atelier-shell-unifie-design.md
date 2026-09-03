@@ -732,6 +732,33 @@ le premier cas à viser — pas un tableau de bord générique.
 Après l'onglet Assistant et la messagerie des agents. Le passe-plat (§1) peut
 partir avant, il ne coûte presque rien et ne s'engage sur rien.
 
+## Ce qui n'est pas cadré
+
+Nommé plutôt que laissé de côté en silence — l'expérience du jour est qu'un
+point qui ne vit que dans une conversation se perd.
+
+**La page Connecteurs n'a été revue par personne.** Code a été repris à fond —
+le fil, les gestes, l'attente, le rendu — et Agents corrigé au coup par coup :
+plafond de tours, libellés de permission, mission tronquée, agent de veille.
+Connecteurs, rien. C'est le seul pan de l'interface qui n'a pas été regardé,
+alors que la revue portait sur les trois.
+
+**Les artefacts d'essai traînent.** Un message « essai touche entrée », deux
+forks de conversation, une conversation « Rendu — tout le vocabulaire », et un
+« EXTENSION-OK » parti dans la mauvaise conversation. À garder ou à effacer,
+mais à trancher.
+
+**L'attribution du clone amont.** `nouveau-projet` porte
+`Onyxia <onyxia@cerema.fr>` dans son `.git/config` local, et trois fiches de
+savoir portent « cerema » jusque dans leur nom de fichier. Rien n'est public,
+mais l'agent qui tient le savoir commun en reproduira, et la question a été
+soulevée deux fois sans être tranchée.
+
+**La cadence de sortie du travail.** Une fois que quelque chose commite et que
+la mémoire se publie, il restera à décider ce qui va sur GitHub, quand, et sous
+quelle identité. La publication existe côté service ; l'interface ne l'expose
+pas, et c'est délibéré jusqu'à ce que ce soit décidé.
+
 ## Hors scope immédiat
 
 - Wizard connecteur multi-étapes complet  
