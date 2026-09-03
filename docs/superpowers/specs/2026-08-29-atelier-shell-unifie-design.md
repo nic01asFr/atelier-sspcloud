@@ -384,6 +384,10 @@ Ce qui reste ouvert, et se décide en une fois :
 
 ### Qui commite — reprendre ce que wikichat fait déjà
 
+Il s'agit ici de figer **le travail des projets**, à ne pas confondre avec la
+publication de la mémoire traitée plus bas : deux sujets distincts, qui se
+trouvent partager une mécanique.
+
 Avant d'écrire quoi que ce soit : **wikichat porte déjà le motif**, éprouvé et
 en service. Deux briques à regarder plutôt qu'à refaire.
 
@@ -487,9 +491,10 @@ La boucle du poste est bidirectionnelle : `sync-memory.mjs` fait INGEST (pull,
 puis intègre `inbox/`) puis PUBLISH (export sanitisé, push), sur une tâche
 planifiée qui pose `WIKICHAT_MEMORY_REPO`.
 
-Attention au nom qui trompe : `~/work/wikichat-memory` sur le pod **n'est pas
-la mémoire** et n'est pas un dépôt — c'est le dossier de travail de
-l'assistant. La mémoire, c'est `~/.wikichat/`.
+Sur le pod, `~/work/wikichat-memory` est aujourd'hui le dossier de travail de
+l'assistant, et n'est pas un dépôt. La **source** de la mémoire reste dans tous
+les cas `~/.wikichat/` : ce qu'un dépôt mémoire porte n'en est que la
+projection, régénérée à chaque publication.
 
 ### L'état du pod : rien n'est sauvegardé
 
@@ -512,13 +517,37 @@ privée, identifiants dans une URL, chemins absolus Windows et Unix. Et
 `triggers.json`, `registry.json`, `identity-bindings.json` ne sont pas
 exportés.
 
-### Un dépôt par machine, et pourquoi pas un seul
+### Un dépôt par machine, et le dossier de l'assistant pour l'accueillir
 
-**Retenu : un dépôt privé propre au pod.** Un dossier dédié — `~/work/.memoire`,
-pas celui de l'assistant —, cloné du dépôt, et `WIKICHAT_MEMORY_REPO` exporté
-dans `start_wikichat.sh`.
+**Retenu : le pod a son propre dépôt mémoire, et c'est `~/work/wikichat-memory`
+lui-même.** Pas un dossier de plus.
 
-Partager un seul dépôt entre le poste et le pod ne marcherait pas en l'état, et
+La symétrie avec le poste était déjà là et j'ai failli la manquer : au poste,
+`wikichat/` porte le code et `wikichat-memory/` porte la mémoire, côte à côte ;
+au pod, `work/wikichat/` porte le code déployé et `work/wikichat-memory/`
+attendait son rôle. Inventer un troisième dossier revenait à dédoubler ce qui
+existait.
+
+Et rien n'oblige à passer par GitHub pour commencer : `git init` suffit, et
+`publish-memory.mjs --no-push` est fait pour ça. Le distant se pose plus tard,
+quand un jeton existera.
+
+Vérifié avant de le retenir : **aucune collision** entre ce que
+`publish-memory` purge (`projects.json`, `ideas.json`, `cartography.json`,
+`knowledge/`, `projects/`, `ideas/`, les index, `manifest.json`) et ce que le
+dossier contient déjà (`.wikichat/`, `.atelier/`, `.claude/`, `.mcp.json`,
+`.vscode/`, `assistant/sessions/`). Et les transcripts de l'assistant ne sont
+pas dedans : ils vivent dans `~/.claude/projects/…`. Le dossier pèse 21
+fichiers et 184 Ko de métadonnées structurelles, sans aucun motif de secret.
+
+Cela renverse une décision de la passe git : le dossier de l'assistant avait
+été écarté du `git init` automatique, au motif que son contenu était « de la
+mémoire de session, pas du travail versionné ». C'est précisément parce que
+c'est de la mémoire qu'il faut la versionner. Une ligne à changer dans
+`projects.py`.
+
+Partager un **même** dépôt entre le poste et le pod, en revanche, ne marcherait
+pas en l'état, et
 la raison est concrète : `publish-memory.mjs` **purge les fichiers gérés avant
 de copier** — `rmSync` sur MANAGED, puis copie du staging. Deux producteurs qui
 publient chacun leur instantané complet s'écrasent l'un l'autre, le dernier
@@ -531,8 +560,12 @@ producteur n'existe.
 
 Au poste, une tâche planifiée toutes les quinze minutes. Au pod,
 `close_project` est le seul déclencheur et il est rare. Le plus simple est un
-agent d'entretien de plus, qui lance `sync-memory.mjs` : l'ordonnanceur existe
-déjà, et c'est exactement la forme des quatre autres.
+agent d'entretien de plus : l'ordonnanceur existe déjà, et ce serait exactement
+la forme des quatre autres.
+
+Il appellera `publish-memory.mjs --no-push`, et non `sync-memory.mjs` : l'étape
+*ingest* de ce dernier fait un `git pull`, qui n'a pas de sens tant qu'aucun
+distant n'est posé. `sync-memory` reprendra sa place le jour du distant.
 
 ### Plus tard : rendre la mémoire du pod lisible en local
 
@@ -590,6 +623,23 @@ Seule la première se versionne :
 
 Ça règle du même coup la réserve sur GitHub : ce qui partirait un jour est
 exactement ce qui a traversé le scan des onze motifs, rien d'autre.
+
+### L'onglet Assistant — ce qu'il reste à faire
+
+La structure est acquise : un projet (`wikichat-memory`), N conversations, une
+par sous-dossier de session, avec sa liaison MCP propre. Le fil de discussion
+est un composant partagé, déjà complet côté Code — défilement ancré, reprise
+d'un message, attente lisible, rendu markdown entier.
+
+Il reste donc à **généraliser la vue, pas à en écrire une seconde**. Ce qui
+diffère de Code se compte : l'unité n'est pas un projet mais l'assistant
+lui-même, la liste des conversations n'a pas d'arbre de projets au-dessus, et
+la mémoire est à portée d'outil plutôt que de fichier.
+
+Deux choses à ne pas rater au passage, tirées des sections ci-dessus : le
+marqueur qui retire les sous-dossiers de session de la liste des projets
+wikichat, et le README à la racine qui dit que la mémoire y est un rendu, pas
+un espace d'écriture.
 
 ## MCP Apps — afficher une interface dans le fil
 
@@ -688,7 +738,7 @@ partir avant, il ne coûte presque rien et ne s'engage sur rien.
 - Pastilles Code / Assistant (contrat posé, UI avec leurs shells)  
 - Raffinement riche des profils  
 
-## Critères (passe courante)
+## Critères — passe « onglet Agents » (close)
 
 - [x] Accueil Agent = overview utile (cartes états)
 - [x] Création = pleine page, pas modale
