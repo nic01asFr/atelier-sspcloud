@@ -542,6 +542,55 @@ que son contenu entre dans `~/.wikichat`. La convergence des deux mémoires est
 un autre sujet, et si on l'ouvre un jour, le chemin est l'`inbox/` — qui est
 fait pour l'ajout — et non un second publieur sur le même instantané.
 
+### L'assistant et ses sessions — ce que la fusion impose
+
+Fusionner le dossier de l'assistant et le dépôt mémoire touche à la façon dont
+les sessions d'assistant sont structurées. Deux constats, mesurés.
+
+**Le sous-dossier par session porte quelque chose.** Une session d'assistant ne
+travaille pas à la racine : `_assistant_session_cwd` la place dans
+`assistant/sessions/<uuid>/`, et `_normalize_assistant_cwd` y déplace même les
+sessions anciennes restées à la racine — c'était une décision, pas un accident.
+La raison est dans `mcp_sync._assistant_binding_paths` : la liaison MCP de
+l'assistant a **deux niveaux**, un `.mcp.json` global à la racine et un
+`.mcp.json` par session. Écraser les sous-dossiers pour tout ramener à la
+racine coûterait la liaison par conversation — le niveau 3 de l'architecture
+MCP. On les garde.
+
+**Et c'est cette structure qui rend la fusion sûre.** La mémoire exportée
+atterrit à la racine ; une session travaille deux niveaux plus bas. Le fichier
+`knowledge/x-axis.md` n'est donc pas sous les yeux de l'assistant, et le geste
+naturel depuis une session reste l'outil — `search_knowledge`, `recall`,
+`remember` — et non l'édition d'un fichier que la prochaine publication
+détruirait. Ce que je prenais pour une gêne est la garde.
+
+**Reste un vrai défaut, indépendant de la fusion.** WikiChat enregistre chaque
+sous-dossier de session comme un *projet*, nommé par son UUID : le registre en
+porte trois aujourd'hui, à côté de `onyxia`, `work` et `src` qui n'en sont pas
+davantage. Ils sont aujourd'hui écartés de l'export comme « bruit » — mais par
+accident : le filtre retient ce qui a un `project-state.json`, et une session
+n'en a pas. Un seul `add_project_note` sur une session promeut un fantôme
+nommé par un UUID dans la mémoire publiée.
+
+Le remède existe déjà dans la maison : le marqueur `.atelier-agent` retire un
+dossier d'agent de la liste des projets. Le même geste vaut ici — un marqueur
+dans `assistant/sessions/`, ou un scanner qui saute ce chemin.
+
+### Ce que le dépôt versionne, alors
+
+La racine porte la mémoire ; `assistant/sessions/` porte l'état de travail.
+Seule la première se versionne :
+
+- **versionné** : l'export sanitisé (`projects.json`, `knowledge/`, `ideas/`,
+  `cartography.json`, les index, `manifest.json`) et un README qui dit ce
+  qu'est ce dépôt ;
+- **ignoré** : `assistant/`, `.atelier/`, `.claude/`, `.vscode/`, et les
+  `.mcp.json` — tous regénérables, et les fichiers de session portent
+  d'ailleurs `_managed_by: wikichat-service` et `_do_not_edit`.
+
+Ça règle du même coup la réserve sur GitHub : ce qui partirait un jour est
+exactement ce qui a traversé le scan des onze motifs, rien d'autre.
+
 ## MCP Apps — afficher une interface dans le fil
 
 L'extension existe et elle est arrêtée : SEP-1865, close, étiquetée `final` et
