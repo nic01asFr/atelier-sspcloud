@@ -465,6 +465,83 @@ Corollaire déjà appliqué : la mission de l'agent de veille part de
 son compte rendu avant de déposer ses notes** — une passe s'était arrêtée juste
 avant de conclure, sur un « laisse-moi ajouter les dernières notes ».
 
+## Mémoire du pod — un service à lui, sauvegardé chez lui
+
+Décidé : **le pod est un service indépendant**, y compris de l'installation
+wikichat du poste. Sa mémoire lui appartient, se sauvegarde chez elle, et sera
+plus tard *consultable* en local — sans jamais se fondre dans l'instance du
+poste. Consultable, pas fusionnée : c'est la distinction qui commande tout le
+reste.
+
+### Ce qui existe, mesuré des deux côtés
+
+Sur le poste, trois choses distinctes qu'il faut cesser de confondre :
+
+| | rôle |
+|---|---|
+| le dépôt `wikichat` | le **code** |
+| `~/.wikichat/` (31 Mo au poste, 252 Ko au pod) | la **centralité** — l'état vivant, pas un dépôt |
+| le dépôt `wikichat-memory` | la **sauvegarde** — privé, 243 commits |
+
+La boucle du poste est bidirectionnelle : `sync-memory.mjs` fait INGEST (pull,
+puis intègre `inbox/`) puis PUBLISH (export sanitisé, push), sur une tâche
+planifiée qui pose `WIKICHAT_MEMORY_REPO`.
+
+Attention au nom qui trompe : `~/work/wikichat-memory` sur le pod **n'est pas
+la mémoire** et n'est pas un dépôt — c'est le dossier de travail de
+l'assistant. La mémoire, c'est `~/.wikichat/`.
+
+### L'état du pod : rien n'est sauvegardé
+
+`WIKICHAT_MEMORY_REPO` n'est défini nulle part sur le pod — ni dans
+l'environnement de wikichat, ni dans ses scripts de démarrage. Le hook de
+`close_project` appelle donc `triggerMemoryPublish`, qui sort sans rien faire :
+c'est son comportement prévu quand la variable manque. Les fiches de savoir et
+les décisions accumulées vivent uniquement sur le système de fichiers du pod.
+
+### L'export marche déjà — vérifié à blanc sur le pod
+
+Lancé vers un dossier temporaire, sans rien pousser : 9 projets retenus, 6
+filtrés comme bruit, 8 fiches de savoir, **0 rédaction**, « sanitisation OK —
+aucun des 11 motifs connus détecté », 148 Ko. Il n'y a donc rien à écrire : il
+manque une destination.
+
+La sanitisation est sérieuse — whitelist de champs, plus onze motifs :
+bearer/`sk-`/`gh*`, clé Google, jeton Slack, PAT GitHub, clé AWS, JWT, clé
+privée, identifiants dans une URL, chemins absolus Windows et Unix. Et
+`triggers.json`, `registry.json`, `identity-bindings.json` ne sont pas
+exportés.
+
+### Un dépôt par machine, et pourquoi pas un seul
+
+**Retenu : un dépôt privé propre au pod.** Un dossier dédié — `~/work/.memoire`,
+pas celui de l'assistant —, cloné du dépôt, et `WIKICHAT_MEMORY_REPO` exporté
+dans `start_wikichat.sh`.
+
+Partager un seul dépôt entre le poste et le pod ne marcherait pas en l'état, et
+la raison est concrète : `publish-memory.mjs` **purge les fichiers gérés avant
+de copier** — `rmSync` sur MANAGED, puis copie du staging. Deux producteurs qui
+publient chacun leur instantané complet s'écrasent l'un l'autre, le dernier
+gagne, et le hash idempotent ne protège pas puisqu'il compare à l'instantané
+*local*. Le préfixe de source qu'on voit sur les fiches (`onyxia__…`) n'y change
+rien : c'est le slug du **projet**, pas la machine — aucun cloisonnement par
+producteur n'existe.
+
+### La cadence
+
+Au poste, une tâche planifiée toutes les quinze minutes. Au pod,
+`close_project` est le seul déclencheur et il est rare. Le plus simple est un
+agent d'entretien de plus, qui lance `sync-memory.mjs` : l'ordonnanceur existe
+déjà, et c'est exactement la forme des quatre autres.
+
+### Plus tard : rendre la mémoire du pod lisible en local
+
+Le besoin est de **consulter**, pas de fusionner. Le dépôt privé du pod, cloné
+au poste, suffit à lire ; ce qui manquerait est une façon de l'interroger sans
+que son contenu entre dans `~/.wikichat`. La convergence des deux mémoires est
+un autre sujet, et si on l'ouvre un jour, le chemin est l'`inbox/` — qui est
+fait pour l'ajout — et non un second publieur sur le même instantané.
+
 ## MCP Apps — afficher une interface dans le fil
 
 L'extension existe et elle est arrêtée : SEP-1865, close, étiquetée `final` et
