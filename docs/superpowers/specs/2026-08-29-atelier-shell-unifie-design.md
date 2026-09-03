@@ -408,20 +408,57 @@ des dépôts à auditer. Il résout le chemin par le `path` que l'Atelier décla
 déjà à la création : mesuré sur le pod, il fonctionne sans rien brancher —
 `default` 58/100, `claude-code` 65/100.
 
-**Ce qu'il reste à décider**, donc, n'est plus le mécanisme mais l'événement et
-le garde-fou :
+**Et l'événement existe aussi — dans le CLI, pas dans l'Atelier.** Claude Code
+a un système de hooks natif : `PreToolUse`, `PostToolUse`, `Stop`,
+`SubagentStop`, `SessionStart`, `SessionEnd`, `UserPromptSubmit`,
+`Notification`, `PreCompact`. Le pod en utilise déjà un — le `Stop` de wikichat
+qui relève la boîte aux lettres de l'agent à la fin de chaque tour.
 
-- **L'événement.** `close_project` convient à une mémoire qui bouge peu. Pour
-  du travail, la fin de tour est la bonne granularité — c'est l'unité qui a un
-  sens, et le message de l'utilisateur fait un sujet de commit honnête.
+Mesuré sur le pod avec une sonde, plutôt que supposé. Un hook `Stop` :
+
+- s'exécute **dans le dossier de travail de la session** ;
+- reçoit sur son entrée standard `session_id`, `transcript_path`, **`cwd`**,
+  `permission_mode`, `hook_event_name`, `stop_hook_active`, et
+  **`last_assistant_message`** ;
+- laisse la session s'arrêter en sortant 0 sans rien écrire ; il ne bloque que
+  s'il rend `{"decision":"block","reason":"…"}`.
+
+Il a donc tout ce qu'il faut : le dossier, le moment, et de quoi rédiger un
+sujet de commit.
+
+**C'est décisif pour une raison qui n'est pas l'économie de code.** Le harnais
+de l'Atelier ne voit que les tours qu'il lance lui-même. Une conversation
+poursuivie depuis l'extension VS Code lui échappe entièrement — et c'est un
+usage nominal, qu'on a passé des jours à faire marcher. Un hook vit dans le
+CLI : il attrape **les deux**. Commiter depuis le harnais laisserait
+silencieusement de côté la moitié du travail.
+
+Il n'y a en revanche **aucun réglage d'auto-commit natif** : vérifié, le
+`autoCommit` qu'on trouve dans le binaire est une option de flux sans rapport
+avec git. Le CLI sait commiter — il le fait quand on le lui demande, avec ses
+réglages d'attribution (`attribution`, `includeCoAuthoredBy` déprécié) — mais
+rien ne commite tout seul.
+
+**Ce qu'il reste à décider** n'est donc ni le mécanisme, ni l'événement :
+
+- **La granularité.** `Stop` à chaque tour donne une histoire fine mais
+  bavarde ; `SessionEnd` donne un commit par session, plus lisible mais moins
+  sûr de se déclencher. Commencer par `Stop`, avec un message construit sur
+  `last_assistant_message`, et voir si le bruit gêne.
 - **Le garde-fou.** Opt-in par projet, sur le modèle de la variable
-  d'environnement de wikichat. Un projet d'essai n'a pas à se remplir de
-  commits.
+  d'environnement de wikichat — un fichier marqueur dans le projet ferait
+  aussi bien, et se versionne.
 - **Ce qu'on ne refait pas.** Ni la détection « y a-t-il quelque chose à
-  figer » (`status --porcelain`, déjà dans les deux scripts), ni la mesure de
-  ce qui traîne (`audit_all_projects`). L'Atelier garde son `git_repos.etat()`
-  — lecture locale, sans dépendance, pour une pastille d'interface — mais
-  c'est un doublon assumé, pas un oubli.
+  figer » (`status --porcelain`), ni la mesure de ce qui traîne
+  (`audit_all_projects`), ni le déclencheur (les hooks). L'Atelier garde son
+  `git_repos.etat()` — lecture locale, sans dépendance, pour une pastille
+  d'interface — mais c'est un doublon assumé, pas un oubli.
+
+**Leçon de méthode, pour la prochaine fois.** J'ai proposé successivement
+d'écrire le mécanisme dans le harnais, puis de porter celui de wikichat, avant
+de regarder ce que le CLI offre. Les trois briques existaient : le déclencheur
+dans Claude Code, le motif de commit dans wikichat, la mesure dans
+`repo-audit.mjs`. Il ne restait qu'à les brancher.
 
 Corollaire déjà appliqué : la mission de l'agent de veille part de
 `audit_all_projects` au lieu d'une boucle `git` écrite à la main, et **écrit
