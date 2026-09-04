@@ -98,18 +98,9 @@ pas celui de la note d'origine.
 
 ### Ouvert
 
-- **La clé propriétaire circule en paramètre d'URL.** `streamEvents` la place
-  dans l'URL du flux SSE à chaque message envoyé, et la route l'y accepte
-  (`request.query_params.get("token")`). Une URL traverse les journaux
-  d'ingress, l'historique du navigateur et le `Referer`. Fermable sans grand
-  travail : le cookie de session existe, et `EventSource` l'envoie de lui-même
-  en même origine — il reste à ce que la route l'accepte et que le front cesse
-  d'écrire la clé dans l'adresse.
-- **Rien ne permet de faire tourner la clé propriétaire.** `ensure_owner_key`
-  lit le fichier ou en génère un ; aucune route ne révoque ni ne renouvelle,
-  alors que la passerelle sait révoquer ses jetons OAuth. Un
-  `POST /v1/auth/rotate` qui réécrit le fichier et invalide les sessions
-  ouvertes.
+Les trois défauts que la revue avait relevés sont fermés. Ce qui reste tient
+au modèle, pas à un oubli : un pod, une identité, `bypassPermissions`. C'est
+dit plus haut, et ça ne se corrige pas par un correctif.
 
 ### Déclassé
 
@@ -120,6 +111,28 @@ pas celui de la note d'origine.
   la sûreté.
 
 ### Fermé
+
+- **La clé propriétaire circulait en paramètre d'URL.** `streamEvents` la
+  plaçait dans l'adresse du flux SSE à chaque message envoyé. Observé en
+  conditions réelles : elle est apparue en clair dans le journal du service.
+  Une URL traverse aussi les journaux d'ingress, l'historique du navigateur et
+  le `Referer`. `EventSource` ne sait pas poser d'en-tête, d'où la tentation —
+  mais le cookie de session part de lui-même en même origine. L'interface ne
+  l'écrit plus, **et** la route ne l'accepte plus : la laisser « au cas où »
+  aurait gardé la fuite ouverte pour une page restée ouverte ailleurs. Le
+  WebSocket du proxy VS Code l'acceptait aussi sans que rien ne l'envoie ; il
+  ne prend plus que le cookie. Vérifié dans le navigateur : la requête part
+  sans jeton et rend 200.
+
+- **La clé propriétaire ne pouvait pas être renouvelée.** Il fallait se
+  connecter au pod et éditer un fichier — ce que personne ne fait à chaud, or
+  une clé se renouvelle précisément parce qu'elle vient de fuir.
+  `POST /v1/auth/rotate` la remplace et rend la nouvelle. Les sessions de
+  navigation ouvertes avec l'ancienne tombent avec elle, y compris celle qui
+  demande : les garder reviendrait à ne rien changer pour qui détient
+  l'ancienne. L'écriture passe par un fichier voisin puis un remplacement d'un
+  seul geste, pour qu'aucune requête ne tombe sur un fichier à moitié écrit et
+  n'en fabrique une troisième.
 
 - **Le proxy `/vscode` relayait les identifiants de sa propre porte.** Il
   retransmettait les en-têtes du navigateur, `Authorization` et `Cookie`

@@ -641,6 +641,91 @@ marqueur qui retire les sous-dossiers de session de la liste des projets
 wikichat, et le README à la racine qui dit que la mémoire y est un rendu, pas
 un espace d'écriture.
 
+## Mode d'exécution, outils et effort — ce qui se règle par conversation
+
+L'extension Claude Code offre un sélecteur — Manual, Edit automatically, Plan,
+Auto — et un curseur d'effort. La question était de savoir si l'Atelier peut en
+faire autant. Réponse mesurée : oui pour l'essentiel, non pour un mode, et le
+chemin existe déjà pour presque tout.
+
+### Ce que le CLI accepte, vérifié
+
+`--permission-mode` prend six valeurs : `manual`, `acceptEdits`, `plan`,
+`auto`, `dontAsk`, `bypassPermissions`. `--effort` prend `low`, `medium`,
+`high`, `xhigh`, `max`. `--allowedTools` et `--disallowedTools` existent aussi.
+
+Le harnais impose aujourd'hui `bypassPermissions` **en dur**, ne passe pas
+d'effort, et ne passe pas de liste d'outils : la sélection s'arrête donc au
+serveur.
+
+### Le mode qui ne peut pas marcher, et pourquoi
+
+`manual` demande une approbation à chaque édition. Dans l'extension quelqu'un
+répond ; les tours de l'Atelier tournent en `-p`, sans personne. L'appel est
+alors **refusé**, pas mis en attente. Il n'existe aucune option de type
+« outil qui pose la question » dans cette version du binaire.
+
+Même limite pour les **formulaires**. Mesuré avec un serveur MCP d'essai qui
+pose une vraie question :
+
+    CAPACITES_CLIENT       {"roots":{...}, "elicitation":{}}
+    OUTIL_APPELE           demander_une_couleur
+    REPONSE_A_ELICITATION  {"action": "cancel"}
+
+Le CLI **annonce** savoir répondre à une élicitation, la **reçoit**, et répond
+`cancel` — automatiquement, faute d'interlocuteur. Un formulaire posé pendant
+un tour ne peut donc pas aboutir, quoi qu'on branche.
+
+Mais le bon chemin existe déjà : la passerelle porte `elicit` comme **étape
+durable qui suspend**, aux côtés de `approval`, `wait_until` et
+`wait_callback`, avec `gateway_resume_composition` pour reprendre. La
+composition se suspend, l'Atelier affiche le formulaire, l'utilisateur répond,
+la composition reprend — et le CLI n'a jamais à répondre, puisque l'attente
+n'est pas dans son tour. C'est le même travail que l'approbation d'une action
+d'agent : à cadrer avec elle, pas à part.
+
+### Ce qu'il faut toucher
+
+Rien n'est à inventer ; `rec.model` est le précédent exact d'un réglage porté
+par la conversation et transmis au harnais.
+
+1. **La fiche de conversation** — trois champs : `permission_mode`, `effort`,
+   `outils_autorises`. Sans risque : la relecture filtre sur les champs connus,
+   donc les fiches existantes prennent les valeurs par défaut.
+2. **La route de modification** — `PatchSessionBody` ne porte que `title` et
+   `archived` ; les trois champs s'y ajoutent.
+3. **Le harnais** — lire le mode plutôt que l'imposer, ajouter `--effort` et
+   `--allowedTools` quand ils sont réglés.
+4. **Le composeur** — son pied porte 📎 et `+`. Un troisième contrôle pour le
+   mode et l'effort. Et le popover des connecteurs gagne un niveau : il affiche
+   déjà « N outils », `ui/tool-picker.js` sait déjà les rendre un par un — il
+   sert aux agents, pas encore aux conversations.
+5. **Des défauts par projet**, pour qu'une conversation neuve hérite.
+6. **Une pastille sur le fil**, pour voir qu'une conversation est en *Plan* —
+   sans quoi on croira l'agent en panne alors qu'il refuse d'éditer, comme
+   demandé.
+
+### Les quatre pièges
+
+- **`--allowedTools` est une liste blanche.** La poser retire silencieusement
+  les outils intégrés — Bash, Read, Edit. Le pilote wikichat le sait déjà et
+  force `Bash` dans chaque sélection ; il faut le même garde-fou ici, sinon
+  cocher trois outils MCP désarme l'agent.
+- **Changer de mode ne vaut que pour la suite.** À dire à l'écran, sinon on
+  croira à un défaut.
+- **L'assistant a deux niveaux de liaison MCP** — un `.mcp.json` global et un
+  par session. Une sélection par outil doit s'y composer, pas l'écraser.
+- **Ne pas proposer `manual` ni de formulaire dans le fil.** Les deux finissent
+  en refus automatique.
+
+### L'ordre
+
+Le mode et l'effort d'abord — trois champs, deux options, un sélecteur. *Plan*
+devient disponible, et l'on cesse de tout passer en `bypassPermissions` par
+défaut : c'est autant de surface en moins, pas seulement du confort. Les outils
+au grain fin ensuite, à cause du garde-fou. Les défauts par projet en dernier,
+quand on saura lesquels valent d'être hérités.
+
 ## MCP Apps — afficher une interface dans le fil
 
 L'extension existe et elle est arrêtée : SEP-1865, close, étiquetée `final` et
