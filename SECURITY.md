@@ -39,6 +39,23 @@ Hors du dépôt, dans `~/work/.secrets/` sur le pod, en 0600 :
 Aucun de ces fichiers n'est versionné, et rien ne les écrit dans un dossier de
 projet : un dossier de projet se partage et se versionne.
 
+Les **identifiants des connecteurs** vivent ailleurs, à trois endroits qu'il
+vaut mieux distinguer :
+
+- **`~/work/mcp/gateway.db`**, table `server_credentials` — un `bearer`, des
+  en-têtes (`headers_json`) et une URL forcée par serveur amont. **En clair** :
+  il n'y a pas de chiffrement au repos, et il n'y en aurait guère l'usage
+  puisque la clé vivrait sur le même disque. Le fichier est en 0600. L'API ne
+  les rend jamais tels quels — `get_server_credentials_masked` masque, et tout
+  en-tête dont le nom contient `authorization`, `token`, `secret`, `key`,
+  `cookie` ou `password` est retiré des réponses.
+- **L'environnement du service**, quand la déclaration d'un serveur nomme une
+  variable (`auth_env`), avec quelques replis historiques par identifiant de
+  serveur. Un jeton posé là ne passe pas par la base.
+- **Les jetons OAuth que la passerelle émet elle-même** (`oauth_tokens`,
+  `oauth_clients`), dans la même base. À ne pas confondre avec les précédents :
+  ceux-là servent à entrer, pas à sortir.
+
 ## Ce qui a été corrigé, et pourquoi le dire
 
 Les commentaires du code qui expliquent *pourquoi* une garde existe sont de la
