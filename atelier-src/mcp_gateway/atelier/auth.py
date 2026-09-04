@@ -12,6 +12,7 @@ défaut ; on réutilise sa table plutôt que d'en écrire une seconde.
 
 from __future__ import annotations
 
+import os
 import secrets
 import stat
 from pathlib import Path
@@ -40,6 +41,23 @@ def ensure_owner_key(path: Path) -> str:
     path.write_text(key + "\n", encoding="utf-8")
     path.chmod(stat.S_IRUSR | stat.S_IWUSR)
     return key
+
+
+def rotate_owner_key(path: Path) -> str:
+    """Remplace la clé propriétaire par une neuve, et rend la neuve.
+
+    Écrire par-dessus laisserait, le temps de l'écriture, un fichier vide ou
+    tronqué : une requête tombant là ne trouverait pas de clé, et
+    `ensure_owner_key` en fabriquerait une troisième. On écrit donc à côté,
+    puis on remplace d'un seul geste.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    neuve = secrets.token_hex(32)
+    provisoire = path.with_suffix(path.suffix + ".neuve")
+    provisoire.write_text(neuve + chr(10), encoding="utf-8")
+    provisoire.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    os.replace(provisoire, path)
+    return neuve
 
 
 def bearer_from_header(authorization: str | None) -> str | None:
@@ -90,6 +108,23 @@ class OwnerAuth:
             return owner_session_valid(conn, sid)
         finally:
             conn.close()
+
+    def faire_tourner(self) -> str:
+        """Renouvelle la clé, et referme toutes les sessions ouvertes.
+
+        Une clé se renouvelle parce qu'elle a fui. Laisser vivre les sessions
+        de navigation qu'elle avait ouvertes reviendrait à ne rien changer
+        pour qui les détient : elles tombent avec elle.
+        """
+        neuve = rotate_owner_key(self.settings.owner_key_path)
+        self.owner_key = neuve
+        conn = self._base()
+        try:
+            conn.execute("DELETE FROM oauth_sessions")
+            conn.commit()
+        finally:
+            conn.close()
+        return neuve
 
     def fermer_session(self, sid: str | None) -> bool:
         conn = self._base()

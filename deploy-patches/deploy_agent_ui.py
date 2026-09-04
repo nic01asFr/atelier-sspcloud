@@ -136,6 +136,10 @@ PAQUET = [
 
 HORS_ARBRE = [
     (
+        DEPOT / "atelier-src/bin/atelier-figer-le-travail.sh",
+        "/home/onyxia/work/bin/atelier-figer-le-travail.sh",
+    ),
+    (
         DEPOT / "wikichat-atelier/src/pilote.mjs",
         "/home/onyxia/work/wikichat/src/src/pilote.mjs",
     ),

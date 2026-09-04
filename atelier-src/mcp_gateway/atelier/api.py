@@ -468,6 +468,29 @@ def build_app(
         """Alias sous /v1 pour les recettes / clients."""
         return health(request, authorization)
 
+    @router.post("/auth/rotate")
+    def rotate_owner(
+        response: Response,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, str]:
+        """Renouvelle la clé propriétaire et rend la nouvelle, une seule fois.
+
+        Une clé se renouvelle parce qu'elle a fui — dans un journal, une URL,
+        le transcript d'un agent. Il faut donc que le geste soit à portée de
+        main : sans cette route, il fallait se connecter au pod et écrire dans
+        un fichier, ce que personne ne fait à chaud.
+
+        Toutes les sessions de navigation tombent avec elle, y compris celle
+        qui vient de la demander : garder la sienne reviendrait à ne rien
+        changer pour qui détient l'ancienne. La réponse porte la nouvelle clé
+        — c'est le seul moment où elle transite, et l'appelant venait de
+        prouver qu'il détenait la précédente.
+        """
+        neuve = auth.faire_tourner()
+        response.delete_cookie(COOKIE_NAME, path="/")
+        log.warning("clé propriétaire renouvelée — sessions de navigation fermées")
+        return {"owner_key": neuve}
+
     @router.post("/auth/cookie")
     def set_auth_cookie(
         response: Response,
