@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import asyncio
 import logging
 from typing import Any, Callable
@@ -32,6 +33,25 @@ HOP_BY_HOP = {
     "host",
     "content-length",
 }
+
+# Les identifiants de notre propre porte, qui n'ont rien à faire en amont.
+#
+# Le navigateur joint à chaque appel de `/vscode` ce qu'il joint partout : la
+# clé propriétaire en `Authorization`, et le cookie de session de l'Atelier.
+# Ils partaient tels quels vers code-server, qui n'en a aucun usage — il
+# tourne sous sa propre authentification, et le proxy s'y connecte avec sa
+# session à lui, pas avec celle du client. Remettre la clé de sa porte à un
+# logiciel qui ne l'a pas demandée n'est jamais utile.
+#
+# Rien ne casse en les retirant : les réponses amont sont déjà dépouillées de
+# leur `set-cookie`, donc le navigateur ne détient aucun cookie de code-server
+# à lui renvoyer.
+NE_PAS_TRANSMETTRE = HOP_BY_HOP | {"authorization", "cookie"}
+
+
+def entetes_amont(entetes: Mapping[str, str]) -> dict[str, str]:
+    """Les en-têtes du client, dépouillés de ce qui ne doit pas remonter."""
+    return {k: v for k, v in entetes.items() if k.lower() not in NE_PAS_TRANSMETTRE}
 
 
 def is_internal_request(request: Request) -> bool:
@@ -171,9 +191,7 @@ class VscodeUpstream:
         url = f"{self.base}/{upstream_path}" if upstream_path else f"{self.base}/"
         if request.url.query:
             url = f"{url}?{request.url.query}"
-        headers = {
-            k: v for k, v in request.headers.items() if k.lower() not in HOP_BY_HOP
-        }
+        headers = entetes_amont(request.headers)
         body = await request.body()
         cookies = None if self._auth_none else self._client_or_new().cookies
         # Le client ne peut pas être refermé avant que la réponse ait été

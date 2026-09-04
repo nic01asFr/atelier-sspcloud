@@ -90,7 +90,6 @@ correctif.
   image d'ailleurs devient donc un lien, que l'on voit avant de le suivre.
   Vérifié dans le navigateur : au rendu d'un message qui en contient une,
   aucune requête ne part vers l'hôte tiers.
-
 ## Ce qui reste ouvert
 
 Un projet qui porte des défauts connus, nommés et situés est un projet tenu.
@@ -111,11 +110,6 @@ pas celui de la note d'origine.
   alors que la passerelle sait révoquer ses jetons OAuth. Un
   `POST /v1/auth/rotate` qui réécrit le fichier et invalide les sessions
   ouvertes.
-- **Le proxy `/vscode` relaie les identifiants de sa propre porte.** Il
-  retransmet les en-têtes du client, `Authorization` et `Cookie` compris, vers
-  code-server : la clé propriétaire part donc en amont. Même pod, risque
-  faible, mais un proxy ne devrait jamais faire cela. `HOP_BY_HOP` ne les
-  contient pas.
 
 ### Déclassé
 
@@ -127,6 +121,16 @@ pas celui de la note d'origine.
 
 ### Fermé
 
+- **Le proxy `/vscode` relayait les identifiants de sa propre porte.** Il
+  retransmettait les en-têtes du navigateur, `Authorization` et `Cookie`
+  compris, vers code-server — qui n'en a aucun usage : il tourne sous sa propre
+  authentification, et le proxy s'y connecte avec sa session à lui. Les deux
+  en-têtes sont désormais retirés avant transmission.
+
+  Ce n'était d'ailleurs pas qu'une question d'hygiène. Mesuré : `httpx` laisse
+  un en-tête `Cookie` explicite l'emporter sur le pot de cookies du client. Le
+  cookie du navigateur **déplaçait** donc la session que le proxy avait ouverte
+  auprès de code-server. Le correctif répare les deux à la fois.
 - **`attachment_ids` était utilisé avant d'être défini** dans `stream_events` :
   un message vide levait un `UnboundLocalError` et rendait un 500. Corrigé.
 - **Aucun test automatisé.** La suite existe, et couvre en premier lieu ce que
