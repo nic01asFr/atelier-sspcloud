@@ -21,10 +21,16 @@ class AtelierSettings(BaseSettings):
     # Timeout mural par tour (secondes). Seul plafond opérant côté plateforme.
     turn_timeout_s: int = 600
     # Au-delà de ce poids estimé, l'Atelier fait compacter la conversation
-    # avant d'envoyer le tour suivant. Claude Code ne peut pas s'en charger
-    # ici : sa bascule automatique se décide sur les jetons consommés, que
-    # la passerelle de modèles rapporte à zéro. 0 désactive.
-    compaction_seuil_jetons: int = 60000
+    # avant d'envoyer le tour suivant. Claude Code ne s'en charge pas ici : sa
+    # bascule automatique se décide sur les jetons consommés, que la passerelle
+    # de modèles rapporte à zéro sur ce chemin. 0 désactive.
+    #
+    # Le seuil est bas à dessein. L'Atelier ne peut agir qu'entre deux tours,
+    # et un seul tour qui enchaîne les outils peut ajouter cent mille jetons —
+    # mesuré. Il faut donc laisser derrière soi de quoi encaisser ce tour-là,
+    # car une conversation qui a franchi la fenêtre ne se rattrape plus : la
+    # compaction, qui passe par le même modèle, ne peut plus la lire non plus.
+    compaction_seuil_jetons: int = 40000
     # Plafond de sortie donné au CLI. Il compte dans la fenêtre du modèle :
     # à 16 384, une conversation de 114 689 jetons faisait 131 073 sur une
     # fenêtre de 131 072 — un jeton de trop, et la compaction elle-même
