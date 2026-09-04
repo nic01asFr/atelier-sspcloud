@@ -658,6 +658,30 @@ Le harnais impose aujourd'hui `bypassPermissions` **en dur**, ne passe pas
 d'effort, et ne passe pas de liste d'outils : la sélection s'arrête donc au
 serveur.
 
+### Ce que chaque mode fait vraiment — éprouvé, pas déduit
+
+Chaque mode a été passé sur le pod avec trois sondes : éditer un fichier dans
+le projet, y lancer une commande, et écrire **hors** du projet.
+
+| mode | édition | commande | hors projet |
+|---|---|---|---|
+| `plan` | non | non | — |
+| `dontAsk` | **non** | **non** | — |
+| `acceptEdits` | oui | oui | **non** |
+| `auto` | oui | oui | **non** |
+| `bypassPermissions` | oui | oui | **oui** |
+
+Deux enseignements qu'on n'aurait pas eus sans mesurer.
+
+**`dontAsk` refuse tout.** Le nom laissait entendre « ne demande pas, fais » ;
+c'est l'inverse — ne pas demander veut dire refuser ce qui aurait demandé. Il
+tombe donc dans la même catégorie que `manual`, et n'est pas proposé.
+
+**`auto` tient sa promesse.** Sur les deux premières sondes il ne se
+distinguait pas de `bypassPermissions` ; c'est la troisième qui les sépare —
+seul `bypassPermissions` laisse écrire hors du projet. Le contrôle de sûreté
+est réel, et faire d'`auto` le défaut serait un gain, pas seulement un confort.
+
 ### Le mode qui ne peut pas marcher, et pourquoi
 
 `manual` demande une approbation à chaque édition. Dans l'extension quelqu'un

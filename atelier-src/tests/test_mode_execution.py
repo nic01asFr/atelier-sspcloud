@@ -21,14 +21,19 @@ from mcp_gateway.atelier.harness import (
 )
 
 
-def test_manual_n_est_pas_propose() -> None:
-    """Il finirait en refus, faute d'interlocuteur dans un tour headless."""
-    assert "manual" not in MODES_PERMISSION
-    assert mode_permission_valide("manual") == MODE_PERMISSION_DEFAUT
+def test_les_modes_qui_refusent_tout_ne_sont_pas_proposes() -> None:
+    """Tous deux supposent quelqu'un à qui demander ; un tour en `-p` n'a personne.
+
+    Mesuré sur le pod : `dontAsk` ne crée pas plus un fichier qu'il ne lance
+    une commande, et `manual` refuse chaque édition.
+    """
+    for refus in ("manual", "dontAsk"):
+        assert refus not in MODES_PERMISSION
+        assert mode_permission_valide(refus) == MODE_PERMISSION_DEFAUT
 
 
 def test_les_modes_utiles_sont_acceptes() -> None:
-    for mode in ("plan", "acceptEdits", "auto", "dontAsk", "bypassPermissions"):
+    for mode in ("plan", "acceptEdits", "auto", "bypassPermissions"):
         assert mode_permission_valide(mode) == mode
 
 

@@ -175,13 +175,22 @@ class FakeHarness(Harness):
         return True
 
 
-# Les modes que le CLI accepte, et que l'Atelier propose.
+# Les modes que le CLI accepte, et que l'Atelier propose. Éprouvés un par un
+# sur le pod, avec trois sondes : éditer dans le projet, y lancer une commande,
+# et écrire hors du projet.
 #
-# `manual` en est absent volontairement : il demande une approbation à chaque
-# édition, et nos tours n'ont personne à qui la demander. Mesuré — l'appel est
-# alors refusé, pas mis en attente. Proposer un mode qui refuse tout serait
-# pire que ne pas le proposer.
-MODES_PERMISSION = ("bypassPermissions", "acceptEdits", "plan", "auto", "dontAsk")
+#   mode                edition   commande   hors projet
+#   plan                non       non        —
+#   acceptEdits         oui       oui        non
+#   auto                oui       oui        non
+#   bypassPermissions   oui       oui        oui
+#
+# Deux modes du CLI sont écartés, pour la même raison mesurée : ils supposent
+# quelqu'un à qui demander, et un tour en `-p` n'a personne. `manual` refuse
+# alors chaque édition ; `dontAsk` refuse tout, y compris ce qu'on croyait
+# anodin — vérifié, il ne crée pas plus un fichier qu'il ne lance une commande.
+# Un mode qui refuse tout est pire que pas de mode.
+MODES_PERMISSION = ("bypassPermissions", "acceptEdits", "plan", "auto")
 MODE_PERMISSION_DEFAUT = "bypassPermissions"
 NIVEAUX_EFFORT = ("low", "medium", "high", "xhigh", "max")
 
