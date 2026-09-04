@@ -798,6 +798,84 @@ class SessionStore:
             return False
         return bool(rec.claude_session_id) or self._transcript_has_claude_cli(rec)
 
+    def poids_de_la_conversation(self, rec: SessionRecord) -> int:
+        """Une estimation de ce que pèse la conversation, en jetons.
+
+        Grossière à dessein : on compte les caractères des tours et on divise.
+        La précision n'importe pas — on cherche à savoir si l'on approche d'un
+        plafond, pas à facturer.
+        """
+        source = dossier_transcripts_claude(Path(rec.cwd)) / f"{self._claude_cli_id(rec)}.jsonl"
+        try:
+            brut = source.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return 0
+        caracteres = 0
+        for ligne in brut.split(chr(10)):
+            ligne = ligne.strip()
+            if not ligne.startswith("{"):
+                continue
+            try:
+                enr = json.loads(ligne)
+            except json.JSONDecodeError:
+                continue
+            if enr.get("type") not in ("user", "assistant"):
+                continue
+            contenu = (enr.get("message") or {}).get("content")
+            if isinstance(contenu, str):
+                caracteres += len(contenu)
+            elif isinstance(contenu, list):
+                for bloc in contenu:
+                    if isinstance(bloc, dict):
+                        caracteres += len(json.dumps(bloc, ensure_ascii=False))
+        return caracteres // 4
+
+    def _compacter_si_besoin(self, rec: SessionRecord, claude_cli_id: str) -> bool:
+        """Fait résumer la conversation avant qu'elle ne dépasse la fenêtre.
+
+        Claude Code sait compacter tout seul, et l'Atelier l'a longtemps cru
+        acquis : `autoCompactEnabled` est vrai, la fenêtre est réglée. Mais la
+        bascule automatique se décide sur les jetons consommés, que la
+        passerelle de modèles rapporte **à zéro** — mesuré : `input_tokens: 0`
+        sur chaque tour, et `preTokens: 1` dans les métadonnées d'une
+        compaction sur une conversation de 76 000 jetons. Le compteur ne monte
+        jamais, le seuil n'est jamais franchi, et la conversation grossit
+        jusqu'à ce que le modèle refuse.
+
+        La compaction manuelle, elle, fonctionne en mode `-p` : on l'envoie
+        comme un tour. C'est donc à l'Atelier de décider quand, puisqu'il est
+        le seul à pouvoir mesurer.
+        """
+        seuil = self.settings.compaction_seuil_jetons
+        if seuil <= 0:
+            return False
+        poids = self.poids_de_la_conversation(rec)
+        if poids < seuil:
+            return False
+        log.info(
+            "conversation %s à ~%d jetons (seuil %d) — compaction demandée",
+            rec.session_id[:8],
+            poids,
+            seuil,
+        )
+        try:
+            self.harness.run_turn(
+                rec.session_id,
+                "/compact",
+                cwd=Path(rec.cwd),
+                model=rec.model or None,
+                resume=True,
+                claude_session_id=claude_cli_id,
+                transcript_path=Path(rec.transcript_path),
+                log_path=Path(rec.log_path),
+                timeout_s=self.settings.turn_timeout_s,
+                agent_name=self._nom_wikichat(rec),
+            )
+        except Exception as exc:  # noqa: BLE001 — un échec ne doit pas bloquer le tour
+            log.warning("compaction de %s échouée : %s", rec.session_id[:8], exc)
+            return False
+        return True
+
     def send(
         self,
         session_id: str,
@@ -835,6 +913,9 @@ class SessionStore:
         else:
             claude_cli_id = rec.session_id
             rec.claude_session_id = rec.session_id
+        # Avant d'envoyer : la conversation tient-elle encore dans la fenêtre ?
+        if resume:
+            self._compacter_si_besoin(rec, claude_cli_id)
         rec.state = "running"
         self.save(rec)
         mcp_config_path: Path | None = None

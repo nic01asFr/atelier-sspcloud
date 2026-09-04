@@ -20,6 +20,11 @@ class AtelierSettings(BaseSettings):
     port: int = 8787
     # Timeout mural par tour (secondes). Seul plafond opérant côté plateforme.
     turn_timeout_s: int = 600
+    # Au-delà de ce poids estimé, l'Atelier fait compacter la conversation
+    # avant d'envoyer le tour suivant. Claude Code ne peut pas s'en charger
+    # ici : sa bascule automatique se décide sur les jetons consommés, que
+    # la passerelle de modèles rapporte à zéro. 0 désactive.
+    compaction_seuil_jetons: int = 60000
     default_model: str = ""  # vide = laisser le CLI / settings décider
     default_slug: str = "default"
     # Repo mémoire user (assistant Wikichat) — slug canonique
