@@ -934,9 +934,21 @@ def build_app(
         message: str | None = None,
         attachments: str | None = None,
     ) -> StreamingResponse:
-        """SSE : envoie un message (query ?message=) puis streame les événements du tour."""
-        token = bearer_from_header(authorization) or request.query_params.get("token")
-        auth.check_token(token)
+        """SSE : envoie un message (query ?message=) puis streame les événements du tour.
+
+        `EventSource` ne sait pas poser d'en-tête, d'où la tentation de mettre
+        la clé dans l'adresse — ce que faisait l'interface, à chaque message
+        envoyé. Une URL traverse les journaux d'ingress, ceux du service,
+        l'historique du navigateur et le `Referer` : la clé propriétaire s'est
+        retrouvée en clair dans tout cela, observé en conditions réelles.
+
+        Le cookie de session, lui, part tout seul en même origine, et ne porte
+        qu'un identifiant révocable. Le paramètre n'est plus accepté : le
+        laisser pour compatibilité reviendrait à garder la fuite ouverte.
+        """
+        auth.check_navigation(
+            bearer_from_header(authorization), request.cookies.get(COOKIE_NAME)
+        )
 
         if not store.get(session_id):
             raise HTTPException(404, "session not found")

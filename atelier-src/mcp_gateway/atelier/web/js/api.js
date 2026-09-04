@@ -193,11 +193,10 @@ export async function deleteProject(token, slug) {
   return res.json();
 }
 
-export function streamEvents(sessionId, message, { token, onEvent, attachmentIds = [] } = {}) {
-  const params = new URLSearchParams({
-    message: message || "",
-    token,
-  });
+export function streamEvents(sessionId, message, { onEvent, attachmentIds = [] } = {}) {
+  // Pas de clé dans l'adresse : le cookie de session part de lui-même en
+  // même origine, et une URL se journalise partout où elle passe.
+  const params = new URLSearchParams({ message: message || "" });
   if (attachmentIds.length) {
     params.set("attachments", attachmentIds.join(","));
   }

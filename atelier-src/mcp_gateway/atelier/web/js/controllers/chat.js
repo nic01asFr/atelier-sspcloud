@@ -138,7 +138,6 @@ export function createChatController(ctx) {
 
     try {
       await api.streamEvents(state.sessionId, text, {
-        token: state.token,
         attachmentIds,
         onEvent: (ev) => {
           if (ev.kind === "texte" && ev.text) {

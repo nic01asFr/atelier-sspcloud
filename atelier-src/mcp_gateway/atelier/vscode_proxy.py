@@ -296,9 +296,10 @@ def register_vscode_proxy(
         # session que le cookie désigne. Le cookie ne porte plus la clé.
         auth = app.state.auth
         try:
-            auth.check_navigation(
-                websocket.query_params.get("token"), websocket.cookies.get(COOKIE_NAME)
-            )
+            # Pas de clé dans l'adresse ici non plus : le navigateur joint son
+            # cookie de lui-même, et une URL de WebSocket se journalise comme
+            # les autres.
+            auth.check_navigation(None, websocket.cookies.get(COOKIE_NAME))
         except HTTPException:
             await websocket.close(code=4401)
             return

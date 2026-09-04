@@ -32,7 +32,13 @@ def reglages(tmp_path: Path) -> AtelierSettings:
 
 @pytest.fixture()
 def atelier(reglages: AtelierSettings) -> Iterator[TestClient]:
-    with TestClient(build_app(settings=reglages, use_fake=True)) as client:
+    # En HTTPS, comme le service l'est derrière son ingress : le cookie de
+    # session est posé `Secure`, et un client qui se croit en clair ne le
+    # renverrait jamais — on testerait alors une authentification qui marche
+    # en production et pas ici, ou l'inverse.
+    with TestClient(
+        build_app(settings=reglages, use_fake=True), base_url="https://testserver"
+    ) as client:
         yield client
 
 
