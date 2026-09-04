@@ -324,7 +324,17 @@ class ClaudeHarness(Harness):
                 f"\n--- turn {stamp} resume={resume} cli_id={cli_id} atelier_id={session_id} "
                 f"mcp={mcp_config_path or 'bridge'} ---\n"
             )
-            lf.write("cmd: " + " ".join(cmd[:4]) + " …\n")
+            # Quatre mots ne disaient rien de ce qui compte pour comprendre
+            # un tour après coup : sous quel mode il a tourné, avec quel
+            # effort, quel modèle. On les nomme.
+            lf.write(
+                "mode: %s | effort: %s | modele: %s" % (
+                    mode_permission_valide(permission_mode),
+                    effort_valide(effort) or "(defaut)",
+                    model or "(defaut)",
+                )
+                + chr(10)
+            )
 
         proc = subprocess.Popen(
             cmd,
