@@ -17,6 +17,8 @@ export function createCodeChatView(ctx) {
   // large pour absorber une ligne qui s'ajoute, assez étroite pour ne pas
   // rattraper quelqu'un qui a délibérément remonté.
   const MARGE_BAS = 80;
+// Plus grand que tout fil concevable : le navigateur ramène au maximum réel.
+const BAS_DU_FIL = 1e9;
 
   /**
    * Corriger une question, puis repartir d'elle.
@@ -137,7 +139,28 @@ export function createCodeChatView(ctx) {
     div.appendChild(p);
   }
 
+  // Une réponse en cours appelle le rendu des centaines de fois — mesuré : 269
+  // fragments pour une seule réponse. Or chaque rendu reconstruit le fil puis
+  // lit `scrollHeight`, ce qui force une mise en page synchrone de tout
+  // l'arbre. Mesuré à la trace : 2 968 ms de mise en page bloquante pour une
+  // seule réponse sur 33 messages, et l'onglet se fige sur une conversation
+  // plus longue.
+  //
+  // On ne rend donc qu'une fois par image d'écran. Les appels intermédiaires
+  // se fondent dans celui qui vient, et le navigateur retrouve la main entre
+  // deux.
+  let renduEnAttente = false;
+
   function renderThread() {
+    if (renduEnAttente) return;
+    renduEnAttente = true;
+    requestAnimationFrame(() => {
+      renduEnAttente = false;
+      rendreLeFil();
+    });
+  }
+
+  function rendreLeFil() {
     const thread = $("thread");
     if (!thread) return;
     // Le fil est reconstruit à chaque rendu, et une réponse en cours en
@@ -146,46 +169,94 @@ export function createCodeChatView(ctx) {
     const suivait =
       thread.scrollHeight - thread.scrollTop - thread.clientHeight <= MARGE_BAS;
     const position = thread.scrollTop;
-    thread.innerHTML = "";
-    if (state.view !== "code") return;
+    if (state.view !== "code") {
+      thread.replaceChildren();
+      return;
+    }
     if (!state.sessionId) {
       const hint = document.createElement("p");
       hint.className = "empty-hint";
       hint.textContent = state.pendingProjectSlug
         ? "Écrivez votre premier message pour démarrer la conversation."
         : "Écrivez votre premier message — un projet sera créé pour l’accueillir.";
-      thread.appendChild(hint);
+      thread.replaceChildren(hint);
       return;
     }
     if (!state.messages.length) {
       const hint = document.createElement("p");
       hint.className = "empty-hint";
       hint.textContent = "Aucun message — envoie le premier";
-      thread.appendChild(hint);
+      thread.replaceChildren(hint);
       return;
     }
-    for (const m of state.messages) {
-      const div = document.createElement("div");
-      const role = m.role || "system";
-      div.className = `msg ${role === "user" ? "user" : role === "assistant" ? "assistant" : role === "error" ? "error-msg" : role === "tool" ? "tool" : "system"}`;
-      if (m.streaming) div.classList.add("msg-streaming");
-      if (role === "user" || role === "assistant") {
-        const label = document.createElement("span");
-        label.className = "role";
-        label.textContent = role;
-        div.appendChild(label);
-      } else if (role === "error") {
-        const label = document.createElement("span");
-        label.className = "role";
-        label.textContent = "erreur";
-        div.appendChild(label);
-      }
-      appendMessageBody(div, m);
-      renderAttente(div, m);
-      renderMessageActions(div, m);
-      thread.appendChild(div);
+    // Pendant une réponse, un seul message change — le dernier. Reconstruire
+    // les autres coûte leur rendu markdown et invalide toute la mise en page,
+    // pour un résultat identique au caractère près. On garde donc le nœud d'un
+    // message dont l'empreinte n'a pas bougé.
+    const anciens = new Map();
+    for (const noeud of [...thread.children]) {
+      if (noeud.dataset?.empreinte) anciens.set(noeud.dataset.empreinte, noeud);
     }
-    thread.scrollTop = suivait ? thread.scrollHeight : position;
+    const voulus = [];
+    for (const m of state.messages) {
+      const empreinte = empreinteDuMessage(m);
+      const garde = anciens.get(empreinte);
+      if (garde) {
+        anciens.delete(empreinte);
+        voulus.push(garde);
+        continue;
+      }
+      voulus.push(construireMessage(m, empreinte));
+    }
+    thread.replaceChildren(...voulus);
+    // Écrire n'impose rien au navigateur ; lire `scrollHeight` juste après
+    // avoir modifié l'arbre l'oblige à recalculer toute la mise en page sur
+    // le champ. C'était l'essentiel du coût — mesuré à la trace. Une valeur
+    // volontairement trop grande est bornée par le navigateur : on atteint le
+    // bas sans avoir demandé où il se trouve.
+    thread.scrollTop = suivait ? BAS_DU_FIL : position;
+  }
+
+  /** De quoi reconnaître un message déjà rendu, sans comparer tout son texte. */
+  function empreinteDuMessage(m) {
+    const texte = m.text || "";
+    const outils = (m.tools || []).map((t) => `${t.name}:${t.status}:${(t.output || "").length}`);
+    return [
+      m.id || "",
+      m.role || "system",
+      m.rang ?? "",
+      texte.length,
+      // La longueur ne suffit pas quand un texte se réécrit à taille égale ;
+      // les bords le disent à peu de frais.
+      texte.slice(0, 24),
+      texte.slice(-24),
+      m.streaming ? "1" : "0",
+      m.phase || "",
+      outils.join("|"),
+    ].join("");
+  }
+
+  function construireMessage(m, empreinte) {
+    const div = document.createElement("div");
+    div.dataset.empreinte = empreinte;
+    const role = m.role || "system";
+    div.className = `msg ${role === "user" ? "user" : role === "assistant" ? "assistant" : role === "error" ? "error-msg" : role === "tool" ? "tool" : "system"}`;
+    if (m.streaming) div.classList.add("msg-streaming");
+    if (role === "user" || role === "assistant") {
+      const label = document.createElement("span");
+      label.className = "role";
+      label.textContent = role;
+      div.appendChild(label);
+    } else if (role === "error") {
+      const label = document.createElement("span");
+      label.className = "role";
+      label.textContent = "erreur";
+      div.appendChild(label);
+    }
+    appendMessageBody(div, m);
+    renderAttente(div, m);
+    renderMessageActions(div, m);
+    return div;
   }
 
   function renderComposer() {

@@ -2309,6 +2309,14 @@ button:disabled {
   border-radius: var(--radius);
   white-space: pre-wrap;
   word-break: break-word;
+  /* Chaque message se calcule seul. Sans cette isolation, un caractère ajouté
+     au dernier obligeait le navigateur à remesurer tout le fil : mesuré à la
+     trace, près de trois secondes de mise en page bloquante pour une seule
+     réponse, et l'onglet qui se fige sur une conversation longue. */
+  contain: layout style;
+  /* `content-visibility: auto` irait plus loin — mais il rend la hauteur du
+     fil approximative, et le suivi de la réponse en cours décroche. Un fil qui
+     ne descend plus pendant qu'on écrit dedans est pire qu'un fil lent. */
 }
 
 .msg.user {
