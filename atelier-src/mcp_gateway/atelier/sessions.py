@@ -810,11 +810,16 @@ class SessionStore:
             brut = source.read_text(encoding="utf-8", errors="replace")
         except OSError:
             return 0
+        lignes = [l.strip() for l in brut.split(chr(10)) if l.strip().startswith("{")]
+        # Après une compaction, le CLI ne rejoue que ce qui suit la frontière —
+        # tout compter reviendrait à mesurer une histoire qui n'est plus
+        # envoyée, et à compacter une conversation déjà légère.
+        depart = 0
+        for i, ligne in enumerate(lignes):
+            if "compact_boundary" in ligne:
+                depart = i
         caracteres = 0
-        for ligne in brut.split(chr(10)):
-            ligne = ligne.strip()
-            if not ligne.startswith("{"):
-                continue
+        for ligne in lignes[depart:]:
             try:
                 enr = json.loads(ligne)
             except json.JSONDecodeError:
@@ -828,7 +833,11 @@ class SessionStore:
                 for bloc in contenu:
                     if isinstance(bloc, dict):
                         caracteres += len(json.dumps(bloc, ensure_ascii=False))
-        return caracteres // 4
+        # Trois, et non quatre : les blocs d'outils sont du JSON, plus dense en
+        # jetons que de la prose. Mieux vaut compacter un peu tôt que trop tard
+        # — une conversation qui a franchi la fenêtre ne peut plus l'être du
+        # tout, la compaction elle-même n'y tenant plus.
+        return caracteres // 3
 
     def _compacter_si_besoin(self, rec: SessionRecord, claude_cli_id: str) -> bool:
         """Fait résumer la conversation avant qu'elle ne dépasse la fenêtre.

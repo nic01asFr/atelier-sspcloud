@@ -99,6 +99,11 @@ def _merge_claude_settings_file(path: Path, settings: AtelierSettings) -> None:
     env.pop("ANTHROPIC_API_KEY", None)
     env.pop("ANTHROPIC_AUTH_TOKEN", None)
     data["apiKeyHelper"] = f"cat {settings.llm_key_path}"
+    # Le plafond de sortie compte dans la fenêtre du modèle. Trop haut, il ne
+    # laisse pas la place de compacter — et une conversation qui ne peut plus
+    # être compactée ne peut plus rien recevoir.
+    if settings.max_output_tokens > 0:
+        env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(settings.max_output_tokens)
     model = (settings.default_model or "").strip()
     if model:
         env["ANTHROPIC_MODEL"] = model

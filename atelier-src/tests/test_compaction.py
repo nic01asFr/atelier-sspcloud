@@ -1,13 +1,18 @@
 """La conversation se fait compacter avant de dépasser la fenêtre du modèle.
 
-Claude Code sait compacter, et son réglage est actif — mais sa bascule
-automatique se décide sur les jetons consommés, que la passerelle de modèles
-rapporte à zéro. Mesuré sur le pod : `input_tokens: 0` à chaque tour, et
-`preTokens: 1` dans les métadonnées d'une compaction sur une conversation de
-76 000 jetons. Le compteur ne monte jamais, le seuil n'est jamais franchi.
+Une conversation a fini par refuser tout message : 114 689 jetons d'entrée plus
+16 384 de sortie contre 131 072 admis. Un jeton de trop — et la compaction, qui
+passe par le même modèle, échouait de la même façon. Une conversation qui a
+franchi la ligne ne peut donc plus être sauvée : il faut agir avant.
 
-C'est donc à l'Atelier de mesurer et de décider. Ce que ces tests tiennent :
-qu'il mesure, et qu'il ne demande la compaction que quand il le faut.
+Deux leviers, mesurés sur le pod. Le plafond de sortie compte dans la fenêtre :
+ramené de 16 384 à 8 192, `/compact` passe là où il échouait. Et l'Atelier doit
+déclencher lui-même, car la bascule automatique du CLI ne joue pas sur ce
+chemin — elle se décide sur des jetons consommés que la passerelle rapporte à
+zéro sur les tours en mode `-p`.
+
+Ce que ces tests tiennent : qu'il mesure ce qui est réellement rejoué, et qu'il
+ne demande la compaction que quand il le faut.
 """
 
 from __future__ import annotations
@@ -54,9 +59,9 @@ def test_le_poids_ne_compte_que_la_conversation(
     rec = store.create(slug="essai", title="Poids")
     _ecrire_transcript(transcripts, store._claude_cli_id(rec), 4000)
 
-    # 4000 caractères de tour utilisateur, divisés par quatre. La ligne
+    # 4000 caractères de tour utilisateur, divisés par trois. La ligne
     # « system » de même taille ne doit pas être comptée.
-    assert store.poids_de_la_conversation(rec) == 1000
+    assert store.poids_de_la_conversation(rec) == 4000 // 3
 
 
 def test_pas_de_compaction_sous_le_seuil(
@@ -108,3 +113,22 @@ def test_un_transcript_absent_ne_leve_pas(
     store = SessionStore(reglages, FakeHarness())
     rec = store.create(slug="essai", title="Neuve")
     assert store.poids_de_la_conversation(rec) == 0
+
+
+def test_seule_la_part_apres_la_compaction_compte(
+    reglages: AtelierSettings, transcripts: Path
+) -> None:
+    """Le CLI ne rejoue que ce qui suit la frontière ; nous non plus."""
+    store = SessionStore(reglages, FakeHarness())
+    rec = store.create(slug="essai", title="Deja compactee")
+    lignes_transcript = [
+        json.dumps({"type": "user", "message": {"content": "a" * 9000}}),
+        json.dumps({"type": "system", "subtype": "compact_boundary",
+                    "compactMetadata": {"trigger": "auto"}}),
+        json.dumps({"type": "user", "message": {"content": "b" * 300}}),
+    ]
+    chemin = transcripts / f"{store._claude_cli_id(rec)}.jsonl"
+    chemin.write_text(chr(10).join(lignes_transcript) + chr(10), encoding="utf-8")
+
+    # Les 9000 caractères d'avant la frontière ne sont plus envoyés.
+    assert store.poids_de_la_conversation(rec) == 300 // 3

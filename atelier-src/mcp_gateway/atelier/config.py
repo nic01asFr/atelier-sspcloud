@@ -25,6 +25,12 @@ class AtelierSettings(BaseSettings):
     # ici : sa bascule automatique se décide sur les jetons consommés, que
     # la passerelle de modèles rapporte à zéro. 0 désactive.
     compaction_seuil_jetons: int = 60000
+    # Plafond de sortie donné au CLI. Il compte dans la fenêtre du modèle :
+    # à 16 384, une conversation de 114 689 jetons faisait 131 073 sur une
+    # fenêtre de 131 072 — un jeton de trop, et la compaction elle-même
+    # échouait, ce qui rendait la conversation irrécupérable. Mesuré : à
+    # 8 192 elle passe.
+    max_output_tokens: int = 8192
     default_model: str = ""  # vide = laisser le CLI / settings décider
     default_slug: str = "default"
     # Repo mémoire user (assistant Wikichat) — slug canonique
