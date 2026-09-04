@@ -16,6 +16,8 @@ from mcp_gateway.atelier.harness import (
     AtelierEvent,
     Harness,
     TurnResult,
+    effort_valide,
+    mode_permission_valide,
     new_session_id,
 )
 from mcp_gateway.atelier.projects import ProjectStore
@@ -177,6 +179,11 @@ class SessionRecord:
     # le nom declare cote Claude/wikichat ne doit alors plus l'ecraser.
     title_source: str = ""
     mcp_overlay: dict[str, Any] = field(default_factory=dict)
+    # Comment cette conversation travaille. Vide = le réglage du service.
+    # Un mode ne vaut que pour les tours à venir : ce qui est déjà écrit
+    # l'a été sous l'ancien.
+    permission_mode: str = ""
+    effort: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -305,6 +312,8 @@ class SessionStore:
         *,
         title: str | None = None,
         archived: bool | None = None,
+        permission_mode: str | None = None,
+        effort: str | None = None,
     ) -> SessionRecord:
         rec = self.get(session_id)
         if not rec:
@@ -324,6 +333,15 @@ class SessionStore:
                 rec.state = "archived"
             elif rec.state == "archived":
                 rec.state = "idle"
+        # Un mode inconnu n'est pas une erreur à remonter : il vaut « comme
+        # avant ». Une chaîne vide rend la conversation au réglage du service.
+        if permission_mode is not None:
+            demande = permission_mode.strip()
+            rec.permission_mode = (
+                mode_permission_valide(demande) if demande else ""
+            )
+        if effort is not None:
+            rec.effort = effort_valide(effort)
         self.save(rec)
         return rec
 
@@ -878,6 +896,10 @@ class SessionStore:
                 transcript_path=Path(rec.transcript_path),
                 log_path=Path(rec.log_path),
                 timeout_s=self.settings.turn_timeout_s,
+                # La compaction n'édite rien et doit aboutir : un mode qui
+                # restreint les outils n'a pas à l'empêcher.
+                permission_mode="bypassPermissions",
+                effort=rec.effort or self.settings.effort,
                 agent_name=self._nom_wikichat(rec),
             )
         except Exception as exc:  # noqa: BLE001 — un échec ne doit pas bloquer le tour
@@ -953,6 +975,8 @@ class SessionStore:
                 log_path=Path(rec.log_path),
                 timeout_s=self.settings.turn_timeout_s,
                 mcp_config_path=mcp_config_path,
+                permission_mode=rec.permission_mode or self.settings.permission_mode,
+                effort=rec.effort or self.settings.effort,
                 agent_name=self._nom_wikichat(rec),
                 on_event=on_event,
             )

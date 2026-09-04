@@ -128,6 +128,26 @@ export function createComposerInputController(ctx) {
     $("btn-stop")?.addEventListener("click", onStop);
     $("btn-composer-attach")?.addEventListener("click", onAttachClick);
     $("composer-attach-input")?.addEventListener("change", onAttachFiles);
+    $("composer-mode")?.addEventListener("change", onModeChange);
+  }
+
+  /** Le mode de travail se pose sur la conversation, pas sur le message. */
+  async function onModeChange(ev) {
+    const mode = ev.target.value;
+    if (!state.sessionId) return;
+    try {
+      const rec = await api.patchSession(state.token, state.sessionId, {
+        permission_mode: mode,
+      });
+      // La liste porte l'état des conversations : sans cette mise à jour, le
+      // sélecteur reviendrait à sa valeur d'avant au prochain rendu.
+      const i = (state.sessions || []).findIndex((x) => x.session_id === rec.session_id);
+      if (i >= 0) state.sessions[i] = rec;
+      render();
+    } catch (err) {
+      S.setError(state, `Mode non appliqué : ${err.message}`);
+      render();
+    }
   }
 
   return {

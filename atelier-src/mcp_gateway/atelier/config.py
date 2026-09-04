@@ -37,6 +37,11 @@ class AtelierSettings(BaseSettings):
     # échouait, ce qui rendait la conversation irrécupérable. Mesuré : à
     # 8 192 elle passe.
     max_output_tokens: int = 8192
+    # Comment travaillent les conversations qui ne disent rien de particulier.
+    # `bypassPermissions` est le comportement historique ; le jour où un autre
+    # défaut paraîtra plus sage, il se change ici sans toucher aux fiches.
+    permission_mode: str = "bypassPermissions"
+    effort: str = ""
     default_model: str = ""  # vide = laisser le CLI / settings décider
     default_slug: str = "default"
     # Repo mémoire user (assistant Wikichat) — slug canonique

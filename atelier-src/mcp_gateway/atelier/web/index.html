@@ -73,6 +73,14 @@
                     <span id="composer-mcp-badge" class="composer-mcp-badge" hidden></span>
                   </button>
                 </div>
+                <label class="composer-mode-label" for="composer-mode">Mode de travail</label>
+                <select id="composer-mode" class="composer-mode" disabled title="Comment l’agent travaille dans ce fil" aria-label="Mode de travail">
+                  <option value="">Réglage du service</option>
+                  <option value="plan">Plan — réfléchit, ne modifie rien</option>
+                  <option value="acceptEdits">Édite — s’arrête sur le reste</option>
+                  <option value="auto">Auto — refuse ce qui est risqué</option>
+                  <option value="bypassPermissions">Sans garde-fou</option>
+                </select>
               </div>
             </div>
           </div>

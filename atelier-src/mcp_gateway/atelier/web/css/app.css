@@ -3251,3 +3251,28 @@ button:disabled {
 .md-root del {
   opacity: 0.65;
 }
+
+/* Le mode de travail, dans le pied du composeur. Une conversation en « Plan »
+   doit se voir : sans cela on croit l'agent en panne alors qu'il refuse
+   d'éditer, comme on le lui a demandé. */
+.composer-mode-label {
+  margin-left: 0.5rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.composer-mode {
+  margin-left: 0.35rem;
+  padding: 0.2rem 0.4rem;
+  max-width: 15rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.composer-mode:disabled {
+  opacity: 0.5;
+}

@@ -86,6 +86,8 @@ class Harness(ABC):
         timeout_s: int,
         claude_session_id: str | None = None,
         mcp_config_path: Path | None = None,
+        permission_mode: str = "",
+        effort: str = "",
         agent_name: str = "",
         on_event: Callable[[AtelierEvent], None] | None = None,
     ) -> TurnResult: ...
@@ -114,6 +116,8 @@ class FakeHarness(Harness):
         timeout_s: int,
         claude_session_id: str | None = None,
         mcp_config_path: Path | None = None,
+        permission_mode: str = "",
+        effort: str = "",
         agent_name: str = "",
         on_event: Callable[[AtelierEvent], None] | None = None,
     ) -> TurnResult:
@@ -169,6 +173,29 @@ class FakeHarness(Harness):
     def interrupt(self, session_id: str) -> bool:
         self._running[session_id] = False
         return True
+
+
+# Les modes que le CLI accepte, et que l'Atelier propose.
+#
+# `manual` en est absent volontairement : il demande une approbation à chaque
+# édition, et nos tours n'ont personne à qui la demander. Mesuré — l'appel est
+# alors refusé, pas mis en attente. Proposer un mode qui refuse tout serait
+# pire que ne pas le proposer.
+MODES_PERMISSION = ("bypassPermissions", "acceptEdits", "plan", "auto", "dontAsk")
+MODE_PERMISSION_DEFAUT = "bypassPermissions"
+NIVEAUX_EFFORT = ("low", "medium", "high", "xhigh", "max")
+
+
+def mode_permission_valide(mode: str | None) -> str:
+    """Le mode demandé s'il est connu, celui par défaut sinon."""
+    choix = (mode or "").strip()
+    return choix if choix in MODES_PERMISSION else MODE_PERMISSION_DEFAUT
+
+
+def effort_valide(niveau: str | None) -> str:
+    """Le niveau demandé s'il est connu, rien sinon — le CLI décidera."""
+    choix = (niveau or "").strip().lower()
+    return choix if choix in NIVEAUX_EFFORT else ""
 
 
 class ClaudeHarness(Harness):
@@ -245,6 +272,8 @@ class ClaudeHarness(Harness):
         timeout_s: int,
         claude_session_id: str | None = None,
         mcp_config_path: Path | None = None,
+        permission_mode: str = "",
+        effort: str = "",
         agent_name: str = "",
         on_event: Callable[[AtelierEvent], None] | None = None,
     ) -> TurnResult:
@@ -260,8 +289,11 @@ class ClaudeHarness(Harness):
             "--include-partial-messages",
             "--verbose",
             "--permission-mode",
-            "bypassPermissions",
+            mode_permission_valide(permission_mode),
         ]
+        niveau = effort_valide(effort)
+        if niveau:
+            cmd.extend(["--effort", niveau])
         if resume:
             cmd.extend(["--resume", cli_id])
         else:

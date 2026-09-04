@@ -67,6 +67,10 @@ class CreateSessionBody(BaseModel):
 class PatchSessionBody(BaseModel):
     title: str | None = None
     archived: bool | None = None
+    # Comment la conversation travaille. Une chaîne vide la rend au réglage du
+    # service ; un mode inconnu est ramené au réglage plutôt que refusé.
+    permission_mode: str | None = None
+    effort: str | None = None
 
 
 class ForkBody(BaseModel):
@@ -823,6 +827,8 @@ def build_app(
                 session_id,
                 title=body.title,
                 archived=body.archived,
+                permission_mode=body.permission_mode,
+                effort=body.effort,
             )
         except KeyError:
             raise HTTPException(404, "session not found") from None

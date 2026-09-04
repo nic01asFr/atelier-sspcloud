@@ -282,6 +282,23 @@ const BAS_DU_FIL = 1e9;
     const peutJoindre = sessionReady && !!state.sessionId;
     if (attach) attach.disabled = !peutJoindre;
     if (attachInput) attachInput.disabled = !peutJoindre;
+
+    // Le mode de travail appartient à la conversation : on ne le propose donc
+    // qu'une fois qu'elle existe. Il ne vaut que pour les tours à venir, ce que
+    // dit l'infobulle — sans quoi on croirait qu'il réécrit le passé.
+    const mode = $("composer-mode");
+    const label = document.querySelector(".composer-mode-label");
+    if (mode) {
+      const courante = state.sessions?.find((x) => x.session_id === state.sessionId);
+      mode.disabled = !peutJoindre || state.busy;
+      mode.hidden = !peutJoindre;
+      if (label) label.hidden = !peutJoindre;
+      const valeur = courante?.permission_mode || "";
+      if (mode.value !== valeur) mode.value = valeur;
+      mode.title = valeur === "plan"
+        ? "Plan — l’agent réfléchit et propose, sans rien modifier. S’applique aux tours à venir."
+        : "Comment l’agent travaille dans ce fil. S’applique aux tours à venir.";
+    }
     composerInput?.syncGrow?.();
     composerInput?.renderAttachments?.();
   }
