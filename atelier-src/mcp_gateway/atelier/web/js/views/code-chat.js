@@ -156,7 +156,12 @@ const BAS_DU_FIL = 1e9;
     renduEnAttente = true;
     requestAnimationFrame(() => {
       renduEnAttente = false;
-      rendreLeFil();
+      const suite = rendreLeFil();
+      // Le défilement attend l'image suivante. Écrit dans la foulée, il
+      // oblige le navigateur à calculer la mise en page sur-le-champ pour
+      // savoir où est le bas ; une image plus tard, elle est déjà faite et
+      // l'écriture ne coûte rien.
+      if (suite) requestAnimationFrame(suite);
     });
   }
 
@@ -209,12 +214,11 @@ const BAS_DU_FIL = 1e9;
       voulus.push(construireMessage(m, empreinte));
     }
     thread.replaceChildren(...voulus);
-    // Écrire n'impose rien au navigateur ; lire `scrollHeight` juste après
-    // avoir modifié l'arbre l'oblige à recalculer toute la mise en page sur
-    // le champ. C'était l'essentiel du coût — mesuré à la trace. Une valeur
-    // volontairement trop grande est bornée par le navigateur : on atteint le
-    // bas sans avoir demandé où il se trouve.
-    thread.scrollTop = suivait ? BAS_DU_FIL : position;
+    // On rend le geste au lieu de le faire : l'appelant l'exécutera à l'image
+    // suivante, quand la mise en page sera déjà calculée.
+    return () => {
+      thread.scrollTop = suivait ? BAS_DU_FIL : position;
+    };
   }
 
   /** De quoi reconnaître un message déjà rendu, sans comparer tout son texte. */
