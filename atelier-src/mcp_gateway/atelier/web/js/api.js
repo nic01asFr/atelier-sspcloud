@@ -136,6 +136,31 @@ export async function putProjectMcp(token, slug, servers) {
   return res.json();
 }
 
+/**
+ * Les questions qu'un tour attend, vives ou seulement tracées.
+ *
+ * Sert au rechargement : une question posée avant qu'on ferme l'onglet doit
+ * se retrouver au retour, sinon « elle peut attendre » devient « elle est
+ * perdue ».
+ */
+export async function decisionsEnAttente(token, sessionId = "") {
+  const q = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : "";
+  const res = await fetch(`/v1/decisions${q}`, { headers: jsonHeaders(token) });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Rend la décision au tour qui l'attend. */
+export async function repondreDecision(token, requestId, { decision, motif } = {}) {
+  const res = await fetch(`/v1/decisions/${encodeURIComponent(requestId)}`, {
+    method: "POST",
+    headers: jsonHeaders(token),
+    body: JSON.stringify({ decision, motif: motif || "" }),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
 export async function patchSessionMcp(token, sessionId, { overlay } = {}) {
   const res = await fetch(`/v1/sessions/${encodeURIComponent(sessionId)}/mcp`, {
     method: "PATCH",
@@ -233,6 +258,8 @@ export function streamEvents(sessionId, message, { onEvent, attachmentIds = [] }
       "outil_debut",
       "outil_fin",
       "permission_demandee",
+      "decision_attendue",
+      "decision_rendue",
       "fin",
       "erreur",
       "heartbeat",

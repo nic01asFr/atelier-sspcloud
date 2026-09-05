@@ -59,5 +59,37 @@ export async function buildMessagesFromServer(state, sessionId) {
   const stored = S.loadTurns(sessionId);
   const { transcript } = await api.getTranscript(state.token, sessionId);
   const parsed = api.messagesFromTranscript(transcript || "");
-  return api.mergeChatMessages(stored, parsed);
+  const messages = api.mergeChatMessages(stored, parsed);
+  return [...messages, ...(await questionsRestees(state, sessionId))];
+}
+
+/**
+ * Les questions qu'un tour attend encore, retrouvées à l'ouverture.
+ *
+ * Sans cela, fermer l'onglet perdrait la question : le tour continuerait
+ * d'attendre sur le pod, sans plus personne pour la voir. C'est très
+ * exactement ce que « une décision en attente doit pouvoir le rester »
+ * interdit.
+ *
+ * Une question dont le processus a disparu — service redémarré depuis — se
+ * dit telle quelle : elle reste lisible, mais ce tour-là ne reprendra pas.
+ */
+async function questionsRestees(state, sessionId) {
+  let liste;
+  try {
+    liste = await api.decisionsEnAttente(state.token, sessionId);
+  } catch {
+    return [];
+  }
+  const cartes = [];
+  for (const d of liste?.vives || []) {
+    cartes.push({ role: "system", blocks: [{ type: "decision", demande: d, etat: "en_attente" }] });
+  }
+  for (const d of liste?.orphelines || []) {
+    cartes.push({
+      role: "system",
+      blocks: [{ type: "decision", demande: d, etat: "orpheline" }],
+    });
+  }
+  return cartes;
 }

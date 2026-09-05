@@ -39,6 +39,7 @@ FILES = [
     "api.py",
     "projects.py",
     "git_repos.py",
+    "decisions.py",
     "sessions.py",
     "gateway_tools.py",
     "session_mcp.py",

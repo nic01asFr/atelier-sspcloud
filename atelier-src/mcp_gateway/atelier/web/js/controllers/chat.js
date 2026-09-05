@@ -36,6 +36,21 @@ function buildStreamBlocks(stream) {
       status: t.status || "done",
     });
   }
+  // La question vient après l'outil qu'elle concerne : c'est là qu'elle a du
+  // sens, et c'est là que l'œil la cherche.
+  for (const d of stream.decisions || []) {
+    // L'outil concerné est déjà rendu juste au-dessus, paramètres compris.
+    // Les répéter dans la carte alourdissait l'écran sans rien apprendre.
+    const dejaMontre = stream.tools.some(
+      (o) => o.id && o.id === d.demande?.tool_use_id
+    );
+    blocks.push({
+      type: "decision",
+      demande: d.demande,
+      etat: d.etat,
+      argumentsAilleurs: dejaMontre,
+    });
+  }
   if (stream.text.trim()) {
     blocks.push({ type: "text", text: stream.text.trim() });
   }
@@ -128,6 +143,7 @@ export function createChatController(ctx) {
       thinking: "",
       text: "",
       tools: [],
+      decisions: [],
       // Le modèle met plusieurs secondes avant son premier mot — mesuré à
       // près de huit sur la passerelle du pod. Pendant ce temps la bulle
       // était muette, et rien ne distinguait « il réfléchit » de « c'est
@@ -230,6 +246,26 @@ export function createChatController(ctx) {
                   });
                 }
               }
+              pushStreamToUi(state, stream);
+              views.codeChat.renderThread();
+            }
+          } else if (ev.kind === "decision_attendue" && ev.text) {
+            // Le tour est suspendu : il attend qu'on réponde, aussi longtemps
+            // qu'il le faudra. On montre la question là où l'œil est déjà.
+            const demande = tryParseJson(ev.text);
+            if (demande && typeof demande === "object") {
+              stream.decisions.push({ demande, etat: "en_attente" });
+              stream.phase = "decision";
+              pushStreamToUi(state, stream);
+              views.codeChat.renderThread();
+            }
+          } else if (ev.kind === "decision_rendue") {
+            const posee = stream.decisions.find(
+              (d) => d.demande?.request_id === ev.tool_id
+            );
+            if (posee) {
+              posee.etat = ev.cause === "allow" ? "allow" : "deny";
+              stream.phase = "reponse";
               pushStreamToUi(state, stream);
               views.codeChat.renderThread();
             }

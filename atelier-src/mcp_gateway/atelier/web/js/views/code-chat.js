@@ -128,6 +128,7 @@ const BAS_DU_FIL = 1e9;
     attente: "En attente du modèle…",
     reflexion: "Réflexion…",
     outil: "Utilisation d’un outil…",
+    decision: "En attente de votre décision…",
   };
 
   function renderAttente(div, m) {
@@ -165,9 +166,93 @@ const BAS_DU_FIL = 1e9;
     });
   }
 
+  // Une seule écoute, posée sur le fil et non sur les cartes : le fil est
+  // reconstruit à chaque rendu, les cartes ne survivent pas, le conteneur si.
+  let ecouteDecisions = false;
+
+  /**
+   * Rend la décision au serveur, qui réveille le tour.
+   *
+   * La carte annonce, elle n'agit pas. Un 409 dit que plus personne
+   * n'attendait — tour fini, interrompu, ou service redémarré : on le dit
+   * plutôt que de laisser croire qu'on a débloqué quelque chose.
+   */
+  async function repondre(detail) {
+    try {
+      await api.repondreDecision(state.token, detail.requestId, {
+        decision: detail.decision,
+        motif: detail.motif,
+      });
+    } catch (e) {
+      S.setError(
+        state,
+        /409/.test(e?.message || "")
+          ? "Ce tour n’attend plus cette décision."
+          : e?.message || "Réponse refusée."
+      );
+      render();
+      return;
+    }
+    // Le tour rend bien la décision par le flux — mais seulement si un flux
+    // écoute. Après un rechargement, il n'y en a plus : la carte resterait à
+    // « en attente » alors qu'on vient de répondre. On la referme ici.
+    marquerDecision(detail.requestId, detail.decision === "allow" ? "allow" : "deny");
+    render();
+    if (!state.busy) await reprendreLesQuestions();
+  }
+
+  /** Referme une carte, où qu'elle soit dans le fil. */
+  function marquerDecision(requestId, etat) {
+    for (const m of state.messages || []) {
+      for (const b of m.blocks || []) {
+        if (b.type === "decision" && b.demande?.request_id === requestId) b.etat = etat;
+      }
+    }
+  }
+
+  /**
+   * Va chercher les questions posées depuis, quand aucun flux n'écoute.
+   *
+   * Refuser n'arrête pas l'agent — mesuré : il lit le motif et tente une autre
+   * route, donc une autre question. Sans ce rappel, on répondrait une fois
+   * puis on regarderait un écran muet pendant que le tour attend.
+   */
+  async function reprendreLesQuestions() {
+    const connues = new Set();
+    for (const m of state.messages || []) {
+      for (const b of m.blocks || []) {
+        if (b.type === "decision" && b.demande?.request_id) connues.add(b.demande.request_id);
+      }
+    }
+    for (let essai = 0; essai < 6; essai += 1) {
+      await new Promise((r) => setTimeout(r, 2000));
+      let liste;
+      try {
+        liste = await api.decisionsEnAttente(state.token, state.sessionId);
+      } catch {
+        return;
+      }
+      const neuves = (liste?.vives || []).filter((d) => !connues.has(d.request_id));
+      if (!neuves.length) continue;
+      for (const d of neuves) {
+        connues.add(d.request_id);
+        S.appendMessage(state, {
+          role: "system",
+          blocks: [{ type: "decision", demande: d, etat: "en_attente" }],
+        });
+      }
+      render();
+      return;
+    }
+  }
+
   function rendreLeFil() {
     const thread = $("thread");
     if (!thread) return;
+    if (!ecouteDecisions) {
+      ecouteDecisions = true;
+      thread.addEventListener("atelier:decision", (e) => repondre(e.detail));
+    }
     // Le fil est reconstruit à chaque rendu, et une réponse en cours en
     // déclenche des centaines. Recoller systématiquement en bas rendait toute
     // relecture impossible : on ne suit donc que si l'on suivait déjà.
@@ -225,6 +310,12 @@ const BAS_DU_FIL = 1e9;
   function empreinteDuMessage(m) {
     const texte = m.text || "";
     const outils = (m.tools || []).map((t) => `${t.name}:${t.status}:${(t.output || "").length}`);
+    // Les blocs aussi : une question qui se pose, puis se referme, ne change
+    // ni le texte ni sa longueur. Sans cette ligne, le nœud serait réutilisé
+    // tel quel et la carte ne bougerait jamais.
+    const blocs = (m.blocks || []).map(
+      (b) => `${b.type}:${b.etat || b.status || ""}:${b.demande?.request_id || b.id || ""}`
+    );
     return [
       m.id || "",
       m.role || "system",
@@ -237,6 +328,7 @@ const BAS_DU_FIL = 1e9;
       m.streaming ? "1" : "0",
       m.phase || "",
       outils.join("|"),
+      blocs.join("|"),
     ].join("");
   }
 

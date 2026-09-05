@@ -682,55 +682,175 @@ distinguait pas de `bypassPermissions` ; c'est la troisième qui les sépare —
 seul `bypassPermissions` laisse écrire hors du projet. Le contrôle de sûreté
 est réel, et faire d'`auto` le défaut serait un gain, pas seulement un confort.
 
-### Le mode qui ne peut pas marcher, et pourquoi
+### Le mode qu'on croyait impossible, et le canal qui le rend possible
 
-`manual` demande une approbation à chaque édition. Dans l'extension quelqu'un
-répond ; les tours de l'Atelier tournent en `-p`, sans personne. L'appel est
-alors **refusé**, pas mis en attente. Il n'existe aucune option de type
-« outil qui pose la question » dans cette version du binaire.
+`manual` demande une approbation à chaque édition. Mesuré tel que le harnais
+lance le CLI aujourd'hui — message positionnel, entrée en texte — l'appel est
+**refusé**, pas mis en attente. J'en avais conclu qu'aucun interlocuteur n'était
+possible. C'était vrai de ce montage, pas du CLI.
 
-Même limite pour les **formulaires**. Mesuré avec un serveur MCP d'essai qui
-pose une vraie question :
+Le binaire porte deux drapeaux absents de l'aide : `--input-format stream-json`,
+qui ouvre l'entrée standard, et `--permission-prompt-tool stdio`, qui **désigne
+l'hôte** comme celui à qui demander. Un outil MCP, lui, est explicitement écarté,
+et le binaire dit pourquoi : « permission prompts reach the host over stdio; an
+MCP tool cannot answer them here ». Ce n'est pas un refus, c'est une adresse —
+et l'hôte, ici, c'est le harnais de l'Atelier.
+
+Éprouvé de bout en bout, en `manual`, sur une écriture hors du projet :
+
+    OUTIL     Write
+    DEMANDE   {"subtype": "can_use_tool", "tool_name": "Write",
+               "input": {"file_path": "~/sonde.txt", "content": "bleu"},
+               "decision_reason": "Path is outside allowed working directories",
+               "decision_reason_type": "workingDir",
+               "permission_suggestions": [
+                 {"type": "setMode", "mode": "acceptEdits"},
+                 {"type": "addDirectories", "directories": ["/home/onyxia"]}]}
+    REPONSE   {"behavior": "allow"}
+    -> fichier écrit
+
+Le tour **attend** la réponse. Et la demande porte déjà tout ce qu'un écran
+réclame : l'outil, ses arguments en entier, la raison du blocage, et des
+suggestions toutes faites. C'est la boîte de dialogue de Claude Code,
+sérialisée.
+
+Ce qui change : l'approbation d'une action n'est plus à reporter sur les
+compositions. Elle se pose **dans le fil**, là où l'utilisateur regarde, et
+`manual` redevient un mode qu'on peut proposer.
+
+**Les formulaires libres, eux, restent hors du tour.** Mesuré avec un serveur
+MCP d'essai qui pose une vraie question :
 
     CAPACITES_CLIENT       {"roots":{...}, "elicitation":{}}
     OUTIL_APPELE           demander_une_couleur
     REPONSE_A_ELICITATION  {"action": "cancel"}
 
-Le CLI **annonce** savoir répondre à une élicitation, la **reçoit**, et répond
-`cancel` — automatiquement, faute d'interlocuteur. Un formulaire posé pendant
-un tour ne peut donc pas aboutir, quoi qu'on branche.
+Le CLI annonce savoir répondre à une élicitation, la reçoit, et répond `cancel`.
+Deux canaux, donc, à ne pas confondre : **l'autorisation** passe par l'hôte et
+suspend le tour ; **la question libre** passe par `elicit`, étape durable de la
+passerelle, avec `gateway_resume_composition` pour reprendre.
 
-Mais le bon chemin existe déjà : la passerelle porte `elicit` comme **étape
-durable qui suspend**, aux côtés de `approval`, `wait_until` et
-`wait_callback`, avec `gateway_resume_composition` pour reprendre. La
-composition se suspend, l'Atelier affiche le formulaire, l'utilisateur répond,
-la composition reprend — et le CLI n'a jamais à répondre, puisque l'attente
-n'est pas dans son tour. C'est le même travail que l'approbation d'une action
-d'agent : à cadrer avec elle, pas à part.
+Un refus n'est d'ailleurs pas muet : répondre `{"behavior": "deny", "message":
+"..."}` rend ce texte au modèle. C'est déjà un aller-retour — dire non *et
+pourquoi*, sans couper le tour.
 
 ### Ce qu'il faut toucher
 
 Rien n'est à inventer ; `rec.model` est le précédent exact d'un réglage porté
 par la conversation et transmis au harnais.
 
-1. **La fiche de conversation** — trois champs : `permission_mode`, `effort`,
-   `outils_autorises`. Sans risque : la relecture filtre sur les champs connus,
-   donc les fiches existantes prennent les valeurs par défaut.
-2. **La route de modification** — `PatchSessionBody` ne porte que `title` et
-   `archived` ; les trois champs s'y ajoutent.
-3. **Le harnais** — lire le mode plutôt que l'imposer, ajouter `--effort` et
-   `--allowedTools` quand ils sont réglés.
-4. **Le composeur** — son pied porte 📎 et `+`. Un troisième contrôle pour le
-   mode et l'effort. Et le popover des connecteurs gagne un niveau : il affiche
-   déjà « N outils », `ui/tool-picker.js` sait déjà les rendre un par un — il
-   sert aux agents, pas encore aux conversations.
-5. **Des défauts par projet**, pour qu'une conversation neuve hérite.
-6. **Une pastille sur le fil**, pour voir qu'une conversation est en *Plan* —
-   sans quoi on croira l'agent en panne alors qu'il refuse d'éditer, comme
-   demandé.
+**Déjà en place** — la fiche porte `permission_mode` et `effort`, la route
+`PATCH` les accepte, le harnais les lit plutôt que d'imposer
+`bypassPermissions`, et le composeur porte le sélecteur. Restent
+`outils_autorises`, les défauts par projet, et une pastille sur le fil pour
+qu'une conversation en *Plan* ne passe pas pour un agent en panne.
 
-### Les quatre pièges
+**Ce que le canal d'autorisation demande en plus.** Ce n'est pas un chemin
+exotique : l'extension VS Code, sur ce pod, tourne déjà avec exactement ces
+drapeaux. C'est le chemin de production, pas une trouvaille.
 
+1. **Le harnais parle en flux.** `--input-format stream-json` et
+   `--permission-prompt-tool stdio` ; le message part sur l'entrée standard au
+   lieu d'être positionnel, et cette entrée reste ouverte tout le tour. Éprouvé
+   compatible avec `--session-id`, `--resume` et `--include-partial-messages`.
+   C'est le cœur de `run_turn` qu'on touche, pas une option qu'on ajoute.
+2. **Un registre des demandes en attente**, par tour : `request_id` vers la
+   demande. Le harnais y dépose, la route y puise, le tour attend.
+3. **Un événement de plus dans le flux** — la demande doit atteindre le
+   navigateur vivante, par le SSE existant, comme le reste.
+4. **Une route pour répondre** — `allow`, `deny` avec message, ou l'une des
+   suggestions. Même authentification que le reste : qui répond exerce le mode,
+   donc la porte est la même.
+5. **Le rendu dans le fil** — l'outil, ses arguments, la raison du blocage, et
+   les suggestions du CLI en boutons. Tout est déjà dans la demande.
+6. **Une échéance tenue par l'Atelier**, et la mémoire des décisions du tour.
+   Les deux ne sont pas du confort : voir les pièges.
+
+### Une décision en attente doit pouvoir le rester
+
+C'est une exigence, pas un réglage, et elle décide de la forme du reste. Une
+question posée à 18 h se répond le lendemain matin si l'on veut ; rien ne doit
+la périmer entre-temps. Cela écarte d'emblée l'échéance qui tue le tour.
+
+Mais « attendre sans fin » ne peut pas reposer sur le seul processus garé. Le
+CLI attend, oui — c'est mesuré — et tant qu'il vit, répondre reprend le tour
+**exactement** là où il s'était arrêté, ce qu'aucun autre montage ne sait
+faire. Seulement un processus ne survit ni à un redéploiement, ni à l'arrêt du
+pod, ni à un incident. Or le pod redémarre souvent.
+
+D'où deux couches, qui ne font pas le même travail :
+
+- **L'attente vive** — le processus garé, l'entrée ouverte. Reprise exacte,
+  rien à rejouer. C'est le cas courant, et le meilleur.
+- **La trace durable** — la demande écrite sur le disque *à l'instant où elle
+  est posée* : outil, arguments, raison, suggestions, conversation, tour. Elle
+  survit à tout, et c'est elle qui rend la promesse tenable.
+
+Tant que le processus vit, la réponse reprend le tour. S'il a disparu, la
+question est toujours là, toujours affichée, toujours répondable — mais la
+réponse ne peut plus reprendre ce tour-là : elle devient **une règle**, et le
+tour est relancé avec cette règle déjà acquise, donc sans reposer la question.
+L'agent refait le chemin ; la décision, elle, n'est pas perdue. C'est le seul
+sens honnête qu'on puisse donner à « répondre après un redémarrage », et il
+tombe juste : c'est exactement la mémoire des décisions du palier 3.
+
+Ce qui donne la règle qui réconcilie tout : **la décision n'expire jamais ;
+seul le chemin rapide expire.** On garde le processus tant qu'il est plausible
+que quelqu'un réponde bientôt ; passé une longue inaction, on le relâche et la
+trace prend le relais. La question, elle, reste posée aussi longtemps qu'il le
+faut. Rien n'est perdu, et la mémoire reste bornée sans qu'on ait jamais tué
+une décision.
+
+Une raison de plus de préférer l'attente vive, et de relâcher tard : rejouer un
+tour, c'est risquer de refaire ce que l'agent avait déjà fait avant la question
+— fichiers écrits, commandes lancées. Le chemin vif n'est pas seulement plus
+rapide, il est plus sûr.
+
+Trois conséquences à ne pas oublier :
+
+- **L'horloge « l'agent est bloqué » doit s'arrêter pendant l'attente**, pas
+  seulement s'allonger. Le `timeout_s` actuel ne distingue pas les deux.
+- **Attendre ne coûte rien ; tenir le processus, si.** Mesuré sur quatorze
+  minutes d'attente : mémoire plate (+1,4 Mo), processeur au repos. Les 237 Mo
+  sont le prix d'être vivant, pas celui d'attendre. Et rien n'est partagé entre
+  deux tours garés — `Pss` égale `Rss` — donc dix attentes coûtent bien dix
+  fois. De ces 237 Mo, 104 sont adossés à des fichiers et récupérables sous
+  pression ; 131 sont sales, et le pod n'a pas d'échange : ceux-là, on les
+  paie. Environ **130 Mo irréductibles par tour garé**.
+
+  À relativiser cependant : ce pod n'a pas de plafond mémoire (`memory.max` à
+  `max`) et le nœud offre des centaines de gigaoctets. Dix attentes vives ne
+  menacent rien. Le plafond reste utile comme garde-fou contre l'emballement,
+  pas parce que la mémoire manque.
+- **L'attente doit se voir depuis la liste des conversations**, pas seulement
+  dans le fil. Une question posée dans une conversation qu'on a quittée est
+  invisible autrement, et « elle peut attendre » deviendrait « elle est
+  oubliée ».
+
+### Les pièges, mesurés
+
+- **Le CLI n'arbitre pas l'attente.** Éprouvé : sans réponse, aucun délai de
+  son côté, processus toujours vivant. C'est une bonne nouvelle — l'attente
+  longue est possible — mais elle place la charge chez nous : plafond de tours
+  garés, trace durable, et deux horloges là où il n'y en a qu'une.
+- **Un tour pose beaucoup de questions.** Éprouvé : dix-sept demandes en un
+  seul tour — `Bash`, `Read`, `Write`, `Skill`. En `manual`, tout passe par la
+  porte, pas seulement les éditions. Sans mémoire de décision, l'écran devient
+  un formulaire à dix-sept cases et le mode est inutilisable. D'où les
+  `permission_suggestions` que le CLI fournit lui-même — `setMode`,
+  `addDirectories` — à porter comme boutons : « cette fois » contre « pour
+  cette conversation ».
+- **Refuser n'arrête pas l'agent.** Éprouvé : refus motivé, l'agent lit le
+  message, en tire une théorie — « c'est un hook bash personnalisé » — et
+  essaie une autre route ; vingt-deux tours. Le refus est un aller-retour, pas
+  un frein. Il faut donc un vrai « arrêter le tour » à côté du refus, sinon on
+  refuse en boucle.
+- **L'arrêt pendant une question.** Le bouton d'arrêt existe ; si une demande
+  est en attente, il doit fermer le canal et terminer le processus, sinon le
+  tour reste suspendu sans personne pour le reprendre.
+- **Le rechargement de page.** La réponse peut venir dix minutes plus tard. La
+  demande doit vivre côté serveur, pas dans le fil du navigateur, et se
+  retrouver au retour.
 - **`--allowedTools` est une liste blanche.** La poser retire silencieusement
   les outils intégrés — Bash, Read, Edit. Le pilote wikichat le sait déjà et
   force `Bash` dans chaque sélection ; il faut le même garde-fou ici, sinon
@@ -739,16 +859,68 @@ par la conversation et transmis au harnais.
   croira à un défaut.
 - **L'assistant a deux niveaux de liaison MCP** — un `.mcp.json` global et un
   par session. Une sélection par outil doit s'y composer, pas l'écraser.
-- **Ne pas proposer `manual` ni de formulaire dans le fil.** Les deux finissent
-  en refus automatique.
+
+### Ce que la construction a appris
+
+Trois choses que le cadrage ne disait pas, trouvées en branchant le canal.
+
+**Le canal change le comportement de tous les modes, pas seulement de
+`manual`.** Éprouvé : en `acceptEdits`, une écriture hors du projet était
+refusée en silence ; elle devient une question qui bloque le tour. C'est
+voulu pour une conversation — c'est un désastre pour un tour que personne ne
+regarde, qui attendrait alors pour toujours au lieu d'échouer vite.
+
+D'où le garde-fou, et son discriminant : **la route en flux sait montrer une
+question, la route bloquante non.** Les agents et les scripts passent par la
+seconde ; on y refuse d'office, avec un motif qui part au modèle. C'est
+exactement ce que le CLI faisait avant que ce canal existe, donc aucun tour
+automatique ne change de comportement. Seule l'interface, qui peut montrer et
+recueillir, a le droit d'attendre.
+
+**L'échéance du tour était inatteignable pendant les silences.** La boucle
+lisait la sortie du CLI avec un `readline` bloquant : tant qu'aucune ligne
+n'arrive, l'échéance n'est jamais vérifiée. Constaté sur le pod — douze
+minutes écoulées pour une échéance de dix, le CLI attendant le réseau. Le
+défaut précédait ce chantier, mais le canal allonge les silences : une série
+de refus automatiques ne produit pas une ligne. La lecture rend désormais la
+main chaque seconde.
 
 ### L'ordre
 
-Le mode et l'effort d'abord — trois champs, deux options, un sélecteur. *Plan*
-devient disponible, et l'on cesse de tout passer en `bypassPermissions` par
-défaut : c'est autant de surface en moins, pas seulement du confort. Les outils
-au grain fin ensuite, à cause du garde-fou. Les défauts par projet en dernier,
-quand on saura lesquels valent d'être hérités.
+1. **Le mode et l'effort** — fait. *Plan* est disponible, et l'on a cessé de
+   tout passer en `bypassPermissions` par défaut : c'est autant de surface en
+   moins, pas seulement du confort.
+2. **Le canal d'autorisation** — fait côté service : le harnais parle en flux,
+   le registre tient les questions, la trace les écrit, deux routes les listent
+   et y répondent, et le garde-fou protège les tours sans interlocuteur.
+   Éprouvé de bout en bout sur le pod : question posée, trace écrite, réponse
+   par la route, tour abouti, fichier écrit, trace effacée.
+
+   Le rendu suit : une carte dans le fil, à la place de l'outil qu'elle
+   concerne — l'outil, sa cible, la raison du blocage, *Autoriser* ou
+   *Refuser*, et une phrase facultative pour dire pourquoi. Les arguments ne
+   sont montrés qu'une fois : le bloc d'outil les porte déjà. Éprouvé au
+   navigateur, y compris après un rechargement — la question revient, on y
+   répond, la carte se referme, et le rappel va chercher la suivante puisque
+   le flux n'écoute plus. Un refus motivé remonte bien au modèle : mesuré à
+   l'écran, il l'a lu et a changé de route.
+3. **L'échéance et la mémoire des décisions** — c'est ce palier, et lui seul,
+   qui rend `manual` proposable. Avant lui, dix-sept questions par tour.
+4. **Les outils au grain fin**, à cause du garde-fou de la liste blanche.
+5. **Les défauts par projet**, quand on saura lesquels valent d'être hérités.
+
+### Ce qui n'est pas tranché
+
+- **Au bout de combien de temps relâcher le processus** — l'inaction après
+  laquelle on passe de l'attente vive à la trace seule. Assez long pour que le
+  cas courant reste vif ; le coût mesuré laisse de la marge.
+- **Plusieurs questions à la fois dans un même tour ?** Les dix-sept mesurées
+  arrivaient l'une après l'autre, le tour étant bloqué entre-temps. Reste à
+  vérifier qu'un appel d'outils en parallèle n'en pose pas deux ensemble : si
+  oui, l'écran doit savoir en montrer plusieurs.
+- **Le grain de la mémoire des décisions** — par outil, par outil et argument,
+  par répertoire ? Le CLI propose les deux derniers dans ses suggestions ; on
+  peut commencer par les reprendre telles quelles, sans en inventer.
 
 ## MCP Apps — afficher une interface dans le fil
 

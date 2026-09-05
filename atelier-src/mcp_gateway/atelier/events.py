@@ -11,6 +11,8 @@ EventKind = Literal[
     "outil_debut",
     "outil_fin",
     "permission_demandee",
+    "decision_attendue",
+    "decision_rendue",
     "fin",
     "erreur",
     "heartbeat",

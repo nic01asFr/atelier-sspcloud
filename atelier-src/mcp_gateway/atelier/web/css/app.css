@@ -3276,3 +3276,121 @@ button:disabled {
 .composer-mode:disabled {
   opacity: 0.5;
 }
+
+/* --- La question qu'un tour attend ---------------------------------------
+   Une carte, pas une bannière : elle appartient au tour et se lit dans son
+   fil. Assez marquée pour qu'on ne la manque pas, assez sobre pour ne pas
+   crier — elle peut rester à l'écran des heures. */
+
+.msg-decision {
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.7rem;
+  background: rgba(196, 165, 116, 0.06);
+  border: 1px solid var(--accent-dim);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  font-size: 0.82rem;
+}
+
+/* Une fois tranchée, la carte cesse d'appeler : elle devient une trace. */
+.msg-decision-allow,
+.msg-decision-deny {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--line);
+  opacity: 0.75;
+}
+
+.msg-decision-deny {
+  border-left-color: var(--danger);
+}
+
+.msg-decision-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.msg-decision-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.msg-decision-tool {
+  margin-left: auto;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
+.msg-decision-cible {
+  margin: 0.3rem 0 0;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.75rem;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.msg-decision-raison {
+  margin: 0.2rem 0 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.msg-decision-actions,
+.msg-decision-motif {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.msg-decision-motif input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: 0.3rem 0.45rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.msg-decision-btn {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.msg-decision-btn:hover {
+  border-color: var(--accent-dim);
+}
+
+.msg-decision-oui {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a1409;
+  font-weight: 600;
+}
+
+.msg-decision-oui:hover {
+  background: #d4b788;
+}
+
+.msg-decision-non:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* Une question dont le tour a disparu : lisible, mais sans geste possible. */
+.msg-decision-orpheline {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: var(--line);
+  border-left-color: var(--muted);
+  opacity: 0.7;
+}

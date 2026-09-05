@@ -4,9 +4,12 @@ Le harnais imposait `bypassPermissions` à tous les tours : tout passait, sans
 qu'on puisse demander à un agent de réfléchir avant d'éditer. Le CLI accepte
 pourtant six modes et cinq niveaux d'effort.
 
-`manual` n'est pas proposé, et c'est mesuré : il demande une approbation à
-chaque édition, or un tour en `-p` n'a personne à qui la demander — l'appel est
-refusé, pas mis en attente. Un mode qui refuse tout serait pire que pas de mode.
+Deux modes ne sont pas proposés. `dontAsk` refuse tout, définitivement.
+`manual` refuse tant que le harnais lance le CLI avec un message positionnel :
+il demande une approbation, et personne ne la reçoit. Ce n'est pas une propriété
+du mode mais du montage — le CLI sait poser la question à son hôte, éprouvé sur
+le pod. Ces tests tiennent l'état d'aujourd'hui ; le jour où le canal existe,
+c'est ce fichier qui devra changer en premier.
 """
 
 from __future__ import annotations
@@ -22,10 +25,10 @@ from mcp_gateway.atelier.harness import (
 
 
 def test_les_modes_qui_refusent_tout_ne_sont_pas_proposes() -> None:
-    """Tous deux supposent quelqu'un à qui demander ; un tour en `-p` n'a personne.
+    """Mesuré sur le pod, sans canal d'autorisation ouvert.
 
-    Mesuré sur le pod : `dontAsk` ne crée pas plus un fichier qu'il ne lance
-    une commande, et `manual` refuse chaque édition.
+    `dontAsk` ne crée pas plus un fichier qu'il ne lance une commande ;
+    `manual` refuse chaque édition faute de recevoir la question.
     """
     for refus in ("manual", "dontAsk"):
         assert refus not in MODES_PERMISSION

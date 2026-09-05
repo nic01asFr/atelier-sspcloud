@@ -73,6 +73,15 @@ class AtelierSettings(BaseSettings):
         return self.work_dir / "wikichat"
 
     @property
+    def decisions_dir(self) -> Path:
+        """Les questions qu'un tour attend, écrites dès qu'elles sont posées.
+
+        Sur le disque, parce qu'une décision en attente doit pouvoir le rester
+        même si le service redémarre entre la question et la réponse.
+        """
+        return self.work_dir / "decisions"
+
+    @property
     def transcripts_dir(self) -> Path:
         return self.work_dir / "transcripts"
 

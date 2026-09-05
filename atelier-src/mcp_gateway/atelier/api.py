@@ -25,6 +25,7 @@ from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
 from mcp_gateway.atelier.gateway_overview import build_mcp_overview
 from mcp_gateway.atelier.gateway_runtime import gateway_shutdown, gateway_startup
 from mcp_gateway.atelier.mcp_endpoint import register_mcp_endpoint
+from mcp_gateway.atelier.decisions import reponse_autorisee, reponse_refusee
 from mcp_gateway.atelier.harness import ClaudeHarness, FakeHarness, Harness
 from mcp_gateway.atelier.mcp_registry import mask_server_entry
 from mcp_gateway.atelier.mcp_sync import sync_summary
@@ -93,6 +94,19 @@ class CreateProjectBody(BaseModel):
     slug: str = Field(min_length=1)
     kind: str | None = None
     title: str | None = None
+
+
+class DecisionBody(BaseModel):
+    """La réponse à une question posée par un tour.
+
+    `motif` n'est pas décoratif quand on refuse : il revient au modèle, qui le
+    lit et en tient compte. `arguments` permet de laisser passer en corrigeant
+    ce que l'outil allait faire — le CLI accepte des arguments amendés.
+    """
+
+    decision: str = "allow"
+    motif: str = ""
+    arguments: dict[str, Any] | None = None
 
 
 class CommitBody(BaseModel):
@@ -1012,6 +1026,9 @@ def build_app(
                         message,
                         attachment_ids=attachment_ids,
                         on_event=file.put,
+                        # Ce tour remonte par le flux : une question posée en
+                        # chemin s'affichera, donc elle peut attendre.
+                        peut_attendre=True,
                     )
                 except Exception as exc:  # noqa: BLE001
                     file.put(
@@ -1060,6 +1077,51 @@ def build_app(
         except KeyError:
             raise HTTPException(404, "session not found") from None
         return rec.to_dict()
+
+    @router.get("/decisions")
+    def decisions_en_attente(
+        session_id: str = "",
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Les questions qu'un tour attend, vives ou seulement tracées.
+
+        Rendue sans filtre, cette liste sert la pastille de l'interface : une
+        question posée dans une conversation qu'on a quittée doit se voir de
+        n'importe où, sinon « elle peut attendre » devient « elle est oubliée ».
+        """
+        registre = harness.decisions
+        vives = [d.to_dict() for d in registre.en_attente(session_id)]
+        connues = {d["request_id"] for d in vives}
+        orphelines = [
+            d.to_dict()
+            for d in registre.orphelines()
+            if d.request_id not in connues and (not session_id or d.session_id == session_id)
+        ]
+        return {"vives": vives, "orphelines": orphelines}
+
+    @router.post("/decisions/{request_id}")
+    def repondre_a_une_decision(
+        request_id: str,
+        body: DecisionBody,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Rend la réponse au tour qui l'attend.
+
+        Un 409 dit que plus personne n'attendait : tour terminé, interrompu, ou
+        service redémarré depuis. La question a beau rester lisible sur le
+        disque, ce tour-là ne reprendra pas — le rejeu est un autre palier.
+        """
+        choix = (body.decision or "").strip().lower()
+        if choix not in ("allow", "deny"):
+            raise HTTPException(400, "decision must be allow or deny")
+        reponse = (
+            reponse_autorisee(body.arguments)
+            if choix == "allow"
+            else reponse_refusee(body.motif)
+        )
+        if not harness.decisions.repondre(request_id, reponse):
+            raise HTTPException(409, "no turn is waiting for this decision")
+        return {"ok": True, "request_id": request_id, "decision": choix}
 
     @router.get("/sessions/{session_id}/transcript")
     def transcript(

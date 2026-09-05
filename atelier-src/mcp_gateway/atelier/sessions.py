@@ -913,7 +913,18 @@ class SessionStore:
         message: str,
         attachment_ids: list[str] | None = None,
         on_event: Callable[[AtelierEvent], None] | None = None,
+        peut_attendre: bool = False,
     ) -> TurnResult:
+        """Joue un tour.
+
+        `peut_attendre` dit si une question d'autorisation peut rester en
+        suspens. Vrai seulement quand le tour part par le flux d'événements :
+        là, l'interface sait montrer la question et l'utilisateur peut y
+        répondre. Sur la route bloquante — celle qu'empruntent les agents et
+        les scripts — personne ne verrait rien, et attendre figerait le tour
+        pour toujours. On y refuse donc d'office, ce que le CLI faisait déjà
+        avant que ce canal existe.
+        """
         rec = self.get(session_id)
         if not rec:
             raise KeyError(session_id)
@@ -976,6 +987,7 @@ class SessionStore:
                 timeout_s=self.settings.turn_timeout_s,
                 mcp_config_path=mcp_config_path,
                 permission_mode=rec.permission_mode or self.settings.permission_mode,
+                peut_attendre=peut_attendre,
                 effort=rec.effort or self.settings.effort,
                 agent_name=self._nom_wikichat(rec),
                 on_event=on_event,

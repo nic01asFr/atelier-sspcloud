@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import select
 import signal
 import subprocess
+import tempfile
 import time
 import uuid
 from abc import ABC, abstractmethod
@@ -17,6 +19,11 @@ from typing import Any, Callable
 
 from mcp_gateway.atelier.claude_home import sync_claude_home
 from mcp_gateway.atelier.config import AtelierSettings
+from mcp_gateway.atelier.decisions import (
+    Demande,
+    RegistreDesDecisions,
+    reponse_refusee,
+)
 from mcp_gateway.atelier.events import AtelierEvent, parse_stream_json_line
 from mcp_gateway.atelier.mcp_sync import materialize_mcp_config
 
@@ -72,6 +79,10 @@ class TurnResult:
 
 
 class Harness(ABC):
+    # Les questions qu'un tour attend. Déclaré sur le contrat parce que
+    # les routes s'y adressent sans savoir lequel des deux harnais tourne.
+    decisions: RegistreDesDecisions
+
     @abstractmethod
     def run_turn(
         self,
@@ -88,6 +99,7 @@ class Harness(ABC):
         mcp_config_path: Path | None = None,
         permission_mode: str = "",
         effort: str = "",
+        peut_attendre: bool = False,
         agent_name: str = "",
         on_event: Callable[[AtelierEvent], None] | None = None,
     ) -> TurnResult: ...
@@ -99,9 +111,15 @@ class Harness(ABC):
 class FakeHarness(Harness):
     """Harness factice — flux fixe, sans appeler claude (test modularité)."""
 
-    def __init__(self) -> None:
+    def __init__(self, decisions_dir: Path | None = None) -> None:
         self._memory: dict[str, str] = {}
         self._running: dict[str, bool] = {}
+        # Le harnais factice ne pose jamais de question, mais le registre doit
+        # exister : les routes s'y adressent sans savoir lequel des deux tourne.
+        # Le dossier n'est créé qu'à la première écriture, donc jamais ici.
+        self.decisions = RegistreDesDecisions(
+            decisions_dir or Path(tempfile.gettempdir()) / "atelier-decisions-fictives"
+        )
 
     def run_turn(
         self,
@@ -118,6 +136,7 @@ class FakeHarness(Harness):
         mcp_config_path: Path | None = None,
         permission_mode: str = "",
         effort: str = "",
+        peut_attendre: bool = False,
         agent_name: str = "",
         on_event: Callable[[AtelierEvent], None] | None = None,
     ) -> TurnResult:
@@ -185,14 +204,75 @@ class FakeHarness(Harness):
 #   auto                oui       oui        non
 #   bypassPermissions   oui       oui        oui
 #
-# Deux modes du CLI sont écartés, pour la même raison mesurée : ils supposent
-# quelqu'un à qui demander, et un tour en `-p` n'a personne. `manual` refuse
-# alors chaque édition ; `dontAsk` refuse tout, y compris ce qu'on croyait
-# anodin — vérifié, il ne crée pas plus un fichier qu'il ne lance une commande.
-# Un mode qui refuse tout est pire que pas de mode.
+# Deux modes sont écartés, mais pas pour la même raison.
+#
+# `dontAsk` refuse tout, y compris ce qu'on croyait anodin — vérifié, il ne crée
+# pas plus un fichier qu'il ne lance une commande. Le nom trompe : ne pas
+# demander veut dire refuser ce qui aurait demandé. Rien ne le rattrapera.
+#
+# `manual`, lui, n'attend que d'être branché. Il demande une approbation à
+# chaque édition, et tel que ce harnais lance le CLI — message positionnel,
+# entrée en texte — l'appel est refusé faute d'interlocuteur. Mais le CLI sait
+# poser la question à son hôte : avec `--input-format stream-json` et
+# `--permission-prompt-tool stdio`, il émet un `control_request` et **attend**
+# la réponse. Éprouvé sur le pod, de bout en bout. Le jour où le harnais tient
+# ce canal, `manual` rejoint la liste.
 MODES_PERMISSION = ("bypassPermissions", "acceptEdits", "plan", "auto")
 MODE_PERMISSION_DEFAUT = "bypassPermissions"
 NIVEAUX_EFFORT = ("low", "medium", "high", "xhigh", "max")
+
+
+# Ce qu'on répond quand la question ne peut atteindre personne. Le motif part
+# au modèle : mieux vaut qu'il lise pourquoi on l'a arrêté plutôt que de voir
+# un refus muet.
+SANS_INTERLOCUTEUR = (
+    "Refusé sans être demandé : ce tour ne passe pas par l'interface, "
+    "personne ne pouvait répondre. Relancez-le depuis l'Atelier pour décider."
+)
+
+
+def ligne_disponible(flux: Any, delai: float) -> str:
+    """Lit une ligne, ou rend la main au bout de `delai` secondes.
+
+    `readline` seul bloque tant que le CLI n'écrit rien. L'échéance du tour se
+    trouvait alors hors d'atteinte : elle n'est vérifiée qu'entre deux lignes,
+    et un CLI silencieux — le temps d'un appel réseau, ou d'une série de refus
+    automatiques — ne produit pas de ligne. Un tour pouvait ainsi dépasser
+    largement son échéance sans que rien ne le rappelle. Constaté sur le pod :
+    douze minutes pour une échéance de dix.
+
+    Là où `select` ne sait pas écouter un tube — Windows —, on retombe sur la
+    lecture bloquante, qui reste correcte : c'est le pod qui fait tourner des
+    tours, et il est POSIX.
+    """
+    try:
+        prets, _, _ = select.select([flux], [], [], delai)
+    except (OSError, ValueError, TypeError):
+        return flux.readline()
+    return flux.readline() if prets else ""
+
+
+def demande_de_decision(session_id: str, ligne: str) -> Demande | None:
+    """Reconnaît, dans le flux, une question posée à l'hôte.
+
+    Le CLI mêle ses `control_request` au reste de sa sortie. Seul le sous-type
+    `can_use_tool` nous concerne : c'est la demande d'autorisation, celle qui
+    bloque le tour tant qu'on n'a pas répondu.
+    """
+    if '"control_request"' not in ligne:
+        return None
+    try:
+        objet = json.loads(ligne)
+    except ValueError:
+        return None
+    if not isinstance(objet, dict) or objet.get("type") != "control_request":
+        return None
+    requete = objet.get("request")
+    if not isinstance(requete, dict) or requete.get("subtype") != "can_use_tool":
+        return None
+    return Demande.depuis_control_request(
+        str(objet.get("request_id") or ""), session_id, requete
+    )
 
 
 def mode_permission_valide(mode: str | None) -> str:
@@ -213,6 +293,10 @@ class ClaudeHarness(Harness):
     def __init__(self, settings: AtelierSettings) -> None:
         self.settings = settings
         self._procs: dict[str, subprocess.Popen[Any]] = {}
+        # Les questions qu'un tour attend. Portées par le harnais parce que
+        # c'est lui qui les pose et se bloque dessus ; la route HTTP y dépose
+        # la réponse depuis un autre fil.
+        self.decisions = RegistreDesDecisions(settings.decisions_dir)
 
     def _env(self, agent_name: str = "") -> dict[str, str]:
         env = os.environ.copy()
@@ -268,6 +352,111 @@ class ClaudeHarness(Harness):
                 return native
         raise FileNotFoundError(f"claude binary not found at {claude}")
 
+    # Un battement pendant l'attente, pour que le flux vers le navigateur ne
+    # s'endorme pas. Sans lui, une question laissée en suspens une heure
+    # couperait la connexion, et l'écran n'apprendrait la réponse qu'au
+    # rechargement.
+    BATTEMENT_ATTENTE = 20.0
+
+    def _repondre_au_cli(
+        self,
+        proc: subprocess.Popen[Any],
+        request_id: str,
+        reponse: dict[str, Any],
+    ) -> None:
+        """Rend la décision au CLI, qui attend sur son entrée."""
+        if proc.poll() is not None or proc.stdin is None:
+            return
+        try:
+            proc.stdin.write(
+                json.dumps(
+                    {
+                        "type": "control_response",
+                        "response": {
+                            "subtype": "success",
+                            "request_id": request_id,
+                            "response": reponse,
+                        },
+                    },
+                    ensure_ascii=False,
+                )
+                + chr(10)
+            )
+            proc.stdin.flush()
+        except (OSError, ValueError):
+            pass
+
+    def _attendre_la_decision(
+        self,
+        demande: Demande,
+        proc: subprocess.Popen[Any],
+        emettre: Callable[[AtelierEvent], AtelierEvent],
+        peut_attendre: bool,
+    ) -> float:
+        """Pose la question, attend aussi longtemps qu'il faut, rend la réponse.
+
+        Le CLI n'arbitre pas : éprouvé sur ce pod, il attend une demi-heure
+        sans broncher, mémoire plate. Rien ici ne vient donc périmer une
+        question — c'est l'exigence. Ce qui peut finir, c'est le tour : si le
+        processus meurt, ou si l'utilisateur interrompt, on cesse d'attendre.
+
+        Rend le temps passé, que l'appelant ajoute à son échéance.
+        """
+        if not peut_attendre:
+            # Personne au bout du fil : ce tour ne remonte pas par l'interface.
+            # Attendre le figerait pour toujours ; on refuse, ce qui est très
+            # exactement ce que le CLI faisait avant que ce canal existe.
+            self._repondre_au_cli(
+                proc, demande.request_id, reponse_refusee(SANS_INTERLOCUTEUR)
+            )
+            emettre(
+                AtelierEvent(
+                    kind="decision_rendue",
+                    session_id=demande.session_id,
+                    tool=demande.outil,
+                    tool_id=demande.request_id,
+                    cause="refus_automatique",
+                )
+            )
+            return 0.0
+
+        signal_recu = self.decisions.poser(demande)
+        emettre(
+            AtelierEvent(
+                kind="decision_attendue",
+                session_id=demande.session_id,
+                text=json.dumps(demande.to_dict(), ensure_ascii=False),
+                tool=demande.outil,
+                tool_id=demande.request_id,
+            )
+        )
+        debut = time.monotonic()
+        while not signal_recu.wait(timeout=self.BATTEMENT_ATTENTE):
+            if proc.poll() is not None:
+                break
+            emettre(AtelierEvent(kind="heartbeat", session_id=demande.session_id))
+
+        reponse = self.decisions.reponse(demande.request_id)
+        if reponse is None:
+            # Le tour s'est arrêté sans qu'on réponde. On refuse plutôt que de
+            # laisser le CLI attendre un interlocuteur qui ne viendra plus.
+            reponse = reponse_refusee("Le tour s'est arrêté avant qu'on réponde.")
+        self.decisions.clore(demande.request_id)
+
+        self._repondre_au_cli(proc, demande.request_id, reponse)
+
+        emettre(
+            AtelierEvent(
+                kind="decision_rendue",
+                session_id=demande.session_id,
+                tool=demande.outil,
+                tool_id=demande.request_id,
+                cause=str(reponse.get("behavior") or ""),
+            )
+        )
+        return time.monotonic() - debut
+
+
     def run_turn(
         self,
         session_id: str,
@@ -283,20 +472,29 @@ class ClaudeHarness(Harness):
         mcp_config_path: Path | None = None,
         permission_mode: str = "",
         effort: str = "",
+        peut_attendre: bool = False,
         agent_name: str = "",
         on_event: Callable[[AtelierEvent], None] | None = None,
     ) -> TurnResult:
         claude = self._resolve_claude_bin()
         cli_id = (claude_session_id or session_id).strip()
 
+        # Le message ne part plus en argument : il descend par l'entrée
+        # standard, qui reste ouverte tout le tour. C'est ce que réclame
+        # `--permission-prompt-tool stdio`, par lequel le CLI nous demande
+        # l'autorisation au lieu de refuser — et c'est exactement ainsi que
+        # l'extension VS Code lance le CLI sur ce pod.
         cmd: list[str] = [
             str(claude),
             "-p",
-            message,
+            "--input-format",
+            "stream-json",
             "--output-format",
             "stream-json",
             "--include-partial-messages",
             "--verbose",
+            "--permission-prompt-tool",
+            "stdio",
             "--permission-mode",
             mode_permission_valide(permission_mode),
         ]
@@ -349,12 +547,30 @@ class ClaudeHarness(Harness):
             cmd,
             cwd=str(cwd),
             env=self._env(agent_name),
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             bufsize=1,
         )
         self._procs[session_id] = proc
+        # L'entrée reste ouverte après l'envoi : c'est par elle que remontent
+        # les réponses aux demandes d'autorisation.
+        if proc.stdin is not None:
+            proc.stdin.write(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "message": {
+                            "role": "user",
+                            "content": [{"type": "text", "text": message}],
+                        },
+                    },
+                    ensure_ascii=False,
+                )
+                + chr(10)
+            )
+            proc.stdin.flush()
 
         events: list[AtelierEvent] = []
 
@@ -397,8 +613,19 @@ class ClaudeHarness(Harness):
                             )
                         )
                         break
-                    line = proc.stdout.readline()
+                    line = ligne_disponible(proc.stdout, 1.0)
                     if line:
+                        demande = demande_de_decision(session_id, line)
+                        if demande is not None:
+                            # L'horloge du tour s'arrête pendant qu'on attend
+                            # quelqu'un : sans cela, `timeout_mural` tuerait un
+                            # tour parce qu'un humain déjeune. Deux horloges,
+                            # pas une — « l'agent est bloqué » n'est pas « on
+                            # attend une réponse ».
+                            deadline += self._attendre_la_decision(
+                                demande, proc, emettre, peut_attendre
+                            )
+                            continue
                         if ligne_a_conserver(line):
                             tf.write(line)
                             tf.flush()
@@ -435,6 +662,9 @@ class ClaudeHarness(Harness):
                 except subprocess.TimeoutExpired:
                     proc.kill()
             self._procs.pop(session_id, None)
+            # Le tour s'arrête : plus personne n'attend ses questions. Les
+            # laisser affichées ferait croire qu'on peut encore y répondre.
+            self.decisions.abandonner(session_id)
             try:
                 sync_claude_home(self.settings)
             except OSError:
@@ -457,6 +687,10 @@ class ClaudeHarness(Harness):
         )
 
     def interrupt(self, session_id: str) -> bool:
+        # Interrompre, c'est aussi renoncer aux questions du tour : le fil qui
+        # attendait va voir le processus mort et cesser d'attendre, mais la
+        # trace, elle, resterait sur le disque.
+        self.decisions.abandonner(session_id)
         proc = self._procs.get(session_id)
         if not proc:
             return False
