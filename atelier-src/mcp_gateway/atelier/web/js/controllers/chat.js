@@ -3,7 +3,11 @@
 import * as api from "../api.js";
 import * as S from "../state.js";
 import { $ } from "../core/dom.js";
-import { refreshProjects, refreshSessions } from "../services/catalog.js";
+import {
+  buildMessagesFromServer,
+  refreshProjects,
+  refreshSessions,
+} from "../services/catalog.js";
 
 function tryParseJson(s) {
   try {
@@ -108,6 +112,31 @@ function buildStreamBlocks(stream) {
     }
   }
   return blocks;
+}
+
+/**
+ * Va rechercher la suite d'un tour dont le flux s'est coupé.
+ *
+ * Rend vrai si l'on a pu relire la conversation. On attend d'abord que le
+ * tour s'achève côté serveur : relire trop tôt ne montrerait qu'un fil
+ * tronqué, et donnerait l'impression que le reste s'est perdu.
+ */
+async function rattraperLeFil(state, render) {
+  const sessionId = state.sessionId;
+  if (!sessionId) return false;
+  try {
+    for (let essai = 0; essai < 120; essai += 1) {
+      const fiche = await api.getSession(state.token, sessionId);
+      if (fiche?.state !== "running") break;
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+    if (state.sessionId !== sessionId) return false;
+    state.messages = await buildMessagesFromServer(state, sessionId);
+    render();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function pushStreamToUi(state, stream) {
@@ -381,8 +410,14 @@ export function createChatController(ctx) {
       S.persistUserTurns(state);
       await refreshSessions(state);
     } catch (err) {
-      S.setError(state, err.message || String(err));
+      // Le lien peut tomber alors que le tour, lui, continue sur le pod. On
+      // ne peut pas le rouvrir : l'adresse du flux porte le message, et s'y
+      // rebrancher relancerait le tour. Mais on peut faire ce que
+      // l'utilisateur faisait à la main — attendre la fin, puis relire la
+      // conversation. Sans cela l'écran restait figé jusqu'au rechargement.
       S.finalizeAssistant(state);
+      const repris = await rattraperLeFil(state, render);
+      if (!repris) S.setError(state, err.message || String(err));
     } finally {
       S.setBusy(state, false);
       render();

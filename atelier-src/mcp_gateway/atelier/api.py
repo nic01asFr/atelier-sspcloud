@@ -1052,7 +1052,20 @@ def build_app(
 
             threading.Thread(target=travail, daemon=True).start()
             while True:
-                ev = file.get()
+                try:
+                    ev = file.get(timeout=15)
+                except queue.Empty:
+                    # Un tour peut se taire longtemps — le modèle réfléchit,
+                    # une commande tourne, une question attend une réponse.
+                    # Rien ne partait alors sur le fil, et le premier délai
+                    # d'inactivité du chemin coupait la connexion : le tour
+                    # continuait côté serveur, l'écran restait figé, et il
+                    # fallait recharger pour voir la suite.
+                    #
+                    # Un commentaire SSE suffit à tenir le lien : le client
+                    # l'ignore, les intermédiaires voient passer des octets.
+                    yield ": battement" + chr(10) + chr(10)
+                    continue
                 if ev is SENTINELLE:
                     return
                 yield ev.as_sse()
