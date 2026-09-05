@@ -287,7 +287,11 @@ export function createChatController(ctx) {
               // l'afficher comme tel mentirait sur ce qui s'est passé.
               const question = posee.demande?.genre === "question";
               posee.etat = question
-                ? "repondu"
+                ? // Une question relâchée n'a pas été répondue : le tour est
+                  // reparti sans cet avis, et rien ne la rattrapera.
+                  ev.cause === "relachee"
+                  ? "orpheline"
+                  : "repondu"
                 : ev.cause === "allow" || ev.cause?.startsWith("regle:")
                   ? "allow"
                   : ev.cause === "relachee"

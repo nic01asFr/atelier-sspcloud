@@ -167,12 +167,34 @@ function carteDeQuestion(block) {
   tete.className = "msg-decision-head";
   const marque = document.createElement("span");
   marque.className = "msg-decision-icon";
-  marque.textContent = etat === "en_attente" ? "?" : "✓";
+  const perdue = etat === "orpheline";
+  marque.textContent = etat === "en_attente" ? "?" : perdue ? "⊘" : "✓";
   const titre = document.createElement("span");
   titre.className = "msg-decision-title";
-  titre.textContent = etat === "en_attente" ? "L’agent vous demande" : "Répondu";
+  titre.textContent =
+    etat === "en_attente"
+      ? "L’agent vous demande"
+      : perdue
+        ? "Question restée sans réponse"
+        : "Répondu";
   tete.append(marque, titre);
   carte.appendChild(tete);
+
+  if (perdue) {
+    // Contrairement à une autorisation, une question relâchée ne se rattrape
+    // pas : il n'y a pas de règle à en tirer, et le modèle a déjà appris que
+    // personne ne répondait. Le dire, plutôt que de laisser croire à un choix.
+    const q = document.createElement("p");
+    q.className = "msg-decision-cible";
+    q.textContent = questions.map((x) => x.question || x.header || "").join(" / ");
+    const note = document.createElement("p");
+    note.className = "msg-decision-raison";
+    note.textContent =
+      "Personne n’a répondu à temps ; le tour est reparti sans cet avis. "
+      + "Reposez la question si elle compte encore.";
+    carte.append(q, note);
+    return carte;
+  }
 
   if (etat !== "en_attente") {
     // Une fois répondu, on montre ce qu'on a dit — sinon le fil garderait la
