@@ -3586,3 +3586,16 @@ select option {
   background: var(--bg-elev);
   color: var(--text);
 }
+
+/* Un message qui attend son tour : c'est la parole de l'utilisateur, mais
+   elle n'est pas encore partie. Le trait interrompu le dit sans un mot. */
+.msg-en-file {
+  border: 1px dashed var(--accent-dim);
+  background: transparent;
+  opacity: 0.85;
+}
+
+.msg-en-file .role {
+  color: var(--accent);
+  font-style: italic;
+}

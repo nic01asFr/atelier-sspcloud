@@ -35,6 +35,14 @@ export function createSessionActions(ctx) {
       S.setShellMode(state, "code", "detail");
       const msgs = await buildMessagesFromServer(state, sessionId);
       S.setMessages(state, msgs);
+      // Ce qui attend son tour se retrouve à l'ouverture : un message déposé
+      // depuis un autre écran, ou avant qu'on ferme celui-ci, doit se voir.
+      try {
+        const file = await api.fileDesMessages(state.token, sessionId);
+        S.setEnFile(state, file.messages || []);
+      } catch {
+        S.setEnFile(state, []);
+      }
       try {
         S.setSessionMcp(state, await api.getSessionMcp(state.token, sessionId));
       } catch {

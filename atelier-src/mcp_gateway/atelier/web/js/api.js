@@ -232,6 +232,35 @@ export async function deleteProject(token, slug) {
  *
  * Rend une fonction qui referme le canal.
  */
+/** Dépose un message qui partira quand le tour en cours aura fini. */
+export async function mettreEnFile(token, sessionId, message) {
+  const res = await fetch(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/messages`,
+    { method: "POST", headers: jsonHeaders(token), body: JSON.stringify({ message }) }
+  );
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Ce qui attend son tour dans cette conversation. */
+export async function fileDesMessages(token, sessionId) {
+  const res = await fetch(`/v1/sessions/${encodeURIComponent(sessionId)}/file`, {
+    headers: jsonHeaders(token),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Retire un message avant son départ. */
+export async function annulerMessageEnFile(token, sessionId, messageId) {
+  const res = await fetch(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/file/${encodeURIComponent(messageId)}`,
+    { method: "DELETE", headers: jsonHeaders(token) }
+  );
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
 export function suivreSession(sessionId, { onEvent } = {}) {
   const es = new EventSource(
     `/v1/sessions/${encodeURIComponent(sessionId)}/live`
@@ -275,6 +304,7 @@ export function streamEvents(sessionId, message, { onEvent, attachmentIds = [] }
   return new Promise((resolve, reject) => {
     const es = new EventSource(url);
     let settled = false;
+    let enchaine = false;
 
     const finish = (fn, arg) => {
       if (settled) return;
@@ -292,6 +322,18 @@ export function streamEvents(sessionId, message, { onEvent, attachmentIds = [] }
       }
       const ev = { kind: kind || data.kind || "systeme", ...data };
       onEvent?.(ev);
+      // Un tour peut traiter plusieurs messages : celui qu'on a envoyé, puis
+      // ceux écrits pendant qu'il travaillait. Chacun finit par un `fin`, mais
+      // le flux, lui, continue. Le serveur annonce l'enchaînement juste avant
+      // — on garde donc la ligne ouverte jusqu'au dernier.
+      if (ev.kind === "systeme" && ev.cause === "message_suivant") {
+        enchaine = true;
+        return;
+      }
+      if (ev.kind === "fin" && enchaine) {
+        enchaine = false;
+        return;
+      }
       if (ev.kind === "fin" || ev.kind === "erreur") {
         finish(resolve, ev);
       }

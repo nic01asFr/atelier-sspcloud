@@ -306,7 +306,20 @@ function appliquerEvenement(ctx, stream, ev) {
         pushStreamToUi(state, stream);
         views.codeChat.renderThread();
       }
-    } else if (ev.kind === "erreur") {
+    } else if (ev.kind === "systeme" && ev.cause === "message_suivant") {
+    // Le tour enchaîne sur un message qui attendait. C'est un autre échange :
+    // on referme la réponse en cours et on rouvre une bulle, sans quoi les
+    // deux réponses se mêleraient dans la même.
+    S.finalizeAssistant(state);
+    S.retirerDeLaFile(state, ev.text || "");
+    S.appendMessage(state, { role: "user", text: ev.text || "" });
+    S.appendMessage(state, { role: "assistant", text: "", blocks: [], streaming: true });
+    stream.blocs.length = 0;
+    stream.tools.length = 0;
+    stream.decisions.length = 0;
+    stream.phase = "attente";
+    render();
+  } else if (ev.kind === "erreur") {
       S.appendMessage(state, {
         role: "error",
         text: ev.cause || "erreur",
@@ -355,7 +368,25 @@ export function createChatController(ctx) {
     ev.preventDefault();
     const text = $("composer-input")?.value.trim() || "";
     const attachments = state.composerAttachments || [];
-    if ((!text && !attachments.length) || state.busy || state.view !== "code") {
+    if ((!text && !attachments.length) || state.view !== "code") {
+      return;
+    }
+
+    // Un tour travaille déjà : le message ne se perd pas et n'en lance pas un
+    // second. Il attend, et partira dans le tour en cours dès qu'il aura fini
+    // le précédent.
+    if (state.busy) {
+      if (!state.sessionId || !text) return;
+      $("composer-input").value = "";
+      composerInput?.resetGrow?.();
+      try {
+        const rendu = await api.mettreEnFile(state.token, state.sessionId, text);
+        const depose = (rendu?.events || []).find((e) => e.cause === "message_en_file");
+        S.ajouterEnFile(state, { id: depose?.tool_id || "", texte: text });
+      } catch (err) {
+        S.setError(state, err.message || String(err));
+      }
+      render();
       return;
     }
 
@@ -486,5 +517,21 @@ export function createChatController(ctx) {
     });
   }
 
-  return { onSend, observer, cesserDObserver };
+  /** Retire un message de la file, tant qu'il n'est pas parti. */
+  async function annulerEnFile(messageId) {
+    if (!state.sessionId || !messageId) return;
+    try {
+      await api.annulerMessageEnFile(state.token, state.sessionId, messageId);
+      S.retirerDeLaFileParId(state, messageId);
+    } catch (err) {
+      // Déjà parti : il est dans le tour, plus dans la file. On le dit.
+      S.retirerDeLaFileParId(state, messageId);
+      if (!/404/.test(err?.message || "")) {
+        S.setError(state, err.message || String(err));
+      }
+    }
+    render();
+  }
+
+  return { onSend, observer, cesserDObserver, annulerEnFile };
 }

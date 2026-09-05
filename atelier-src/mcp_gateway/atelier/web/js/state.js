@@ -69,6 +69,10 @@ export function createState() {
     sessions: [],
     expandedSlugs: new Set(loadExpandedSlugs()),
     messages: [],
+    // Ce qu'on a écrit pendant qu'un tour travaillait : déposé côté service,
+    // pas encore parti. On le garde ici pour le montrer, et pour pouvoir le
+    // retirer tant qu'il n'a pas quitté la file.
+    enFile: [],
     mcpServers: {},
     mcpOverview: null,
     mcpProfiles: null,
@@ -320,6 +324,33 @@ export function setSessionMcp(state, data) {
 
 export function setMessages(state, messages) {
   state.messages = messages || [];
+}
+
+export function setEnFile(state, messages) {
+  state.enFile = messages || [];
+}
+
+export function ajouterEnFile(state, message) {
+  state.enFile = [...(state.enFile || []), message];
+}
+
+/**
+ * Retire de la file le message qui vient de partir.
+ *
+ * Le service annonce son départ par son texte, non par son identifiant : ce
+ * qu'il écrit dans le tour, c'est le texte. On retire donc le premier qui
+ * correspond — l'ordre de la file est celui du départ.
+ */
+export function retirerDeLaFile(state, texte) {
+  const rang = (state.enFile || []).findIndex((m) => m.texte === texte);
+  if (rang < 0) return null;
+  const parti = state.enFile[rang];
+  state.enFile = state.enFile.filter((_, i) => i !== rang);
+  return parti;
+}
+
+export function retirerDeLaFileParId(state, id) {
+  state.enFile = (state.enFile || []).filter((m) => m.id !== id);
 }
 
 export function toggleExpanded(state, slug) {

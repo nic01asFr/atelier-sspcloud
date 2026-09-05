@@ -249,6 +249,11 @@ function createApp() {
     composerMcpCtrl.bind();
     composerInput.bind();
     $("composer").addEventListener("submit", chat.onSend);
+    // Le fil est reconstruit à chaque rendu : on écoute sur le document, que
+    // les cartes ne survivent pas mais qui, lui, reste.
+    document.addEventListener("atelier:annuler-file", (e) => {
+      chat.annulerEnFile(e.detail?.id);
+    });
     // Le bouton Envoyer suit la saisie. Rendu cible : un render() complet
     // reconstruirait le panneau et ferait perdre le focus a chaque frappe.
     $("composer-input").addEventListener("input", () => {

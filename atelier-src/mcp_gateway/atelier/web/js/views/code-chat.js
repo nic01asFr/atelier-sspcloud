@@ -315,12 +315,67 @@ const BAS_DU_FIL = 1e9;
       }
       voulus.push(construireMessage(m, cle));
     });
+    // Ce qui attend son tour se montre au bout du fil, à sa place : après ce
+    // qui est déjà dit, avant ce qui viendra. Sans cela on écrirait dans le
+    // vide, sans savoir si le message a été pris.
+    for (const attente of state.enFile || []) {
+      const cle = "file:" + (attente.id || attente.texte.slice(0, 24));
+      const garde = anciens.get(cle);
+      if (garde) {
+        anciens.delete(cle);
+        voulus.push(garde);
+        continue;
+      }
+      voulus.push(construireEnAttente(attente, cle));
+    }
     thread.replaceChildren(...voulus);
     // On rend le geste au lieu de le faire : l'appelant l'exécutera à l'image
     // suivante, quand la mise en page sera déjà calculée.
     return () => {
       thread.scrollTop = suivait ? BAS_DU_FIL : position;
     };
+  }
+
+  /**
+   * Un message écrit pendant qu'un tour travaille, et qui n'est pas parti.
+   *
+   * Il s'affiche comme ce qu'il est — la parole de l'utilisateur, en attente —
+   * et se retire tant qu'il n'a pas quitté la file. Une fois parti, il devient
+   * un message ordinaire : c'est le service qui l'annonce.
+   */
+  function construireEnAttente(attente, cle) {
+    const div = document.createElement("div");
+    div.dataset.cle = cle;
+    div.className = "msg user msg-en-file";
+
+    const etiquette = document.createElement("span");
+    etiquette.className = "role";
+    etiquette.textContent = "en attente";
+    div.appendChild(etiquette);
+
+    const texte = document.createElement("div");
+    texte.className = "msg-text-plain";
+    texte.textContent = attente.texte || "";
+    div.appendChild(texte);
+
+    const barre = document.createElement("div");
+    barre.className = "msg-actions";
+    const retirer = document.createElement("button");
+    retirer.type = "button";
+    retirer.className = "msg-action";
+    retirer.textContent = "Retirer";
+    retirer.title = "Retirer ce message avant qu'il ne parte";
+    retirer.addEventListener("click", () => {
+      div.dispatchEvent(
+        new CustomEvent("atelier:annuler-file", {
+          bubbles: true,
+          detail: { id: attente.id },
+        })
+      );
+    });
+    barre.appendChild(retirer);
+    div.appendChild(barre);
+    return div;
   }
 
   /** Rafraîchit un message sans le refaire : seul ce qui bouge est redessiné. */
@@ -358,7 +413,10 @@ const BAS_DU_FIL = 1e9;
 
   function renderComposer() {
     const sessionReady = state.view === "code" && !!state.token;
-    const canSend = sessionReady && !state.busy;
+    // On écrit même pendant un tour : le message attend son tour au lieu
+    // d'être refusé. Seul le premier message d'une conversation neuve doit
+    // attendre, faute de conversation où le déposer.
+    const canSend = sessionReady && (!state.busy || !!state.sessionId);
     const input = $("composer-input");
     const send = $("btn-send");
     const stop = $("btn-stop");
@@ -369,7 +427,9 @@ const BAS_DU_FIL = 1e9;
     if (input) input.disabled = !canSend;
     if (send) {
       send.disabled = !canSend || !hasContent;
-      send.hidden = state.busy;
+      // Il reste visible pendant un tour : c'est par lui qu'on met en file.
+      send.hidden = false;
+      send.textContent = state.busy ? "Mettre en file" : "Envoyer";
     }
     if (stop) stop.hidden = !state.busy;
     const peutJoindre = sessionReady && !!state.sessionId;
