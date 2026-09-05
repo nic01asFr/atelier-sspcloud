@@ -22,6 +22,7 @@ from mcp_gateway.atelier.config import AtelierSettings
 from mcp_gateway.atelier.decisions import (
     Demande,
     RegistreDesDecisions,
+    reponse_autorisee,
     reponse_refusee,
 )
 from mcp_gateway.atelier.events import AtelierEvent, parse_stream_json_line
@@ -200,9 +201,14 @@ class FakeHarness(Harness):
 #
 #   mode                edition   commande   hors projet
 #   plan                non       non        —
-#   acceptEdits         oui       oui        non
-#   auto                oui       oui        non
+#   manual              demande   demande    demande
+#   acceptEdits         oui       oui        demande
+#   auto                oui       oui        demande
 #   bypassPermissions   oui       oui        oui
+#
+# « demande » se lit à la lettre depuis que le harnais tient le canal : le CLI
+# ne refuse plus, il pose la question et attend. Les colonnes « non » d'hier
+# sont devenues des questions.
 #
 # Deux modes sont écartés, mais pas pour la même raison.
 #
@@ -210,14 +216,15 @@ class FakeHarness(Harness):
 # pas plus un fichier qu'il ne lance une commande. Le nom trompe : ne pas
 # demander veut dire refuser ce qui aurait demandé. Rien ne le rattrapera.
 #
-# `manual`, lui, n'attend que d'être branché. Il demande une approbation à
-# chaque édition, et tel que ce harnais lance le CLI — message positionnel,
-# entrée en texte — l'appel est refusé faute d'interlocuteur. Mais le CLI sait
-# poser la question à son hôte : avec `--input-format stream-json` et
-# `--permission-prompt-tool stdio`, il émet un `control_request` et **attend**
-# la réponse. Éprouvé sur le pod, de bout en bout. Le jour où le harnais tient
-# ce canal, `manual` rejoint la liste.
-MODES_PERMISSION = ("bypassPermissions", "acceptEdits", "plan", "auto")
+# `manual` est là, désormais. Il demande une approbation à chaque geste, ce qui
+# était invivable tant qu'on ne savait pas retenir une réponse : dix-sept
+# questions pour un seul tour, mesuré. La mémoire des décisions le rend tenable
+# — on accorde une fois, on ne repose plus.
+#
+# Une réserve tout de même, à dire à l'écran : un tour lancé hors de
+# l'interface n'a personne pour répondre, et en `manual` tout passe par la
+# porte. Une conversation d'agent réglée ainsi refusera donc tout.
+MODES_PERMISSION = ("bypassPermissions", "acceptEdits", "auto", "manual", "plan")
 MODE_PERMISSION_DEFAUT = "bypassPermissions"
 NIVEAUX_EFFORT = ("low", "medium", "high", "xhigh", "max")
 
@@ -358,6 +365,16 @@ class ClaudeHarness(Harness):
     # rechargement.
     BATTEMENT_ATTENTE = 20.0
 
+    @staticmethod
+    def _fermer_entree(proc: subprocess.Popen[Any]) -> None:
+        """Dit au CLI qu'il n'y aura plus rien à lire, donc qu'il peut sortir."""
+        if proc.stdin is None or proc.stdin.closed:
+            return
+        try:
+            proc.stdin.close()
+        except (OSError, ValueError):
+            pass
+
     def _repondre_au_cli(
         self,
         proc: subprocess.Popen[Any],
@@ -365,7 +382,7 @@ class ClaudeHarness(Harness):
         reponse: dict[str, Any],
     ) -> None:
         """Rend la décision au CLI, qui attend sur son entrée."""
-        if proc.poll() is not None or proc.stdin is None:
+        if proc.poll() is not None or proc.stdin is None or proc.stdin.closed:
             return
         try:
             proc.stdin.write(
@@ -402,6 +419,26 @@ class ClaudeHarness(Harness):
 
         Rend le temps passé, que l'appelant ajoute à son échéance.
         """
+        # Une décision déjà prise dans ce fil ne se repose pas. C'est ce
+        # palier, et lui seul, qui rend `manual` vivable : sans lui, dix-sept
+        # questions pour un seul tour. La règle vaut aussi pour un tour
+        # automatique — ce que l'utilisateur a accordé, il l'a accordé.
+        regle = self.decisions.regle_qui_couvre(demande)
+        if regle is not None:
+            self._repondre_au_cli(
+                proc, demande.request_id, reponse_autorisee(demande.arguments)
+            )
+            emettre(
+                AtelierEvent(
+                    kind="decision_rendue",
+                    session_id=demande.session_id,
+                    tool=demande.outil,
+                    tool_id=demande.request_id,
+                    cause=f"regle:{regle.portee}",
+                )
+            )
+            return 0.0
+
         if not peut_attendre:
             # Personne au bout du fil : ce tour ne remonte pas par l'interface.
             # Attendre le figerait pour toujours ; on refuse, ce qui est très
@@ -431,17 +468,32 @@ class ClaudeHarness(Harness):
             )
         )
         debut = time.monotonic()
+        limite = max(60, int(self.settings.attente_vive_max_s))
+        relachee = False
         while not signal_recu.wait(timeout=self.BATTEMENT_ATTENTE):
             if proc.poll() is not None:
+                break
+            if time.monotonic() - debut > limite:
+                # On rend la mémoire du processus garé, pas la décision : la
+                # trace reste sur le disque, et y répondre plus tard la
+                # retiendra comme règle. Seul le chemin rapide expire.
+                relachee = True
+                self.decisions.relacher(demande.request_id)
                 break
             emettre(AtelierEvent(kind="heartbeat", session_id=demande.session_id))
 
         reponse = self.decisions.reponse(demande.request_id)
         if reponse is None:
-            # Le tour s'est arrêté sans qu'on réponde. On refuse plutôt que de
-            # laisser le CLI attendre un interlocuteur qui ne viendra plus.
-            reponse = reponse_refusee("Le tour s'est arrêté avant qu'on réponde.")
-        self.decisions.clore(demande.request_id)
+            # Le tour s'est arrêté, ou l'attente vive a été relâchée. On refuse
+            # plutôt que de laisser le CLI attendre quelqu'un qui ne viendra
+            # plus.
+            reponse = reponse_refusee(
+                "Personne n'a répondu à temps ; la question reste posée dans l'Atelier."
+                if relachee
+                else "Le tour s'est arrêté avant qu'on réponde."
+            )
+        if not relachee:
+            self.decisions.clore(demande.request_id)
 
         self._repondre_au_cli(proc, demande.request_id, reponse)
 
@@ -451,7 +503,7 @@ class ClaudeHarness(Harness):
                 session_id=demande.session_id,
                 tool=demande.outil,
                 tool_id=demande.request_id,
-                cause=str(reponse.get("behavior") or ""),
+                cause="relachee" if relachee else str(reponse.get("behavior") or ""),
             )
         )
         return time.monotonic() - debut
@@ -629,6 +681,14 @@ class ClaudeHarness(Harness):
                         if ligne_a_conserver(line):
                             tf.write(line)
                             tf.flush()
+                        if '"type":"result"' in line:
+                            # Le tour est fini : plus aucune question ne
+                            # viendra. Tant que son entrée reste ouverte, le
+                            # CLI attend d'autres messages au lieu de sortir —
+                            # et le tour ne s'achevait qu'à l'échéance murale,
+                            # dix minutes plus tard, marqué `timeout`. La
+                            # fermer est le signal de fin.
+                            self._fermer_entree(proc)
                         for ev in parse_stream_json_line(session_id, line):
                             emettre(ev)
                             if ev.kind == "texte" and ev.text and ev.raw_type not in (

@@ -833,13 +833,15 @@ Trois conséquences à ne pas oublier :
   son côté, processus toujours vivant. C'est une bonne nouvelle — l'attente
   longue est possible — mais elle place la charge chez nous : plafond de tours
   garés, trace durable, et deux horloges là où il n'y en a qu'une.
-- **Un tour pose beaucoup de questions.** Éprouvé : dix-sept demandes en un
-  seul tour — `Bash`, `Read`, `Write`, `Skill`. En `manual`, tout passe par la
-  porte, pas seulement les éditions. Sans mémoire de décision, l'écran devient
-  un formulaire à dix-sept cases et le mode est inutilisable. D'où les
-  `permission_suggestions` que le CLI fournit lui-même — `setMode`,
-  `addDirectories` — à porter comme boutons : « cette fois » contre « pour
-  cette conversation ».
+- **Un tour peut poser beaucoup de questions.** Éprouvé : dix-sept demandes en
+  un seul tour — `Bash`, `Read`, `Write`, `Skill`. Non parce que `manual`
+  demanderait pour tout : vérifié depuis, un `echo` dans le projet passe sans
+  rien demander. C'est ce que le tour visait qui déclenchait la porte — des
+  écritures hors du projet, refusées puis retentées autrement. Reste que le
+  cas existe, et sans mémoire de décision l'écran devient un formulaire à
+  dix-sept cases. D'où les `permission_suggestions` que le CLI fournit
+  lui-même — `addRules`, `addDirectories` — portées comme boutons : « cette
+  fois » contre « toujours, dans cette conversation ».
 - **Refuser n'arrête pas l'agent.** Éprouvé : refus motivé, l'agent lit le
   message, en tire une théorie — « c'est un hook bash personnalisé » — et
   essaie une autre route ; vingt-deux tours. Le refus est un aller-retour, pas
@@ -885,6 +887,14 @@ défaut précédait ce chantier, mais le canal allonge les silences : une série
 de refus automatiques ne produit pas une ligne. La lecture rend désormais la
 main chaque seconde.
 
+**L'entrée ouverte empêchait le CLI de sortir.** C'est elle qui permet de
+répondre aux questions, mais tant qu'elle reste ouverte le CLI attend d'autres
+messages : chaque tour s'achevait à l'échéance murale, dix minutes plus tard,
+marqué `timeout` — et la conversation refusait de repartir, son identifiant
+étant « déjà utilisé ». J'avais vu ces `timeout` sans les lire, et attribué à
+tort un tour interminable à une attente réseau. La fermer à la réception du
+`result` est le signal de fin ; un tour dure de nouveau huit secondes.
+
 ### L'ordre
 
 1. **Le mode et l'effort** — fait. *Plan* est disponible, et l'on a cessé de
@@ -904,8 +914,18 @@ main chaque seconde.
    répond, la carte se referme, et le rappel va chercher la suivante puisque
    le flux n'écoute plus. Un refus motivé remonte bien au modèle : mesuré à
    l'écran, il l'a lu et a changé de route.
-3. **L'échéance et la mémoire des décisions** — c'est ce palier, et lui seul,
-   qui rend `manual` proposable. Avant lui, dix-sept questions par tour.
+3. **L'échéance et la mémoire des décisions** — fait, et `manual` est proposé
+   depuis. Une réponse peut valoir « toujours » : on retient alors la règle que
+   le CLI suggère lui-même, de la plus étroite à la plus large — la commande
+   exacte, sinon le répertoire, sinon l'outil. Le libellé du bouton dit ce
+   qu'il accorde, et une règle ne vaut que pour sa conversation. Éprouvé à
+   l'écran : une question pour trois fichiers, puis plus rien — y compris au
+   tour suivant, et après un redémarrage du service.
+
+   L'échéance ne touche que l'attente vive : passé une heure de silence, le
+   processus garé est rendu, la trace reste. Répondre plus tard ne reprend pas
+   ce tour-là — la réponse le dit — mais la décision est prise et retenue.
+   C'est ce que veut dire « seul le chemin rapide expire ».
 4. **Les outils au grain fin**, à cause du garde-fou de la liste blanche.
 5. **Les défauts par projet**, quand on saura lesquels valent d'être hérités.
 

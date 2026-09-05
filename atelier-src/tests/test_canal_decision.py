@@ -147,11 +147,43 @@ def _cle(atelier: TestClient) -> str:
     return atelier.app.state.settings.owner_key_path.read_text(encoding="utf-8").strip()
 
 
-def test_la_route_refuse_une_reponse_sans_tour_qui_attend(atelier: TestClient) -> None:
-    """409, et non 200 : sinon l'écran croirait avoir débloqué un tour mort."""
+def test_repondre_a_une_question_qui_n_existe_pas(atelier: TestClient) -> None:
+    """404 : ni trace, ni tour — il n'y a rien à décider."""
     entete = {"Authorization": f"Bearer {_cle(atelier)}"}
     r = atelier.post("/v1/decisions/inconnue", headers=entete, json={"decision": "allow"})
-    assert r.status_code == 409
+    assert r.status_code == 404
+
+
+def test_on_repond_encore_a_une_question_relachee(atelier: TestClient) -> None:
+    """La décision n'expire pas ; seule l'attente vive expire.
+
+    Le tour a été relâché — sa mémoire rendue — mais la trace reste. Y
+    répondre ne reprend pas ce tour-là, et la réponse le dit franchement.
+    Ce qu'on accorde, en revanche, est retenu pour la suite.
+    """
+    registre = atelier.app.state.harness.decisions
+    demande = Demande(
+        request_id="rel",
+        session_id="s11",
+        outil="Write",
+        suggestions=[{"type": "addDirectories", "directories": ["/home/onyxia"]}],
+    )
+    registre.poser(demande)
+    registre.relacher("rel")  # le processus garé a été rendu
+    assert registre.en_attente("s11") == []
+
+    entete = {"Authorization": f"Bearer {_cle(atelier)}"}
+    r = atelier.post(
+        "/v1/decisions/rel",
+        headers=entete,
+        json={"decision": "allow", "portee": "toujours"},
+    )
+    assert r.status_code == 200
+    corps = r.json()
+    assert corps["reprise"] is False, "ce tour-là ne reprend pas, et on le dit"
+    assert corps["regle"]["valeur"] == "/home/onyxia"
+    assert [x.valeur for x in registre.regles("s11")] == ["/home/onyxia"]
+    registre.oublier_les_regles("s11")
 
 
 def test_la_route_n_accepte_que_deux_reponses(atelier: TestClient) -> None:
@@ -205,6 +237,10 @@ class _FauxProcessus:
     def __init__(self) -> None:
         self.recu: list[str] = []
         self.stdin = self
+        self.closed = False
+
+    def close(self) -> None:
+        self.closed = True
 
     def write(self, texte: str) -> None:
         self.recu.append(texte)
@@ -285,3 +321,42 @@ def test_la_lecture_rend_la_main_pour_que_l_echeance_existe() -> None:
     assert ligne_disponible(flux, 0.01) == "une ligne\n"
     assert ligne_disponible(flux, 0.01) == "une autre\n"
     assert ligne_disponible(flux, 0.01) == ""
+
+
+def test_relacher_rend_le_processus_sans_perdre_la_question(tmp_path) -> None:
+    """La mémoire du tour garé est rendue ; la décision, elle, reste à prendre.
+
+    Un tour garé coûte environ 130 Mo qu'aucun échange ne récupère — mesuré
+    sur ce pod, qui n'a pas de zone d'échange. Au bout d'un long silence on
+    rend cette mémoire, et la trace prend le relais.
+    """
+    dossier = tmp_path / "decisions"
+    registre = RegistreDesDecisions(dossier)
+    registre.poser(_demande("rl", "s1"))
+
+    registre.relacher("rl")
+    assert registre.en_attente() == [], "plus personne n'attend"
+    assert (dossier / "rl.json").exists(), "la question doit rester lisible"
+    relue = registre.demande_tracee("rl")
+    assert relue is not None and relue.vive is False
+    # Et plus aucun signal : répondre ne réveillerait personne.
+    assert registre.repondre("rl", reponse_autorisee()) is False
+
+
+def test_l_entree_se_ferme_quand_le_tour_est_fini() -> None:
+    """Sans quoi le CLI attend d'autres messages et ne sort jamais.
+
+    Constaté après coup : chaque tour s'achevait à l'échéance murale, dix
+    minutes plus tard, marqué `timeout` — et la conversation suivante refusait
+    de repartir, l'identifiant de session étant « déjà utilisé ». L'entrée
+    ouverte est ce qui permet de répondre aux questions ; la fermer est le
+    signal de fin.
+    """
+    from mcp_gateway.atelier.harness import ClaudeHarness
+
+    proc = _FauxProcessus()
+    assert proc.stdin.closed is False
+    ClaudeHarness._fermer_entree(proc)
+    assert proc.stdin.closed is True
+    # Deux fois de suite ne doit pas lever : la boucle peut y repasser.
+    ClaudeHarness._fermer_entree(proc)

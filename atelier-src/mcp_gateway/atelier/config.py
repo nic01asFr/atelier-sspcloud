@@ -72,6 +72,13 @@ class AtelierSettings(BaseSettings):
     def wikichat_dir(self) -> Path:
         return self.work_dir / "wikichat"
 
+    # Combien de temps on garde le processus garé pendant qu'une question
+    # attend. Ce n'est pas la durée de vie de la décision — elle, ne périme
+    # pas : passé ce délai on relâche le processus et la trace prend le
+    # relais. Une heure laisse largement le temps de revenir à l'écran, et
+    # un tour garé coûte environ 130 Mo qu'aucun échange ne récupère.
+    attente_vive_max_s: int = 3600
+
     @property
     def decisions_dir(self) -> Path:
         """Les questions qu'un tour attend, écrites dès qu'elles sont posées.

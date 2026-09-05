@@ -355,6 +355,11 @@ class SessionStore:
         path = self._path(session_id)
         if path.is_file():
             path.unlink()
+        # Ce qu'on avait accordé à cette conversation disparaît avec elle : une
+        # règle sans fil auquel se rattacher n'autorise plus rien, mais elle
+        # traînerait sur le disque, et un identifiant réutilisé la retrouverait.
+        self.harness.decisions.oublier_les_regles(session_id)
+        self.harness.decisions.abandonner(session_id)
         if remove_files:
             for fp in (rec.transcript_path, rec.log_path):
                 p = Path(fp)

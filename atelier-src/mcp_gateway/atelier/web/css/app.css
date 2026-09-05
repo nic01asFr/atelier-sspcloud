@@ -3394,3 +3394,13 @@ button:disabled {
   border-left-color: var(--muted);
   opacity: 0.7;
 }
+
+/* « Toujours » engage l'avenir : présent, mais moins appuyé qu'« Autoriser ». */
+.msg-decision-toujours {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+.msg-decision-toujours:hover {
+  background: rgba(196, 165, 116, 0.12);
+}

@@ -4,12 +4,12 @@ Le harnais imposait `bypassPermissions` à tous les tours : tout passait, sans
 qu'on puisse demander à un agent de réfléchir avant d'éditer. Le CLI accepte
 pourtant six modes et cinq niveaux d'effort.
 
-Deux modes ne sont pas proposés. `dontAsk` refuse tout, définitivement.
-`manual` refuse tant que le harnais lance le CLI avec un message positionnel :
-il demande une approbation, et personne ne la reçoit. Ce n'est pas une propriété
-du mode mais du montage — le CLI sait poser la question à son hôte, éprouvé sur
-le pod. Ces tests tiennent l'état d'aujourd'hui ; le jour où le canal existe,
-c'est ce fichier qui devra changer en premier.
+Un seul mode reste écarté : `dontAsk`, qui refuse tout, définitivement. Le nom
+trompe — ne pas demander veut dire refuser ce qui aurait demandé.
+
+`manual` est revenu, et c'est le canal d'autorisation qui l'a rendu possible :
+le CLI pose la question à son hôte au lieu de refuser, et la mémoire des
+décisions évite de la reposer. Sans elle, dix-sept questions pour un seul tour.
 """
 
 from __future__ import annotations
@@ -24,19 +24,24 @@ from mcp_gateway.atelier.harness import (
 )
 
 
-def test_les_modes_qui_refusent_tout_ne_sont_pas_proposes() -> None:
-    """Mesuré sur le pod, sans canal d'autorisation ouvert.
+def test_le_mode_qui_refuse_tout_n_est_pas_propose() -> None:
+    """Mesuré sur le pod : `dontAsk` ne crée pas un fichier ni ne lance une commande.
 
-    `dontAsk` ne crée pas plus un fichier qu'il ne lance une commande ;
-    `manual` refuse chaque édition faute de recevoir la question.
+    Rien ne le rattrapera — il ne demande pas, il refuse. C'est le seul mode
+    du CLI que l'Atelier ne propose pas.
     """
-    for refus in ("manual", "dontAsk"):
-        assert refus not in MODES_PERMISSION
-        assert mode_permission_valide(refus) == MODE_PERMISSION_DEFAUT
+    assert "dontAsk" not in MODES_PERMISSION
+    assert mode_permission_valide("dontAsk") == MODE_PERMISSION_DEFAUT
+
+
+def test_manual_est_propose_depuis_que_la_question_atteint_quelqu_un() -> None:
+    """Il refusait tout faute d'interlocuteur ; le harnais en est un désormais."""
+    assert "manual" in MODES_PERMISSION
+    assert mode_permission_valide("manual") == "manual"
 
 
 def test_les_modes_utiles_sont_acceptes() -> None:
-    for mode in ("plan", "acceptEdits", "auto", "bypassPermissions"):
+    for mode in ("plan", "acceptEdits", "auto", "bypassPermissions", "manual"):
         assert mode_permission_valide(mode) == mode
 
 

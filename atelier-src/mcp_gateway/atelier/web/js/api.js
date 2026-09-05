@@ -151,11 +151,11 @@ export async function decisionsEnAttente(token, sessionId = "") {
 }
 
 /** Rend la décision au tour qui l'attend. */
-export async function repondreDecision(token, requestId, { decision, motif } = {}) {
+export async function repondreDecision(token, requestId, { decision, motif, portee } = {}) {
   const res = await fetch(`/v1/decisions/${encodeURIComponent(requestId)}`, {
     method: "POST",
     headers: jsonHeaders(token),
-    body: JSON.stringify({ decision, motif: motif || "" }),
+    body: JSON.stringify({ decision, motif: motif || "", portee: portee || "une_fois" }),
   });
   if (!res.ok) await parseError(res);
   return res.json();

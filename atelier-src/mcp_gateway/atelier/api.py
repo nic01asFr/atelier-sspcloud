@@ -25,7 +25,11 @@ from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
 from mcp_gateway.atelier.gateway_overview import build_mcp_overview
 from mcp_gateway.atelier.gateway_runtime import gateway_shutdown, gateway_startup
 from mcp_gateway.atelier.mcp_endpoint import register_mcp_endpoint
-from mcp_gateway.atelier.decisions import reponse_autorisee, reponse_refusee
+from mcp_gateway.atelier.decisions import (
+    regle_suggeree,
+    reponse_autorisee,
+    reponse_refusee,
+)
 from mcp_gateway.atelier.harness import ClaudeHarness, FakeHarness, Harness
 from mcp_gateway.atelier.mcp_registry import mask_server_entry
 from mcp_gateway.atelier.mcp_sync import sync_summary
@@ -107,6 +111,10 @@ class DecisionBody(BaseModel):
     decision: str = "allow"
     motif: str = ""
     arguments: dict[str, Any] | None = None
+    # « une_fois » ne vaut que pour cette demande ; « toujours » retient la
+    # règle que le CLI suggère lui-même, et la question ne revient plus dans
+    # cette conversation.
+    portee: str = "une_fois"
 
 
 class CommitBody(BaseModel):
@@ -1119,9 +1127,60 @@ def build_app(
             if choix == "allow"
             else reponse_refusee(body.motif)
         )
-        if not harness.decisions.repondre(request_id, reponse):
-            raise HTTPException(409, "no turn is waiting for this decision")
-        return {"ok": True, "request_id": request_id, "decision": choix}
+        # La demande porte les suggestions du CLI, et elle disparaît dès qu'on
+        # répond : on la prend donc avant. Si plus aucun tour ne l'attend, on
+        # la relit sur le disque — une question relâchée ou survivante d'un
+        # redémarrage reste une question, et y répondre veut encore dire
+        # quelque chose.
+        demande = harness.decisions.demande(request_id)
+        vivante = demande is not None
+        if demande is None:
+            demande = harness.decisions.demande_tracee(request_id)
+        if demande is None:
+            raise HTTPException(404, "unknown decision")
+
+        retenue = None
+        if choix == "allow" and (body.portee or "") == "toujours":
+            regle = regle_suggeree(demande)
+            if regle is not None:
+                harness.decisions.retenir(regle)
+                retenue = regle.to_dict()
+
+        # Le tour ne reprendra pas s'il n'attendait plus : on le dit, plutôt
+        # que de laisser croire qu'on vient de le débloquer. La décision, elle,
+        # est prise — et retenue si on l'a demandé.
+        repris = harness.decisions.repondre(request_id, reponse) if vivante else False
+        if not repris:
+            harness.decisions.clore(request_id)
+        return {
+            "ok": True,
+            "request_id": request_id,
+            "decision": choix,
+            "regle": retenue,
+            "reprise": repris,
+        }
+
+    @router.get("/sessions/{session_id}/regles")
+    def regles_de_la_conversation(
+        session_id: str,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Ce qu'on a accordé une fois pour toutes dans ce fil."""
+        return {
+            "regles": [r.to_dict() for r in harness.decisions.regles(session_id)]
+        }
+
+    @router.delete("/sessions/{session_id}/regles")
+    def oublier_les_regles(
+        session_id: str,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Tout redevient à décider.
+
+        Une autorisation permanente doit pouvoir se reprendre, sinon elle
+        n'est plus une décision mais un état de fait.
+        """
+        return {"oubliees": harness.decisions.oublier_les_regles(session_id)}
 
     @router.get("/sessions/{session_id}/transcript")
     def transcript(

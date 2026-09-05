@@ -182,6 +182,7 @@ const BAS_DU_FIL = 1e9;
       await api.repondreDecision(state.token, detail.requestId, {
         decision: detail.decision,
         motif: detail.motif,
+        portee: detail.portee,
       });
     } catch (e) {
       S.setError(

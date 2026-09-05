@@ -143,6 +143,30 @@ const RAISONS = {
 };
 
 /**
+ * Ce qu'un « Toujours » accorderait, en toutes lettres.
+ *
+ * Reprend les suggestions du CLI dans l'ordre où elles portent le moins loin :
+ * une commande précise avant un répertoire entier, l'outil seulement faute de
+ * mieux. Le libellé dit exactement ce qu'on accorde — accorder plus large que
+ * ce qu'on croit est la seule vraie faute possible ici.
+ */
+function ceQueToujoursAccorde(d) {
+  for (const s of d.suggestions || []) {
+    if (s.type !== "addRules") continue;
+    for (const r of s.rules || []) {
+      if (r.ruleContent) return `Ne plus demander pour : ${r.ruleContent}`;
+    }
+  }
+  for (const s of d.suggestions || []) {
+    if (s.type !== "addDirectories") continue;
+    for (const dossier of s.directories || []) {
+      if (dossier) return `Ne plus demander dans ${dossier}`;
+    }
+  }
+  return d.outil ? `Ne plus demander pour l’outil ${d.outil}` : "";
+}
+
+/**
  * La question posée par un tour, et les deux gestes qui la referment.
  *
  * Tout ce qu'on affiche vient de la demande du CLI — l'outil, ses arguments
@@ -213,24 +237,31 @@ function carteDeDecision(block) {
   }
 
   if (etat === "orpheline") {
+    // Répondre a encore un sens : le tour ne reprendra pas, mais un
+    // « Toujours » retient la décision et la question ne se reposera plus.
     const p = document.createElement("p");
     p.className = "msg-decision-raison";
     p.textContent =
-      "Le tour qui l’attendait n’est plus là — le service a redémarré depuis. "
-      + "Relancez la demande pour décider.";
+      "Le tour qui l’attendait n’est plus là. Répondre ne le reprendra pas, "
+      + "mais « Toujours » retiendra la décision pour la suite.";
     carte.appendChild(p);
+  } else if (etat !== "en_attente") {
     return carte;
   }
-  if (etat !== "en_attente") return carte;
 
   const barre = document.createElement("div");
   barre.className = "msg-decision-actions";
 
-  const annoncer = (decision, motif) => {
+  const annoncer = (decision, motif, portee) => {
     carte.dispatchEvent(
       new CustomEvent("atelier:decision", {
         bubbles: true,
-        detail: { requestId: d.request_id, decision, motif: motif || "" },
+        detail: {
+          requestId: d.request_id,
+          decision,
+          motif: motif || "",
+          portee: portee || "une_fois",
+        },
       })
     );
   };
@@ -246,7 +277,21 @@ function carteDeDecision(block) {
   refuser.className = "msg-decision-btn msg-decision-non";
   refuser.textContent = "Refuser";
 
-  barre.append(autoriser, refuser);
+  // « Toujours » n'est pas un raccourci de confort : sans lui, dix-sept
+  // questions pour un seul tour, mesuré. Il vaut pour cette conversation
+  // seulement, et son infobulle dit ce qu'il accorde.
+  const portee = ceQueToujoursAccorde(d);
+  if (portee) {
+    const toujours = document.createElement("button");
+    toujours.type = "button";
+    toujours.className = "msg-decision-btn msg-decision-toujours";
+    toujours.textContent = "Toujours";
+    toujours.title = `${portee} — dans cette conversation.`;
+    toujours.addEventListener("click", () => annoncer("allow", "", "toujours"));
+    barre.append(autoriser, toujours, refuser);
+  } else {
+    barre.append(autoriser, refuser);
+  }
   carte.appendChild(barre);
 
   // Refuser sans rien dire laisse l'agent deviner, et il devine mal : mesuré,
