@@ -264,7 +264,15 @@ export function createChatController(ctx) {
               (d) => d.demande?.request_id === ev.tool_id
             );
             if (posee) {
-              posee.etat = ev.cause === "allow" ? "allow" : "deny";
+              // « relachee » n'est pas un refus : le tour a rendu sa mémoire
+              // faute de réponse, mais la question reste posée et répondable.
+              // L'afficher comme refusée mentirait sur ce qui s'est passé.
+              posee.etat =
+                ev.cause === "allow" || ev.cause?.startsWith("regle:")
+                  ? "allow"
+                  : ev.cause === "relachee"
+                    ? "orpheline"
+                    : "deny";
               stream.phase = "reponse";
               pushStreamToUi(state, stream);
               views.codeChat.renderThread();

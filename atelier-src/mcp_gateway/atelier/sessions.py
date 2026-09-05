@@ -360,6 +360,7 @@ class SessionStore:
         # traînerait sur le disque, et un identifiant réutilisé la retrouverait.
         self.harness.decisions.oublier_les_regles(session_id)
         self.harness.decisions.abandonner(session_id)
+        self.harness.decisions.oublier_les_questions(session_id)
         if remove_files:
             for fp in (rec.transcript_path, rec.log_path):
                 p = Path(fp)

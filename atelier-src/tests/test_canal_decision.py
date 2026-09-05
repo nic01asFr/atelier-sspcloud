@@ -360,3 +360,24 @@ def test_l_entree_se_ferme_quand_le_tour_est_fini() -> None:
     assert proc.stdin.closed is True
     # Deux fois de suite ne doit pas lever : la boucle peut y repasser.
     ClaudeHarness._fermer_entree(proc)
+
+
+def test_supprimer_une_conversation_efface_jusqu_aux_questions_relachees(
+    atelier: TestClient,
+) -> None:
+    """Sinon une question resterait affichable pour un fil qui n'existe plus.
+
+    `abandonner` ne referme que les attentes vives ; une question relâchée
+    n'est plus vive, et rien ne la retirait.
+    """
+    entete = {"Authorization": f"Bearer {_cle(atelier)}"}
+    sid = atelier.post(
+        "/v1/sessions", headers=entete, json={"slug": "essai", "title": "Traces"}
+    ).json()["session_id"]
+    registre = atelier.app.state.harness.decisions
+    registre.poser(_demande("q1", sid))
+    registre.relacher("q1")  # plus vive, mais toujours tracée
+    assert any(d.request_id == "q1" for d in registre.orphelines())
+
+    atelier.delete(f"/v1/sessions/{sid}", headers=entete)
+    assert not any(d.request_id == "q1" for d in registre.orphelines())

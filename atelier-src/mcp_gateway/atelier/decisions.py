@@ -384,6 +384,21 @@ class RegistreDesDecisions:
             demandes = [d for d in demandes if d.session_id == session_id]
         return sorted(demandes, key=lambda d: d.posee_le)
 
+    def oublier_les_questions(self, session_id: str) -> int:
+        """Efface jusqu'aux traces des questions de cette conversation.
+
+        `abandonner` ne referme que les attentes vives. Une question relâchée,
+        ou survivante d'un redémarrage, n'a plus personne qui l'attende : rien
+        ne la retirait, et elle restait affichable pour une conversation qui
+        n'existe plus.
+        """
+        efface = 0
+        for demande in self.orphelines():
+            if demande.session_id == session_id:
+                self._effacer(demande.request_id)
+                efface += 1
+        return efface
+
     def abandonner(self, session_id: str) -> int:
         """Le tour s'arrête sans réponse : on ne laisse pas la question traîner.
 
