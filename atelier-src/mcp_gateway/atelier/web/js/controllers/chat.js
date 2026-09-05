@@ -26,9 +26,17 @@ function buildStreamBlocks(stream) {
   if (stream.thinking.trim()) {
     blocks.push({ type: "thinking", text: stream.thinking.trim() });
   }
+  const outilsAQuestion = new Set(
+    (stream.decisions || [])
+      .filter((d) => d.demande?.genre === "question")
+      .map((d) => d.demande?.tool_use_id)
+  );
   for (const t of stream.tools) {
     blocks.push({
       type: "tool",
+      // La carte de question montre déjà les options et la réponse en clair ;
+      // répéter la charge brute et le résultat n'apprend rien et encombre.
+      masquerDetails: outilsAQuestion.has(t.id),
       name: t.name,
       id: t.id,
       input: t.input,
@@ -48,6 +56,7 @@ function buildStreamBlocks(stream) {
       type: "decision",
       demande: d.demande,
       etat: d.etat,
+      resume: d.resume,
       argumentsAilleurs: dejaMontre,
     });
   }
@@ -230,9 +239,15 @@ export function createChatController(ctx) {
               for (const d of denials) {
                 if (!d || typeof d !== "object") continue;
                 const toolId = d.tool_use_id || "";
+                // Une question voyage dans le message d'un refus, et le CLI la
+                // compte donc parmi ses refus. L'afficher ainsi contredirait la
+                // carte juste en dessous, qui dit « Répondu ».
+                const etaitUneQuestion = (stream.decisions || []).some(
+                  (q) => q.demande?.genre === "question" && q.demande?.tool_use_id === toolId
+                );
                 const existing = stream.tools.find((t) => t.id === toolId);
                 if (existing) {
-                  existing.status = "denied";
+                  existing.status = etaitUneQuestion ? "done" : "denied";
                   if (d.tool_name) existing.name = d.tool_name;
                   if (d.tool_input) existing.input = d.tool_input;
                 } else {
@@ -267,12 +282,18 @@ export function createChatController(ctx) {
               // « relachee » n'est pas un refus : le tour a rendu sa mémoire
               // faute de réponse, mais la question reste posée et répondable.
               // L'afficher comme refusée mentirait sur ce qui s'est passé.
-              posee.etat =
-                ev.cause === "allow" || ev.cause?.startsWith("regle:")
+              // Une question n'est ni accordée ni refusée : elle est
+              // répondue. Le libellé du refus n'est qu'un véhicule, et
+              // l'afficher comme tel mentirait sur ce qui s'est passé.
+              const question = posee.demande?.genre === "question";
+              posee.etat = question
+                ? "repondu"
+                : ev.cause === "allow" || ev.cause?.startsWith("regle:")
                   ? "allow"
                   : ev.cause === "relachee"
                     ? "orpheline"
                     : "deny";
+              if (question && ev.text) posee.resume = ev.text;
               stream.phase = "reponse";
               pushStreamToUi(state, stream);
               views.codeChat.renderThread();

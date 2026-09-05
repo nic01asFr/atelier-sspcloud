@@ -503,6 +503,15 @@ class ClaudeHarness(Harness):
                 session_id=demande.session_id,
                 tool=demande.outil,
                 tool_id=demande.request_id,
+                # Pour une question, on renvoie ce qui a été répondu : le
+                # navigateur, lui, reconstruit ses blocs depuis ce flux et
+                # perdrait ce qu'il avait noté de son côté. Le serveur est le
+                # seul à savoir, de source sûre, ce qui est parti au modèle.
+                text=(
+                    str(reponse.get("message") or "")
+                    if demande.genre == "question"
+                    else ""
+                ),
                 cause="relachee" if relachee else str(reponse.get("behavior") or ""),
             )
         )

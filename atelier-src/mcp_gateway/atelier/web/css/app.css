@@ -3404,3 +3404,83 @@ button:disabled {
 .msg-decision-toujours:hover {
   background: rgba(196, 165, 116, 0.12);
 }
+
+/* --- Une question posée par l'agent --------------------------------------
+   Même famille que la carte d'autorisation — c'est le même canal — mais on
+   ne demande pas la même chose : ici l'œil doit aller aux options, pas à un
+   verdict. D'où des propositions lisibles plutôt que deux boutons. */
+
+.msg-question {
+  border-left-color: var(--accent);
+}
+
+.msg-question-bloc + .msg-question-bloc {
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--line);
+}
+
+.msg-question-texte {
+  margin: 0.35rem 0 0.5rem;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.msg-question-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.msg-question-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.45rem 0.6rem;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.msg-question-option:hover {
+  border-color: var(--accent-dim);
+}
+
+.msg-question-option.choisie {
+  border-color: var(--accent);
+  background: rgba(196, 165, 116, 0.12);
+}
+
+.msg-question-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.msg-question-desc {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.msg-question-autre {
+  width: 100%;
+  margin-top: 0.4rem;
+  padding: 0.3rem 0.45rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+/* Une question répondue : refermée, mais sans la teinte d'un refus. */
+.msg-decision-repondu {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--line);
+  border-left-color: var(--accent-dim);
+  opacity: 0.75;
+}

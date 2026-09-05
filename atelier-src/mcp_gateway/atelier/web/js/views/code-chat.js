@@ -183,6 +183,7 @@ const BAS_DU_FIL = 1e9;
         decision: detail.decision,
         motif: detail.motif,
         portee: detail.portee,
+        reponses: detail.reponses,
       });
     } catch (e) {
       S.setError(
@@ -197,16 +198,24 @@ const BAS_DU_FIL = 1e9;
     // Le tour rend bien la décision par le flux — mais seulement si un flux
     // écoute. Après un rechargement, il n'y en a plus : la carte resterait à
     // « en attente » alors qu'on vient de répondre. On la referme ici.
-    marquerDecision(detail.requestId, detail.decision === "allow" ? "allow" : "deny");
+    marquerDecision(
+      detail.requestId,
+      detail.decision === "allow" ? "allow" : "deny",
+      detail.reponses
+    );
     render();
     if (!state.busy) await reprendreLesQuestions();
   }
 
   /** Referme une carte, où qu'elle soit dans le fil. */
-  function marquerDecision(requestId, etat) {
+  function marquerDecision(requestId, etat, reponses) {
     for (const m of state.messages || []) {
       for (const b of m.blocks || []) {
-        if (b.type === "decision" && b.demande?.request_id === requestId) b.etat = etat;
+        if (b.type !== "decision" || b.demande?.request_id !== requestId) continue;
+        b.etat = etat;
+        // Ce qu'on a répondu se garde avec la carte : sans cela le fil
+        // conserverait la question sans sa réponse.
+        if (reponses) b.reponses = reponses;
       }
     }
   }

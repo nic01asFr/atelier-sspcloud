@@ -88,7 +88,7 @@ export function appendBlock(parent, block) {
     head.append(icon, label, status);
     card.appendChild(head);
 
-    const inputStr = formatJson(block.input);
+    const inputStr = block.masquerDetails ? "" : formatJson(block.input);
     if (inputStr) {
       const det = document.createElement("details");
       det.className = "msg-tool-section";
@@ -103,7 +103,7 @@ export function appendBlock(parent, block) {
       card.appendChild(det);
     }
 
-    if (block.output) {
+    if (block.output && !block.masquerDetails) {
       const { text: outText } = truncate(block.output);
       const det = document.createElement("details");
       det.className = "msg-tool-section";
@@ -123,7 +123,8 @@ export function appendBlock(parent, block) {
   }
 
   if (block.type === "decision") {
-    parent.appendChild(carteDeDecision(block));
+    const question = block.demande?.genre === "question";
+    parent.appendChild(question ? carteDeQuestion(block) : carteDeDecision(block));
     return;
   }
 
@@ -141,6 +142,155 @@ const RAISONS = {
   permissionRule: "Une règle du projet l'interdit",
   mode: "Le mode de la conversation ne l'autorise pas",
 };
+
+/**
+ * L'agent demande un avis, pas une permission.
+ *
+ * Le modèle appelle son outil de question ; l'appel nous arrive par le canal
+ * des autorisations, mais ce qu'il attend est une réponse. On rend donc les
+ * options telles qu'il les a écrites — libellés et descriptions — au lieu
+ * d'un « autoriser / refuser » qui ne voudrait rien dire ici.
+ *
+ * Une seule question à choix unique se répond d'un clic : c'est le cas
+ * courant, et attendre un second geste pour valider serait une cérémonie.
+ * Dès qu'il y a plusieurs questions, ou un choix multiple, on rassemble et
+ * l'on valide en une fois.
+ */
+function carteDeQuestion(block) {
+  const d = block.demande || {};
+  const etat = block.etat || "en_attente";
+  const questions = Array.isArray(d.arguments?.questions) ? d.arguments.questions : [];
+  const carte = document.createElement("div");
+  carte.className = `msg-decision msg-question msg-decision-${etat}`;
+
+  const tete = document.createElement("div");
+  tete.className = "msg-decision-head";
+  const marque = document.createElement("span");
+  marque.className = "msg-decision-icon";
+  marque.textContent = etat === "en_attente" ? "?" : "✓";
+  const titre = document.createElement("span");
+  titre.className = "msg-decision-title";
+  titre.textContent = etat === "en_attente" ? "L’agent vous demande" : "Répondu";
+  tete.append(marque, titre);
+  carte.appendChild(tete);
+
+  if (etat !== "en_attente") {
+    // Une fois répondu, on montre ce qu'on a dit — sinon le fil garderait la
+    // question sans sa réponse. Ce qui fait foi, c'est ce que le serveur a
+    // envoyé au modèle ; le navigateur reconstruit ses blocs depuis le flux
+    // et perdrait sa propre note.
+    const lignes = String(block.resume || "")
+      .split(String.fromCharCode(10))
+      .map((l) => l.replace(/^-\s*/, "").trim())
+      .filter((l) => l && !l.endsWith(":"));
+    if (lignes.length) {
+      for (const l of lignes) {
+        const p = document.createElement("p");
+        p.className = "msg-decision-cible";
+        p.textContent = l;
+        carte.appendChild(p);
+      }
+    } else {
+      for (const [rang, q] of questions.entries()) {
+        const dit = (block.reponses || [])[rang] || [];
+        const p = document.createElement("p");
+        p.className = "msg-decision-cible";
+        p.textContent = `${q.header || q.question || ""} : ${dit.join(", ") || "(sans réponse)"}`;
+        carte.appendChild(p);
+      }
+    }
+    return carte;
+  }
+
+  const choisi = questions.map(() => []);
+  const unSeulClic = questions.length === 1 && !questions[0]?.multiSelect;
+
+  const repondre = () => {
+    carte.dispatchEvent(
+      new CustomEvent("atelier:decision", {
+        bubbles: true,
+        detail: { requestId: d.request_id, decision: "deny", reponses: choisi },
+      })
+    );
+  };
+
+  for (const [rang, q] of questions.entries()) {
+    const bloc = document.createElement("div");
+    bloc.className = "msg-question-bloc";
+    const texte = document.createElement("p");
+    texte.className = "msg-question-texte";
+    texte.textContent = q.question || q.header || "";
+    bloc.appendChild(texte);
+
+    const options = Array.isArray(q.options) ? q.options : [];
+    const liste = document.createElement("div");
+    liste.className = "msg-question-options";
+    for (const opt of options) {
+      const bouton = document.createElement("button");
+      bouton.type = "button";
+      bouton.className = "msg-question-option";
+      const libelle = document.createElement("span");
+      libelle.className = "msg-question-label";
+      libelle.textContent = opt.label || "";
+      bouton.appendChild(libelle);
+      if (opt.description) {
+        const desc = document.createElement("span");
+        desc.className = "msg-question-desc";
+        desc.textContent = opt.description;
+        bouton.appendChild(desc);
+      }
+      bouton.addEventListener("click", () => {
+        if (q.multiSelect) {
+          const i = choisi[rang].indexOf(opt.label);
+          if (i >= 0) choisi[rang].splice(i, 1);
+          else choisi[rang].push(opt.label);
+          bouton.classList.toggle("choisie", i < 0);
+          return;
+        }
+        choisi[rang] = [opt.label];
+        for (const autre of liste.querySelectorAll(".msg-question-option")) {
+          autre.classList.toggle("choisie", autre === bouton);
+        }
+        if (unSeulClic) repondre();
+      });
+      liste.appendChild(bouton);
+    }
+    bloc.appendChild(liste);
+
+    // Aucune liste ne prévoit tout : on garde la porte ouverte, comme le fait
+    // Claude Code avec son « Other ».
+    const autre = document.createElement("input");
+    autre.type = "text";
+    autre.className = "msg-question-autre";
+    autre.placeholder = "Autre réponse…";
+    autre.addEventListener("input", () => {
+      const libre = autre.value.trim();
+      const retenues = choisi[rang].filter((v) =>
+        options.some((o) => o.label === v)
+      );
+      choisi[rang] = libre ? [...retenues, libre] : retenues;
+    });
+    autre.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && autre.value.trim()) repondre();
+    });
+    bloc.appendChild(autre);
+    carte.appendChild(bloc);
+  }
+
+  if (!unSeulClic) {
+    const barre = document.createElement("div");
+    barre.className = "msg-decision-actions";
+    const valider = document.createElement("button");
+    valider.type = "button";
+    valider.className = "msg-decision-btn msg-decision-oui";
+    valider.textContent = "Répondre";
+    valider.addEventListener("click", repondre);
+    barre.appendChild(valider);
+    carte.appendChild(barre);
+  }
+
+  return carte;
+}
 
 /**
  * Ce qu'un « Toujours » accorderait, en toutes lettres.

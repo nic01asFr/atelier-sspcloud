@@ -27,6 +27,7 @@ from mcp_gateway.atelier.gateway_runtime import gateway_shutdown, gateway_startu
 from mcp_gateway.atelier.mcp_endpoint import register_mcp_endpoint
 from mcp_gateway.atelier.decisions import (
     regle_suggeree,
+    reponse_aux_questions,
     reponse_autorisee,
     reponse_refusee,
 )
@@ -115,6 +116,10 @@ class DecisionBody(BaseModel):
     # règle que le CLI suggère lui-même, et la question ne revient plus dans
     # cette conversation.
     portee: str = "une_fois"
+    # Quand la demande est une question, c'est ceci qu'on renvoie : une liste
+    # de réponses, une par question posée, chacune pouvant en porter plusieurs
+    # si le modèle a demandé un choix multiple.
+    reponses: list[list[str]] | None = None
 
 
 class CommitBody(BaseModel):
@@ -1122,11 +1127,6 @@ def build_app(
         choix = (body.decision or "").strip().lower()
         if choix not in ("allow", "deny"):
             raise HTTPException(400, "decision must be allow or deny")
-        reponse = (
-            reponse_autorisee(body.arguments)
-            if choix == "allow"
-            else reponse_refusee(body.motif)
-        )
         # La demande porte les suggestions du CLI, et elle disparaît dès qu'on
         # répond : on la prend donc avant. Si plus aucun tour ne l'attend, on
         # la relit sur le disque — une question relâchée ou survivante d'un
@@ -1139,8 +1139,18 @@ def build_app(
         if demande is None:
             raise HTTPException(404, "unknown decision")
 
+        # Une question ne s'autorise pas, elle se répond. Le modèle attend un
+        # avis, pas une permission — et ce qu'on lui rend part dans le message,
+        # seul champ du protocole qui lui revienne mot pour mot.
+        if demande.genre == "question":
+            reponse = reponse_aux_questions(demande, body.reponses or [])
+        elif choix == "allow":
+            reponse = reponse_autorisee(body.arguments)
+        else:
+            reponse = reponse_refusee(body.motif)
+
         retenue = None
-        if choix == "allow" and (body.portee or "") == "toujours":
+        if demande.genre != "question" and choix == "allow" and (body.portee or "") == "toujours":
             regle = regle_suggeree(demande)
             if regle is not None:
                 harness.decisions.retenir(regle)

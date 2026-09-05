@@ -33,6 +33,17 @@ from pathlib import Path
 from typing import Any
 
 
+# L'outil par lequel l'agent pose une question à l'utilisateur. Il arrive par
+# le même canal qu'une demande d'autorisation — mesuré — mais il ne demande pas
+# la permission d'agir : il demande une réponse.
+#
+# L'autoriser ne sert à rien : le CLI, n'ayant pas d'écran pour poser la
+# question, conclut aussitôt « The user did not answer the questions ». C'est
+# le message d'un refus qui lui revient comme résultat, verbatim — c'est donc
+# par là que la réponse passe. Le mot « refus » n'est qu'un véhicule.
+OUTIL_QUESTION = "AskUserQuestion"
+
+
 def _maintenant() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -59,6 +70,15 @@ class Demande:
     tool_use_id: str = ""
     posee_le: str = field(default_factory=_maintenant)
     vive: bool = True
+    # « autorisation » : peut-on faire ceci ? « question » : que répondez-vous ?
+    # Deux cartes différentes à l'écran, un seul canal en dessous.
+    genre: str = "autorisation"
+
+    @property
+    def questions(self) -> list[dict[str, Any]]:
+        """Les questions posées, telles que le modèle les a formulées."""
+        brut = self.arguments.get("questions")
+        return [q for q in brut if isinstance(q, dict)] if isinstance(brut, list) else []
 
     @classmethod
     def depuis_control_request(
@@ -75,6 +95,11 @@ class Demande:
             raison_type=str(requete.get("decision_reason_type") or ""),
             suggestions=[s for s in (requete.get("permission_suggestions") or []) if isinstance(s, dict)],
             tool_use_id=str(requete.get("tool_use_id") or ""),
+            genre=(
+                "question"
+                if requete.get("tool_name") == OUTIL_QUESTION
+                else "autorisation"
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -117,6 +142,11 @@ class Regle:
     def couvre(self, demande: Demande) -> bool:
         if demande.session_id != self.session_id:
             return False
+        # Une question ne s'accorde pas d'avance. L'autoriser sans réponse ne
+        # rendrait rien au modèle, et « ne plus me demander » n'a aucun sens
+        # quand ce qu'on demande, c'est un avis.
+        if demande.genre == "question":
+            return False
         if self.portee == "outil":
             return demande.outil == self.valeur
         if self.portee == "commande":
@@ -139,7 +169,11 @@ def regle_suggeree(demande: Demande) -> Regle | None:
     une commande précise avant un répertoire entier, et l'outil seulement
     faute de mieux. Élargir plus que nécessaire serait accorder plus que ce
     qu'on nous demande.
+
+    Une question n'en a jamais : on ne se dispense pas de donner son avis.
     """
+    if demande.genre == "question":
+        return None
     for suggestion in demande.suggestions:
         if suggestion.get("type") != "addRules":
             continue
@@ -156,6 +190,32 @@ def regle_suggeree(demande: Demande) -> Regle | None:
     if demande.outil:
         return Regle(demande.session_id, "outil", demande.outil)
     return None
+
+
+def reponse_aux_questions(demande: Demande, choix: list[list[str]]) -> dict[str, Any]:
+    """Rend les réponses de l'utilisateur au modèle.
+
+    Elles voyagent dans le message d'un refus, parce que c'est le seul champ
+    du protocole qui revienne au modèle verbatim — vérifié : il l'a reçu tel
+    quel et a poursuivi. Autoriser l'outil, au contraire, ne produit qu'un
+    « the user did not answer ».
+
+    On nomme chaque réponse par l'intitulé de sa question, faute de quoi un
+    modèle qui en a posé trois ne saurait pas laquelle on lui rend.
+    """
+    lignes: list[str] = []
+    for rang, question in enumerate(demande.questions):
+        repondu = choix[rang] if rang < len(choix) else []
+        if not repondu:
+            continue
+        intitule = str(question.get("header") or question.get("question") or f"Question {rang + 1}")
+        lignes.append(f"- {intitule} : " + ", ".join(str(r) for r in repondu))
+    if not lignes:
+        return {"behavior": "deny", "message": "L'utilisateur n'a pas répondu."}
+    return {
+        "behavior": "deny",
+        "message": "Réponse de l'utilisateur :" + chr(10) + chr(10).join(lignes),
+    }
 
 
 def reponse_autorisee(arguments: dict[str, Any] | None = None) -> dict[str, Any]:

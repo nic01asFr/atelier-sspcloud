@@ -895,6 +895,44 @@ marqué `timeout` — et la conversation refusait de repartir, son identifiant
 tort un tour interminable à une attente réseau. La fermer à la réception du
 `result` est le signal de fin ; un tour dure de nouveau huit secondes.
 
+### Les questions de l'agent
+
+Le modèle sait demander un avis, pas seulement une permission : il appelle
+`AskUserQuestion` avec une charge complète — la question, son intitulé, des
+options portant chacune une description, et le choix multiple ou non. Mesuré
+sur le pod, cet appel arrive **par le même canal** qu'une demande
+d'autorisation.
+
+L'autoriser ne rend rien. Le CLI, faute d'écran pour poser la question, conclut
+aussitôt « The user did not answer the questions ». Mais le message d'un refus
+lui revient comme résultat, mot pour mot — vérifié :
+
+    CONTROLE   can_use_tool  AskUserQuestion
+    REPONSE    deny + "L utilisateur a choisi : Bleu."
+    RESULTAT   "L utilisateur a choisi : Bleu."
+    TEXTE      Bleu.
+
+C'est donc par là que la réponse passe. Le mot « refus » n'est qu'un véhicule,
+et l'écran ne le prend pas au mot : l'outil s'affiche « terminé », la carte dit
+« Répondu », et ce qui est montré comme réponse est ce que le serveur a
+réellement envoyé au modèle — le navigateur reconstruit ses blocs depuis le
+flux et perdrait sa propre note.
+
+Trois règles tombent de là :
+
+- **Une question ne s'accorde pas d'avance.** Aucune règle ne la couvre, et
+  aucun « Toujours » ne s'en déduit : autoriser sans répondre ne rendrait
+  rien au modèle, et « ne plus me demander » n'a pas de sens quand ce qu'on
+  demande est un avis.
+- **Une seule question à choix unique se répond d'un clic.** C'est le cas
+  courant ; exiger un second geste pour valider serait une cérémonie. Dès
+  qu'il y a plusieurs questions ou un choix multiple, on rassemble.
+- **La liste n'est jamais fermée** : un champ libre accompagne toujours les
+  options, comme le « Other » de Claude Code.
+
+Tout le reste est hérité du canal : le tour attend, la question survit au
+rechargement, elle se relâche au bout d'une heure sans se perdre.
+
 ### L'ordre
 
 1. **Le mode et l'effort** — fait. *Plan* est disponible, et l'on a cessé de
