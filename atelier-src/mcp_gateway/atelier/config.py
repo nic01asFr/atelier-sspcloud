@@ -18,8 +18,16 @@ class AtelierSettings(BaseSettings):
     work_dir: Path = _default_work()
     host: str = "127.0.0.1"
     port: int = 8787
-    # Timeout mural par tour (secondes). Seul plafond opérant côté plateforme.
-    turn_timeout_s: int = 600
+    # Échéance murale d'un tour, en secondes. Seul plafond opérant côté
+    # plateforme, et il ne court que pendant le travail : l'attente d'une
+    # décision l'arrête.
+    #
+    # Dix minutes suffisaient tant qu'un tour n'écrivait que du code. Depuis
+    # qu'un agent peut agir sur l'infrastructure — construire une image,
+    # attendre qu'un pod démarre —, elles ne suffisent plus : un build kaniko
+    # a été tué en plein travail. On donne le temps d'une tâche longue, sans
+    # renoncer à un plafond : un tour parti en boucle doit finir par s'arrêter.
+    turn_timeout_s: int = 2700
     # Au-delà de ce poids estimé, l'Atelier fait compacter la conversation
     # avant d'envoyer le tour suivant. Claude Code ne s'en charge pas ici : sa
     # bascule automatique se décide sur les jetons consommés, que la passerelle
