@@ -38,7 +38,12 @@ class AtelierSettings(BaseSettings):
     # mesuré. Il faut donc laisser derrière soi de quoi encaisser ce tour-là,
     # car une conversation qui a franchi la fenêtre ne se rattrape plus : la
     # compaction, qui passe par le même modèle, ne peut plus la lire non plus.
-    compaction_seuil_jetons: int = 40000
+    # Mesuré depuis : notre compte sous-estime d'environ 2,7 fois ce que le
+    # modèle servi facture. Une conversation à 45 000 de nos unités a été
+    # refusée à 122 881 jetons réels. Le seuil descend donc d'autant : 25 000
+    # chez nous valent environ 68 000 là-bas, ce qui laisse de la place pour
+    # le tour qui suit.
+    compaction_seuil_jetons: int = 25000
     # Plafond de sortie donné au CLI. Il compte dans la fenêtre du modèle :
     # à 16 384, une conversation de 114 689 jetons faisait 131 073 sur une
     # fenêtre de 131 072 — un jeton de trop, et la compaction elle-même
