@@ -120,8 +120,13 @@ export function createComposerMcpView(ctx) {
     if (!choisis.length) {
       const empty = document.createElement("p");
       empty.className = "composer-mcp-empty";
+      // Un service branché mais éteint au niveau du projet n'apparaît pas
+      // ici du tout : le fil ne connaît que ce que le projet lui accorde.
+      // Renvoyer vers « Connecteurs » pour en brancher un envoyait donc
+      // créer ce qu'on a déjà — il dort, il ne manque pas. La porte est
+      // « Configuration avancée », juste en dessous.
       empty.textContent = connectors.length
-        ? "Aucun service personnalisé sur ce fil — branche-en un dans Connecteurs."
+        ? "Aucun service personnalisé sur ce fil. Ceux du projet s’allument dans « Configuration avancée »."
         : "Aucun connecteur lié — configure le binding projet ou l’onglet Connecteurs.";
       pop.appendChild(empty);
     } else {

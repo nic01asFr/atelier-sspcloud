@@ -1199,7 +1199,14 @@ button:disabled {
 
 .modal-submit:disabled {
   opacity: 0.6;
-  cursor: wait;
+  /* Désactivé n'est pas occupé. Le sablier faisait croire à un envoi en
+     cours alors que le bouton attendait quelque chose de l'utilisateur —
+     ou, pire, qu'il était resté mort. */
+  cursor: not-allowed;
+}
+
+.modal-submit.modal-submit-envoi:disabled {
+  cursor: progress;
 }
 
 .session-row {

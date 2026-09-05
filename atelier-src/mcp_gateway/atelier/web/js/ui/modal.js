@@ -23,7 +23,15 @@ export function closeModal(state) {
     modal.classList.remove("modal-lg", "modal-md");
   }
   const submit = $("modal-submit");
-  if (submit) submit.textContent = "Confirmer";
+  if (submit) {
+    submit.textContent = "Confirmer";
+    // Le bouton est désactivé le temps de l'envoi, et la modale se ferme
+    // ensuite sans jamais le réarmer : il restait mort pour toutes les
+    // modales suivantes, avec son libellé juste et un curseur d'attente
+    // trompeur. Un enregistrement réussi bloquait donc tous les suivants,
+    // jusqu'au rechargement de la page.
+    submit.disabled = false;
+  }
   const lead = $("modal-lead");
   if (lead) {
     lead.hidden = true;
@@ -95,7 +103,12 @@ export function openModal(
   }
 
   const submit = $("modal-submit");
-  if (submit) submit.textContent = submitLabel || "Confirmer";
+  if (submit) {
+    submit.textContent = submitLabel || "Confirmer";
+    // Ceinture et bretelles : une modale qui s'ouvre a toujours son bouton
+    // vivant, quel que soit l'état laissé par la précédente.
+    submit.disabled = false;
+  }
 
   const container = $("modal-fields");
   container.innerHTML = "";
@@ -241,6 +254,7 @@ async function onModalSubmit(state, ev) {
   const submit = $("modal-submit");
   if (submit) {
     submit.disabled = true;
+    submit.classList.add("modal-submit-envoi");
     submit.textContent = "Envoi…";
   }
   try {
@@ -251,6 +265,7 @@ async function onModalSubmit(state, ev) {
     $("modal-error").textContent = err.message || String(err);
     if (submit) {
       submit.disabled = false;
+      submit.classList.remove("modal-submit-envoi");
       submit.textContent = modal.submitLabel || "Confirmer";
     }
   }
