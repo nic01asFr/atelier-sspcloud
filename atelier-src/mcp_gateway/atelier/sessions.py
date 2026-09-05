@@ -361,6 +361,14 @@ class SessionStore:
         self.harness.decisions.oublier_les_regles(session_id)
         self.harness.decisions.abandonner(session_id)
         self.harness.decisions.oublier_les_questions(session_id)
+        self.harness.messages.vider(session_id)
+        # La configuration MCP effective est refaite à chaque tour ; celle
+        # d'une conversation supprimée ne sert plus à rien et restait pourtant
+        # là. Soixante et une traînaient pour quatorze conversations.
+        try:
+            (self.settings.mcp_effective_dir / f"{session_id}.json").unlink(missing_ok=True)
+        except OSError:
+            pass
         if remove_files:
             for fp in (rec.transcript_path, rec.log_path):
                 p = Path(fp)

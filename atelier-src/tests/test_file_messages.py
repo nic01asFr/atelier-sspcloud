@@ -114,3 +114,23 @@ def test_la_file_se_lit_et_se_defait_par_l_api(atelier: TestClient) -> None:
 def test_la_file_n_est_pas_publique(atelier: TestClient) -> None:
     assert atelier.get("/v1/sessions/x/file").status_code == 401
     assert atelier.delete("/v1/sessions/x/file/y").status_code == 401
+
+
+def test_supprimer_une_conversation_emporte_sa_configuration_mcp(
+    atelier: TestClient,
+) -> None:
+    """Elle est refaite à chaque tour ; celle d'un fil disparu ne sert plus.
+
+    Soixante et une traînaient sur le pod pour quatorze conversations.
+    """
+    entete = {"Authorization": f"Bearer {_cle(atelier)}"}
+    sid = atelier.post(
+        "/v1/sessions", headers=entete, json={"slug": "essai", "title": "Config"}
+    ).json()["session_id"]
+    reglages = atelier.app.state.settings
+    reglages.mcp_effective_dir.mkdir(parents=True, exist_ok=True)
+    trace = reglages.mcp_effective_dir / f"{sid}.json"
+    trace.write_text("{}", encoding="utf-8")
+
+    atelier.delete(f"/v1/sessions/{sid}", headers=entete)
+    assert not trace.exists()
