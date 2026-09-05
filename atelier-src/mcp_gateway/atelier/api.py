@@ -1025,6 +1025,31 @@ def build_app(
             raise HTTPException(404, "attachment not found")
         return {"deleted": attachment_id}
 
+    @router.get("/sessions/{session_id}/file")
+    def file_des_messages(
+        session_id: str,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Ce qui attend son tour dans cette conversation."""
+        if not store.get(session_id):
+            raise HTTPException(404, "session not found")
+        return {"messages": harness.messages.en_attente(session_id)}
+
+    @router.delete("/sessions/{session_id}/file/{message_id}")
+    def annuler_un_message(
+        session_id: str,
+        message_id: str,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Retire un message avant son départ.
+
+        C'est tout l'intérêt de garder la file chez nous plutôt que de l'écrire
+        aussitôt dans le CLI : un message déjà parti ne se reprend plus.
+        """
+        if not harness.messages.annuler(session_id, message_id):
+            raise HTTPException(404, "message not queued")
+        return {"annule": message_id}
+
     @router.get("/sessions/{session_id}/live")
     def suivre_en_direct(
         session_id: str,

@@ -936,6 +936,26 @@ class SessionStore:
             raise KeyError(session_id)
         if rec.state == "archived":
             raise ValueError("session is archived")
+        if rec.state == "running":
+            # Un tour travaille déjà. On ne refuse pas et on n'en lance pas un
+            # second — deux processus sur le même identifiant de session se
+            # marcheraient dessus. Le message attend, et partira dans le tour
+            # en cours dès qu'il aura fini le précédent : c'est le CLI qui
+            # tient cette file, il suffit de lui écrire au bon moment.
+            identifiant = self.harness.messages.deposer(session_id, message)
+            return TurnResult(
+                session_id=session_id,
+                exit_code=0,
+                events=[
+                    AtelierEvent(
+                        kind="systeme",
+                        session_id=session_id,
+                        cause="message_en_file",
+                        tool_id=identifiant,
+                        text=message,
+                    )
+                ],
+            )
         if rec.kind == "assistant":
             _normalize_assistant_cwd(self.settings, rec)
             self.save(rec)

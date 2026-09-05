@@ -9,6 +9,7 @@ import select
 import signal
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 from abc import ABC, abstractmethod
@@ -79,10 +80,72 @@ class TurnResult:
     text: str = ""
 
 
+class FileDesMessages:
+    """Ce qu'on écrira au tour en cours, quand il en aura fini avec le précédent.
+
+    Le CLI tient déjà cette file : un message écrit sur son entrée pendant
+    qu'il travaille est gardé, puis traité — mesuré, même processus et même
+    session. On pourrait donc y écrire aussitôt.
+
+    On ne le fait pas, pour deux raisons. Un tour qui tombe — échéance,
+    interruption, incident — emporterait ce qui attend dans son entrée, sans
+    trace. Et un message déjà parti ne se reprend plus, alors qu'on veut
+    pouvoir l'annuler tant qu'il n'a pas quitté la file.
+
+    Différer l'écriture règle un troisième problème, sans qu'on l'ait cherché :
+    seul le fil du tour écrit dans l'entrée du CLI. Deux fils qui y écriraient
+    ensemble pourraient couper une ligne JSON en deux, et il n'existe aucun
+    verrou pour l'empêcher.
+    """
+
+    def __init__(self) -> None:
+        self._verrou = threading.Lock()
+        self._files: dict[str, list[dict[str, str]]] = {}
+
+    def deposer(self, session_id: str, texte: str) -> str:
+        message = {
+            "id": uuid.uuid4().hex[:12],
+            "texte": texte,
+            "depose_le": datetime.now(timezone.utc).isoformat(),
+        }
+        with self._verrou:
+            self._files.setdefault(session_id, []).append(message)
+        return message["id"]
+
+    def retirer(self, session_id: str) -> dict[str, str] | None:
+        """Le prochain message à écrire, s'il y en a un."""
+        with self._verrou:
+            file = self._files.get(session_id) or []
+            if not file:
+                self._files.pop(session_id, None)
+                return None
+            return file.pop(0)
+
+    def en_attente(self, session_id: str) -> list[dict[str, str]]:
+        with self._verrou:
+            return list(self._files.get(session_id) or [])
+
+    def annuler(self, session_id: str, message_id: str) -> bool:
+        with self._verrou:
+            file = self._files.get(session_id) or []
+            for i, m in enumerate(file):
+                if m["id"] == message_id:
+                    file.pop(i)
+                    return True
+        return False
+
+    def vider(self, session_id: str) -> int:
+        """Le tour s'arrête pour de bon : ce qui attendait n'a plus de porteur."""
+        with self._verrou:
+            return len(self._files.pop(session_id, []) or [])
+
+
 class Harness(ABC):
     # Les questions qu'un tour attend. Déclaré sur le contrat parce que
     # les routes s'y adressent sans savoir lequel des deux harnais tourne.
     decisions: RegistreDesDecisions
+    # Les messages écrits pendant qu'un tour travaille, en attente de leur départ.
+    messages: FileDesMessages
 
     @abstractmethod
     def run_turn(
@@ -121,6 +184,7 @@ class FakeHarness(Harness):
         self.decisions = RegistreDesDecisions(
             decisions_dir or Path(tempfile.gettempdir()) / "atelier-decisions-fictives"
         )
+        self.messages = FileDesMessages()
 
     def run_turn(
         self,
@@ -304,6 +368,7 @@ class ClaudeHarness(Harness):
         # c'est lui qui les pose et se bloque dessus ; la route HTTP y dépose
         # la réponse depuis un autre fil.
         self.decisions = RegistreDesDecisions(settings.decisions_dir)
+        self.messages = FileDesMessages()
 
     def _env(self, agent_name: str = "") -> dict[str, str]:
         env = os.environ.copy()
@@ -364,6 +429,30 @@ class ClaudeHarness(Harness):
     # couperait la connexion, et l'écran n'apprendrait la réponse qu'au
     # rechargement.
     BATTEMENT_ATTENTE = 20.0
+
+    @staticmethod
+    def _ecrire_message(proc: subprocess.Popen[Any], texte: str) -> bool:
+        """Dépose un message utilisateur sur l'entrée du CLI."""
+        if proc.poll() is not None or proc.stdin is None or proc.stdin.closed:
+            return False
+        try:
+            proc.stdin.write(
+                json.dumps(
+                    {
+                        "type": "user",
+                        "message": {
+                            "role": "user",
+                            "content": [{"type": "text", "text": texte}],
+                        },
+                    },
+                    ensure_ascii=False,
+                )
+                + chr(10)
+            )
+            proc.stdin.flush()
+            return True
+        except (OSError, ValueError):
+            return False
 
     @staticmethod
     def _fermer_entree(proc: subprocess.Popen[Any]) -> None:
@@ -616,22 +705,9 @@ class ClaudeHarness(Harness):
         )
         self._procs[session_id] = proc
         # L'entrée reste ouverte après l'envoi : c'est par elle que remontent
-        # les réponses aux demandes d'autorisation.
-        if proc.stdin is not None:
-            proc.stdin.write(
-                json.dumps(
-                    {
-                        "type": "user",
-                        "message": {
-                            "role": "user",
-                            "content": [{"type": "text", "text": message}],
-                        },
-                    },
-                    ensure_ascii=False,
-                )
-                + chr(10)
-            )
-            proc.stdin.flush()
+        # les réponses aux demandes d'autorisation, et que partent les messages
+        # écrits pendant que le tour travaille.
+        self._ecrire_message(proc, message)
 
         events: list[AtelierEvent] = []
 
@@ -691,13 +767,38 @@ class ClaudeHarness(Harness):
                             tf.write(line)
                             tf.flush()
                         if '"type":"result"' in line:
-                            # Le tour est fini : plus aucune question ne
-                            # viendra. Tant que son entrée reste ouverte, le
-                            # CLI attend d'autres messages au lieu de sortir —
-                            # et le tour ne s'achevait qu'à l'échéance murale,
-                            # dix minutes plus tard, marqué `timeout`. La
-                            # fermer est le signal de fin.
-                            self._fermer_entree(proc)
+                            # Un message a fini. S'il en attend un autre, on
+                            # l'écrit dans le même tour : le CLI le traitera à
+                            # la suite, sans nouveau processus ni `--resume`.
+                            # Sinon on ferme l'entrée — tant qu'elle reste
+                            # ouverte le CLI attend d'autres messages au lieu
+                            # de sortir, et le tour ne s'achevait qu'à
+                            # l'échéance murale, marqué `timeout`.
+                            suivant = self.messages.retirer(session_id)
+                            if suivant is None:
+                                self._fermer_entree(proc)
+                            elif self._ecrire_message(proc, suivant["texte"]):
+                                tf.write(
+                                    enregistrement_utilisateur(
+                                        suivant["texte"],
+                                        cli_id,
+                                        datetime.now(timezone.utc).isoformat(),
+                                    )
+                                )
+                                tf.flush()
+                                # L'échéance repart : ce message n'a pas à
+                                # payer le temps qu'a pris le précédent.
+                                deadline = time.monotonic() + timeout_s
+                                emettre(
+                                    AtelierEvent(
+                                        kind="systeme",
+                                        session_id=session_id,
+                                        cause="message_suivant",
+                                        text=suivant["texte"],
+                                    )
+                                )
+                            else:
+                                self._fermer_entree(proc)
                         for ev in parse_stream_json_line(session_id, line):
                             emettre(ev)
                             if ev.kind == "texte" and ev.text and ev.raw_type not in (
@@ -731,9 +832,11 @@ class ClaudeHarness(Harness):
                 except subprocess.TimeoutExpired:
                     proc.kill()
             self._procs.pop(session_id, None)
-            # Le tour s'arrête : plus personne n'attend ses questions. Les
-            # laisser affichées ferait croire qu'on peut encore y répondre.
+            # Le tour s'arrête : plus personne n'attend ses questions, ni ne
+            # portera les messages restés en file. Les laisser ferait croire
+            # qu'ils partiront.
             self.decisions.abandonner(session_id)
+            self.messages.vider(session_id)
             try:
                 sync_claude_home(self.settings)
             except OSError:
