@@ -30,7 +30,12 @@ export function closeModal(state) {
     // modales suivantes, avec son libellé juste et un curseur d'attente
     // trompeur. Un enregistrement réussi bloquait donc tous les suivants,
     // jusqu'au rechargement de la page.
+    //
+    // La marque d'envoi se retire ici aussi : elle n'était ôtée qu'en cas
+    // d'erreur, si bien qu'après un succès le bouton gardait son curseur
+    // d'attente — le même mensonge, par une autre porte.
     submit.disabled = false;
+    submit.classList.remove("modal-submit-envoi");
   }
   const lead = $("modal-lead");
   if (lead) {
