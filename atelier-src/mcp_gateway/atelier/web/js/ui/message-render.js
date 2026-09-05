@@ -331,7 +331,7 @@ function carteDeQuestion(block) {
  * mieux. Le libellé dit exactement ce qu'on accorde — accorder plus large que
  * ce qu'on croit est la seule vraie faute possible ici.
  */
-function ceQueToujoursAccorde(d) {
+export function ceQueToujoursAccorde(d) {
   for (const s of d.suggestions || []) {
     if (s.type !== "addRules") continue;
     for (const r of s.rules || []) {
@@ -513,7 +513,7 @@ function carteDeDecision(block) {
  * qui, en changeant, doit le faire redessiner — un statut, une sortie qui
  * s'allonge, un texte qui grossit.
  */
-function empreinteDuBloc(b) {
+export function empreinteDuBloc(b) {
   if (b.type === "tool") {
     return [
       "tool", b.id || "", b.name || "", b.status || "",
@@ -544,17 +544,26 @@ function empreinteDuBloc(b) {
  * proportionnel à ce qui change, non à ce qui est affiché.
  */
 export function synchroniserBlocs(conteneur, blocks) {
+  // Une empreinte peut désigner plusieurs nœuds : deux paragraphes au texte
+  // identique, deux outils de même statut et de même sortie. N'en garder qu'un
+  // par empreinte faisait reconstruire tous les suivants à chaque rafraîchis-
+  // sement, sans qu'aucun d'eux n'ait changé — la réutilisation s'arrêtait au
+  // premier. On les file donc dans l'ordre, et l'on sert le plus ancien.
   const anciens = new Map();
   for (const n of conteneur.children) {
     const emp = n.dataset?.bloc;
-    if (emp && !anciens.has(emp)) anciens.set(emp, n);
+    if (!emp) continue;
+    const file = anciens.get(emp);
+    if (file) file.push(n);
+    else anciens.set(emp, [n]);
   }
   const voulus = [];
   for (const block of blocks) {
     const emp = empreinteDuBloc(block);
-    const garde = anciens.get(emp);
+    const file = anciens.get(emp);
+    const garde = file && file.length ? file.shift() : null;
     if (garde) {
-      anciens.delete(emp);
+      if (!file.length) anciens.delete(emp);
       voulus.push(garde);
       continue;
     }
@@ -572,8 +581,14 @@ export function appendMessageBody(parent, m) {
   // Appelable deux fois sur le même nœud sans le doubler : chaque partie a
   // son conteneur, qu'on retrouve et qu'on met à jour. C'est ce qui permet
   // de rafraîchir un message sans le reconstruire.
+  const rangeeExistante = parent.querySelector(":scope > .msg-attachments");
+  if (!m.attachments?.length && rangeeExistante) {
+    // Le corps et le texte de repli disparaissent quand ils n'ont plus lieu
+    // d'être ; cette rangée restait, vide. L'asymétrie n'avait pas de raison.
+    rangeeExistante.remove();
+  }
   if (m.attachments?.length) {
-    let row = parent.querySelector(":scope > .msg-attachments");
+    let row = rangeeExistante;
     if (!row) {
       row = document.createElement("div");
       row.className = "msg-attachments";

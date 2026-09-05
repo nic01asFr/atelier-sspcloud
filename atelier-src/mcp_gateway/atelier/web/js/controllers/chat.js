@@ -26,7 +26,7 @@ function findStreamTool(stream, toolId) {
 }
 
 /** Le dernier bloc du fil, s'il est bien du type voulu — pour y coller la suite. */
-function blocCourant(stream, type) {
+export function blocCourant(stream, type) {
   const dernier = stream.blocs[stream.blocs.length - 1];
   return dernier && dernier.type === type ? dernier : null;
 }
@@ -40,7 +40,7 @@ function blocCourant(stream, type) {
  * raisonnement n'apparaissait jamais en direct, et ne se lisait qu'après
  * rechargement, relu du transcript.
  */
-function fusionnerReflexion(buf, chunk, rawType) {
+export function fusionnerReflexion(buf, chunk, rawType) {
   if (!chunk) return buf || "";
   if (!buf) return chunk;
   if (chunk === buf) return buf;
@@ -50,7 +50,7 @@ function fusionnerReflexion(buf, chunk, rawType) {
 }
 
 /** Ce que l'agent a dit, tous segments confondus — pour la copie et le repli. */
-function texteAssemble(stream) {
+export function texteAssemble(stream) {
   return stream.blocs
     .filter((b) => b.type === "text")
     .map((b) => b.text)
@@ -72,7 +72,7 @@ function texteAssemble(stream) {
  * et `stream.decisions` n'en sont que des index — ils pointent sur les mêmes
  * objets, si bien qu'une mise à jour se voit des deux côtés.
  */
-function buildStreamBlocks(stream) {
+export function buildStreamBlocks(stream) {
   const outilsAQuestion = new Set(
     (stream.decisions || [])
       .filter((d) => d.demande?.genre === "question")

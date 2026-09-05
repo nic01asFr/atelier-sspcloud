@@ -111,8 +111,11 @@ export function openModal(
   if (submit) {
     submit.textContent = submitLabel || "Confirmer";
     // Ceinture et bretelles : une modale qui s'ouvre a toujours son bouton
-    // vivant, quel que soit l'état laissé par la précédente.
+    // vivant, quel que soit l'état laissé par la précédente — et sans la
+    // marque d'envoi, qui pourrait avoir survécu à une fermeture par un autre
+    // chemin qu'un envoi réussi.
     submit.disabled = false;
+    submit.classList.remove("modal-submit-envoi");
   }
 
   const container = $("modal-fields");
