@@ -3484,3 +3484,42 @@ button:disabled {
   border-left-color: var(--accent-dim);
   opacity: 0.75;
 }
+
+/* --- La largeur, sur grand écran -----------------------------------------
+   Un message plafonnait à 720 px quelle que soit la fenêtre. C'est la bonne
+   mesure pour de la prose — au-delà, l'œil se perd en revenant à la ligne —
+   mais pas pour du code : les sorties d'outils et les blocs défilaient
+   horizontalement pendant que la moitié droite de l'écran restait vide.
+
+   On sépare donc les deux. Le message de l'agent s'élargit ; ses paragraphes,
+   ses listes et ses titres gardent leur mesure de lecture. Le code, les
+   tableaux et les cartes prennent la place rendue. La bulle de l'utilisateur
+   ne bouge pas : elle ne contient que ce qu'il a écrit. */
+
+@media (min-width: 1240px) {
+  .msg.assistant {
+    max-width: min(1060px, 100%);
+  }
+
+  .msg.assistant .md-p,
+  .msg.assistant .md-list,
+  .msg.assistant .md-heading,
+  .msg.assistant .md-quote {
+    max-width: 72ch;
+  }
+}
+
+/* On ne devrait pas avoir à cliquer deux fois pour découvrir qu'on le peut. */
+.msg-question-indice {
+  margin: -0.25rem 0 0.45rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+}
+
+/* Une carte de décision est un dialogue, pas une bannière : maintenant que le
+   message de l'agent s'élargit pour son code, elle garderait la même largeur
+   et s'étirerait sur toute la ligne pour deux boutons. */
+.msg-decision {
+  max-width: 640px;
+}

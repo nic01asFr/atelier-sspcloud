@@ -244,6 +244,15 @@ function carteDeQuestion(block) {
     texte.textContent = q.question || q.header || "";
     bloc.appendChild(texte);
 
+    // Rien ne disait qu'on pouvait en cocher plusieurs : on ne l'apprenait
+    // qu'en cliquant deux fois, et par hasard.
+    if (q.multiSelect) {
+      const indice = document.createElement("p");
+      indice.className = "msg-question-indice";
+      indice.textContent = "Plusieurs réponses possibles";
+      bloc.appendChild(indice);
+    }
+
     const options = Array.isArray(q.options) ? q.options : [];
     const liste = document.createElement("div");
     liste.className = "msg-question-options";
