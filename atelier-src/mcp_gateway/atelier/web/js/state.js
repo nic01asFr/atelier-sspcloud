@@ -73,6 +73,10 @@ export function createState() {
     // pas encore parti. On le garde ici pour le montrer, et pour pouvoir le
     // retirer tant qu'il n'a pas quitté la file.
     enFile: [],
+    // Ce que la page Connecteurs est en train de faire. Ajouter un service
+    // suppose de le joindre et de lui demander ses outils : c'est long, et
+    // rien ne le disait — on ne savait pas s'il était analysé ou ignoré.
+    mcpTravail: "",
     mcpServers: {},
     mcpOverview: null,
     mcpProfiles: null,
@@ -324,6 +328,10 @@ export function setSessionMcp(state, data) {
 
 export function setMessages(state, messages) {
   state.messages = messages || [];
+}
+
+export function setMcpTravail(state, quoi) {
+  state.mcpTravail = quoi || "";
 }
 
 export function setEnFile(state, messages) {

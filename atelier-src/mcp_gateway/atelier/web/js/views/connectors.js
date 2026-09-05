@@ -469,7 +469,8 @@ function renderNew(state, actions) {
   valider.type = "button";
   valider.id = "btn-mcp-import";
   valider.className = "primary btn-sm";
-  valider.textContent = "Ajouter";
+  valider.textContent = state.mcpTravail ? "Analyse en cours…" : "Ajouter";
+  valider.disabled = !!state.mcpTravail;
   valider.addEventListener("click", () => actions.importMcp());
   acts.appendChild(annuler);
   acts.appendChild(valider);
@@ -788,6 +789,21 @@ export function createConnectorsView(ctx) {
   function renderPoolSummary() {
     const el = $("mcp-pool-summary");
     if (!el) return;
+    // Joindre un service et lui demander ses outils prend du temps. Sans le
+    // dire, on ne savait pas s'il était analysé ou simplement ignoré : on
+    // l'annonce ici, où la zone est déjà lue à voix haute.
+    const relance = $("btn-mcp-reprobe");
+    const ajouter = $("btn-mcp-import");
+    if (relance) relance.disabled = !!state.mcpTravail;
+    if (ajouter) ajouter.disabled = !!state.mcpTravail;
+    if (state.mcpTravail) {
+      el.innerHTML = "";
+      const p = document.createElement("p");
+      p.className = "mcp-pool-travail";
+      p.textContent = state.mcpTravail;
+      el.appendChild(p);
+      return;
+    }
     const ov = state.mcpOverview;
     if (!ov?.pool_summary) {
       el.textContent = "";

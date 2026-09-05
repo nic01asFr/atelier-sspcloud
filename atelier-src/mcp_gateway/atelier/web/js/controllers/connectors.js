@@ -433,11 +433,26 @@ export function createConnectorActions(ctx) {
       return;
     }
     try {
-      await api.importMcpServers(state.token, block);
+      // Enregistrer ne suffit pas : tant qu'on ne l'a pas joint, on ignore ce
+      // qu'il apporte et s'il répond. On enchaîne donc le sondage, et on dit
+      // où l'on en est — l'écran restait muet pendant tout ce temps.
+      S.setMcpTravail(state, "Enregistrement du service…");
       S.setError(state, "");
+      render();
+      await api.importMcpServers(state.token, block);
+      S.setMcpTravail(state, "Analyse : on demande ses outils…");
+      render();
+      try {
+        await api.reprobeMcpPool(state.token);
+      } catch {
+        // Un sondage qui échoue n'annule pas l'ajout : le service est
+        // enregistré, son état se lira dans la liste.
+      }
+      S.setMcpTravail(state, "");
       S.setConnectorPanel(state, "home");
       await refreshAll();
     } catch (err) {
+      S.setMcpTravail(state, "");
       if (err.status === 401) return logout("Clé invalide");
       S.setError(state, err.message || String(err));
       render();
@@ -446,9 +461,13 @@ export function createConnectorActions(ctx) {
 
   async function reprobePool() {
     try {
+      S.setMcpTravail(state, "Analyse des services…");
+      render();
       await api.reprobeMcpPool(state.token);
+      S.setMcpTravail(state, "");
       await refreshAll();
     } catch (err) {
+      S.setMcpTravail(state, "");
       if (err.status === 401) return logout("Clé invalide");
       S.setError(state, err.message || String(err));
       render();

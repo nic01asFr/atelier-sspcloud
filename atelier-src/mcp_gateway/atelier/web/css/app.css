@@ -3599,3 +3599,15 @@ select option {
   color: var(--accent);
   font-style: italic;
 }
+
+/* Ce que la page Connecteurs est en train de faire. Joindre un service et lui
+   demander ses outils prend quelques secondes : sans un mot, on ne savait pas
+   s'il était analysé ou ignoré. */
+.mcp-pool-travail {
+  margin: 0;
+  padding: 0.4rem 0.55rem;
+  border-left: 2px solid var(--accent);
+  background: rgba(196, 165, 116, 0.08);
+  color: var(--text);
+  font-size: 0.78rem;
+}
