@@ -101,6 +101,48 @@ class CreateProjectBody(BaseModel):
     title: str | None = None
 
 
+class DiffusionDesTours:
+    """Rediffuse les événements d'un tour à qui regarde, sans le déclencher.
+
+    Le flux d'un tour était attaché à la requête qui l'avait lancé : son
+    adresse porte le message, elle démarre le tour et en reçoit les
+    événements dans une file qui n'appartient qu'à elle. Un second onglet
+    ouvert sur la même conversation n'avait donc rien à écouter, et une
+    conversation reprise dans VS Code ne se voyait pas du tout.
+
+    Ici, chaque événement part aussi vers les abonnés. Une file pleine est
+    abandonnée plutôt que de retenir le tour : un spectateur lent ne doit pas
+    ralentir le travail.
+    """
+
+    def __init__(self) -> None:
+        self._verrou = threading.Lock()
+        self._abonnes: dict[str, list[queue.Queue]] = {}
+
+    def souscrire(self, session_id: str) -> queue.Queue:
+        file: queue.Queue = queue.Queue(maxsize=2000)
+        with self._verrou:
+            self._abonnes.setdefault(session_id, []).append(file)
+        return file
+
+    def resilier(self, session_id: str, file: queue.Queue) -> None:
+        with self._verrou:
+            restants = self._abonnes.get(session_id) or []
+            if file in restants:
+                restants.remove(file)
+            if not restants:
+                self._abonnes.pop(session_id, None)
+
+    def publier(self, session_id: str, ev: Any) -> None:
+        with self._verrou:
+            files = list(self._abonnes.get(session_id) or [])
+        for file in files:
+            try:
+                file.put_nowait(ev)
+            except queue.Full:
+                pass
+
+
 class DecisionBody(BaseModel):
     """La réponse à une question posée par un tour.
 
@@ -353,6 +395,7 @@ def build_app(
     store = SessionStore(settings, harness)
     projects = ProjectStore(settings)
     auth = OwnerAuth(settings)
+    diffusion = DiffusionDesTours()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -982,6 +1025,39 @@ def build_app(
             raise HTTPException(404, "attachment not found")
         return {"deleted": attachment_id}
 
+    @router.get("/sessions/{session_id}/live")
+    def suivre_en_direct(
+        session_id: str,
+        request: Request,
+        authorization: str | None = Header(default=None),
+    ) -> StreamingResponse:
+        """Regarde un tour sans le déclencher.
+
+        L'autre adresse porte le message : s'y brancher pour observer
+        relancerait le tour. Celle-ci ne fait qu'écouter — un second onglet,
+        une conversation reprise ailleurs, un écran resté ouvert.
+        """
+        bearer = (authorization or "").removeprefix("Bearer ").strip() or None
+        if not auth.check_navigation(bearer, request.cookies.get(COOKIE_NAME)):
+            raise HTTPException(401, "owner key required")
+        if not store.get(session_id):
+            raise HTTPException(404, "session not found")
+
+        def gen():
+            file = diffusion.souscrire(session_id)
+            try:
+                while True:
+                    try:
+                        ev = file.get(timeout=15)
+                    except queue.Empty:
+                        yield ": battement" + chr(10) + chr(10)
+                        continue
+                    yield ev.as_sse()
+            finally:
+                diffusion.resilier(session_id, file)
+
+        return StreamingResponse(gen(), media_type="text/event-stream")
+
     @router.get("/sessions/{session_id}/events")
     def stream_events(
         session_id: str,
@@ -1034,11 +1110,15 @@ def build_app(
 
             def travail() -> None:
                 try:
+                    def relayer(ev: AtelierEvent) -> None:
+                        file.put(ev)
+                        diffusion.publier(session_id, ev)
+
                     store.send(
                         session_id,
                         message,
                         attachment_ids=attachment_ids,
-                        on_event=file.put,
+                        on_event=relayer,
                         # Ce tour remonte par le flux : une question posée en
                         # chemin s'affichera, donc elle peut attendre.
                         peut_attendre=True,

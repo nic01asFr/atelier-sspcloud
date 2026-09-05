@@ -381,3 +381,20 @@ def test_supprimer_une_conversation_efface_jusqu_aux_questions_relachees(
 
     atelier.delete(f"/v1/sessions/{sid}", headers=entete)
     assert not any(d.request_id == "q1" for d in registre.orphelines())
+
+
+def test_on_peut_regarder_un_tour_sans_le_declencher(atelier: TestClient) -> None:
+    """Deux écrans sur la même conversation doivent voir la même chose.
+
+    Le flux d'un tour est attaché à l'adresse qui le lance — elle porte le
+    message. S'y brancher pour observer relancerait le tour ; il fallait donc
+    une porte qui ne fasse qu'écouter.
+    """
+    entete = {"Authorization": f"Bearer {_cle(atelier)}"}
+    sid = atelier.post(
+        "/v1/sessions", headers=entete, json={"slug": "essai", "title": "Regard"}
+    ).json()["session_id"]
+
+    # La porte existe et se garde comme le reste.
+    assert atelier.get(f"/v1/sessions/{sid}/live").status_code == 401
+    assert atelier.get("/v1/sessions/inconnue/live", headers=entete).status_code == 404

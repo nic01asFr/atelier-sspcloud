@@ -148,6 +148,175 @@ function pushStreamToUi(state, stream) {
 }
 
 /**
+ * Applique un événement du tour à l'écran.
+ *
+ * Sorti de la fermeture d'envoi pour servir deux fois : à celui qui a
+ * lancé le tour, et à celui qui le regarde depuis un autre onglet. Les
+ * deux reçoivent les mêmes événements et doivent en tirer le même fil.
+ */
+function appliquerEvenement(ctx, stream, ev) {
+  const { state, render, views } = ctx;
+    if (ev.kind === "texte" && ev.text) {
+      const reflexion = api.isThinkingRawType(ev.raw_type);
+      stream.phase = reflexion ? "reflexion" : "reponse";
+      // Le texte complet arrive une seconde fois à la fin du tour. Il
+      // servait à repartir de zéro sur un tampon unique ; avec des
+      // segments il écraserait le dernier et doublerait les précédents.
+      // On ne le prend donc que si rien n'est venu en direct.
+      const dejaDit = stream.blocs.some(
+        (b) => b.type === "text" && b.text.trim()
+      );
+      if (ev.raw_type === "result_text" && dejaDit) return;
+      const type = reflexion ? "thinking" : "text";
+      let cible = blocCourant(stream, type);
+      if (!cible) {
+        cible = { type, text: "" };
+        stream.blocs.push(cible);
+      }
+      cible.text = reflexion
+        ? fusionnerReflexion(cible.text, ev.text, ev.raw_type)
+        : api.mergeAssistantText(cible.text, ev.text, ev.raw_type || "");
+      pushStreamToUi(state, stream);
+      views.codeChat.renderThread();
+    } else if (ev.kind === "outil_debut") {
+      stream.phase = "outil";
+      const toolId = ev.tool_id || ev.cause || "";
+      if (ev.raw_type === "input_json_delta") {
+        const tool = findStreamTool(stream, toolId);
+        if (tool) {
+          tool.inputPartial = (tool.inputPartial || "") + (ev.text || "");
+          try {
+            tool.input = JSON.parse(tool.inputPartial);
+          } catch {
+            /* partial */
+          }
+        }
+      } else {
+        let input = ev.text ? tryParseJson(ev.text) : undefined;
+        const existing = stream.tools.find((t) => t.id === toolId);
+        if (existing) {
+          existing.name = ev.tool || existing.name;
+          if (input && typeof input === "object") existing.input = input;
+          if (!existing.status) existing.status = "running";
+        } else {
+          const bloc = {
+            type: "tool",
+            id: toolId,
+            name: ev.tool || "?",
+            input,
+            output: "",
+            status: "running",
+            inputPartial: "",
+          };
+          stream.tools.push(bloc);
+          stream.blocs.push(bloc);
+        }
+      }
+      pushStreamToUi(state, stream);
+      views.codeChat.renderThread();
+    } else if (ev.kind === "outil_fin") {
+      if (ev.raw_type === "tool_result" || ev.text) {
+        const toolId = ev.tool_id || ev.tool || ev.cause || "";
+        const tool = findStreamTool(stream, toolId);
+        if (tool) {
+          if (ev.text) tool.output = ev.text;
+          if (
+            ev.raw_type === "permission_denials" ||
+            /permission|haven't granted|refusé|refuse/i.test(ev.text || "")
+          ) {
+            tool.status = "denied";
+          } else {
+            tool.status = "done";
+          }
+        }
+        pushStreamToUi(state, stream);
+        views.codeChat.renderThread();
+      }
+    } else if (ev.kind === "permission_demandee" && ev.text) {
+      const denials = tryParseJson(ev.text);
+      if (Array.isArray(denials)) {
+        for (const d of denials) {
+          if (!d || typeof d !== "object") continue;
+          const toolId = d.tool_use_id || "";
+          // Une question voyage dans le message d'un refus, et le CLI la
+          // compte donc parmi ses refus. L'afficher ainsi contredirait la
+          // carte juste en dessous, qui dit « Répondu ».
+          const etaitUneQuestion = (stream.decisions || []).some(
+            (q) => q.demande?.genre === "question" && q.demande?.tool_use_id === toolId
+          );
+          const existing = stream.tools.find((t) => t.id === toolId);
+          if (existing) {
+            existing.status = etaitUneQuestion ? "done" : "denied";
+            if (d.tool_name) existing.name = d.tool_name;
+            if (d.tool_input) existing.input = d.tool_input;
+          } else {
+            const bloc = {
+              type: "tool",
+              id: toolId,
+              name: d.tool_name || "?",
+              input: d.tool_input,
+              output: "",
+              status: "denied",
+              inputPartial: "",
+            };
+            stream.tools.push(bloc);
+            stream.blocs.push(bloc);
+          }
+        }
+        pushStreamToUi(state, stream);
+        views.codeChat.renderThread();
+      }
+    } else if (ev.kind === "decision_attendue" && ev.text) {
+      // Le tour est suspendu : il attend qu'on réponde, aussi longtemps
+      // qu'il le faudra. On montre la question là où l'œil est déjà.
+      const demande = tryParseJson(ev.text);
+      if (demande && typeof demande === "object") {
+        const bloc = { type: "decision", demande, etat: "en_attente" };
+        stream.decisions.push(bloc);
+        stream.blocs.push(bloc);
+        stream.phase = "decision";
+        pushStreamToUi(state, stream);
+        views.codeChat.renderThread();
+      }
+    } else if (ev.kind === "decision_rendue") {
+      const posee = stream.decisions.find(
+        (d) => d.demande?.request_id === ev.tool_id
+      );
+      if (posee) {
+        // « relachee » n'est pas un refus : le tour a rendu sa mémoire
+        // faute de réponse, mais la question reste posée et répondable.
+        // L'afficher comme refusée mentirait sur ce qui s'est passé.
+        // Une question n'est ni accordée ni refusée : elle est
+        // répondue. Le libellé du refus n'est qu'un véhicule, et
+        // l'afficher comme tel mentirait sur ce qui s'est passé.
+        const question = posee.demande?.genre === "question";
+        posee.etat = question
+          ? // Une question relâchée n'a pas été répondue : le tour est
+            // reparti sans cet avis, et rien ne la rattrapera.
+            ev.cause === "relachee"
+            ? "orpheline"
+            : "repondu"
+          : ev.cause === "allow" || ev.cause?.startsWith("regle:")
+            ? "allow"
+            : ev.cause === "relachee"
+              ? "orpheline"
+              : "deny";
+        if (question && ev.text) posee.resume = ev.text;
+        stream.phase = "reponse";
+        pushStreamToUi(state, stream);
+        views.codeChat.renderThread();
+      }
+    } else if (ev.kind === "erreur") {
+      S.appendMessage(state, {
+        role: "error",
+        text: ev.cause || "erreur",
+      });
+      S.setError(state, ev.cause || "erreur");
+      render();
+    }
+}
+
+/**
  * @param {object} ctx
  */
 export function createChatController(ctx) {
@@ -239,166 +408,8 @@ export function createChatController(ctx) {
     try {
       await api.streamEvents(state.sessionId, text, {
         attachmentIds,
-        onEvent: (ev) => {
-          if (ev.kind === "texte" && ev.text) {
-            const reflexion = api.isThinkingRawType(ev.raw_type);
-            stream.phase = reflexion ? "reflexion" : "reponse";
-            // Le texte complet arrive une seconde fois à la fin du tour. Il
-            // servait à repartir de zéro sur un tampon unique ; avec des
-            // segments il écraserait le dernier et doublerait les précédents.
-            // On ne le prend donc que si rien n'est venu en direct.
-            const dejaDit = stream.blocs.some(
-              (b) => b.type === "text" && b.text.trim()
-            );
-            if (ev.raw_type === "result_text" && dejaDit) return;
-            const type = reflexion ? "thinking" : "text";
-            let cible = blocCourant(stream, type);
-            if (!cible) {
-              cible = { type, text: "" };
-              stream.blocs.push(cible);
-            }
-            cible.text = reflexion
-              ? fusionnerReflexion(cible.text, ev.text, ev.raw_type)
-              : api.mergeAssistantText(cible.text, ev.text, ev.raw_type || "");
-            pushStreamToUi(state, stream);
-            views.codeChat.renderThread();
-          } else if (ev.kind === "outil_debut") {
-            stream.phase = "outil";
-            const toolId = ev.tool_id || ev.cause || "";
-            if (ev.raw_type === "input_json_delta") {
-              const tool = findStreamTool(stream, toolId);
-              if (tool) {
-                tool.inputPartial = (tool.inputPartial || "") + (ev.text || "");
-                try {
-                  tool.input = JSON.parse(tool.inputPartial);
-                } catch {
-                  /* partial */
-                }
-              }
-            } else {
-              let input = ev.text ? tryParseJson(ev.text) : undefined;
-              const existing = stream.tools.find((t) => t.id === toolId);
-              if (existing) {
-                existing.name = ev.tool || existing.name;
-                if (input && typeof input === "object") existing.input = input;
-                if (!existing.status) existing.status = "running";
-              } else {
-                const bloc = {
-                  type: "tool",
-                  id: toolId,
-                  name: ev.tool || "?",
-                  input,
-                  output: "",
-                  status: "running",
-                  inputPartial: "",
-                };
-                stream.tools.push(bloc);
-                stream.blocs.push(bloc);
-              }
-            }
-            pushStreamToUi(state, stream);
-            views.codeChat.renderThread();
-          } else if (ev.kind === "outil_fin") {
-            if (ev.raw_type === "tool_result" || ev.text) {
-              const toolId = ev.tool_id || ev.tool || ev.cause || "";
-              const tool = findStreamTool(stream, toolId);
-              if (tool) {
-                if (ev.text) tool.output = ev.text;
-                if (
-                  ev.raw_type === "permission_denials" ||
-                  /permission|haven't granted|refusé|refuse/i.test(ev.text || "")
-                ) {
-                  tool.status = "denied";
-                } else {
-                  tool.status = "done";
-                }
-              }
-              pushStreamToUi(state, stream);
-              views.codeChat.renderThread();
-            }
-          } else if (ev.kind === "permission_demandee" && ev.text) {
-            const denials = tryParseJson(ev.text);
-            if (Array.isArray(denials)) {
-              for (const d of denials) {
-                if (!d || typeof d !== "object") continue;
-                const toolId = d.tool_use_id || "";
-                // Une question voyage dans le message d'un refus, et le CLI la
-                // compte donc parmi ses refus. L'afficher ainsi contredirait la
-                // carte juste en dessous, qui dit « Répondu ».
-                const etaitUneQuestion = (stream.decisions || []).some(
-                  (q) => q.demande?.genre === "question" && q.demande?.tool_use_id === toolId
-                );
-                const existing = stream.tools.find((t) => t.id === toolId);
-                if (existing) {
-                  existing.status = etaitUneQuestion ? "done" : "denied";
-                  if (d.tool_name) existing.name = d.tool_name;
-                  if (d.tool_input) existing.input = d.tool_input;
-                } else {
-                  const bloc = {
-                    type: "tool",
-                    id: toolId,
-                    name: d.tool_name || "?",
-                    input: d.tool_input,
-                    output: "",
-                    status: "denied",
-                    inputPartial: "",
-                  };
-                  stream.tools.push(bloc);
-                  stream.blocs.push(bloc);
-                }
-              }
-              pushStreamToUi(state, stream);
-              views.codeChat.renderThread();
-            }
-          } else if (ev.kind === "decision_attendue" && ev.text) {
-            // Le tour est suspendu : il attend qu'on réponde, aussi longtemps
-            // qu'il le faudra. On montre la question là où l'œil est déjà.
-            const demande = tryParseJson(ev.text);
-            if (demande && typeof demande === "object") {
-              const bloc = { type: "decision", demande, etat: "en_attente" };
-              stream.decisions.push(bloc);
-              stream.blocs.push(bloc);
-              stream.phase = "decision";
-              pushStreamToUi(state, stream);
-              views.codeChat.renderThread();
-            }
-          } else if (ev.kind === "decision_rendue") {
-            const posee = stream.decisions.find(
-              (d) => d.demande?.request_id === ev.tool_id
-            );
-            if (posee) {
-              // « relachee » n'est pas un refus : le tour a rendu sa mémoire
-              // faute de réponse, mais la question reste posée et répondable.
-              // L'afficher comme refusée mentirait sur ce qui s'est passé.
-              // Une question n'est ni accordée ni refusée : elle est
-              // répondue. Le libellé du refus n'est qu'un véhicule, et
-              // l'afficher comme tel mentirait sur ce qui s'est passé.
-              const question = posee.demande?.genre === "question";
-              posee.etat = question
-                ? // Une question relâchée n'a pas été répondue : le tour est
-                  // reparti sans cet avis, et rien ne la rattrapera.
-                  ev.cause === "relachee"
-                  ? "orpheline"
-                  : "repondu"
-                : ev.cause === "allow" || ev.cause?.startsWith("regle:")
-                  ? "allow"
-                  : ev.cause === "relachee"
-                    ? "orpheline"
-                    : "deny";
-              if (question && ev.text) posee.resume = ev.text;
-              stream.phase = "reponse";
-              pushStreamToUi(state, stream);
-              views.codeChat.renderThread();
-            }
-          } else if (ev.kind === "erreur") {
-            S.appendMessage(state, {
-              role: "error",
-              text: ev.cause || "erreur",
-            });
-            S.setError(state, ev.cause || "erreur");
-            render();
-          }
-        },
+        onEvent: (ev) =>
+          appliquerEvenement({ state, render, views }, stream, ev),
       });
       S.finalizeAssistant(state);
       if (!stream.blocs.length) {
@@ -424,5 +435,56 @@ export function createChatController(ctx) {
     }
   }
 
-  return { onSend };
+  // Ce qui écoute la conversation ouverte, quand quelqu'un d'autre la fait
+  // tourner. Un seul canal à la fois : on referme en changeant de fil.
+  let fermerLObservation = null;
+  let sessionObservee = null;
+
+  function cesserDObserver() {
+    if (fermerLObservation) fermerLObservation();
+    fermerLObservation = null;
+    sessionObservee = null;
+  }
+
+  /**
+   * Suit un tour lancé ailleurs — un autre onglet, VS Code, un agent.
+   *
+   * Le fil se remplissait uniquement chez celui qui avait envoyé le message,
+   * puisque le flux est attaché à cette requête. Ailleurs, l'écran restait
+   * muet jusqu'au rechargement.
+   */
+  function observer(sessionId) {
+    if (sessionObservee === sessionId) return;
+    cesserDObserver();
+    if (!sessionId) return;
+    sessionObservee = sessionId;
+
+    let flux = null;
+    fermerLObservation = api.suivreSession(sessionId, {
+      onEvent: (ev) => {
+        // On ne se mêle pas d'un tour qu'on a lancé soi-même : celui-là a
+        // déjà son flux, et deux écritures sur le même fil se marcheraient
+        // dessus.
+        if (state.busy || state.sessionId !== sessionId) return;
+        if (ev.kind === "heartbeat") return;
+        if (!flux) {
+          flux = { blocs: [], tools: [], decisions: [], phase: "attente" };
+          S.appendMessage(state, {
+            role: "assistant",
+            text: "",
+            blocks: [],
+            streaming: true,
+          });
+        }
+        appliquerEvenement({ state, render, views }, flux, ev);
+        if (ev.kind === "fin" || ev.kind === "erreur") {
+          flux = null;
+          S.finalizeAssistant(state);
+          refreshSessions(state).then(render);
+        }
+      },
+    });
+  }
+
+  return { onSend, observer, cesserDObserver };
 }

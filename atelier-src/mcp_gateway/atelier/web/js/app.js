@@ -29,7 +29,17 @@ function createApp() {
   const writeQuery = () => writeQueryState(state);
 
   const shell = createShellView(ctx);
-  const render = () => shell.renderApp();
+  // Le contrôleur de chat naît plus bas, mais le rendu doit pouvoir lui
+  // demander de suivre la conversation ouverte. On le laisse s'installer.
+  let chat = null;
+  const render = () => {
+    shell.renderApp();
+    // Une conversation qu'on regarde sans l'avoir lancée doit se remplir
+    // quand même : c'est ici qu'on branche l'écoute, à chaque rendu, puisque
+    // c'est le rendu qui suit le changement de fil. L'appel est sans effet
+    // si l'on écoute déjà le bon.
+    chat?.observer?.(state.view === "code" ? state.sessionId : null);
+  };
 
   let logout = (msg) => {
     S.setToken(state, "");
@@ -140,7 +150,7 @@ function createApp() {
   });
   logout = auth.logout;
 
-  const chat = createChatController({
+  chat = createChatController({
     state,
     render,
     views: ctx.views,

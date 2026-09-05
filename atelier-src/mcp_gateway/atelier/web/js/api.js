@@ -223,6 +223,45 @@ export async function deleteProject(token, slug) {
   return res.json();
 }
 
+/**
+ * Regarde un tour sans le déclencher.
+ *
+ * L'adresse de `streamEvents` porte le message : s'y brancher relancerait le
+ * tour. Celle-ci ne fait qu'écouter — un second onglet, un écran resté
+ * ouvert, une conversation reprise ailleurs.
+ *
+ * Rend une fonction qui referme le canal.
+ */
+export function suivreSession(sessionId, { onEvent } = {}) {
+  const es = new EventSource(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/live`
+  );
+  const handle = (kind, e) => {
+    let data = {};
+    try {
+      data = JSON.parse(e.data);
+    } catch {
+      data = { text: e.data };
+    }
+    onEvent?.({ kind: kind || data.kind || "systeme", ...data });
+  };
+  for (const kind of [
+    "texte",
+    "outil_debut",
+    "outil_fin",
+    "permission_demandee",
+    "decision_attendue",
+    "decision_rendue",
+    "fin",
+    "erreur",
+    "heartbeat",
+    "systeme",
+  ]) {
+    es.addEventListener(kind, (e) => handle(kind, e));
+  }
+  return () => es.close();
+}
+
 export function streamEvents(sessionId, message, { onEvent, attachmentIds = [] } = {}) {
   // Pas de clé dans l'adresse : le cookie de session part de lui-même en
   // même origine, et une URL se journalise partout où elle passe.
