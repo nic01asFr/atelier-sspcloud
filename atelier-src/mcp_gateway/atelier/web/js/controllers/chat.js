@@ -21,54 +21,98 @@ function findStreamTool(stream, toolId) {
   return stream.tools[stream.tools.length - 1];
 }
 
+/** Le dernier bloc du fil, s'il est bien du type voulu — pour y coller la suite. */
+function blocCourant(stream, type) {
+  const dernier = stream.blocs[stream.blocs.length - 1];
+  return dernier && dernier.type === type ? dernier : null;
+}
+
+/**
+ * Assemble les fragments de raisonnement.
+ *
+ * `mergeAssistantText` les refuse — c'est un garde-fou qui protège le texte
+ * de la réponse d'y voir tomber du raisonnement. Seulement l'appelant s'en
+ * servait aussi pour le tampon de réflexion, qui restait donc vide : le
+ * raisonnement n'apparaissait jamais en direct, et ne se lisait qu'après
+ * rechargement, relu du transcript.
+ */
+function fusionnerReflexion(buf, chunk, rawType) {
+  if (!chunk) return buf || "";
+  if (!buf) return chunk;
+  if (chunk === buf) return buf;
+  if (rawType === "thinking_delta") return buf.endsWith(chunk) ? buf : buf + chunk;
+  if (chunk.startsWith(buf)) return chunk;
+  return buf + chunk;
+}
+
+/** Ce que l'agent a dit, tous segments confondus — pour la copie et le repli. */
+function texteAssemble(stream) {
+  return stream.blocs
+    .filter((b) => b.type === "text")
+    .map((b) => b.text)
+    .join(String.fromCharCode(10, 10))
+    .trim();
+}
+
+/**
+ * Rend le tour dans son ordre, et non par catégories.
+ *
+ * Les blocs étaient assemblés par nature : tout le raisonnement, puis tous
+ * les outils, puis toutes les demandes, puis tout le texte. Or un tour ne se
+ * déroule pas ainsi — il dit, il agit, il redit. Les regrouper mettait les
+ * appels d'outils en haut et la parole en bas, si bien qu'on ne pouvait plus
+ * suivre : ce qui motivait un outil se lisait après lui, et une question
+ * d'autorisation se retrouvait loin du geste qui l'avait provoquée.
+ *
+ * On garde donc l'ordre d'arrivée. `stream.blocs` est le fil, `stream.tools`
+ * et `stream.decisions` n'en sont que des index — ils pointent sur les mêmes
+ * objets, si bien qu'une mise à jour se voit des deux côtés.
+ */
 function buildStreamBlocks(stream) {
-  const blocks = [];
-  if (stream.thinking.trim()) {
-    blocks.push({ type: "thinking", text: stream.thinking.trim() });
-  }
   const outilsAQuestion = new Set(
     (stream.decisions || [])
       .filter((d) => d.demande?.genre === "question")
       .map((d) => d.demande?.tool_use_id)
   );
-  for (const t of stream.tools) {
-    blocks.push({
-      type: "tool",
-      // La carte de question montre déjà les options et la réponse en clair ;
-      // répéter la charge brute et le résultat n'apprend rien et encombre.
-      masquerDetails: outilsAQuestion.has(t.id),
-      name: t.name,
-      id: t.id,
-      input: t.input,
-      output: t.output || "",
-      status: t.status || "done",
-    });
-  }
-  // La question vient après l'outil qu'elle concerne : c'est là qu'elle a du
-  // sens, et c'est là que l'œil la cherche.
-  for (const d of stream.decisions || []) {
-    // L'outil concerné est déjà rendu juste au-dessus, paramètres compris.
-    // Les répéter dans la carte alourdissait l'écran sans rien apprendre.
-    const dejaMontre = stream.tools.some(
-      (o) => o.id && o.id === d.demande?.tool_use_id
-    );
-    blocks.push({
-      type: "decision",
-      demande: d.demande,
-      etat: d.etat,
-      resume: d.resume,
-      argumentsAilleurs: dejaMontre,
-    });
-  }
-  if (stream.text.trim()) {
-    blocks.push({ type: "text", text: stream.text.trim() });
+  const blocks = [];
+  for (const b of stream.blocs) {
+    if (b.type === "thinking" || b.type === "text") {
+      if (b.text && b.text.trim()) blocks.push({ type: b.type, text: b.text.trim() });
+      continue;
+    }
+    if (b.type === "tool") {
+      blocks.push({
+        type: "tool",
+        // La carte de question montre déjà les options et la réponse en
+        // clair ; répéter la charge brute et le résultat n'apprend rien.
+        masquerDetails: outilsAQuestion.has(b.id),
+        name: b.name,
+        id: b.id,
+        input: b.input,
+        output: b.output || "",
+        status: b.status || "done",
+      });
+      continue;
+    }
+    if (b.type === "decision") {
+      blocks.push({
+        type: "decision",
+        demande: b.demande,
+        etat: b.etat,
+        resume: b.resume,
+        // L'outil concerné est rendu juste au-dessus, paramètres compris.
+        argumentsAilleurs: stream.tools.some(
+          (o) => o.id && o.id === b.demande?.tool_use_id
+        ),
+      });
+    }
   }
   return blocks;
 }
 
 function pushStreamToUi(state, stream) {
   S.updateLastAssistant(state, {
-    text: stream.text.trim(),
+    text: texteAssemble(stream),
     blocks: buildStreamBlocks(stream),
     phase: stream.phase,
   });
@@ -149,8 +193,10 @@ export function createChatController(ctx) {
     const attachmentIds = attachments.map((a) => a.id).filter(Boolean);
 
     const stream = {
-      thinking: "",
-      text: "",
+      // Le fil du tour, dans son ordre d'arrivée. `tools` et `decisions` n'en
+      // sont que des index : ils pointent sur les mêmes objets, si bien
+      // qu'une mise à jour se voit des deux côtés.
+      blocs: [],
       tools: [],
       decisions: [],
       // Le modèle met plusieurs secondes avant son premier mot — mesuré à
@@ -166,20 +212,25 @@ export function createChatController(ctx) {
         attachmentIds,
         onEvent: (ev) => {
           if (ev.kind === "texte" && ev.text) {
-            stream.phase = api.isThinkingRawType(ev.raw_type) ? "reflexion" : "reponse";
-            if (api.isThinkingRawType(ev.raw_type)) {
-              stream.thinking = api.mergeAssistantText(
-                stream.thinking,
-                ev.text,
-                ev.raw_type
-              );
-            } else {
-              stream.text = api.mergeAssistantText(
-                stream.text,
-                ev.text,
-                ev.raw_type || ""
-              );
+            const reflexion = api.isThinkingRawType(ev.raw_type);
+            stream.phase = reflexion ? "reflexion" : "reponse";
+            // Le texte complet arrive une seconde fois à la fin du tour. Il
+            // servait à repartir de zéro sur un tampon unique ; avec des
+            // segments il écraserait le dernier et doublerait les précédents.
+            // On ne le prend donc que si rien n'est venu en direct.
+            const dejaDit = stream.blocs.some(
+              (b) => b.type === "text" && b.text.trim()
+            );
+            if (ev.raw_type === "result_text" && dejaDit) return;
+            const type = reflexion ? "thinking" : "text";
+            let cible = blocCourant(stream, type);
+            if (!cible) {
+              cible = { type, text: "" };
+              stream.blocs.push(cible);
             }
+            cible.text = reflexion
+              ? fusionnerReflexion(cible.text, ev.text, ev.raw_type)
+              : api.mergeAssistantText(cible.text, ev.text, ev.raw_type || "");
             pushStreamToUi(state, stream);
             views.codeChat.renderThread();
           } else if (ev.kind === "outil_debut") {
@@ -203,14 +254,17 @@ export function createChatController(ctx) {
                 if (input && typeof input === "object") existing.input = input;
                 if (!existing.status) existing.status = "running";
               } else {
-                stream.tools.push({
+                const bloc = {
+                  type: "tool",
                   id: toolId,
                   name: ev.tool || "?",
                   input,
                   output: "",
                   status: "running",
                   inputPartial: "",
-                });
+                };
+                stream.tools.push(bloc);
+                stream.blocs.push(bloc);
               }
             }
             pushStreamToUi(state, stream);
@@ -251,14 +305,17 @@ export function createChatController(ctx) {
                   if (d.tool_name) existing.name = d.tool_name;
                   if (d.tool_input) existing.input = d.tool_input;
                 } else {
-                  stream.tools.push({
+                  const bloc = {
+                    type: "tool",
                     id: toolId,
                     name: d.tool_name || "?",
                     input: d.tool_input,
                     output: "",
                     status: "denied",
                     inputPartial: "",
-                  });
+                  };
+                  stream.tools.push(bloc);
+                  stream.blocs.push(bloc);
                 }
               }
               pushStreamToUi(state, stream);
@@ -269,7 +326,9 @@ export function createChatController(ctx) {
             // qu'il le faudra. On montre la question là où l'œil est déjà.
             const demande = tryParseJson(ev.text);
             if (demande && typeof demande === "object") {
-              stream.decisions.push({ demande, etat: "en_attente" });
+              const bloc = { type: "decision", demande, etat: "en_attente" };
+              stream.decisions.push(bloc);
+              stream.blocs.push(bloc);
               stream.phase = "decision";
               pushStreamToUi(state, stream);
               views.codeChat.renderThread();
@@ -313,7 +372,7 @@ export function createChatController(ctx) {
         },
       });
       S.finalizeAssistant(state);
-      if (!stream.text.trim() && !stream.tools.length && !stream.thinking.trim()) {
+      if (!stream.blocs.length) {
         const last = state.messages[state.messages.length - 1];
         if (last?.role === "assistant" && !last.text) {
           state.messages = state.messages.slice(0, -1);
