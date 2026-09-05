@@ -933,6 +933,61 @@ Trois règles tombent de là :
 Tout le reste est hérité du canal : le tour attend, la question survit au
 rechargement, elle se relâche au bout d'une heure sans se perdre.
 
+### Écrire pendant qu'il travaille
+
+Le composeur se désactive tant qu'un tour tourne. Claude Code, lui, met le
+message en file et le traite ensuite. Ce n'est pas seulement plus agréable :
+la conversation reste un fil, et l'on n'a pas à guetter la fin d'un tour pour
+placer une précision.
+
+Bonne nouvelle, mesurée : **il n'y a pas de file à construire**. Le CLI la
+tient déjà. Un second message écrit sur son entrée pendant qu'il travaille est
+gardé, puis traité — dans le même processus, la même session, sans `--resume` :
+
+    --> Explique en dix phrases ce qu'est un conteneur Linux…
+        (à la 3e seconde, avant tout résultat)
+    --> STOP. Réponds uniquement ANANAS.
+
+    TEXTE « Un conteneur Linux est une unité d'exécution… »   RESULT success
+    TEXTE « ANANAS »                                          RESULT success
+
+Le premier tour va au bout, le second suit. Il suffit donc d'écrire dans le
+tour en cours — l'entrée est ouverte depuis qu'on parle en flux.
+
+**Trois obstacles, dont deux de notre fait.**
+
+*L'entrée se referme trop tôt.* On la ferme à la réception du `result`, faute
+de quoi le CLI attend d'autres messages au lieu de sortir — c'est ce qui
+faisait expirer chaque tour. Mais c'est cette même entrée qu'il faut garder
+ouverte pour la file. La fermeture doit devenir conditionnelle : on ne referme
+que s'il ne reste rien en attente. Et la boucle de lecture doit accepter
+plusieurs `result`, un par message traité, au lieu d'y voir la fin.
+
+*Rien ne protège l'entrée.* Aujourd'hui un seul fil y écrit — celui du tour,
+pour le message initial et pour les réponses d'autorisation. Dès qu'une requête
+HTTP y écrira aussi, deux écritures pourront s'entrelacer et produire une ligne
+JSON coupée en deux. Il faut un verrou par processus, et il n'y en a aucun.
+
+*Un tour qui échoue emporterait la file.* Si le processus meurt — échéance,
+interruption, incident — ce qui attendait dedans disparaît sans trace. Les
+messages en attente doivent donc rester chez nous jusqu'à leur départ.
+
+**Écriture différée, et non immédiate.** C'est la conséquence du point
+précédent, et ça règle aussi l'annulation : tant que le message n'est pas
+parti, on peut le retirer de la file. L'écrire tout de suite dans l'entrée
+serait plus simple d'une ligne, mais on ne pourrait ni le reprendre ni le
+sauver d'un tour qui tombe.
+
+**Ce que l'écran devient.** Le composeur cesse d'être désactivé pendant un
+tour. Un message envoyé s'affiche dans le fil, marqué en attente, et part
+quand le tour s'achève. Le canal d'observation fait le reste : les autres
+écrans voient la file comme ils voient le tour.
+
+**Ce qui n'est pas tranché** : ce qu'il advient de la file quand le service
+redémarre — la perdre est honnête si on le dit, la garder demande de l'écrire
+sur le disque comme les décisions ; et si la route bloquante, celle des
+agents, doit y avoir droit ou continuer de refuser.
+
 ### L'ordre
 
 1. **Le mode et l'effort** — fait. *Plan* est disponible, et l'on a cessé de
