@@ -108,6 +108,10 @@ export class Noeud {
     this._classes = [];
     this._texte = null;
     this._html = null;
+    // Un navigateur garantit une chaîne vide sur un champ jamais saisi ; le
+    // code de l'Atelier appelle `champ.value.trim()` sans se garder. Laisser
+    // `undefined` obligeait les suites à le rétablir elles-mêmes.
+    this.value = "";
     // La mise en page n'existe pas ici ; ces valeurs sont là pour que le code
     // qui les lit ne casse pas, jamais pour être vérifiées.
     this.scrollTop = 0;
