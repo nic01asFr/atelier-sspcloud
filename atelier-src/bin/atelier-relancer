@@ -1,0 +1,52 @@
+#!/bin/sh
+# Relance le service en ne tuant que celui qui détient le port.
+#
+# `kill $(pgrep -f mcp_gateway...)` tuait aussi le shell qui l'exécutait — sa
+# propre ligne de commande contient le motif — et laissait des orphelins.
+# Quatre instances s'étaient ainsi accumulées, 364 Mo pour rien.
+#
+# À déposer dans ~/work/bin/ sur le pod.
+set -u
+PORT=8787
+
+# Qui détient le port : on le trouve par l'inode de sa socket d'écoute, non
+# par son âge ni par son nom. C'est le seul critère qui ne se trompe pas.
+PID=$(python3 - "$PORT" <<'PY'
+import glob, os, re, sys
+port = format(int(sys.argv[1]), '04X')
+inodes = set()
+for f in ('/proc/net/tcp', '/proc/net/tcp6'):
+    try:
+        for l in open(f).read().splitlines()[1:]:
+            c = l.split()
+            if c[3] == '0A' and c[1].split(':')[1].upper() == port:
+                inodes.add(c[9])
+    except OSError:
+        pass
+for p in glob.glob('/proc/[0-9]*'):
+    for fd in glob.glob(p + '/fd/*'):
+        try:
+            m = re.match(r'socket:\[(\d+)\]', os.readlink(fd))
+        except OSError:
+            continue
+        if m and m.group(1) in inodes:
+            print(p.split('/')[2]); sys.exit(0)
+PY
+)
+
+# Arrêt gracieux, puis forcé. Uvicorn attend que les connexions se ferment
+# avant de sortir ; or nos flux d'événements restent ouverts par conception,
+# si bien qu'il ne sort jamais de lui-même.
+if [ -n "$PID" ]; then
+  kill "$PID" 2>/dev/null
+  n=0
+  while kill -0 "$PID" 2>/dev/null && [ $n -lt 8 ]; do sleep 1; n=$((n+1)); done
+  kill -9 "$PID" 2>/dev/null
+  sleep 1
+fi
+
+cd /home/onyxia/work/atelier-src || exit 1
+setsid nohup python -m mcp_gateway.atelier.app --host 0.0.0.0 --port "$PORT" \
+  >>/home/onyxia/work/logs/atelier-uvicorn.log 2>&1 </dev/null &
+sleep 6
+printf 'relance : %s\n' "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$PORT/v1/health)"

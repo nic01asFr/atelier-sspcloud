@@ -1,0 +1,20 @@
+#!/bin/sh
+# Relais vers le node embarqué par code-server.
+#
+# Le pod n'a pas de node installé : le serveur MCP `filesystem`, déclaré le
+# 29 août, n'a donc jamais démarré — ni pour les agents, ni pour VS Code, et
+# ce bruit permanent masquait les vraies pannes.
+#
+# Le seul node disponible est celui que code-server transporte, dont le chemin
+# porte son numéro de version. Le figer casserait à la prochaine mise à jour ;
+# on le retrouve donc à l'exécution, en prenant le plus récent.
+#
+# À déposer sur le pod sous ~/work/bin/node — c'est ce chemin absolu que porte
+# la déclaration du serveur, faute de quoi VS Code ne le trouverait pas : son
+# PATH ne passe pas par ~/work/bin.
+set -u
+for candidat in $(ls -d /home/onyxia/work/.tools/code-server-*/lib/node 2>/dev/null | sort -V -r); do
+  [ -x "$candidat" ] && exec "$candidat" "$@"
+done
+echo "node introuvable : aucun code-server dans ~/work/.tools" >&2
+exit 127

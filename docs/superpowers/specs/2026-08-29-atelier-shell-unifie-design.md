@@ -983,10 +983,68 @@ tour. Un message envoyé s'affiche dans le fil, marqué en attente, et part
 quand le tour s'achève. Le canal d'observation fait le reste : les autres
 écrans voient la file comme ils voient le tour.
 
-**Ce qui n'est pas tranché** : ce qu'il advient de la file quand le service
-redémarre — la perdre est honnête si on le dit, la garder demande de l'écrire
-sur le disque comme les décisions ; et si la route bloquante, celle des
-agents, doit y avoir droit ou continuer de refuser.
+**Fait, et éprouvé.** Un message envoyé pendant un tour reçoit
+« message_en_file », se voit dans le fil en trait interrompu, et part dans le
+tour en cours dès qu'il a fini le précédent — événement `message_suivant`, deux
+fins, le mot demandé présent dans le transcript. Le composeur reste ouvert, son
+bouton devient « Mettre en file », et chaque message traité ouvre sa propre
+bulle.
+
+Un obstacle imprévu s'est présenté : un tour qui traite plusieurs messages émet
+plusieurs `fin`, et le navigateur raccrochait au premier, perdant la suite. Le
+serveur annonce l'enchaînement juste avant chaque fin ; c'est ce qui permet de
+tenir la ligne ouverte jusqu'au dernier.
+
+L'écriture différée a réglé le verrou sans qu'on ait à l'écrire : seul le fil
+du tour écrit dans l'entrée du CLI, la requête HTTP ne fait que déposer.
+
+**Ce qui reste ouvert** : la file vit en mémoire et se vide avec le tour — un
+redémarrage la perd, ce qu'on assume faute d'un cas où ça coûte cher. Et le
+retrait d'un message encore en file n'a pas été éprouvé de bout en bout : le
+bouton est câblé, le service testé, mais tenir un tour assez long pour cliquer
+entre-temps m'a échappé.
+
+### Le fil, à plusieurs écrans et à plusieurs voix
+
+Quatre défauts du fil, trouvés à l'usage, corrigés le même jour. Ils tiennent
+ensemble : tous viennent de ce que le fil était pensé pour un seul spectateur,
+regardant un seul tour, du début à la fin.
+
+**Il ne suivait pas son propre ordre.** Les blocs étaient assemblés par nature
+— tout le raisonnement, puis tous les outils, puis tout le texte — alors qu'un
+tour dit, agit, redit. Les appels d'outils se retrouvaient en haut et la parole
+en bas, si bien que ce qui motivait un geste se lisait après lui. Le flux garde
+désormais l'ordre d'arrivée ; le texte n'est plus un tampon unique mais une
+suite de segments qu'un outil vient clore.
+
+**Le raisonnement n'apparaissait jamais en direct.** La fusion du texte refuse
+les fragments de réflexion — un garde-fou qui protège la réponse — mais
+l'appelant s'en servait aussi pour le tampon de réflexion, qui restait donc
+vide. On ne le lisait qu'après rechargement, relu du transcript.
+
+**Tout le message se refaisait pour un bloc.** Mesuré sur une conversation
+réelle : 242 blocs de code et 270 000 caractères reconstruits parce qu'un outil
+venait d'apparaître, ou qu'on venait d'accorder une autorisation. D'où le
+clignotement d'une demi-seconde à chaque geste. Ce n'était pas la coloration
+syntaxique — la refaire coûte 23 ms. La réutilisation descend maintenant au
+bloc : un message se reconnaît à sa place dans le fil, chaque bloc à son
+empreinte. Mesuré après coup : 66 messages sur 66 conservés, 915 blocs sur 927.
+
+**Un seul écran voyait le tour.** Le flux d'événements est attaché à la requête
+qui lance le tour — son adresse porte le message — et ses événements tombaient
+dans une file qui n'appartenait qu'à elle. Un second onglet n'avait rien à
+écouter, et une conversation reprise dans VS Code ne se voyait pas du tout. Le
+tour publie désormais ce qu'il émet, et `/live` laisse s'y abonner sans rien
+déclencher. Éprouvé : envoi depuis un onglet, le second s'est rempli seul, et
+la conversation n'a compté qu'un tour.
+
+**Enfin, le lien tombait pendant les silences.** Rien ne partait sur le fil
+tant que le CLI se taisait — le modèle réfléchit, une commande tourne — et le
+premier délai d'inactivité du chemin coupait la connexion : le tour continuait,
+l'écran restait figé, il fallait recharger. Un commentaire SSE toutes les
+quinze secondes suffit à tenir la ligne. Et si elle tombe malgré tout, on
+attend la fin du tour et on relit la conversation, au lieu de laisser l'écran
+en plan.
 
 ### L'ordre
 

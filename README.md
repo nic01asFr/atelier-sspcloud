@@ -63,6 +63,18 @@ La clé propriétaire (`atelier_owner_key`) ne transite jamais par le dépôt ni
 les fichiers de projet : elle vit dans `~/work/.secrets/` sur le pod, et n'est
 transmise au processus `claude` que par son environnement.
 
+Pour relancer le service, utilisez `~/work/bin/atelier-relancer` plutôt qu'un
+`kill` sur le motif du processus : celui-ci tue aussi le shell qui l'exécute, sa
+propre ligne de commande contenant le motif, et laisse des orphelins — quatre
+instances s'étaient ainsi accumulées, pour 364 Mo. Le script trouve le
+détenteur du port par l'inode de sa socket d'écoute, puis escalade en `SIGKILL`
+si l'arrêt gracieux traîne : uvicorn attend la fermeture des connexions, or les
+flux d'événements restent ouverts par conception.
+
+Le pod n'a pas de `node` installé. Le serveur MCP `filesystem` passe donc par
+`~/work/bin/node`, un relais qui retrouve à l'exécution celui qu'embarque
+code-server — figer son chemin casserait à la prochaine mise à jour.
+
 ---
 
 ## Documentation
@@ -102,7 +114,18 @@ Apache-2.0, voir [`LICENSE`](LICENSE). Elle ne couvre que le code de ce dépôt.
 ## État
 
 Le shell unifié, les conversations de projet, les agents, les connecteurs et les
-compositions sont en service. Le passage de main vers VS Code fonctionne dans les
+compositions sont en service.
+
+Une conversation demande l'autorisation avant d'agir, quand son mode le veut :
+le CLI pose la question à l'Atelier plutôt que de refuser, une carte s'affiche
+dans le fil à la place de l'outil concerné, et le tour attend aussi longtemps
+qu'il le faut. Une réponse peut valoir « toujours » pour ce fil. L'agent peut
+aussi poser une vraie question à choix, avec ses options et un champ libre.
+
+On écrit pendant qu'un tour travaille : le message se met en file et part dans
+le tour en cours dès qu'il a fini le précédent. Et l'on peut regarder une
+conversation depuis plusieurs écrans — un second onglet, ou VS Code — sans la
+déclencher. Le passage de main vers VS Code fonctionne dans les
 deux sens : une conversation de l'Atelier s'ouvre dans l'extension Claude Code,
 et une conversation ouverte depuis l'extension remonte comme session du projet.
 
