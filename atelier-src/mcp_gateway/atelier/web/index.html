@@ -24,14 +24,14 @@
     <header class="app-shell-head">
       <div class="shell-brand-row">
         <p class="brand-sm">Atelier</p>
+        <nav id="app-nav" class="app-nav" aria-label="Navigation principale">
+          <button type="button" class="nav-tab" data-view="code">Code</button>
+          <button type="button" class="nav-tab" data-view="assistant">Assistant</button>
+          <button type="button" class="nav-tab" data-view="connecteurs">Connecteurs</button>
+          <button type="button" class="nav-tab" data-view="agent">Agents</button>
+        </nav>
         <button type="button" id="btn-logout" class="ghost">Quitter</button>
       </div>
-      <nav id="app-nav" class="app-nav" aria-label="Navigation principale">
-        <button type="button" class="nav-tab" data-view="code">Code</button>
-        <button type="button" class="nav-tab" data-view="assistant">Assistant</button>
-        <button type="button" class="nav-tab" data-view="connecteurs">Connecteurs</button>
-        <button type="button" class="nav-tab" data-view="agent">Agents</button>
-      </nav>
     </header>
 
     <div id="view-code" class="view view-shell view-code shell-mode-list">
@@ -48,10 +48,7 @@
             <select id="session-project-select" class="session-project-select" hidden></select>
           </div>
           <div class="session-bar-actions">
-            <span id="session-meta-display" class="session-meta"></span>
-            <button type="button" id="btn-copy-session" class="ghost" title="Copier l'id de session">Copier l'id</button>
             <a id="session-vscode-link" class="session-face-link" hidden target="_blank" rel="noopener">VS Code</a>
-            <span id="session-resume-hint" class="session-hint"></span>
           </div>
         </div>
         <div id="banner" class="banner" hidden></div>
@@ -73,7 +70,6 @@
                     <span id="composer-mcp-badge" class="composer-mcp-badge" hidden></span>
                   </button>
                 </div>
-                <label class="composer-mode-label" for="composer-mode">Mode de travail</label>
                 <select id="composer-mode" class="composer-mode" disabled title="Comment l’agent travaille dans ce fil" aria-label="Mode de travail">
                   <option value="">Réglage du service</option>
                   <option value="plan">Plan — réfléchit, ne modifie rien</option>
@@ -82,12 +78,12 @@
                   <option value="auto">Auto — refuse ce qui est risqué</option>
                   <option value="bypassPermissions">Sans garde-fou</option>
                 </select>
+                <div class="composer-actions">
+                  <button type="submit" id="btn-send" disabled>Envoyer</button>
+                  <button type="button" id="btn-stop" class="composer-stop" hidden>Arrêter</button>
+                </div>
               </div>
             </div>
-          </div>
-          <div class="composer-actions">
-            <button type="submit" id="btn-send" disabled>Envoyer</button>
-            <button type="button" id="btn-stop" class="composer-stop" hidden>Arrêter</button>
           </div>
         </form>
       </main>

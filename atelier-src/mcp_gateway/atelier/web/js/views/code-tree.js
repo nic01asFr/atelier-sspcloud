@@ -273,14 +273,6 @@ export function createCodeTreeView(ctx) {
 
     const headerRow = document.createElement("div");
     headerRow.className = "tree-toolbar";
-    const chatBtn = document.createElement("button");
-    chatBtn.type = "button";
-    chatBtn.className = "ghost tree-add";
-    chatBtn.textContent = "+ Nouvelle conversation";
-    chatBtn.title = "Écrire — le projet sera créé à l’envoi";
-    chatBtn.addEventListener("click", () => actions.newConversation());
-    headerRow.appendChild(chatBtn);
-
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "ghost tree-add";

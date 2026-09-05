@@ -389,12 +389,10 @@ const BAS_DU_FIL = 1e9;
     // qu'une fois qu'elle existe. Il ne vaut que pour les tours à venir, ce que
     // dit l'infobulle — sans quoi on croirait qu'il réécrit le passé.
     const mode = $("composer-mode");
-    const label = document.querySelector(".composer-mode-label");
     if (mode) {
       const courante = state.sessions?.find((x) => x.session_id === state.sessionId);
       mode.disabled = !peutJoindre || state.busy;
       mode.hidden = !peutJoindre;
-      if (label) label.hidden = !peutJoindre;
       const valeur = courante?.permission_mode || "";
       if (mode.value !== valeur) mode.value = valeur;
       mode.title = valeur === "plan"
@@ -465,13 +463,10 @@ const BAS_DU_FIL = 1e9;
       }
     }
 
-    const metaEl = $("session-meta-display");
-    if (metaEl) metaEl.textContent = current ? S.sessionMetaLine(current) : "";
-
+    // L'état et le nombre de tours se lisent déjà dans la liste, en face de
+    // chaque conversation ; les répéter ici doublait sans rien apprendre.
     const vs = state.meta?.vscode_url;
     const link = $("session-vscode-link");
-    const copyBtn = $("btn-copy-session");
-    if (copyBtn) copyBtn.hidden = !enConversation;
     if (link) {
       if (vs && enConversation) {
         link.hidden = false;
@@ -481,11 +476,6 @@ const BAS_DU_FIL = 1e9;
         link.hidden = true;
         link.removeAttribute("href");
       }
-    }
-    const hint = $("session-resume-hint");
-    if (hint) {
-      if (!enConversation) hint.textContent = "";
-      else hint.textContent = vs ? `Workspace ${slug}` : `Pod : projects/${slug}`;
     }
   }
 

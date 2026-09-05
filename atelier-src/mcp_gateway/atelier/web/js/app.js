@@ -239,9 +239,6 @@ function createApp() {
     composerMcpCtrl.bind();
     composerInput.bind();
     $("composer").addEventListener("submit", chat.onSend);
-    $("btn-copy-session").addEventListener("click", () => {
-      if (state.sessionId) sessionActions.copySessionId(state.sessionId);
-    });
     // Le bouton Envoyer suit la saisie. Rendu cible : un render() complet
     // reconstruirait le panneau et ferait perdre le focus a chaque frappe.
     $("composer-input").addEventListener("input", () => {

@@ -3523,3 +3523,59 @@ button:disabled {
 .msg-decision {
   max-width: 640px;
 }
+
+/* --- L'en-tête sur une seule ligne ---------------------------------------
+   Deux barres empilées mangeaient 90 px de haut pour un titre et quatre
+   onglets. Le titre, la navigation et la sortie tiennent sur la même ligne. */
+
+.app-shell-head {
+  padding-bottom: 0.65rem;
+}
+
+.shell-brand-row {
+  gap: 1.25rem;
+  margin-bottom: 0;
+}
+
+.shell-brand-row .app-nav {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* --- Envoyer, au pied de la saisie ---------------------------------------
+   Le bouton flottait à droite, hors du cadre, séparé de ce qu'il envoie. Il
+   rejoint la rangée d'outils, poussé à droite : même bloc, même bordure. */
+
+.composer-input-footer .composer-actions {
+  flex-direction: row;
+  align-items: center;
+  align-self: auto;
+  margin-left: auto;
+}
+
+.composer-input-footer .composer-actions button {
+  padding: 0.34rem 0.9rem;
+  min-width: 0;
+  font-size: 0.82rem;
+  border-radius: 5px;
+}
+
+/* --- Le menu déroulant natif ---------------------------------------------
+   Les options s'ouvraient sur fond blanc, texte invisible tant qu'on ne les
+   survolait pas : le thème sombre ne touche pas la liste native. C'est
+   `color-scheme` qui le dit au navigateur ; les couleurs explicites servent
+   de filet là où il ne l'écoute pas. */
+
+/* Sur la racine, il vaut pour tout ce que le navigateur dessine lui-même :
+   les listes déroulantes, mais aussi les barres de défilement et les champs
+   natifs, qui restaient clairs au milieu d'une interface sombre. */
+:root,
+select,
+select option {
+  color-scheme: dark;
+}
+
+.composer-mode option {
+  background: var(--bg-elev);
+  color: var(--text);
+}
