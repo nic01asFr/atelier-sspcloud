@@ -293,21 +293,28 @@ const BAS_DU_FIL = 1e9;
     // les autres coûte leur rendu markdown et invalide toute la mise en page,
     // pour un résultat identique au caractère près. On garde donc le nœud d'un
     // message dont l'empreinte n'a pas bougé.
+    // On reconnaît un message à sa place dans le fil, non à son contenu :
+    // un message qui change garde son nœud et se met à jour dedans. Sur son
+    // contenu, le moindre changement — un outil qui apparaît, une
+    // autorisation qu'on accorde — refaisait tout le message : mesuré, 242
+    // blocs de code et 270 000 caractères reconstruits, près de deux
+    // secondes de gel. C'était le clignotement.
     const anciens = new Map();
     for (const noeud of [...thread.children]) {
-      if (noeud.dataset?.empreinte) anciens.set(noeud.dataset.empreinte, noeud);
+      if (noeud.dataset?.cle) anciens.set(noeud.dataset.cle, noeud);
     }
     const voulus = [];
-    for (const m of state.messages) {
-      const empreinte = empreinteDuMessage(m);
-      const garde = anciens.get(empreinte);
+    state.messages.forEach((m, rang) => {
+      const cle = rang + ":" + (m.role || "system");
+      const garde = anciens.get(cle);
       if (garde) {
-        anciens.delete(empreinte);
+        anciens.delete(cle);
+        majMessage(garde, m);
         voulus.push(garde);
-        continue;
+        return;
       }
-      voulus.push(construireMessage(m, empreinte));
-    }
+      voulus.push(construireMessage(m, cle));
+    });
     thread.replaceChildren(...voulus);
     // On rend le geste au lieu de le faire : l'appelant l'exécutera à l'image
     // suivante, quand la mise en page sera déjà calculée.
@@ -316,35 +323,19 @@ const BAS_DU_FIL = 1e9;
     };
   }
 
-  /** De quoi reconnaître un message déjà rendu, sans comparer tout son texte. */
-  function empreinteDuMessage(m) {
-    const texte = m.text || "";
-    const outils = (m.tools || []).map((t) => `${t.name}:${t.status}:${(t.output || "").length}`);
-    // Les blocs aussi : une question qui se pose, puis se referme, ne change
-    // ni le texte ni sa longueur. Sans cette ligne, le nœud serait réutilisé
-    // tel quel et la carte ne bougerait jamais.
-    const blocs = (m.blocks || []).map(
-      (b) => `${b.type}:${b.etat || b.status || ""}:${b.demande?.request_id || b.id || ""}`
-    );
-    return [
-      m.id || "",
-      m.role || "system",
-      m.rang ?? "",
-      texte.length,
-      // La longueur ne suffit pas quand un texte se réécrit à taille égale ;
-      // les bords le disent à peu de frais.
-      texte.slice(0, 24),
-      texte.slice(-24),
-      m.streaming ? "1" : "0",
-      m.phase || "",
-      outils.join("|"),
-      blocs.join("|"),
-    ].join("");
+  /** Rafraîchit un message sans le refaire : seul ce qui bouge est redessiné. */
+  function majMessage(div, m) {
+    div.classList.toggle("msg-streaming", !!m.streaming);
+    appendMessageBody(div, m);
+    div.querySelector(":scope > .msg-attente")?.remove();
+    div.querySelector(":scope > .msg-actions")?.remove();
+    renderAttente(div, m);
+    renderMessageActions(div, m);
   }
 
-  function construireMessage(m, empreinte) {
+  function construireMessage(m, cle) {
     const div = document.createElement("div");
-    div.dataset.empreinte = empreinte;
+    div.dataset.cle = cle;
     const role = m.role || "system";
     div.className = `msg ${role === "user" ? "user" : role === "assistant" ? "assistant" : role === "error" ? "error-msg" : role === "tool" ? "tool" : "system"}`;
     if (m.streaming) div.classList.add("msg-streaming");

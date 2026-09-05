@@ -506,34 +506,124 @@ function carteDeDecision(block) {
  * @param {HTMLElement} parent
  * @param {{ role?: string, text?: string, blocks?: object[], attachments?: object[] }} m
  */
-export function appendMessageBody(parent, m) {
-  if (m.attachments?.length) {
-    const row = document.createElement("div");
-    row.className = "msg-attachments";
-    for (const a of m.attachments) {
-      const chip = document.createElement("span");
-      chip.className = "msg-attach-chip";
-      chip.textContent = a.name || a.rel_path || "fichier";
-      row.appendChild(chip);
-    }
-    parent.appendChild(row);
+/**
+ * De quoi reconnaître un bloc déjà rendu, sans comparer tout son contenu.
+ *
+ * Un identifiant d'outil ou de demande suffit à l'ancrer ; le reste dit ce
+ * qui, en changeant, doit le faire redessiner — un statut, une sortie qui
+ * s'allonge, un texte qui grossit.
+ */
+function empreinteDuBloc(b) {
+  if (b.type === "tool") {
+    return [
+      "tool", b.id || "", b.name || "", b.status || "",
+      (b.output || "").length, JSON.stringify(b.input || "").length,
+      b.masquerDetails ? "1" : "0",
+    ].join(":");
   }
+  if (b.type === "decision") {
+    return [
+      "dec", b.demande?.request_id || "", b.etat || "",
+      (b.resume || "").length, b.argumentsAilleurs ? "1" : "0",
+    ].join(":");
+  }
+  const texte = b.text || "";
+  return [b.type, texte.length, texte.slice(0, 16), texte.slice(-16)].join(":");
+}
+
+/**
+ * Met le corps d'un message à jour sans le refaire.
+ *
+ * Un message ne changeait qu'en entier : dès qu'un bloc bougeait — un outil
+ * qui apparaît, une autorisation qu'on accorde — tout était reconstruit.
+ * Mesuré sur une conversation réelle : 242 blocs de code et 270 000
+ * caractères refaits pour un seul changement, près de deux secondes de gel.
+ * D'où le clignotement à chaque outil et à chaque réponse.
+ *
+ * On garde donc les nœuds dont l'empreinte n'a pas bougé. Le coût redevient
+ * proportionnel à ce qui change, non à ce qui est affiché.
+ */
+export function synchroniserBlocs(conteneur, blocks) {
+  const anciens = new Map();
+  for (const n of conteneur.children) {
+    const emp = n.dataset?.bloc;
+    if (emp && !anciens.has(emp)) anciens.set(emp, n);
+  }
+  const voulus = [];
+  for (const block of blocks) {
+    const emp = empreinteDuBloc(block);
+    const garde = anciens.get(emp);
+    if (garde) {
+      anciens.delete(emp);
+      voulus.push(garde);
+      continue;
+    }
+    const berceau = document.createElement("div");
+    appendBlock(berceau, block);
+    for (const n of [...berceau.children]) {
+      if (n.dataset) n.dataset.bloc = emp;
+      voulus.push(n);
+    }
+  }
+  conteneur.replaceChildren(...voulus);
+}
+
+export function appendMessageBody(parent, m) {
+  // Appelable deux fois sur le même nœud sans le doubler : chaque partie a
+  // son conteneur, qu'on retrouve et qu'on met à jour. C'est ce qui permet
+  // de rafraîchir un message sans le reconstruire.
+  if (m.attachments?.length) {
+    let row = parent.querySelector(":scope > .msg-attachments");
+    if (!row) {
+      row = document.createElement("div");
+      row.className = "msg-attachments";
+      parent.appendChild(row);
+    }
+    row.replaceChildren(
+      ...m.attachments.map((a) => {
+        const chip = document.createElement("span");
+        chip.className = "msg-attach-chip";
+        chip.textContent = a.name || a.rel_path || "fichier";
+        return chip;
+      })
+    );
+  }
+
+  let corps = parent.querySelector(":scope > .msg-blocs");
   if (m.blocks?.length) {
-    for (const block of m.blocks) {
-      appendBlock(parent, block);
+    if (!corps) {
+      corps = document.createElement("div");
+      corps.className = "msg-blocs";
+      parent.appendChild(corps);
     }
-    const hasTextBlock = m.blocks.some((b) => b.type === "text" && b.text);
-    if (!hasTextBlock && m.text) {
-      parent.appendChild(renderMarkdown(m.text));
+    synchroniserBlocs(corps, m.blocks);
+  } else if (corps) {
+    corps.remove();
+    corps = null;
+  }
+
+  // Le texte de repli : quand aucun bloc ne le porte déjà.
+  const porteParUnBloc = (m.blocks || []).some((b) => b.type === "text" && b.text);
+  let repli = parent.querySelector(":scope > .msg-repli");
+  if (m.text && !porteParUnBloc) {
+    if (!repli) {
+      repli = document.createElement("div");
+      repli.className = "msg-repli";
+      parent.appendChild(repli);
     }
-  } else if (m.text) {
-    if (m.role === "assistant") {
-      parent.appendChild(renderMarkdown(m.text));
-    } else {
-      const el = document.createElement("div");
-      el.className = "msg-text-plain";
-      el.textContent = m.text;
-      parent.appendChild(el);
+    if (repli.dataset.texte !== m.text) {
+      repli.dataset.texte = m.text;
+      repli.replaceChildren(
+        m.role === "assistant"
+          ? renderMarkdown(m.text)
+          : Object.assign(document.createElement("div"), {
+              className: "msg-text-plain",
+              textContent: m.text,
+            })
+      );
     }
+  } else if (repli) {
+    repli.remove();
   }
 }
+
