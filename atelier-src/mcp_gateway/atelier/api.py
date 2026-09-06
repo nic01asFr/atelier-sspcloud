@@ -101,6 +101,96 @@ class CreateProjectBody(BaseModel):
     title: str | None = None
 
 
+class VeilleDesJournaux:
+    """Prévient les onglets quand une conversation bouge ailleurs qu'ici.
+
+    Une conversation s'écrit à deux endroits : notre journal, et le transcript
+    du CLI qu'alimente VS Code. La lecture les fond désormais, mais rien ne
+    disait à l'onglet ouvert qu'il y avait du neuf — il fallait actualiser à la
+    main pour voir ce qu'on venait de taper dans l'autre fenêtre.
+
+    On ne rejoue pas le flux de l'autre côté événement par événement : on ne
+    l'a pas, et le reconstituer serait deviner. On dit seulement que le journal
+    a changé, et l'onglet relit — la lecture fondue fait le reste, et c'est le
+    même chemin que celui déjà éprouvé au rattrapage d'un fil.
+
+    La veille ne tourne que tant que quelqu'un regarde, et une conversation
+    n'est surveillée qu'une fois quel que soit le nombre d'onglets.
+    """
+
+    INTERVALLE_S = 2.0
+
+    def __init__(
+        self,
+        diffusion: "DiffusionDesTours",
+        registres: Any,
+        absorber: Any = None,
+    ) -> None:
+        self._diffusion = diffusion
+        self._registres = registres
+        self._absorber = absorber
+        self._verrou = threading.Lock()
+        self._compte: dict[str, int] = {}
+        self._fils: dict[str, threading.Thread] = {}
+        self._arret: dict[str, threading.Event] = {}
+
+    def surveiller(self, session_id: str) -> None:
+        with self._verrou:
+            self._compte[session_id] = self._compte.get(session_id, 0) + 1
+            if self._compte[session_id] > 1:
+                return
+            arret = threading.Event()
+            self._arret[session_id] = arret
+            fil = threading.Thread(
+                target=self._boucle, args=(session_id, arret), daemon=True
+            )
+            self._fils[session_id] = fil
+        fil.start()
+
+    def relacher(self, session_id: str) -> None:
+        with self._verrou:
+            reste = self._compte.get(session_id, 0) - 1
+            if reste > 0:
+                self._compte[session_id] = reste
+                return
+            self._compte.pop(session_id, None)
+            self._fils.pop(session_id, None)
+            arret = self._arret.pop(session_id, None)
+        if arret is not None:
+            arret.set()
+
+    def _empreinte(self, session_id: str) -> tuple:
+        """Ce qui change quand un registre grossit, sans le relire."""
+        marques = []
+        for chemin in self._registres(session_id):
+            try:
+                st = chemin.stat()
+                marques.append((st.st_size, st.st_mtime_ns))
+            except OSError:
+                marques.append(None)
+        return tuple(marques)
+
+    def _boucle(self, session_id: str, arret: threading.Event) -> None:
+        connue = self._empreinte(session_id)
+        while not arret.wait(self.INTERVALLE_S):
+            actuelle = self._empreinte(session_id)
+            if actuelle == connue:
+                continue
+            connue = actuelle
+            if self._absorber is not None:
+                self._absorber(session_id)
+                # Absorber fait grossir notre journal : sans reprendre
+                # l'empreinte, on se réveillerait aussitôt sur notre propre
+                # écriture, en boucle.
+                connue = self._empreinte(session_id)
+            self._diffusion.publier(
+                session_id,
+                AtelierEvent(
+                    kind="systeme", session_id=session_id, cause="journal_change"
+                ),
+            )
+
+
 class DiffusionDesTours:
     """Rediffuse les événements d'un tour à qui regarde, sans le déclencher.
 
@@ -396,6 +486,26 @@ def build_app(
     projects = ProjectStore(settings)
     auth = OwnerAuth(settings)
     diffusion = DiffusionDesTours()
+
+    def _registres_de(session_id: str) -> list[Path]:
+        """Les fichiers où cette conversation peut grossir, ici ou ailleurs."""
+        rec = store.get(session_id)
+        return store.registres_de(rec) if rec else []
+
+    def _absorber(session_id: str) -> None:
+        """Faire entrer dans notre cahier ce qui vient d'être écrit ailleurs.
+
+        Au moment où la veille le voit, plutôt qu'à la prochaine lecture : ce
+        qui n'existe que dans le registre du CLI disparaît avec lui.
+        """
+        rec = store.get(session_id)
+        if rec is not None:
+            try:
+                store.absorber_le_cli(rec)
+            except OSError:
+                pass
+
+    veille = VeilleDesJournaux(diffusion, _registres_de, _absorber)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -804,6 +914,22 @@ def build_app(
             raise HTTPException(409, str(exc)) from exc
         return {"deleted": slug}
 
+    def _connecteurs_de(rec: Any) -> set[str] | None:
+        """Les connecteurs que cette conversation a réellement, ou rien.
+
+        Sans fiche, on ne sait pas de quelle conversation il s'agit : mieux
+        vaut ne rien masquer que masquer au hasard.
+        """
+        if rec is None:
+            return None
+        try:
+            from mcp_gateway.atelier.session_mcp import session_mcp_layers
+
+            _, effective = session_mcp_layers(settings, rec)
+        except (OSError, ValueError):
+            return None
+        return set(effective)
+
     @router.get("/vscode/open")
     async def vscode_open(
         session: str | None = None,
@@ -829,7 +955,15 @@ def build_app(
         dossier = str(rec.cwd) if rec is not None and rec.cwd else folder_abs(settings, slug_v)
         if session:
             try:
-                prepare_vscode_handoff(settings, slug_v, session, Path(dossier))
+                prepare_vscode_handoff(
+                    settings,
+                    slug_v,
+                    session,
+                    Path(dossier),
+                    mode_permission=(rec.permission_mode if rec is not None else "")
+                    or settings.permission_mode,
+                    connecteurs=_connecteurs_de(rec),
+                )
             except OSError:
                 pass
         q = f"folder={quote(dossier, safe='')}"
@@ -1070,6 +1204,10 @@ def build_app(
 
         def gen():
             file = diffusion.souscrire(session_id)
+            # Tant que cet onglet regarde, on surveille aussi ce que VS Code
+            # écrit de son côté : sans cela, il faudrait actualiser à la main
+            # pour voir un message tapé dans l'autre fenêtre.
+            veille.surveiller(session_id)
             try:
                 while True:
                     try:
@@ -1079,6 +1217,7 @@ def build_app(
                         continue
                     yield ev.as_sse()
             finally:
+                veille.relacher(session_id)
                 diffusion.resilier(session_id, file)
 
         return StreamingResponse(gen(), media_type="text/event-stream")

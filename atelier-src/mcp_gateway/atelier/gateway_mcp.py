@@ -26,6 +26,25 @@ def _entry_to_hub_shape(conn: sqlite3.Connection, entry: Any) -> dict[str, Any]:
     return out
 
 
+def _avec_son_transport(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Dit au CLI par quel transport joindre un connecteur.
+
+    Sans `type`, il l'écarte : « has a "url" but no "type" ». Et il l'écarte en
+    silence — le connecteur reste affiché comme actif chez nous, mais n'offre
+    aucun outil. Deux du pool étaient dans ce cas, `github` et `llm`, ajoutés
+    par la page Connecteurs qui n'exige pas ce champ.
+
+    On déduit plutôt que d'imposer : une adresse qui se termine par `/sse`
+    annonce son transport elle-même, tout le reste est du HTTP streamable.
+    """
+    if "url" not in cfg or cfg.get("type"):
+        return cfg
+    adresse = str(cfg.get("url") or "")
+    sans_requete = adresse.partition("?")[0].rstrip("/")
+    cfg["type"] = "sse" if sans_requete.endswith("/sse") else "http"
+    return cfg
+
+
 class IntegratedMcpStore:
     """Registre perso pod — backend gateway SQLite."""
 
@@ -103,7 +122,7 @@ class IntegratedMcpStore:
             cfg = deepcopy(entry.config)
             for k in ("_metadata", "enabled"):
                 cfg.pop(k, None)
-            out[entry.server_id] = cfg
+            out[entry.server_id] = _avec_son_transport(cfg)
         return out
 
     def masked_export(self) -> dict[str, dict[str, Any]]:

@@ -44,6 +44,18 @@ class AtelierSettings(BaseSettings):
     # chez nous valent environ 68 000 là-bas, ce qui laisse de la place pour
     # le tour qui suit.
     compaction_seuil_jetons: int = 25000
+
+    # Ce que le CLI, lui, doit croire de sa propre fenêtre. Son compte de
+    # jetons sous-estime d'environ 2,7 fois ce que le modèle servi facture :
+    # une conversation qu'il situait à 50 000 a été refusée à 122 881. On lui
+    # donne donc une fenêtre bien plus étroite que la vraie, pour que sa
+    # compaction tombe à temps.
+    #
+    # Ces deux réglages vivaient à la main sur le pod, donc nulle part : ils
+    # auraient disparu à sa recréation, et l'erreur de contexte serait revenue
+    # sans qu'on sache pourquoi.
+    cli_fenetre_compaction: int = 30000
+    cli_contexte_max: int = 40000
     # Plafond de sortie donné au CLI. Il compte dans la fenêtre du modèle :
     # à 16 384, une conversation de 114 689 jetons faisait 131 073 sur une
     # fenêtre de 131 072 — un jeton de trop, et la compaction elle-même

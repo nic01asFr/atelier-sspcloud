@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from urllib.parse import quote
 from typing import Any, Literal
@@ -172,6 +173,55 @@ def declaration_atelier(settings: AtelierSettings) -> dict[str, Any]:
     }
 
 
+# Les variables qu'un connecteur peut demander dans son adresse. Le fichier
+# effectif est reconstruit à chaque tour, et l'Atelier connaît alors la
+# conversation : il peut donc les résoudre, ce que le client ne saurait pas faire.
+#
+# C'est volontairement une demande, pas un cadeau. Ajouter l'identité de la
+# conversation à l'adresse de tous les connecteurs l'enverrait à des services
+# tiers qui n'en ont que faire — mcp.data.gouv.fr n'a pas à savoir qui lui parle.
+# Un service ne la reçoit que s'il l'a écrite dans son adresse.
+#
+# Le service du navigateur en a besoin : c'est par là qu'il saura quel contexte
+# rendre à quelle conversation, et donc quelles pages et quels cookies. Sans
+# elle, il ne peut ni retrouver un fil d'un tour à l'autre, ni les cloisonner.
+VARIABLES_CONNUES = ("ATELIER_SESSION", "ATELIER_AGENT")
+
+_VARIABLE = re.compile(r"\$\{([A-Z_]+)(?::-([^}]*))?\}")
+
+
+def resoudre_les_variables(config: dict[str, Any], *, session: str, agent: str) -> dict[str, Any]:
+    """Remplit dans l'adresse les variables que l'Atelier sait renseigner.
+
+    La syntaxe est celle du shell, `${NOM}` ou `${NOM:-repli}`, parce que c'est
+    déjà celle du fichier de projet et qu'un connecteur écrit à la main s'y lit
+    sans mode d'emploi.
+
+    Une variable qu'on ne connaît pas est laissée telle quelle plutôt qu'effacée :
+    une adresse visiblement fautive se répare, une adresse silencieusement vidée
+    de son identité donne un service qui mélange deux conversations sans le dire.
+    """
+    url = str(config.get("url") or "")
+    if "${" not in url:
+        return config
+    valeurs = {"ATELIER_SESSION": session, "ATELIER_AGENT": agent}
+
+    def remplacer(m: re.Match[str]) -> str:
+        nom, repli = m.group(1), m.group(2)
+        if nom in valeurs and valeurs[nom]:
+            return quote(valeurs[nom], safe="")
+        if repli is not None:
+            return quote(repli, safe="")
+        return m.group(0)
+
+    resolue = _VARIABLE.sub(remplacer, url)
+    if resolue == url:
+        return config
+    sortie = dict(config)
+    sortie["url"] = resolue
+    return sortie
+
+
 def _avec_identite(config: dict[str, Any], nom: str, wikichat_url: str) -> dict[str, Any]:
     """Inscrit l'identité de la session dans l'adresse du coordinateur.
 
@@ -335,6 +385,12 @@ def materialize_session_mcp(
             nom: _avec_identite(cfg, agent_name, settings.wikichat_url)
             for nom, cfg in merged.items()
         }
+    # Puis les variables que le connecteur a demandées lui-même. Après l'identité
+    # du coordinateur, pour qu'un service qui écrirait les deux obtienne les deux.
+    merged = {
+        nom: resoudre_les_variables(cfg, session=session_id, agent=agent_name)
+        for nom, cfg in merged.items()
+    }
     cfg_path = settings.mcp_effective_dir / f"{session_id}.json"
     _atomic_write_json(cfg_path, {"mcpServers": merged})
     log.info(

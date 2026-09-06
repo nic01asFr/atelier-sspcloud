@@ -108,6 +108,17 @@ def _merge_claude_settings_file(path: Path, settings: AtelierSettings) -> None:
     if model:
         env["ANTHROPIC_MODEL"] = model
         env.setdefault("ANTHROPIC_DEFAULT_MODEL", model)
+    # La compaction automatique du CLI, calibrée sur ce que le modèle servi
+    # facture réellement — son propre compte sous-estime d'environ 2,7 fois :
+    # une conversation qu'il situait à 50 000 jetons a été refusée à 122 881.
+    # Sans ces deux lignes, une conversation menée depuis VS Code grossit
+    # jusqu'au refus : notre filet à nous ne couvre que les tours de l'Atelier.
+    # Elles vivaient à la main sur le pod, donc nulle part.
+    data["autoCompactEnabled"] = True
+    if settings.cli_fenetre_compaction > 0:
+        data["autoCompactWindow"] = settings.cli_fenetre_compaction
+    if settings.cli_contexte_max > 0:
+        env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(settings.cli_contexte_max)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
@@ -144,8 +155,80 @@ def _titre_du_projet(settings: AtelierSettings, slug: str) -> str:
     return slug
 
 
+# Ce que l'extension VS Code sait faire des modes de l'Atelier. Son propre
+# réglage n'accepte que ces valeurs — relevé dans son manifeste, qui connaît en
+# plus `default` — et `auto` n'y figure pas.
+#
+# On a failli le traduire en `acceptEdits`, que la matrice du harnais donnait
+# pour équivalent. Une sonde directe les sépare : à qui lui demande d'écrire un
+# fichier, `auto` demande l'autorisation quand `acceptEdits` écrit sans rien
+# demander. Les traduire l'un par l'autre aurait donc accordé une écriture que
+# personne n'avait accordée. Le mode passe par l'autre chemin — voir
+# `ecrire_mode_du_dossier`, que le CLI, lui, comprend.
+MODES_VERS_EXTENSION = {
+    "plan": "plan",
+    "manual": "manual",
+    "acceptEdits": "acceptEdits",
+    "bypassPermissions": "bypassPermissions",
+}
+
+
+def mode_pour_extension(mode: str | None) -> str:
+    """Le mode que VS Code comprendra, ou rien.
+
+    Deux limites, qu'il vaut mieux connaître que découvrir. Ce réglage vaut
+    pour le dossier, non pour la conversation : deux fils du même projet réglés
+    différemment ne peuvent pas l'être des deux côtés. Et l'extension le décrit
+    comme le mode des conversations *neuves* — une conversation reprise garde
+    sans doute le sien. On l'écrit quand même : c'est mieux que rien, et cela
+    couvre le cas courant, où l'on ouvre le projet pour continuer ce fil-là.
+    """
+    return MODES_VERS_EXTENSION.get((mode or "").strip(), "")
+
+
+# Le vocabulaire du CLI, relevé dans son binaire : c'est ce que `defaultMode`
+# accepte. Il connaît `auto`, que l'extension ignore, et `default`, dont
+# `manual` n'est qu'un autre nom — leur documentation le dit toutes les deux.
+MODES_CLI = ("acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan")
+
+
+def ecrire_mode_du_dossier(dossier: Path, mode: str) -> None:
+    """Pose le mode là où le CLI le résout, pour ceux que l'extension ignore.
+
+    Le réglage de l'extension ne couvre pas `auto` — or c'est le mode de la
+    plupart des conversations. Sans ce second chemin, elles repartaient toutes
+    dans VS Code sous un autre mode que celui affiché sur leur onglet.
+
+    L'extension dit elle-même s'en remettre au « défaut résolu par le CLI »
+    quand son propre réglage est vide : ce fichier est ce défaut. Il vaut pour
+    le dossier, comme le réglage d'atelier — deux conversations du même projet
+    réglées différemment ne peuvent donc pas l'être des deux côtés.
+
+    On écrit dans `settings.local.json`, le fichier personnel : `settings.json`
+    appartient au dépôt, et le mode de travail de quelqu'un n'a rien à y faire.
+    """
+    voulu = (mode or "").strip()
+    voulu = "default" if voulu == "manual" else voulu
+    if voulu not in MODES_CLI:
+        return
+    chemin = dossier / ".claude" / "settings.local.json"
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    data: dict[str, object] = {}
+    if chemin.is_file():
+        try:
+            data = json.loads(chemin.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            data = {}
+    permissions = data.setdefault("permissions", {})
+    if not isinstance(permissions, dict):
+        permissions = {}
+        data["permissions"] = permissions
+    permissions["defaultMode"] = voulu
+    chemin.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
 def write_vscode_workspace_config(
-    settings: AtelierSettings, slug: str, cwd: Path | None = None
+    settings: AtelierSettings, slug: str, cwd: Path | None = None, mode_permission: str = ""
 ) -> None:
     vscode_dir = (cwd or settings.projects_dir / slug) / ".vscode"
     vscode_dir.mkdir(parents=True, exist_ok=True)
@@ -163,6 +246,13 @@ def write_vscode_workspace_config(
         # tiennent — leur nom se lit sur leur onglet, pas au-dessus.
         "window.title": _titre_du_projet(settings, slug),
     }
+    # Le mode de travail de la conversation, quand l'extension sait le dire.
+    # Sans lui, un fil qu'on avait mis en « Demande » repartait dans VS Code
+    # sous le mode par défaut du CLI : la précaution prise d'un côté ne valait
+    # pas de l'autre, sans qu'aucun des deux écrans ne le signale.
+    voulu = mode_pour_extension(mode_permission)
+    if voulu:
+        cfg["claudeCode.initialPermissionMode"] = voulu
     (vscode_dir / "settings.json").write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
     (vscode_dir / "extensions.json").write_text(
         json.dumps({"recommendations": [CLAUDE_CODE_EXTENSION_ID]}, indent=2) + "\n",
@@ -427,8 +517,79 @@ def ensure_claude_onboarding(settings: AtelierSettings, slug: str) -> None:
     )
 
 
+def accorder_les_connecteurs(dossier: Path, effectifs: set[str]) -> list[str]:
+    """Masque dans VS Code les connecteurs que la conversation n'a pas.
+
+    Mesuré : la conversation ouverte dans VS Code voyait dix connecteurs quand
+    l'Atelier ne lui en donnait que quatre. Le même agent, sur le même fil,
+    n'avait pas la même boîte à outils selon la fenêtre par laquelle on
+    l'ouvrait — et rien, d'aucun côté, ne le signalait.
+
+    L'écart vient de la portée utilisateur : l'Atelier y dépose tout le pool,
+    et VS Code le sert à tout le monde, sans rien savoir ni du périmètre du
+    projet ni du réglage propre à la conversation. On ne vide pas ce pool : un
+    projet sans `.mcp.json` en hérite par conception, et le CLI lancé à la main
+    dans un terminal s'en sert. On masque, pour ce dossier seulement.
+
+    `disabledMcpServers`, dans l'entrée de projet, est la liste que le CLI
+    applique — relevé dans son binaire. Elle vaut pour le dossier, non pour la
+    conversation : deux fils du même projet réglés différemment ne peuvent pas
+    l'être des deux côtés, et c'est le dernier ouvert qui gagne.
+
+    Renvoie les noms masqués, pour que l'appelant puisse le dire.
+    """
+    chemin = Path.home() / ".claude.json"
+    data: dict[str, object] = {}
+    if chemin.is_file():
+        try:
+            charge = json.loads(chemin.read_text(encoding="utf-8"))
+            if isinstance(charge, dict):
+                data = charge
+        except (json.JSONDecodeError, OSError):
+            return []
+    pool = set((data.get("mcpServers") or {}) if isinstance(data.get("mcpServers"), dict) else {})
+    # Le périmètre déclaré par le projet compte aussi : VS Code le sert en plus
+    # du pool, et la conversation peut l'avoir restreint.
+    binding = _load_json_object_local(dossier / ".mcp.json")
+    pool |= set(binding)
+    a_masquer = sorted(pool - effectifs)
+
+    projets = data.setdefault("projects", {})
+    if not isinstance(projets, dict):
+        return []
+    entree = projets.setdefault(str(dossier), {})
+    if not isinstance(entree, dict):
+        return []
+    if entree.get("disabledMcpServers") == a_masquer:
+        return a_masquer
+    entree["disabledMcpServers"] = a_masquer
+    tmp = chemin.with_suffix(".tmp")
+    tmp.write_text(
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    tmp.replace(chemin)
+    return a_masquer
+
+
+def _load_json_object_local(path: Path) -> dict:
+    """Les serveurs declares par un `.mcp.json`, ou rien."""
+    if not path.is_file():
+        return {}
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+    serveurs = d.get("mcpServers") if isinstance(d, dict) else None
+    return serveurs if isinstance(serveurs, dict) else {}
+
+
 def prepare_vscode_handoff(
-    settings: AtelierSettings, slug: str, session_id: str, cwd: Path | None = None
+    settings: AtelierSettings,
+    slug: str,
+    session_id: str,
+    cwd: Path | None = None,
+    mode_permission: str = "",
+    connecteurs: set[str] | None = None,
 ) -> None:
     """Prepare le dossier que VS Code va ouvrir, et lui confie la conversation.
 
@@ -442,7 +603,10 @@ def prepare_vscode_handoff(
     dossier.mkdir(parents=True, exist_ok=True)
     sync_claude_home(settings, slug_v)
     write_claude_settings_env(settings)
-    write_vscode_workspace_config(settings, slug_v, dossier)
+    write_vscode_workspace_config(settings, slug_v, dossier, mode_permission)
+    ecrire_mode_du_dossier(dossier, mode_permission)
+    if connecteurs is not None:
+        accorder_les_connecteurs(dossier, connecteurs)
     write_user_code_server_settings(settings)
     ensure_claude_onboarding(settings, slug_v)
     write_resume_sidecar(settings, slug_v, session_id, dossier)
