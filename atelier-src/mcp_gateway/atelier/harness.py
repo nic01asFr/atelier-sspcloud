@@ -171,6 +171,16 @@ class Harness(ABC):
     @abstractmethod
     def interrupt(self, session_id: str) -> bool: ...
 
+    @abstractmethod
+    def tour_en_cours(self, session_id: str) -> bool:
+        """Un tour tourne-t-il vraiment pour cette conversation ?
+
+        La fiche dit « en cours » ; ce n'est pas la même chose. Un service
+        redémarré, un processus tué, et la fiche garde son état alors que plus
+        rien ne travaille. Seul le harnais sait, parce que c'est lui qui tient
+        les processus.
+        """
+
 
 class FakeHarness(Harness):
     """Harness factice — flux fixe, sans appeler claude (test modularité)."""
@@ -257,6 +267,9 @@ class FakeHarness(Harness):
     def interrupt(self, session_id: str) -> bool:
         self._running[session_id] = False
         return True
+
+    def tour_en_cours(self, session_id: str) -> bool:
+        return bool(self._running.get(session_id))
 
 
 # Les modes que le CLI accepte, et que l'Atelier propose. Éprouvés un par un
@@ -857,6 +870,10 @@ class ClaudeHarness(Harness):
             transcript_path=str(transcript_path),
             text="".join(texts),
         )
+
+    def tour_en_cours(self, session_id: str) -> bool:
+        proc = self._procs.get(session_id)
+        return proc is not None and proc.poll() is None
 
     def interrupt(self, session_id: str) -> bool:
         # Interrompre, c'est aussi renoncer aux questions du tour : le fil qui

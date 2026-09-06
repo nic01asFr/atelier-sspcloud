@@ -75,13 +75,18 @@ def test_ecrire_pendant_un_tour_met_en_file_au_lieu_de_lancer(
         "/v1/sessions", headers=entete, json={"slug": "essai", "title": "File"}
     ).json()["session_id"]
 
-    # On place la conversation dans l'état qu'aurait un tour en cours.
+    # On place la conversation dans l'état qu'aurait un tour en cours — et
+    # surtout, on fait qu'un tour tourne vraiment. La fiche seule ne suffit
+    # pas : une fiche qui dit « en cours » sans processus derrière est un
+    # fantôme, et la mise en file l'ignore désormais, faute de quoi le message
+    # attendrait un tour qui ne viendra jamais.
     fiche = atelier.app.state.settings.sessions_dir / f"{sid}.json"
     import json
 
     donnees = json.loads(fiche.read_text(encoding="utf-8"))
     donnees["state"] = "running"
     fiche.write_text(json.dumps(donnees), encoding="utf-8")
+    atelier.app.state.harness._running[sid] = True
 
     r = atelier.post(
         f"/v1/sessions/{sid}/messages", headers=entete, json={"message": "en retard"}
@@ -90,6 +95,32 @@ def test_ecrire_pendant_un_tour_met_en_file_au_lieu_de_lancer(
 
     attente = atelier.get(f"/v1/sessions/{sid}/file", headers=entete).json()["messages"]
     assert [m["texte"] for m in attente] == ["en retard"]
+
+
+def test_un_tour_fantome_ne_prend_pas_le_message_en_otage(atelier: TestClient) -> None:
+    """Une fiche qui dit « en cours » alors que plus rien ne tourne.
+
+    Un service redémarré, un processus tué, et l'état reste. Le message serait
+    alors déposé dans une file que personne ne viderait jamais : la parole
+    avalée en silence, ce qui est pire que refusée. On répare la fiche et l'on
+    joue le tour.
+    """
+    entete = {"Authorization": f"Bearer {_cle(atelier)}"}
+    sid = atelier.post(
+        "/v1/sessions", headers=entete, json={"slug": "essai", "title": "Fantôme"}
+    ).json()["session_id"]
+
+    import json
+
+    fiche = atelier.app.state.settings.sessions_dir / f"{sid}.json"
+    donnees = json.loads(fiche.read_text(encoding="utf-8"))
+    donnees["state"] = "running"
+    fiche.write_text(json.dumps(donnees), encoding="utf-8")
+    # Aucun tour n'est déclaré au harnais : la fiche ment.
+
+    atelier.post(f"/v1/sessions/{sid}/messages", headers=entete, json={"message": "bonjour"})
+    assert atelier.get(f"/v1/sessions/{sid}/file", headers=entete).json()["messages"] == []
+    assert atelier.get(f"/v1/sessions/{sid}", headers=entete).json()["state"] != "running"
 
 
 def test_la_file_se_lit_et_se_defait_par_l_api(atelier: TestClient) -> None:
@@ -134,3 +165,41 @@ def test_supprimer_une_conversation_emporte_sa_configuration_mcp(
 
     atelier.delete(f"/v1/sessions/{sid}", headers=entete)
     assert not trace.exists()
+
+
+def test_le_compteur_suit_les_messages_et_non_les_appels(atelier: TestClient) -> None:
+    """Deux messages échangés doivent se compter deux fois.
+
+    Depuis qu'on écrit pendant qu'un tour travaille, un même tour en traite
+    plusieurs : compter les appels au harnais en oubliait, et la liste des
+    conversations affichait un chiffre qui ne disait plus ce qu'il disait.
+
+    On fait rendre au harnais le tour d'un message qui en a enchaîné un autre —
+    c'est l'événement `message_suivant` qui le dit, et lui seul.
+    """
+    from mcp_gateway.atelier.harness import AtelierEvent, TurnResult
+
+    entete = {"Authorization": f"Bearer {_cle(atelier)}"}
+    sid = atelier.post(
+        "/v1/sessions", headers=entete, json={"slug": "essai", "title": "Compte"}
+    ).json()["session_id"]
+
+    harnais = atelier.app.state.harness
+    vrai_run_turn = harnais.run_turn
+
+    def run_turn_avec_enchainement(session_id, message, **kw):
+        resultat = vrai_run_turn(session_id, message, **kw)
+        resultat.events.append(
+            AtelierEvent(
+                kind="systeme", session_id=session_id, cause="message_suivant", text="deux"
+            )
+        )
+        return resultat
+
+    harnais.run_turn = run_turn_avec_enchainement
+    try:
+        atelier.post(f"/v1/sessions/{sid}/messages", headers=entete, json={"message": "un"})
+    finally:
+        harnais.run_turn = vrai_run_turn
+
+    assert atelier.get(f"/v1/sessions/{sid}", headers=entete).json()["turns"] == 2

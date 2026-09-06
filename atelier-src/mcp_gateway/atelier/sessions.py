@@ -28,6 +28,13 @@ from mcp_gateway.atelier.vscode_handoff import (
     nommer_pour_l_extension,
     rendre_visible_a_l_extension,
 )
+from mcp_gateway.atelier.journal import (
+    a_absorber,
+    fondre,
+    histoire_unifiee,
+    paroles_humaines,
+    uuids_connus,
+)
 
 log = logging.getLogger("atelier.sessions")
 
@@ -110,6 +117,28 @@ def _normalize_assistant_cwd(settings: AtelierSettings, rec: SessionRecord) -> P
     return Path(rec.cwd)
 
 
+# Les prises de parole que le CLI se rédige à lui-même sous le rôle « user ».
+# Aucune ne dit de quoi parle la conversation, et deux fils repris après
+# compaction portaient ainsi le même titre — celui d'un préambule.
+PREAMBULES_SYNTHETIQUES = (
+    "This session is being continued",
+    "Caveat: The messages below were generated",
+    "<system-reminder>",
+    "<command-name>",
+    "<local-command-stdout>",
+)
+
+# Au-delà, on renonce : un transcript de plusieurs milliers de lignes dont
+# aucune n'est de quelqu'un n'aura pas de titre plus bas non plus.
+LIGNES_CHERCHEES_POUR_LE_TITRE = 500
+
+
+def titre_utilisable(texte: str) -> bool:
+    """Un titre doit dire de quoi l'on parle, pas d'où l'on vient."""
+    debut = (texte or "").strip()
+    return bool(debut) and not debut.startswith(PREAMBULES_SYNTHETIQUES)
+
+
 def _default_title(slug: str, session_id: str) -> str:
     short = session_id[:8]
     if slug:
@@ -157,6 +186,14 @@ def _claude_name_rank(data: dict[str, Any]) -> int:
     return 2
 
 
+# La règle d'absorption en vigueur. On a d'abord repris ce qui portait un autre
+# point d'entrée que le nôtre, ce qui laissait dehors les entrées de nos propres
+# tours que le harnais ne consigne pas. Le `uuid` les attrape toutes ; changer de
+# règle demande d'incrémenter ce nombre, faute de quoi les conversations déjà
+# marquées garderaient le trou de l'ancienne.
+CRITERE_ABSORPTION = 1
+
+
 @dataclass
 class SessionRecord:
     session_id: str
@@ -184,6 +221,15 @@ class SessionRecord:
     # l'a été sous l'ancien.
     permission_mode: str = ""
     effort: str = ""
+    # Jusqu'où l'on a déjà recopié le registre du CLI dans le nôtre. Une
+    # conversation menée dans VS Code s'écrit là-bas ; sans cette marque, on
+    # la relirait en entier à chaque fois, ou on la recopierait deux fois.
+    octets_absorbes: int = 0
+    # Sous quel critère cette marque a été posée. Quand la règle d'absorption
+    # change, la marque d'avant ne vaut plus : elle a pu dépasser des entrées
+    # que l'ancienne règle écartait et que la nouvelle reprendrait. On rebalaie
+    # une fois, plutôt que de les perdre en silence.
+    critere_absorption: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -463,34 +509,50 @@ class SessionStore:
         return lignes, tours
 
     def _titre_depuis_claude(self, source: Path) -> str:
-        """Le premier mot de quelqu'un, qui vaut mieux qu'un identifiant."""
+        """Le premier mot de quelqu'un, qui vaut mieux qu'un identifiant.
+
+        Le premier n'est pas toujours de quelqu'un. Une conversation reprise
+        après compaction commence par un résumé que le CLI se rédige à
+        lui-même, sous le rôle « user » : deux conversations du pod s'appelaient
+        ainsi « This session is being continued from a previous… », ce qui ne
+        dit rien et les rendait indiscernables l'une de l'autre. On saute ces
+        prises de parole-là et l'on continue à chercher la vraie.
+
+        Et l'on parcourt le fichier ligne à ligne : ce résumé pèse parfois plus
+        que les 64 ko qu'on lisait d'un coup, si bien que le vrai premier
+        message tombait hors de portée et qu'il ne restait plus de titre du
+        tout.
+        """
         try:
             with source.open(encoding="utf-8", errors="replace") as f:
-                tete = f.read(65536)
+                for numero, ligne in enumerate(f):
+                    if numero > LIGNES_CHERCHEES_POUR_LE_TITRE:
+                        break
+                    ligne = ligne.strip()
+                    if not ligne.startswith("{") or '"type":"user"' not in ligne:
+                        continue
+                    try:
+                        enr = json.loads(ligne)
+                    except json.JSONDecodeError:
+                        continue
+                    if enr.get("isMeta") or enr.get("isSidechain"):
+                        continue
+                    contenu = (enr.get("message") or {}).get("content")
+                    if isinstance(contenu, str):
+                        texte = contenu
+                    elif isinstance(contenu, list):
+                        texte = " ".join(
+                            b.get("text", "")
+                            for b in contenu
+                            if isinstance(b, dict) and b.get("type") == "text"
+                        )
+                    else:
+                        continue
+                    texte = " ".join(texte.split())
+                    if texte and titre_utilisable(texte):
+                        return texte[:60]
         except OSError:
             return ""
-        for ligne in tete.split("\n"):
-            ligne = ligne.strip()
-            if not ligne.startswith("{") or '"type":"user"' not in ligne:
-                continue
-            try:
-                enr = json.loads(ligne)
-            except json.JSONDecodeError:
-                continue
-            if enr.get("isMeta") or enr.get("isSidechain"):
-                continue
-            contenu = (enr.get("message") or {}).get("content")
-            if isinstance(contenu, str):
-                texte = contenu
-            elif isinstance(contenu, list):
-                texte = " ".join(
-                    b.get("text", "") for b in contenu if isinstance(b, dict) and b.get("type") == "text"
-                )
-            else:
-                continue
-            texte = " ".join(texte.split())
-            if texte:
-                return texte[:60]
         return ""
 
     def adopter_conversations_claude(self) -> list[str]:
@@ -662,6 +724,17 @@ class SessionStore:
         )
         return fork
 
+    def _titre_du_transcript_claude(self, rec: SessionRecord) -> str:
+        """Le titre qu'aurait eu cette fiche si on l'avait su dès l'adoption."""
+        if not rec.cwd:
+            return ""
+        source = dossier_transcripts_claude(Path(rec.cwd)) / (
+            self._claude_cli_id(rec) + ".jsonl"
+        )
+        if not source.is_file():
+            return ""
+        return self._titre_depuis_claude(source)
+
     def sync_claude_titles(self) -> dict[str, Any]:
         """Aligne title depuis ~/.claude/sessions (extension / CLI Claude Code)."""
         # D'abord faire entrer ce qui manque : une conversation ouverte dans
@@ -697,6 +770,17 @@ class SessionStore:
         )
 
         for rec in records:
+            # Réparer avant d'aligner : deux conversations du pod portaient le
+            # préambule d'une reprise en guise de titre, posé par une version
+            # de ce code qui prenait la première prise de parole sans regarder
+            # de qui elle venait. Elles ne se seraient jamais renommées seules.
+            if rec.title and not titre_utilisable(rec.title):
+                retrouve = self._titre_du_transcript_claude(rec)
+                if retrouve:
+                    rec.title = retrouve
+                    self.save(rec)
+                    updated.append(rec.session_id)
+
             # Les deux listes doivent montrer la même chose : ce que l'Atelier
             # connaît, l'extension doit pouvoir le rouvrir. Elle écarte les
             # conversations marquées « sdk-cli », marque que le CLI pose à
@@ -752,6 +836,11 @@ class SessionStore:
 
             name = str(data.get("name") or "").strip()
             if not name or re.match(r"^[a-f0-9]{8}$", name):
+                continue
+            # L'IDE reprend parfois le même préambule que nous : le refuser
+            # ici aussi, sinon il réécrirait par la bande le titre qu'on vient
+            # de retrouver.
+            if not titre_utilisable(name):
                 continue
 
             changed = False
@@ -944,9 +1033,16 @@ class SessionStore:
             raise KeyError(session_id)
         if rec.state == "archived":
             raise ValueError("session is archived")
+        if rec.state == "running" and not self.harness.tour_en_cours(session_id):
+            # La fiche dit « en cours », mais plus rien ne tourne : un service
+            # redémarré, un processus tué. Sans cette reprise, le message
+            # partirait dans une file que personne ne viderait jamais — la
+            # parole avalée en silence, ce qui est pire que refusée.
+            rec.state = "failed" if rec.cause else "idle"
+            self.save(rec)
         if rec.state == "running":
-            # Un tour travaille déjà. On ne refuse pas et on n'en lance pas un
-            # second — deux processus sur le même identifiant de session se
+            # Un tour travaille vraiment. On ne refuse pas et on n'en lance pas
+            # un second — deux processus sur le même identifiant de session se
             # marcheraient dessus. Le message attend, et partira dans le tour
             # en cours dès qu'il aura fini le précédent : c'est le CLI qui
             # tient cette file, il suffit de lui écrire au bon moment.
@@ -1032,7 +1128,13 @@ class SessionStore:
             self.save(rec)
             raise
 
-        rec.turns += 1
+        # Un tour peut traiter plusieurs messages depuis qu'on écrit pendant
+        # qu'il travaille : celui qu'on lui a donné, puis ceux qui attendaient.
+        # Compter les appels au harnais revenait à en oublier — deux messages
+        # échangés, un seul affiché dans la liste.
+        rec.turns += 1 + sum(
+            1 for e in result.events if e.kind == "systeme" and e.cause == "message_suivant"
+        )
         rec.last_text = result.text
         if any(e.kind == "erreur" and e.cause == "timeout_mural" for e in result.events):
             rec.state = "timeout"
@@ -1092,11 +1194,86 @@ class SessionStore:
         self.save(rec)
         return rec
 
+    def registres_de(self, rec: SessionRecord) -> list[Path]:
+        """Les endroits où cette conversation s'est écrite.
+
+        Le nôtre d'abord : sa graphie est celle que l'affichage sait lire, et
+        c'est elle qui gagne quand un même geste figure des deux côtés.
+        """
+        registres = [Path(rec.transcript_path)]
+        if rec.cwd:
+            cli = dossier_transcripts_claude(Path(rec.cwd)) / (
+                self._claude_cli_id(rec) + ".jsonl"
+            )
+            registres.append(cli)
+        return registres
+
+    def absorber_le_cli(self, rec: SessionRecord) -> int:
+        """Recopie dans notre journal ce que l'autre fenêtre a écrit.
+
+        Une conversation menée dans VS Code s'écrit dans le registre du CLI ;
+        la nôtre n'en savait rien. On les fondait à la lecture, ce qui montrait
+        la bonne histoire mais n'en gardait qu'une moitié : le jour où ce
+        registre est réécrit ou purgé, ce qui n'était que là disparaît.
+
+        On ne recopie que ce qui vient d'ailleurs — le CLI estampille ses
+        entrées, les nôtres portent `sdk-cli` et sont déjà chez nous.
+
+        Deux gardes. On n'écrit pas pendant qu'un tour écrit : deux plumes sur
+        le même fichier couperaient une ligne en deux. Et on repart de l'octet
+        où l'on s'était arrêté, pour ne rien recopier deux fois — un doublon ne
+        se retire plus d'un journal qui ne fait qu'ajouter.
+
+        Renvoie le nombre d'entrées reprises.
+        """
+        if self.harness.tour_en_cours(rec.session_id):
+            return 0
+        if not rec.cwd:
+            return 0
+        source = dossier_transcripts_claude(Path(rec.cwd)) / (
+            self._claude_cli_id(rec) + ".jsonl"
+        )
+        journal = Path(rec.transcript_path)
+        if rec.critere_absorption < CRITERE_ABSORPTION:
+            rec.octets_absorbes = 0
+            rec.critere_absorption = CRITERE_ABSORPTION
+        # On ne relit notre cahier que s'il y a matière : c'est le seul coût
+        # notable ici, et il ne se paie pas quand rien n'a bougé ailleurs.
+        candidates, position = a_absorber(source, rec.octets_absorbes)
+        entrees = (
+            a_absorber(source, rec.octets_absorbes, uuids_connus(journal))[0]
+            if candidates
+            else []
+        )
+        if position == rec.octets_absorbes and not entrees:
+            return 0
+        if entrees:
+            journal.parent.mkdir(parents=True, exist_ok=True)
+            with journal.open("a", encoding="utf-8") as f:
+                for e in entrees:
+                    f.write(json.dumps(e, ensure_ascii=False) + "\n")
+        rec.octets_absorbes = position
+        # Le compteur affiché doit dire ce que le fil montre. Il ne comptait
+        # que les tours menés d'ici : une conversation travaillée dans VS Code
+        # s'annonçait « 2 tour(s) » avec deux cent soixante-sept entrées.
+        vues = paroles_humaines(fondre([journal]))
+        if vues > rec.turns:
+            rec.turns = vues
+        self.save(rec)
+        return len(entrees)
+
     def transcript_text(self, session_id: str) -> str:
+        """La conversation entière, d'où qu'elle ait été menée.
+
+        Elle s'écrit à deux endroits — notre journal, et le transcript du CLI
+        que VS Code alimente — et ni l'un ni l'autre n'est complet. Les rendre
+        séparément revenait à montrer deux histoires partielles selon la
+        fenêtre par laquelle on regardait.
+        """
         rec = self.get(session_id)
         if not rec:
             raise KeyError(session_id)
-        path = Path(rec.transcript_path)
-        if not path.is_file():
-            return ""
-        return path.read_text(encoding="utf-8")
+        # Absorber d'abord : la lecture fondue reste le filet, mais ce qui a
+        # été écrit ailleurs doit d'abord entrer dans notre cahier.
+        self.absorber_le_cli(rec)
+        return histoire_unifiee(self.registres_de(rec))

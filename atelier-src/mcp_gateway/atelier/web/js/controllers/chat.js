@@ -121,6 +121,25 @@ export function buildStreamBlocks(stream) {
  * tour s'achève côté serveur : relire trop tôt ne montrerait qu'un fil
  * tronqué, et donnerait l'impression que le reste s'est perdu.
  */
+/** Relit la conversation telle que le service la voit maintenant.
+ *
+ * Sans attendre la fin d'un tour, contrairement au rattrapage : ici rien ne
+ * tourne de notre côté, c'est l'autre fenêtre qui a écrit.
+ */
+async function relireLeJournal(state, render) {
+  const sessionId = state.sessionId;
+  if (!sessionId) return false;
+  try {
+    const messages = await buildMessagesFromServer(state, sessionId);
+    if (state.sessionId !== sessionId) return false;
+    state.messages = messages;
+    render();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function rattraperLeFil(state, render) {
   const sessionId = state.sessionId;
   if (!sessionId) return false;
@@ -498,6 +517,14 @@ export function createChatController(ctx) {
         // dessus.
         if (state.busy || state.sessionId !== sessionId) return;
         if (ev.kind === "heartbeat") return;
+        // Le journal a bougé ailleurs — dans VS Code, le plus souvent. On ne
+        // rejoue pas un flux qu'on n'a pas : on relit, et la lecture fondue
+        // rend l'histoire complete. A traiter avant d'ouvrir un bloc de flux,
+        // sinon on poserait une bulle vide pour un evenement qui n'en veut pas.
+        if (ev.kind === "systeme" && ev.cause === "journal_change") {
+          relireLeJournal(state, render);
+          return;
+        }
         if (!flux) {
           flux = { blocs: [], tools: [], decisions: [], phase: "attente" };
           S.appendMessage(state, {
