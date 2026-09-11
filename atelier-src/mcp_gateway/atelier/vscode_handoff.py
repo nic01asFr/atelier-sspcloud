@@ -117,6 +117,14 @@ def _merge_claude_settings_file(path: Path, settings: AtelierSettings) -> None:
     data["autoCompactEnabled"] = True
     if settings.cli_fenetre_compaction > 0:
         data["autoCompactWindow"] = settings.cli_fenetre_compaction
+        # Le réglage à la racine ne suffit pas : le binaire dit lui-même
+        # « this session can grow past it. To enforce it, set
+        # CLAUDE_CODE_AUTO_COMPACT_WINDOW ». C'est donc cette variable qui
+        # commande — et une autre main l'avait posée à 50 000, au-dessus du
+        # plafond de 40 000 : la compaction ne se déclenchait jamais avant la
+        # limite. Trois conversations en sont mortes en une semaine. On
+        # l'écrit nous-mêmes, à la même valeur que la racine, sous le plafond.
+        env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(settings.cli_fenetre_compaction)
     if settings.cli_contexte_max > 0:
         env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(settings.cli_contexte_max)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

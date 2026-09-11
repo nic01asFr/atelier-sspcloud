@@ -454,6 +454,15 @@ def _merge_user_claude_json(path: Path, servers: dict[str, dict[str, Any]]) -> N
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     tmp.replace(path)
+    # Ce fichier porte les adresses des connecteurs, et parfois leurs jetons en
+    # clair — celui de n8n y était, en 644, affiché par `claude mcp list`. Le
+    # mettre en 600 ne protège pas des agents, qui tournent sous le même
+    # utilisateur ; il protège du reste. Le vrai remède est que les secrets
+    # n'y entrent pas — c'est le chantier OAuth.
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
 
 
 def sync_summary(settings: AtelierSettings) -> dict[str, Any]:

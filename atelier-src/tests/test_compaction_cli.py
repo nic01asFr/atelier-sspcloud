@@ -71,3 +71,34 @@ def test_les_reglages_deja_la_ne_sont_pas_chasses(reglages, tmp_path: Path) -> N
     assert ecrit["hooks"] == {"x": 1}
     assert ecrit["env"]["MON_VAR"] == "a moi"
     assert ecrit["autoCompactEnabled"] is True
+
+
+def test_la_variable_qui_fait_respecter_la_fenetre_est_ecrite(reglages, tmp_path: Path) -> None:
+    """Le réglage à la racine ne suffit pas.
+
+    Le binaire du CLI le dit lui-même : « this session can grow past it. To
+    enforce it, set CLAUDE_CODE_AUTO_COMPACT_WINDOW ». Sans cette variable, la
+    fenêtre est un vœu.
+    """
+    ecrit = _reglages_ecrits(reglages, tmp_path)
+    assert ecrit["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == str(reglages.cli_fenetre_compaction)
+
+
+def test_une_fenetre_posee_par_une_autre_main_est_ramenee_sous_le_plafond(
+    reglages, tmp_path: Path
+) -> None:
+    """Mesuré sur le pod : 50 000 en environnement, plafond à 40 000.
+
+    La compaction se déclenchait après la limite, donc jamais. Trois
+    conversations en sont mortes en une semaine.
+    """
+    chemin = tmp_path / "settings.json"
+    chemin.write_text(
+        json.dumps({"env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "50000"}}), encoding="utf-8"
+    )
+    reglages.llm_key_path.parent.mkdir(parents=True, exist_ok=True)
+    reglages.llm_key_path.write_text("factice", encoding="utf-8")
+
+    _merge_claude_settings_file(chemin, reglages)
+    env = json.loads(chemin.read_text(encoding="utf-8"))["env"]
+    assert int(env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]) < int(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])

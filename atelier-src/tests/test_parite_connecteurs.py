@@ -147,3 +147,22 @@ def test_un_connecteur_en_commande_n_a_pas_de_transport() -> None:
     from mcp_gateway.atelier.gateway_mcp import _avec_son_transport
 
     assert "type" not in _avec_son_transport({"command": "node", "args": ["s.js"]})
+
+
+def test_le_fichier_utilisateur_du_cli_n_est_lisible_que_par_son_proprietaire(tmp_path: Path) -> None:
+    """Il porte les adresses des connecteurs, et parfois leurs jetons en clair.
+
+    Mesuré sur le pod : `~/.claude.json` en 644, avec le jeton n8n dedans,
+    affiché par `claude mcp list`. Sur Windows, les droits POSIX n'ont pas de
+    sens ; on ne vérifie que là où ils en ont un.
+    """
+    import os
+    import stat
+
+    from mcp_gateway.atelier.mcp_sync import _merge_user_claude_json
+
+    chemin = tmp_path / ".claude.json"
+    _merge_user_claude_json(chemin, {"x": {"type": "http", "url": "http://x"}})
+    assert chemin.is_file()
+    if os.name == "posix":
+        assert stat.S_IMODE(chemin.stat().st_mode) == 0o600

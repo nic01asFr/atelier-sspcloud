@@ -1208,6 +1208,25 @@ class SessionStore:
             registres.append(cli)
         return registres
 
+    def reconcilier_les_etats(self) -> list[str]:
+        """Rend leur vérité aux fiches qui se disent « en cours » sans processus.
+
+        Un service redémarré laisse cet état derrière lui, et rien ne le
+        corrigeait avant l'envoi d'un message. Entre-temps la conversation
+        s'affichait en cours, l'absorption du journal la tenait pour occupée
+        et l'ignorait, et un message posté partait en file au lieu de jouer.
+        Deux fiches réparées à la main le 7 septembre ; on le fait ici, à
+        chaque démarrage.
+        """
+        reparees: list[str] = []
+        for rec in self.list_sessions(include_archived=True):
+            if rec.state != "running" or self.harness.tour_en_cours(rec.session_id):
+                continue
+            rec.state = "failed" if rec.cause else "idle"
+            self.save(rec)
+            reparees.append(rec.session_id)
+        return reparees
+
     def absorber_le_cli(self, rec: SessionRecord) -> int:
         """Recopie dans notre journal ce que l'autre fenêtre a écrit.
 

@@ -394,6 +394,13 @@ class ClaudeHarness(Harness):
         except OSError:
             pass
         env["PATH"] = str(self.settings.work_dir / "bin") + os.pathsep + env.get("PATH", "")
+        # La compaction de nos tours, dite au processus lui-même plutôt que
+        # laissée au fichier de réglages global — partagé avec VS Code et
+        # avec d'autres mains, où deux valeurs se sont déjà contredites.
+        if self.settings.cli_fenetre_compaction > 0:
+            env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(self.settings.cli_fenetre_compaction)
+        if self.settings.cli_contexte_max > 0:
+            env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(self.settings.cli_contexte_max)
         # Clé de la porte MCP de l'Atelier. Elle passe par l'environnement du
         # processus plutôt que par le `.mcp.json` : le fichier vit dans le
         # dossier du projet, qu'on partage et qu'on versionne.

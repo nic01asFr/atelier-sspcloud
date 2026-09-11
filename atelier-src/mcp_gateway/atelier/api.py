@@ -509,6 +509,12 @@ def build_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Avant tout : un service qui redémarre ne doit pas hériter d'états
+        # que plus aucun processus ne porte.
+        try:
+            store.reconcilier_les_etats()
+        except OSError:
+            pass
         if not use_fake:
             await gateway_startup(app, settings)
         yield

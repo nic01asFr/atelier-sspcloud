@@ -14,80 +14,16 @@ MCP_URL = os.environ.get(
 SESSION = os.environ.get("ATELIER_MCP_SESSION", "proj-claude-code")
 ROOT = pathlib.Path(__file__).resolve().parent.parent / "atelier-src/mcp_gateway/atelier"
 BASE = "/home/onyxia/work/atelier-src/mcp_gateway/atelier"
-# Tous les fichiers du service, sans exception : une liste tenue à la main
-# laissait quinze modules hors déploiement, dont les changements ne
-# partaient jamais — en silence, ce qui est le pire des cas.
-FILES = [
-    "web/js/views/agent.js",
-    "web/js/controllers/agent.js",
-    "web/js/views/connectors.js",
-    "web/js/views/composition-builder.js",
-    "web/js/controllers/connectors.js",
-    "web/js/views/code-tree.js",
-    "web/js/views/code-chat.js",
-    "web/js/controllers/chat.js",
-    "web/js/controllers/projects.js",
-    "web/js/controllers/sessions.js",
-    "web/js/controllers/auth.js",
-    "web/js/state.js",
-    "web/js/api.js",
-    "web/js/ui/tool-picker.js",
-    "web/js/ui/tool-variant.js",
-    "web/js/ui/modal.js",
-    "web/js/views/composer-mcp.js",
-    "web/js/controllers/composer-mcp.js",
-    "api.py",
-    "projects.py",
-    "git_repos.py",
-    "decisions.py",
-    "journal.py",
-    "sessions.py",
-    "gateway_tools.py",
-    "session_mcp.py",
-    "mcp_sync.py",
-    "stdio_probe.py",
-    "mcp_endpoint.py",
-    "wikichat_ensure.py",
-    "wikichat_projects.py",
-    "project_context.py",
-    "enrichissements.py",
-    "ui_settings.py",
-    "vscode_proxy.py",
-    "vscode_handoff.py",
-    "decrire_connecteur.py",
-    "llm.py",
-    "pilote_overview.py",
-    "harness.py",
-    "web/js/app.js",
-    "web/css/app.css",
-    "web/index.html",
-    "__init__.py",
-    "app.py",
-    "auth.py",
-    "claude_home.py",
-    "config.py",
-    "events.py",
-    "gateway_mcp.py",
-    "gateway_overview.py",
-    "gateway_runtime.py",
-    "mcp_registry.py",
-    "models_catalog.py",
-    "pilote_client.py",
-    "session_attachments.py",
-    "vscode_bridge.py",
-    "web/js/controllers/composer-input.js",
-    "web/js/core/dom.js",
-    "web/js/core/router.js",
-    "web/js/services/catalog.js",
-    "web/js/services/vscode.js",
-    "web/js/ui/auto-grow-textarea.js",
-    "web/js/ui/code-highlight.js",
-    "web/js/ui/context-menu.js",
-    "web/js/ui/markdown.js",
-    "web/js/ui/message-render.js",
-    "web/js/views/shell.js",
-    "wikichat_pilote_proxy.py",
-]
+# Tous les fichiers du service, sans exception — enumeres, pas recites. Une
+# liste tenue a la main avait laisse quinze modules hors deploiement, puis un
+# module neuf, `journal.py`, que le service importait : deux minutes d'arret
+# dont la cause ne se lisait que dans le journal du pod. L'arbre fait foi.
+EXTENSIONS = (".py", ".js", ".html", ".css")
+FILES = sorted(
+    str(p.relative_to(ROOT)).replace("\\", "/")
+    for p in ROOT.rglob("*")
+    if p.is_file() and p.suffix in EXTENSIONS and "__pycache__" not in p.parts
+)
 
 # Notre version de wikichat (voir wikichat-atelier/README.md) : elle vit hors
 # de l'arbre du service, mais se deploie avec lui — sinon elle ne survivrait
