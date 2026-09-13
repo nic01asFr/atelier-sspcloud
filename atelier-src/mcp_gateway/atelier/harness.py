@@ -304,6 +304,10 @@ class FakeHarness(Harness):
 MODES_PERMISSION = ("bypassPermissions", "acceptEdits", "auto", "manual", "plan")
 MODE_PERMISSION_DEFAUT = "bypassPermissions"
 NIVEAUX_EFFORT = ("low", "medium", "high", "xhigh", "max")
+# Ce que TOUS les modèles servis par la passerelle acceptent — mesuré :
+# `high` et `max` passent sur le modèle principal et sont refusés par celui du
+# repli. `medium` passe partout.
+EFFORT_SUR_LA_PASSERELLE = "medium"
 
 
 # Ce qu'on répond quand la question ne peut atteindre personne. Le motif part
@@ -401,6 +405,14 @@ class ClaudeHarness(Harness):
             env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(self.settings.cli_fenetre_compaction)
         if self.settings.cli_contexte_max > 0:
             env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(self.settings.cli_contexte_max)
+        # L'effort par défaut du CLI est `high`, et le modèle de repli de la
+        # passerelle — celui du créneau haiku, qui sert aussi les sous-agents —
+        # le refuse : « Unexpected reasoning effort high. Supported types are
+        # xhigh, medium, and low ». Trois conversations en sont mortes en
+        # plein travail, dont un lot entier non commité. On fixe un effort que
+        # tous les modèles servis acceptent ; une conversation qui en demande
+        # un autre le dit par `--effort`, qui prime.
+        env["CLAUDE_CODE_EFFORT_LEVEL"] = self.settings.effort or EFFORT_SUR_LA_PASSERELLE
         # Clé de la porte MCP de l'Atelier. Elle passe par l'environnement du
         # processus plutôt que par le `.mcp.json` : le fichier vit dans le
         # dossier du projet, qu'on partage et qu'on versionne.
