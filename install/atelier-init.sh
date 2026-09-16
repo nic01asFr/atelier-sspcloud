@@ -234,6 +234,7 @@ if [ ! -s "$WORK/.claude/settings.json" ]; then
   "fallbackModel": [$replis],
   "hooks": $crochets,
   "apiKeyHelper": "cat $SECRETS/llm_api_key",
+  "effortLevel": "medium",
   "env": {
     "ANTHROPIC_BASE_URL": "$PASSERELLE_LLM",
     "ANTHROPIC_MODEL": "$MODELE",
@@ -244,6 +245,7 @@ if [ ! -s "$WORK/.claude/settings.json" ]; then
     "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "40000",
     "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "30000",
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8192",
+    "CLAUDE_CODE_EFFORT_LEVEL": "medium",
     "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT": "1"

@@ -50,7 +50,7 @@ from mcp_gateway.atelier.vscode_bridge import (
     load_vscode_password,
     save_vscode_password,
 )
-from mcp_gateway.atelier.vscode_handoff import prepare_vscode_handoff
+from mcp_gateway.atelier.vscode_handoff import prepare_vscode_handoff, write_claude_settings_env
 from mcp_gateway.atelier.vscode_proxy import (
     is_internal_request,
     register_vscode_proxy,
@@ -517,6 +517,14 @@ def build_app(
         except OSError:
             pass
         if not use_fake:
+            # Les réglages partagés du CLI ne s'écrivaient qu'à l'ouverture d'une
+            # conversation dans VS Code par l'Atelier. Un VS Code ouvert autrement,
+            # un terminal, un agent de wikichat ne les recevaient jamais — l'effort
+            # compris. On les pose dès le démarrage.
+            try:
+                write_claude_settings_env(settings)
+            except OSError:
+                pass
             await gateway_startup(app, settings)
         yield
         if not use_fake and hasattr(app.state, "pool"):

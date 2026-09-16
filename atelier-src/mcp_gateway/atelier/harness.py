@@ -20,7 +20,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from mcp_gateway.atelier.claude_home import sync_claude_home
-from mcp_gateway.atelier.config import AtelierSettings
+from mcp_gateway.atelier.config import (
+    EFFORT_SUR_LA_PASSERELLE,
+    AtelierSettings,
+    effort_accepte_partout,
+)
 from mcp_gateway.atelier.decisions import (
     Demande,
     RegistreDesDecisions,
@@ -312,10 +316,7 @@ MODE_PERMISSION_DEFAUT = "acceptEdits"
 # comportement historique.
 MODE_SANS_INTERLOCUTEUR = "bypassPermissions"
 NIVEAUX_EFFORT = ("low", "medium", "high", "xhigh", "max")
-# Ce que TOUS les modèles servis par la passerelle acceptent — mesuré :
-# `high` et `max` passent sur le modèle principal et sont refusés par celui du
-# repli. `medium` passe partout.
-EFFORT_SUR_LA_PASSERELLE = "medium"
+# Les niveaux acceptés partout, et celui par défaut : voir `config.py`.
 
 
 # Ce qu'on répond quand la question ne peut atteindre personne. Le motif part
@@ -480,7 +481,7 @@ class ClaudeHarness(Harness):
         # plein travail, dont un lot entier non commité. On fixe un effort que
         # tous les modèles servis acceptent ; une conversation qui en demande
         # un autre le dit par `--effort`, qui prime.
-        env["CLAUDE_CODE_EFFORT_LEVEL"] = self.settings.effort or EFFORT_SUR_LA_PASSERELLE
+        env["CLAUDE_CODE_EFFORT_LEVEL"] = effort_accepte_partout(self.settings.effort)
         # Clé de la porte MCP de l'Atelier. Elle passe par l'environnement du
         # processus plutôt que par le `.mcp.json` : le fichier vit dans le
         # dossier du projet, qu'on partage et qu'on versionne.
@@ -762,9 +763,11 @@ class ClaudeHarness(Harness):
             "--permission-mode",
             mode_permission_valide(permission_mode),
         ]
+        # Une conversation qui demande `high` le garde en fiche, mais part avec
+        # un niveau que le repli accepte : sinon elle meurt au premier repli.
         niveau = effort_valide(effort)
         if niveau:
-            cmd.extend(["--effort", niveau])
+            cmd.extend(["--effort", effort_accepte_partout(niveau)])
         cmd.extend(self._arguments_des_regles(session_id))
         if resume:
             cmd.extend(["--resume", cli_id])
@@ -802,7 +805,7 @@ class ClaudeHarness(Harness):
             lf.write(
                 "mode: %s | effort: %s | modele: %s" % (
                     mode_permission_valide(permission_mode),
-                    effort_valide(effort) or "(defaut)",
+                    effort_accepte_partout(effort_valide(effort)) if effort_valide(effort) else "(defaut)",
                     model or "(defaut)",
                 )
                 + chr(10)

@@ -7,7 +7,7 @@ import re
 import shutil
 from pathlib import Path
 
-from mcp_gateway.atelier.config import AtelierSettings
+from mcp_gateway.atelier.config import AtelierSettings, effort_accepte_partout
 from mcp_gateway.atelier.claude_home import sync_claude_home as sync_claude_home_store
 
 CLAUDE_CODE_EXTENSION_ID = "anthropic.claude-code"
@@ -127,6 +127,15 @@ def _merge_claude_settings_file(path: Path, settings: AtelierSettings) -> None:
         env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(settings.cli_fenetre_compaction)
     if settings.cli_contexte_max > 0:
         env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(settings.cli_contexte_max)
+    # L'effort, pour tout ce qui lance `claude` sans passer par nos tours :
+    # l'extension VS Code, le terminal, les agents de wikichat. Notre harnais
+    # le fixait pour lui seul ; le 16 septembre, les erreurs « Unexpected
+    # reasoning effort high » sont tombées dans VS Code, au bout d'une chaîne
+    # de replis. Un choix déjà fait est gardé s'il passe partout, relevé à
+    # `xhigh` s'il visait plus haut ; sinon, celui du service.
+    niveau = effort_accepte_partout(data.get("effortLevel") or settings.effort)
+    data["effortLevel"] = niveau
+    env["CLAUDE_CODE_EFFORT_LEVEL"] = niveau
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 

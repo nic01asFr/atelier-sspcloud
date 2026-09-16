@@ -8,6 +8,33 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# Les niveaux d'effort que TOUS les modèles de la passerelle acceptent.
+# Mesuré le 16 septembre 2026, CLI 2.1.273, repli neutralisé, sur chacun des
+# trois modèles servis : low, medium et xhigh passent partout ; high est refusé
+# par qwen3-8-27b — « Unexpected reasoning effort high. Supported types are
+# xhigh, medium, and low ». Or ce modèle est à la fois le dernier repli et celui
+# des sous-agents : un effort `high`, défaut du CLI, ne tombe pas au premier
+# appel mais au pire moment, quand les deux autres ont déjà échoué, et son
+# message masque alors la vraie cause.
+EFFORTS_ACCEPTES_PARTOUT = ("low", "medium", "xhigh")
+EFFORT_SUR_LA_PASSERELLE = "medium"
+
+
+def effort_accepte_partout(niveau: str | None) -> str:
+    """Le niveau demandé s'il passe partout, sinon le plus proche qui passe.
+
+    `high` et `max` deviennent `xhigh` : on garde l'intention — réfléchir
+    davantage — plutôt que de la réduire en silence. Rien, ou un niveau
+    inconnu, donne le niveau de la passerelle.
+    """
+    choix = (niveau or "").strip().lower()
+    if choix in EFFORTS_ACCEPTES_PARTOUT:
+        return choix
+    if choix in ("high", "max"):
+        return "xhigh"
+    return EFFORT_SUR_LA_PASSERELLE
+
+
 def _default_work() -> Path:
     return Path(os.environ.get("ATELIER_WORK", os.environ.get("HOME", "/home/onyxia") + "/work"))
 
