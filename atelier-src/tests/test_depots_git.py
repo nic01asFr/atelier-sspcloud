@@ -45,9 +45,16 @@ def test_un_projet_naît_versionné(reglages: AtelierSettings) -> None:
 
 @besoin_de_git
 def test_l_identité_des_commits_est_celle_des_réglages(
-    reglages: AtelierSettings,
+    reglages: AtelierSettings, tmp_path: Path, monkeypatch
 ) -> None:
-    """Locale au dépôt : on ne réécrit pas la machine pour un projet."""
+    """Locale au dépôt : on ne réécrit pas la machine pour un projet.
+
+    Et seulement faute d'identité globale — sur une machine qui en porte une,
+    c'est elle qui signe (voir test_liste_et_depots). On lit donc un fichier
+    global vide, pour ne pas dépendre du poste où le test tourne.
+    """
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(tmp_path / "gitconfig-vide"))
+    (tmp_path / "gitconfig-vide").write_text("", encoding="utf-8")
     projet = ProjectStore(reglages).create("essai-identite", kind="code")
     assert f"{reglages.git_user_name} <{reglages.git_user_email}>" in _journal(
         Path(projet.path)

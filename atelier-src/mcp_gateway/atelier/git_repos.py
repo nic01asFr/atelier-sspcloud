@@ -49,6 +49,7 @@ GITIGNORE = """# Écrit par l'Atelier.
 .claude/projects/
 .atelier/
 .wikichat/
+.vscode/
 
 # Ce qui ne doit jamais partir. Un projet du pod porte souvent un .env
 # d'amorçage — on en a trouvé un qui disait « ne pas committer » sur sa
@@ -136,14 +137,64 @@ def _git(
 
 
 def _identite(settings: AtelierSettings, chemin: Path) -> None:
-    """Pose l'identité des commits sur ce dépôt, et sur lui seul.
+    """Pose l'identité des commits sur ce dépôt, et sur lui seul — si la
+    machine n'en a pas.
 
     Locale et non globale : le pod porte d'autres dépôts, dont un clone amont
     qui traîne déjà une adresse d'emprunt. On ne réécrit pas la machine pour
     configurer un projet.
+
+    Et l'inverse : quand la machine porte une identité, c'est la vraie —
+    celle de la personne. Quatorze projets signaient « Atelier
+    <atelier@localhost> » parce que notre réglage local recouvrait tout ;
+    on ne pose le nôtre que faute de mieux, et on retire celui qu'on avait
+    posé dès qu'une identité globale existe.
     """
+    globale = _git(chemin, "config", "--global", "--get", "user.email", verifier=False)
+    if globale:
+        for cle, defaut in (
+            ("user.name", settings.git_user_name),
+            ("user.email", settings.git_user_email),
+        ):
+            if _git(chemin, "config", "--local", "--get", cle, verifier=False) == defaut:
+                _git(chemin, "config", "--local", "--unset", cle, verifier=False)
+        return
     _git(chemin, "config", "user.name", settings.git_user_name)
     _git(chemin, "config", "user.email", settings.git_user_email)
+
+
+# Les lignes du .gitignore que l'Atelier doit à ses propres dépôts : un
+# fichier écrit avant qu'une ligne existe ne la connaît pas, et un agent qui
+# « commite tout » emporte alors ce qu'on dépose — `.vscode/` l'a été.
+LIGNES_DE_L_ATELIER = (
+    ".claude/settings.local.json",
+    ".claude/projects/",
+    ".atelier/",
+    ".wikichat/",
+    ".vscode/",
+)
+
+
+def completer_le_gitignore(chemin: Path) -> list[str]:
+    """Ajoute au .gitignore les dépôts de l'Atelier qui y manquent.
+
+    N'écrit rien d'autre : le reste du fichier appartient au projet. Rend
+    les lignes ajoutées, pour le dire.
+    """
+    gitignore = chemin / ".gitignore"
+    if not gitignore.is_file():
+        gitignore.write_text(GITIGNORE, encoding="utf-8")
+        return list(LIGNES_DE_L_ATELIER)
+    contenu = gitignore.read_text(encoding="utf-8")
+    presentes = {l.strip() for l in contenu.splitlines()}
+    manquantes = [l for l in LIGNES_DE_L_ATELIER if l not in presentes]
+    if not manquantes:
+        return []
+    ajout = "" if contenu.endswith(chr(10)) or not contenu else chr(10)
+    ajout += "# Déposé par l'Atelier, à ne pas versionner." + chr(10)
+    ajout += chr(10).join(manquantes) + chr(10)
+    gitignore.write_text(contenu + ajout, encoding="utf-8")
+    return manquantes
 
 
 def etat(chemin: Path) -> EtatDepot:
@@ -231,9 +282,7 @@ def initialiser(settings: AtelierSettings, chemin: Path) -> EtatDepot:
 
     _git(chemin, "init", "-b", BRANCHE)
     _identite(settings, chemin)
-    gitignore = chemin / ".gitignore"
-    if not gitignore.is_file():
-        gitignore.write_text(GITIGNORE, encoding="utf-8")
+    completer_le_gitignore(chemin)
 
     # Un dépôt sans commit n'a pas de branche : `rev-parse HEAD` échoue, et la
     # veille ne trouve rien à lire. Le premier commit fait exister l'histoire,
@@ -252,6 +301,7 @@ def enregistrer(settings: AtelierSettings, chemin: Path, message: str) -> EtatDe
     if not (chemin / ".git").is_dir():
         initialiser(settings, chemin)
     _identite(settings, chemin)
+    completer_le_gitignore(chemin)
     _git(chemin, "add", "-A")
     if not _git(chemin, "status", "--porcelain", verifier=False):
         return etat(chemin)
