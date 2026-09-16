@@ -75,7 +75,11 @@
                   <option value="plan">Plan — réfléchit, ne modifie rien</option>
                   <option value="manual">Demande — chaque geste soumis</option>
                   <option value="acceptEdits">Édite — demande pour le reste</option>
-                  <option value="auto">Auto — refuse ce qui est risqué</option>
+                  <!-- Pas de mode « auto » ici : il repose sur un classifieur que la
+                       passerelle LLM du pod ne sert pas. Mesuré : « Auto mode could not
+                       evaluate this action and is blocking it for safety », trois fois de
+                       suite, puis tout est bloqué. Le service l'accepte toujours pour
+                       rester aligné sur le CLI ; l'interface ne le propose pas. -->
                   <option value="bypassPermissions">Sans garde-fou</option>
                 </select>
                 <div class="composer-actions">

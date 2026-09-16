@@ -11,6 +11,7 @@ import {
   refreshSessions,
   refreshMcpOverview,
   refreshPiloteOverview,
+  veillerLesSessions,
 } from "../services/catalog.js";
 
 /**
@@ -56,6 +57,7 @@ export function createAuthController(ctx) {
       }
       await refreshProjects(state);
       await refreshSessions(state);
+      veillerLesSessions(state, render);
       if (state.view === "connecteurs") {
         await refreshMcp(state);
         await refreshMcpOverview(state);

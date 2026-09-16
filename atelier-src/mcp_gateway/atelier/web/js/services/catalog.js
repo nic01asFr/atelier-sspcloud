@@ -60,7 +60,42 @@ export async function buildMessagesFromServer(state, sessionId) {
   const { transcript } = await api.getTranscript(state.token, sessionId);
   const parsed = api.messagesFromTranscript(transcript || "");
   const messages = api.mergeChatMessages(stored, parsed);
-  return [...messages, ...(await questionsRestees(state, sessionId))];
+  // Une question déjà dans le fil ne se rajoute pas en fin : après un
+  // rechargement pendant une attente, la même carte se montrait deux fois,
+  // avec deux jeux de boutons.
+  const connues = new Set();
+  for (const m of messages) {
+    for (const b of m.blocks || []) {
+      if (b.type === "decision" && b.demande?.request_id) connues.add(b.demande.request_id);
+    }
+  }
+  const restees = (await questionsRestees(state, sessionId)).filter(
+    (carte) => !connues.has(carte.blocks[0]?.demande?.request_id)
+  );
+  return [...messages, ...restees];
+}
+
+let veilleDesSessions = null;
+
+/**
+ * Relit la liste des conversations à intervalle, tant que l'onglet est visible.
+ *
+ * La liste ne bougeait qu'à la suite d'un geste de cet onglet : un tour lancé
+ * depuis VS Code, une autorisation demandée dans un autre fil, restaient
+ * invisibles jusqu'au rechargement. Une lecture toutes les quinze secondes
+ * suffit — c'est une liste, pas un flux.
+ */
+export function veillerLesSessions(state, render, intervalleMs = 15000) {
+  if (veilleDesSessions) return;
+  veilleDesSessions = setInterval(async () => {
+    if (document.visibilityState !== "visible" || !state.token) return;
+    try {
+      await refreshSessions(state);
+      render();
+    } catch {
+      /* la prochaine lecture fera foi */
+    }
+  }, intervalleMs);
 }
 
 /**

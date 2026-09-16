@@ -279,6 +279,10 @@ function createApp() {
     const q = readQuery();
     S.setView(state, q.view);
     if (q.slug) S.setSlug(state, q.slug);
+    // Un lien vers un projet sans conversation veut dire « écris ici » : le
+    // premier message y ouvre une conversation. Sans cela il créait un projet
+    // neuf, nommé d'après ses premiers mots — un dossier fantôme par lien.
+    if (q.slug && !q.session) S.setPendingProjectSlug(state, q.slug);
     if (state.token) {
       await auth.enterHub();
     } else {

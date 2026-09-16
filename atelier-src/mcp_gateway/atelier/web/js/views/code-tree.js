@@ -16,6 +16,9 @@ export function createCodeTreeView(ctx) {
 
   // Contrat de pastilles commun : au repos / en reponse / en erreur.
   function sessionTone(session) {
+    // Attendre une autorisation n'est pas répondre : l'agent est arrêté
+    // jusqu'à ce qu'on vienne. Cela se voit d'abord, avant tout état.
+    if (session?.attend_une_decision) return ["warn", "autorisation demandée"];
     switch (session?.state) {
       case "running":
         return ["busy", "en réponse"];

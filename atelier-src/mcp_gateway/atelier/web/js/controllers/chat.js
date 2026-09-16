@@ -296,8 +296,12 @@ function appliquerEvenement(ctx, stream, ev) {
         stream.phase = "decision";
         pushStreamToUi(state, stream);
         views.codeChat.renderThread();
+        // La liste latérale doit dire « autorisation demandée » : c'est
+        // elle qu'on regarde depuis un autre fil.
+        refreshSessions(state).then(render);
       }
     } else if (ev.kind === "decision_rendue") {
+      refreshSessions(state).then(render);
       const posee = stream.decisions.find(
         (d) => d.demande?.request_id === ev.tool_id
       );
@@ -393,8 +397,10 @@ export function createChatController(ctx) {
 
     // Un tour travaille déjà : le message ne se perd pas et n'en lance pas un
     // second. Il attend, et partira dans le tour en cours dès qu'il aura fini
-    // le précédent.
-    if (state.busy) {
+    // le précédent. Le tour peut avoir été lancé ailleurs — un autre onglet,
+    // ou cet onglet avant rechargement : on le suit alors sans être occupé,
+    // et lancer un flux par-dessus figeait l'écran jusqu'au rechargement.
+    if (state.busy || tourEnCoursAilleurs()) {
       if (!state.sessionId || !text) return;
       $("composer-input").value = "";
       composerInput?.resetGrow?.();
@@ -458,8 +464,15 @@ export function createChatController(ctx) {
     try {
       await api.streamEvents(state.sessionId, text, {
         attachmentIds,
-        onEvent: (ev) =>
-          appliquerEvenement({ state, render, views }, stream, ev),
+        onEvent: (ev) => {
+          // Dès le premier signe de vie, la liste latérale doit passer
+          // « en réponse » : elle restait « jamais lancée » tout le tour.
+          if (!stream.listeRafraichie) {
+            stream.listeRafraichie = true;
+            refreshSessions(state).then(render);
+          }
+          appliquerEvenement({ state, render, views }, stream, ev);
+        },
       });
       S.finalizeAssistant(state);
       if (!stream.blocs.length) {
@@ -489,11 +502,20 @@ export function createChatController(ctx) {
   // tourner. Un seul canal à la fois : on referme en changeant de fil.
   let fermerLObservation = null;
   let sessionObservee = null;
+  // Vrai tant qu'un tour lancé ailleurs remplit le fil observé.
+  let tourObserve = false;
+
+  function tourEnCoursAilleurs() {
+    if (tourObserve) return true;
+    const fiche = (state.sessions || []).find((s) => s.session_id === state.sessionId);
+    return fiche?.state === "running";
+  }
 
   function cesserDObserver() {
     if (fermerLObservation) fermerLObservation();
     fermerLObservation = null;
     sessionObservee = null;
+    tourObserve = false;
   }
 
   /**
@@ -527,6 +549,7 @@ export function createChatController(ctx) {
         }
         if (!flux) {
           flux = { blocs: [], tools: [], decisions: [], phase: "attente" };
+          tourObserve = true;
           S.appendMessage(state, {
             role: "assistant",
             text: "",
@@ -537,6 +560,7 @@ export function createChatController(ctx) {
         appliquerEvenement({ state, render, views }, flux, ev);
         if (ev.kind === "fin" || ev.kind === "erreur") {
           flux = null;
+          tourObserve = false;
           S.finalizeAssistant(state);
           refreshSessions(state).then(render);
         }
