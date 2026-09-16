@@ -63,9 +63,23 @@ class AtelierSettings(BaseSettings):
     # 8 192 elle passe.
     max_output_tokens: int = 8192
     # Comment travaillent les conversations qui ne disent rien de particulier.
-    # `bypassPermissions` est le comportement historique ; le jour où un autre
-    # défaut paraîtra plus sage, il se change ici sans toucher aux fiches.
-    permission_mode: str = "bypassPermissions"
+    # `bypassPermissions` fut le comportement historique, seul vivable tant
+    # qu'une réponse « toujours » ne tenait pas. Depuis qu'elle tient — le CLI
+    # applique lui-même ce qu'on a accordé —, `acceptEdits` demande une fois
+    # par commande et se tait ensuite : c'est le réglage d'un atelier où
+    # quelqu'un regarde. Un tour sans interlocuteur (agent piloté, script)
+    # garde `bypassPermissions`, sinon il refuserait tout : voir
+    # `MODE_SANS_INTERLOCUTEUR` dans le harnais.
+    permission_mode: str = "acceptEdits"
+    # Un processus `claude` par conversation, gardé entre les tours. Mesuré le
+    # 14 septembre 2026 avec dix connecteurs : 3,8 s de reconnexion MCP à
+    # chaque processus neuf, 6,6 s au premier mot contre 2,7 s dans le même
+    # processus — et sa file de messages devient la nôtre. Il s'éteint après
+    # ce silence, et on n'en garde qu'autant que la mémoire le permet : 238 Mo
+    # chacun, mesuré, sur un pod sans zone d'échange.
+    cli_processus_vivant: bool = True
+    cli_inactivite_s: int = 600
+    cli_processus_max: int = 3
     effort: str = ""
     default_model: str = ""  # vide = laisser le CLI / settings décider
     default_slug: str = "default"

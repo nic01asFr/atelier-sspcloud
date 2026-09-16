@@ -13,6 +13,7 @@ from typing import Any, Callable, Literal
 
 from mcp_gateway.atelier.config import AtelierSettings
 from mcp_gateway.atelier.harness import (
+    MODE_SANS_INTERLOCUTEUR,
     AtelierEvent,
     Harness,
     TurnResult,
@@ -1116,7 +1117,11 @@ class SessionStore:
                 log_path=Path(rec.log_path),
                 timeout_s=self.settings.turn_timeout_s,
                 mcp_config_path=mcp_config_path,
-                permission_mode=rec.permission_mode or self.settings.permission_mode,
+                # Le mode choisi pour la conversation, sinon celui du service
+                # — mais un tour sans interlocuteur ne peut pas attendre une
+                # autorisation : faute de choix, il garde l'ancien défaut.
+                permission_mode=rec.permission_mode
+                or (self.settings.permission_mode if peut_attendre else MODE_SANS_INTERLOCUTEUR),
                 peut_attendre=peut_attendre,
                 effort=rec.effort or self.settings.effort,
                 agent_name=self._nom_wikichat(rec),

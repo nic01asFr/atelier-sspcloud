@@ -26,6 +26,7 @@ question.
 from __future__ import annotations
 
 import json
+import re
 import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -121,6 +122,53 @@ def chemins_vises(demande: Demande) -> list[str]:
     return vus
 
 
+_SEPARATEURS = re.compile(r"\|\||&&|\||;|\n")
+_REDIRECTION_SEULE = re.compile(r"^\d*(>>?|<)(&\d+)?$")
+_REDIRECTION_COLLEE = re.compile(r"^\d*(>>?|<)\S+$")
+
+
+def segments_de_la_commande(commande: str) -> list[str]:
+    """Les sous-commandes d'une ligne, telles que le CLI les juge une à une.
+
+    Mesuré : pour `./x.sh 2>&1 | tail -5`, le CLI répond
+    `decision_reason_type: subcommandResults` et ne suggère de règle que pour
+    `./x.sh` — il a découpé sur le tube, jugé `tail -5` inoffensif, et ôté
+    la redirection avant de comparer. On découpe comme lui, sans prétendre
+    connaître sa liste de commandes sûres.
+    """
+    return [
+        sans_redirections(morceau)
+        for morceau in _SEPARATEURS.split(commande)
+        if sans_redirections(morceau)
+    ]
+
+
+def sans_redirections(segment: str) -> str:
+    """`./x.sh 2>&1` et `./x.sh > out.txt` sont `./x.sh` aux yeux du CLI."""
+    gardes: list[str] = []
+    sauter = False
+    for mot in segment.split():
+        if sauter:
+            sauter = False
+            continue
+        if _REDIRECTION_SEULE.match(mot):
+            # `> fichier` : la cible suit et part avec ; `2>&1` se suffit.
+            sauter = "&" not in mot
+            continue
+        if _REDIRECTION_COLLEE.match(mot):
+            continue
+        gardes.append(mot)
+    return " ".join(gardes)
+
+
+def _regle_couvre_le_segment(valeur: str, segment: str) -> bool:
+    """La syntaxe du CLI : `x` exact, `x:*` tout ce qui commence par `x`."""
+    if valeur.endswith(":*"):
+        prefixe = valeur[:-2]
+        return segment == prefixe or segment.startswith(prefixe + " ")
+    return segment == valeur
+
+
 @dataclass
 class Regle:
     """Une décision qu'on ne veut plus reprendre.
@@ -132,12 +180,17 @@ class Regle:
 
     Une règle ne vaut que pour une conversation. Rien ne fuit d'un fil à
     l'autre : c'est là qu'on a accordé, c'est là que ça s'applique.
+
+    `outil` nomme l'outil d'une règle `commande` (« Bash », le plus souvent) :
+    c'est ce qu'il faut pour la rendre au CLI dans sa propre syntaxe,
+    `Bash(./x.sh)`. Vide sur les règles écrites avant ce champ.
     """
 
     session_id: str
     portee: str
     valeur: str
     posee_le: str = field(default_factory=_maintenant)
+    outil: str = ""
 
     def couvre(self, demande: Demande) -> bool:
         if demande.session_id != self.session_id:
@@ -150,7 +203,12 @@ class Regle:
         if self.portee == "outil":
             return demande.outil == self.valeur
         if self.portee == "commande":
-            return str(demande.arguments.get("command") or "") == self.valeur
+            if self.outil and demande.outil != self.outil:
+                return False
+            segments = segments_de_la_commande(str(demande.arguments.get("command") or ""))
+            return bool(segments) and all(
+                _regle_couvre_le_segment(self.valeur, s) for s in segments
+            )
         if self.portee == "repertoire":
             racine = self.valeur.rstrip("/") or "/"
             for chemin in chemins_vises(demande):
@@ -158,38 +216,110 @@ class Regle:
                     return True
         return False
 
+    def pour_le_cli(self) -> str:
+        """La règle dans la syntaxe des réglages du CLI (`permissions.allow`).
+
+        Vide pour un répertoire : celui-là se passe par
+        `permissions.additionalDirectories`, pas par une règle d'outil.
+        """
+        if self.portee == "outil":
+            return self.valeur
+        if self.portee == "commande":
+            return f"{self.outil or 'Bash'}({self.valeur})"
+        return ""
+
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
-def regle_suggeree(demande: Demande) -> Regle | None:
-    """La règle que le CLI propose lui-même pour cette demande, s'il en propose une.
+def regles_suggerees(demande: Demande) -> list[Regle]:
+    """Les règles que le CLI propose lui-même pour cette demande.
 
     On suit ses suggestions dans l'ordre où elles portent le moins loin :
-    une commande précise avant un répertoire entier, et l'outil seulement
+    les commandes précises avant un répertoire entier, et l'outil seulement
     faute de mieux. Élargir plus que nécessaire serait accorder plus que ce
     qu'on nous demande.
+
+    Toutes les règles de commande sont prises, pas la première : pour une
+    ligne `a && b` le CLI en propose une par sous-commande qu'il juge à
+    demander, et n'en retenir qu'une le ferait redemander l'autre.
 
     Une question n'en a jamais : on ne se dispense pas de donner son avis.
     """
     if demande.genre == "question":
-        return None
+        return []
+    commandes: list[Regle] = []
     for suggestion in demande.suggestions:
         if suggestion.get("type") != "addRules":
             continue
         for regle in suggestion.get("rules") or []:
             contenu = regle.get("ruleContent")
+            outil = regle.get("toolName")
             if isinstance(contenu, str) and contenu:
-                return Regle(demande.session_id, "commande", contenu)
+                commandes.append(
+                    Regle(
+                        demande.session_id,
+                        "commande",
+                        contenu,
+                        outil=outil if isinstance(outil, str) else "",
+                    )
+                )
+    if commandes:
+        return commandes
     for suggestion in demande.suggestions:
         if suggestion.get("type") != "addDirectories":
             continue
         for dossier in suggestion.get("directories") or []:
             if isinstance(dossier, str) and dossier:
-                return Regle(demande.session_id, "repertoire", dossier)
+                return [Regle(demande.session_id, "repertoire", dossier)]
     if demande.outil:
-        return Regle(demande.session_id, "outil", demande.outil)
-    return None
+        return [Regle(demande.session_id, "outil", demande.outil)]
+    return []
+
+
+def regle_suggeree(demande: Demande) -> Regle | None:
+    """La première des règles suggérées — celle qu'on nomme à l'écran."""
+    regles = regles_suggerees(demande)
+    return regles[0] if regles else None
+
+
+def permissions_a_retenir(demande: Demande) -> list[dict[str, Any]]:
+    """Les suggestions du CLI, à lui rendre telles quelles avec l'autorisation.
+
+    Le protocole le prévoit : une réponse `allow` peut porter
+    `updatedPermissions`, et le CLI applique ces règles sur-le-champ, avec sa
+    propre sémantique — il cesse de demander dans le tour courant. On force
+    la destination `session` : le processus meurt avec le tour, et c'est
+    notre registre, repassé au tour suivant, qui fait durer la décision.
+    Rien n'est écrit dans les réglages du dossier, que d'autres fils
+    partagent.
+    """
+    retenues: list[dict[str, Any]] = []
+    for suggestion in demande.suggestions:
+        if suggestion.get("type") not in ("addRules", "addDirectories"):
+            continue
+        copie = dict(suggestion)
+        copie["destination"] = "session"
+        retenues.append(copie)
+    return retenues
+
+
+def reglages_cli(regles: list[Regle]) -> dict[str, Any]:
+    """Ce qu'on passe au CLI par `--settings` pour qu'il applique lui-même
+    ce qu'on a accordé dans ce fil.
+
+    C'est lui qui découpe, juge et compare ; nous ne faisons que lui rendre
+    ses règles dans sa syntaxe. Vide quand rien n'a été accordé : on n'ajoute
+    pas un drapeau pour rien.
+    """
+    autorisees = [r.pour_le_cli() for r in regles if r.pour_le_cli()]
+    dossiers = [r.valeur for r in regles if r.portee == "repertoire" and r.valeur]
+    permissions: dict[str, Any] = {}
+    if autorisees:
+        permissions["allow"] = autorisees
+    if dossiers:
+        permissions["additionalDirectories"] = dossiers
+    return {"permissions": permissions} if permissions else {}
 
 
 def reponse_aux_questions(demande: Demande, choix: list[list[str]]) -> dict[str, Any]:
@@ -218,9 +348,19 @@ def reponse_aux_questions(demande: Demande, choix: list[list[str]]) -> dict[str,
     }
 
 
-def reponse_autorisee(arguments: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Laisser passer, éventuellement avec des arguments corrigés."""
-    return {"behavior": "allow", "updatedInput": arguments or {}}
+def reponse_autorisee(
+    arguments: dict[str, Any] | None = None,
+    permissions: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Laisser passer, éventuellement avec des arguments corrigés.
+
+    `permissions` sont les règles à faire appliquer par le CLI dès
+    maintenant — celles qu'il a suggérées, rendues avec « toujours ».
+    """
+    reponse: dict[str, Any] = {"behavior": "allow", "updatedInput": arguments or {}}
+    if permissions:
+        reponse["updatedPermissions"] = permissions
+    return reponse
 
 
 def reponse_refusee(motif: str = "") -> dict[str, Any]:
@@ -345,11 +485,33 @@ class RegistreDesDecisions:
             pass
 
     def regle_qui_couvre(self, demande: Demande) -> Regle | None:
-        """La règle déjà posée qui dispense de reposer cette question."""
-        for regle in self.regles(demande.session_id):
+        """La règle déjà posée qui dispense de reposer cette question.
+
+        Pour une ligne de commande, les règles se cumulent comme chez le CLI :
+        `a && b` est couverte si `a` l'est par une règle et `b` par une
+        autre. On rend la première qui participe, pour nommer la cause.
+        """
+        regles = self.regles(demande.session_id)
+        for regle in regles:
             if regle.couvre(demande):
                 return regle
-        return None
+        commande = demande.arguments.get("command")
+        if demande.genre == "question" or not isinstance(commande, str):
+            return None
+        segments = segments_de_la_commande(commande)
+        de_commande = [
+            r
+            for r in regles
+            if r.portee == "commande"
+            and r.session_id == demande.session_id
+            and (not r.outil or r.outil == demande.outil)
+        ]
+        if not segments or not de_commande:
+            return None
+        for segment in segments:
+            if not any(_regle_couvre_le_segment(r.valeur, segment) for r in de_commande):
+                return None
+        return de_commande[0]
 
     def oublier_les_regles(self, session_id: str) -> int:
         """Rend à la conversation son état de départ : tout redevient à décider."""

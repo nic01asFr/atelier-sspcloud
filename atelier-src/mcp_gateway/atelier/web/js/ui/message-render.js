@@ -332,12 +332,16 @@ function carteDeQuestion(block) {
  * ce qu'on croit est la seule vraie faute possible ici.
  */
 export function ceQueToujoursAccorde(d) {
+  // Toutes les commandes suggérées, pas la première : pour `a && b` le CLI
+  // en propose une par sous-commande, et « toujours » les retient toutes.
+  const commandes = [];
   for (const s of d.suggestions || []) {
     if (s.type !== "addRules") continue;
     for (const r of s.rules || []) {
-      if (r.ruleContent) return `Ne plus demander pour : ${r.ruleContent}`;
+      if (r.ruleContent) commandes.push(r.ruleContent);
     }
   }
+  if (commandes.length) return `Ne plus demander pour : ${commandes.join(", ")}`;
   for (const s of d.suggestions || []) {
     if (s.type !== "addDirectories") continue;
     for (const dossier of s.directories || []) {

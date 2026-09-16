@@ -26,7 +26,8 @@ from mcp_gateway.atelier.gateway_overview import build_mcp_overview
 from mcp_gateway.atelier.gateway_runtime import gateway_shutdown, gateway_startup
 from mcp_gateway.atelier.mcp_endpoint import register_mcp_endpoint
 from mcp_gateway.atelier.decisions import (
-    regle_suggeree,
+    permissions_a_retenir,
+    regles_suggerees,
     reponse_aux_questions,
     reponse_autorisee,
     reponse_refusee,
@@ -1007,7 +1008,25 @@ def build_app(
         sessions = store.list_sessions(slug, include_archived=include_archived)
         if kind in ("assistant", "code"):
             sessions = [s for s in sessions if s.kind == kind]
-        return {"sessions": [s.to_dict() for s in sessions]}
+        # Archiver un projet range ses conversations avec lui. Sans cela elles
+        # restaient listées « sans projet », comme orphelines — alors qu'un
+        # projet archivé se rouvre, et ses conversations avec.
+        if not include_archived:
+            visibles = {p.slug for p in projects.list_projects()}
+            ranges = {
+                p.slug for p in projects.list_projects(include_archived=True)
+            } - visibles
+            sessions = [s for s in sessions if s.slug not in ranges]
+        # Une conversation qui attend qu'on l'autorise n'est pas « en réponse »
+        # : elle attend quelqu'un. La liste doit le dire, sinon l'agent reste
+        # bloqué cinq minutes avant qu'on ouvre le fil — mesuré.
+        en_attente = {d.session_id for d in harness.decisions.en_attente()}
+        return {
+            "sessions": [
+                {**s.to_dict(), "attend_une_decision": s.session_id in en_attente}
+                for s in sessions
+            ]
+        }
 
     @router.post("/sessions/sync-titles")
     def sync_session_titles(_owner: str = Depends(require_owner)) -> dict[str, Any]:
@@ -1405,19 +1424,29 @@ def build_app(
         # Une question ne s'autorise pas, elle se répond. Le modèle attend un
         # avis, pas une permission — et ce qu'on lui rend part dans le message,
         # seul champ du protocole qui lui revienne mot pour mot.
+        pour_toujours = (
+            demande.genre != "question" and choix == "allow" and (body.portee or "") == "toujours"
+        )
         if demande.genre == "question":
             reponse = reponse_aux_questions(demande, body.reponses or [])
         elif choix == "allow":
-            reponse = reponse_autorisee(body.arguments)
+            # « Toujours » rend au CLI ses propres suggestions : c'est lui qui
+            # les applique dans le tour courant, avec sa sémantique. Notre
+            # registre, lui, les fera durer d'un tour à l'autre.
+            reponse = reponse_autorisee(
+                body.arguments,
+                permissions_a_retenir(demande) if pour_toujours else None,
+            )
         else:
             reponse = reponse_refusee(body.motif)
 
         retenue = None
-        if demande.genre != "question" and choix == "allow" and (body.portee or "") == "toujours":
-            regle = regle_suggeree(demande)
-            if regle is not None:
+        retenues: list[dict[str, Any]] = []
+        if pour_toujours:
+            for regle in regles_suggerees(demande):
                 harness.decisions.retenir(regle)
-                retenue = regle.to_dict()
+                retenues.append(regle.to_dict())
+            retenue = retenues[0] if retenues else None
 
         # Le tour ne reprendra pas s'il n'attendait plus : on le dit, plutôt
         # que de laisser croire qu'on vient de le débloquer. La décision, elle,
@@ -1430,6 +1459,7 @@ def build_app(
             "request_id": request_id,
             "decision": choix,
             "regle": retenue,
+            "regles": retenues,
             "reprise": repris,
         }
 

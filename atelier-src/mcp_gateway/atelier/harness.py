@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -23,6 +24,7 @@ from mcp_gateway.atelier.config import AtelierSettings
 from mcp_gateway.atelier.decisions import (
     Demande,
     RegistreDesDecisions,
+    reglages_cli,
     reponse_autorisee,
     reponse_refusee,
 )
@@ -302,7 +304,13 @@ class FakeHarness(Harness):
 # l'interface n'a personne pour répondre, et en `manual` tout passe par la
 # porte. Une conversation d'agent réglée ainsi refusera donc tout.
 MODES_PERMISSION = ("bypassPermissions", "acceptEdits", "auto", "manual", "plan")
-MODE_PERMISSION_DEFAUT = "bypassPermissions"
+MODE_PERMISSION_DEFAUT = "acceptEdits"
+# Un tour que personne ne regarde ne peut pas attendre une autorisation : le
+# harnais refuse d'office ce qui demande (voir `SANS_INTERLOCUTEUR`). Sous
+# `acceptEdits`, un agent piloté verrait donc chacune de ses commandes
+# refusée. Faute de mode choisi pour la conversation, un tel tour garde le
+# comportement historique.
+MODE_SANS_INTERLOCUTEUR = "bypassPermissions"
 NIVEAUX_EFFORT = ("low", "medium", "high", "xhigh", "max")
 # Ce que TOUS les modèles servis par la passerelle acceptent — mesuré :
 # `high` et `max` passent sur le modèle principal et sont refusés par celui du
@@ -317,6 +325,43 @@ SANS_INTERLOCUTEUR = (
     "Refusé sans être demandé : ce tour ne passe pas par l'interface, "
     "personne ne pouvait répondre. Relancez-le depuis l'Atelier pour décider."
 )
+
+
+@dataclass
+class ProcessusVivant:
+    """Un `claude` gardé entre deux tours d'une même conversation.
+
+    Sa sortie d'erreur est lue par un fil à part dès sa naissance : lue à la
+    fin du tour, comme avant, elle attendrait un processus qui ne finit plus
+    — et un tube jamais lu finit par bloquer celui qui y écrit.
+    """
+
+    proc: subprocess.Popen[Any]
+    cli_id: str
+    empreinte: str
+    log_path: Path
+    dernier_usage: float = field(default_factory=time.monotonic)
+    erreurs: list[str] = field(default_factory=list)
+    lecteur: threading.Thread | None = None
+
+    def lire_les_erreurs(self) -> None:
+        flux = self.proc.stderr
+        if flux is None:
+            return
+
+        def lire() -> None:
+            try:
+                for ligne in flux:
+                    self.erreurs.append(ligne)
+            except (OSError, ValueError):
+                pass
+
+        self.lecteur = threading.Thread(target=lire, name="atelier-stderr", daemon=True)
+        self.lecteur.start()
+
+    def attendre_les_erreurs(self, delai: float = 2.0) -> None:
+        if self.lecteur is not None:
+            self.lecteur.join(timeout=delai)
 
 
 def ligne_disponible(flux: Any, delai: float) -> str:
@@ -338,6 +383,22 @@ def ligne_disponible(flux: Any, delai: float) -> str:
     except (OSError, ValueError, TypeError):
         return flux.readline()
     return flux.readline() if prets else ""
+
+
+def est_un_resultat(ligne: str) -> bool:
+    """La ligne qui clôt un message du CLI.
+
+    Reconnue en la lisant, pas à la lettre : `"type":"result"` collé est la
+    forme du vrai CLI, mais un test qui l'écrit avec une espace laissait le
+    tour attendre une fin déjà passée.
+    """
+    if '"result"' not in ligne:
+        return False
+    try:
+        objet = json.loads(ligne)
+    except ValueError:
+        return False
+    return isinstance(objet, dict) and objet.get("type") == "result"
 
 
 def demande_de_decision(session_id: str, ligne: str) -> Demande | None:
@@ -381,6 +442,13 @@ class ClaudeHarness(Harness):
     def __init__(self, settings: AtelierSettings) -> None:
         self.settings = settings
         self._procs: dict[str, subprocess.Popen[Any]] = {}
+        # Les processus gardés entre deux tours, et les conversations dont un
+        # tour travaille vraiment. Un processus vivant n'est pas un tour en
+        # cours : c'est la seconde qui dit si l'agent travaille.
+        self._vivants: dict[str, ProcessusVivant] = {}
+        self._en_tour: set[str] = set()
+        self._verrou = threading.Lock()
+        self._veilleur: threading.Thread | None = None
         # Les questions qu'un tour attend. Portées par le harnais parce que
         # c'est lui qui les pose et se bloque dessus ; la route HTTP y dépose
         # la réponse depuis un autre fil.
@@ -523,6 +591,20 @@ class ClaudeHarness(Harness):
             proc.stdin.flush()
         except (OSError, ValueError):
             pass
+
+    def _arguments_des_regles(self, session_id: str) -> list[str]:
+        """Ce qu'on a accordé dans ce fil, rendu au CLI par `--settings`.
+
+        Un processus par tour : ce que le CLI a retenu pendant un tour meurt
+        avec lui. À chaque tour on lui repasse donc les règles du fil, dans sa
+        syntaxe, et c'est lui qui les applique — découpage des commandes,
+        redirections, liste des commandes sûres : sa sémantique, pas la nôtre.
+        Rien quand rien n'a été accordé.
+        """
+        reglages = reglages_cli(self.decisions.regles(session_id))
+        if not reglages:
+            return []
+        return ["--settings", json.dumps(reglages, ensure_ascii=False)]
 
     def _attendre_la_decision(
         self,
@@ -683,6 +765,7 @@ class ClaudeHarness(Harness):
         niveau = effort_valide(effort)
         if niveau:
             cmd.extend(["--effort", niveau])
+        cmd.extend(self._arguments_des_regles(session_id))
         if resume:
             cmd.extend(["--resume", cli_id])
         else:
@@ -725,17 +808,37 @@ class ClaudeHarness(Harness):
                 + chr(10)
             )
 
-        proc = subprocess.Popen(
-            cmd,
-            cwd=str(cwd),
-            env=self._env(agent_name),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            bufsize=1,
-        )
+        # Le même processus sert les tours qui se suivent, tant que rien de ce
+        # qui le configure n'a changé : dossier, modèle, mode, effort, agent,
+        # connecteurs. Sinon on l'éteint et on repart — un mode de permission
+        # se donne à la ligne de commande, il ne se change pas en vol.
+        empreinte = self._empreinte(cwd, model, permission_mode, effort, agent_name, mcp_cfg)
+        vivant = self._reprendre(session_id, empreinte)
+        if vivant is None:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(cwd),
+                env=self._env(agent_name),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+            )
+            vivant = ProcessusVivant(proc=proc, cli_id=cli_id, empreinte=empreinte, log_path=log_path)
+            vivant.lire_les_erreurs()
+            with self._verrou:
+                self._vivants[session_id] = vivant
+        else:
+            with log_path.open("a", encoding="utf-8") as lf:
+                lf.write("processus repris (pid %s)" % vivant.proc.pid + chr(10))
+            self._purger_la_sortie(vivant.proc)
+        proc = vivant.proc
         self._procs[session_id] = proc
+        with self._verrou:
+            self._en_tour.add(session_id)
+        depuis = len(vivant.erreurs)
+        termine = False
         # L'entrée reste ouverte après l'envoi : c'est par elle que remontent
         # les réponses aux demandes d'autorisation, et que partent les messages
         # écrits pendant que le tour travaille.
@@ -798,7 +901,7 @@ class ClaudeHarness(Harness):
                         if ligne_a_conserver(line):
                             tf.write(line)
                             tf.flush()
-                        if '"type":"result"' in line:
+                        if est_un_resultat(line):
                             # Un message a fini. S'il en attend un autre, on
                             # l'écrit dans le même tour : le CLI le traitera à
                             # la suite, sans nouveau processus ni `--resume`.
@@ -808,7 +911,15 @@ class ClaudeHarness(Harness):
                             # l'échéance murale, marqué `timeout`.
                             suivant = self.messages.retirer(session_id)
                             if suivant is None:
-                                self._fermer_entree(proc)
+                                # Le tour est fini. Le processus, lui, reste :
+                                # ses connecteurs sont branchés, son contexte
+                                # est chaud, le prochain message n'aura pas à
+                                # repayer tout cela. Sauf si on a demandé
+                                # l'ancien comportement, un processus par tour.
+                                if self.settings.cli_processus_vivant:
+                                    termine = True
+                                else:
+                                    self._fermer_entree(proc)
                             elif self._ecrire_message(proc, suivant["texte"]):
                                 tf.write(
                                     enregistrement_utilisateur(
@@ -838,32 +949,42 @@ class ClaudeHarness(Harness):
                                 "thinking_delta",
                             ):
                                 texts.append(ev.text)
+                        if termine:
+                            # La ligne de résultat est lue et dite ; le tour
+                            # est fini, le processus reste.
+                            break
                         continue
                     if proc.poll() is not None:
                         break
                     time.sleep(0.05)
-                err = proc.stderr.read()
+                if termine:
+                    code = None
+                else:
+                    code = proc.wait(timeout=5)
+                    vivant.attendre_les_erreurs()
+                # La sortie d'erreur est lue par un fil à part : `read()` ici
+                # attendrait la fin du processus, qui ne vient plus.
+                err = "".join(vivant.erreurs[depuis:])
                 if err:
                     lf.write(err)
                     if "[claude-code:unrecognized_model]" not in err and "Error:" in err:
                         emettre(
                             AtelierEvent(kind="erreur", session_id=session_id, cause=err[-500:])
                         )
-            code = proc.wait(timeout=5)
         finally:
-            # Un tour abandonné en cours de route — l'appelant qui raccroche,
-            # une exception dans la boucle — laissait le `claude` vivre seul,
-            # sans personne pour lire sa sortie ni faire jouer l'échéance :
-            # elle ne vaut que tant que la boucle tourne. Quinze processus
-            # s'étaient ainsi accumulés. On ne sort pas d'ici sans l'avoir
-            # refermé.
-            if proc.poll() is None:
-                proc.send_signal(signal.SIGTERM)
-                try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-            self._procs.pop(session_id, None)
+            garder = termine and proc.poll() is None
+            with self._verrou:
+                self._en_tour.discard(session_id)
+            if garder:
+                vivant.dernier_usage = time.monotonic()
+            else:
+                # Un tour abandonné en cours de route — l'appelant qui
+                # raccroche, une exception dans la boucle — laissait le
+                # `claude` vivre seul, sans personne pour lire sa sortie ni
+                # faire jouer l'échéance. Quinze processus s'étaient ainsi
+                # accumulés. Ce qui n'est pas un processus gardé à dessein
+                # s'éteint ici.
+                self._eteindre(session_id, de_force=True)
             # Le tour s'arrête : plus personne n'attend ses questions, ni ne
             # portera les messages restés en file. Les laisser ferait croire
             # qu'ils partiront.
@@ -873,6 +994,7 @@ class ClaudeHarness(Harness):
                 sync_claude_home(self.settings)
             except OSError:
                 pass
+            self._veiller()
 
         if not any(e.kind == "fin" for e in events) and code == 0:
             emettre(AtelierEvent(kind="fin", session_id=session_id, cause="exit_0"))
@@ -883,31 +1005,206 @@ class ClaudeHarness(Harness):
 
         return TurnResult(
             session_id=session_id,
-            exit_code=int(code if code is not None else -1),
+            # Un tour fini dans un processus qui vit encore n'a pas de code de
+            # sortie ; il s'est bien terminé, c'est ce que l'appelant lit.
+            exit_code=0 if termine else int(code if code is not None else -1),
             events=events,
             log_path=str(log_path),
             transcript_path=str(transcript_path),
             text="".join(texts),
         )
 
+    # -- les processus gardés ---------------------------------------------
+
+    @staticmethod
+    def _empreinte(
+        cwd: Path,
+        model: str | None,
+        permission_mode: str,
+        effort: str,
+        agent_name: str,
+        mcp_cfg: Path | None,
+    ) -> str:
+        """Ce qui, en changeant, oblige à relancer le processus.
+
+        Les connecteurs comptent par leur contenu, pas par le chemin du
+        fichier : celui-ci est le même à chaque tour, seul ce qu'il porte
+        change quand on branche ou débranche un connecteur. Les règles
+        accordées n'y sont pas : un processus vivant les a reçues avec
+        l'autorisation, un neuf les reçoit par `--settings`.
+        """
+        contenu = b""
+        if mcp_cfg is not None:
+            try:
+                contenu = Path(mcp_cfg).read_bytes()
+            except OSError:
+                contenu = b""
+        clef = "|".join(
+            [
+                str(cwd),
+                model or "",
+                mode_permission_valide(permission_mode),
+                effort_valide(effort),
+                agent_name,
+                hashlib.sha256(contenu).hexdigest(),
+            ]
+        )
+        return clef
+
+    def _reprendre(self, session_id: str, empreinte: str) -> ProcessusVivant | None:
+        """Le processus gardé pour cette conversation, s'il peut encore servir."""
+        with self._verrou:
+            vivant = self._vivants.get(session_id)
+        if vivant is None:
+            return None
+        if (
+            self.settings.cli_processus_vivant
+            and vivant.proc.poll() is None
+            and vivant.empreinte == empreinte
+        ):
+            return vivant
+        self._eteindre(session_id, de_force=vivant.proc.poll() is None)
+        return None
+
+    @staticmethod
+    def _purger_la_sortie(proc: subprocess.Popen[Any]) -> None:
+        """Jette ce que le processus a pu écrire entre deux tours.
+
+        Rien n'est attendu là — le CLI se tait quand on ne lui parle pas —
+        mais une ligne oubliée serait lue comme le début du tour suivant.
+        Sans `select` (Windows), on ne lit pas : on ne bloquerait pas un
+        tour pour vider un tube qui est vide.
+        """
+        if proc.stdout is None:
+            return
+        for _ in range(1000):
+            try:
+                prets, _, _ = select.select([proc.stdout], [], [], 0)
+            except (OSError, ValueError, TypeError):
+                return
+            if not prets or not proc.stdout.readline():
+                return
+
+    def _eteindre(self, session_id: str, *, de_force: bool = False) -> None:
+        """Referme un processus gardé : l'entrée d'abord, la force ensuite.
+
+        Fermer l'entrée suffit d'ordinaire — le CLI sort quand il n'a plus
+        rien à lire. `de_force` est pour ce qui ne doit pas attendre : une
+        interruption, un tour abandonné.
+        """
+        with self._verrou:
+            vivant = self._vivants.pop(session_id, None)
+        self._procs.pop(session_id, None)
+        if vivant is None:
+            return
+        proc = vivant.proc
+        if proc.poll() is None and not de_force:
+            self._fermer_entree(proc)
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                pass
+        if proc.poll() is None:
+            proc.send_signal(signal.SIGTERM)
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+        vivant.attendre_les_erreurs()
+
+    def _veiller(self) -> None:
+        """Éteint ce qui a trop attendu, et ce qui dépasse le plafond.
+
+        Jamais un processus dont un tour travaille. Le plafond retire les
+        moins récents d'abord. Appelée à la fin de chaque tour, et par un fil
+        qui repasse régulièrement — sans quoi un dernier processus resterait
+        garé tant que personne n'écrit.
+        """
+        maintenant = time.monotonic()
+        with self._verrou:
+            garés = [
+                (sid, v)
+                for sid, v in self._vivants.items()
+                if sid not in self._en_tour
+            ]
+        trop_vieux = [
+            sid
+            for sid, v in garés
+            if maintenant - v.dernier_usage >= self.settings.cli_inactivite_s
+            or v.proc.poll() is not None
+        ]
+        for sid in trop_vieux:
+            self._eteindre(sid)
+        restants = sorted(
+            ((sid, v) for sid, v in garés if sid not in trop_vieux),
+            key=lambda item: item[1].dernier_usage,
+        )
+        with self._verrou:
+            total = len(self._vivants)
+        excedent = total - max(1, int(self.settings.cli_processus_max))
+        for sid, _ in restants[: max(0, excedent)]:
+            self._eteindre(sid)
+        self._lancer_le_veilleur()
+
+    def _lancer_le_veilleur(self) -> None:
+        if self._veilleur is not None and self._veilleur.is_alive():
+            return
+        if not self.settings.cli_processus_vivant:
+            return
+
+        def boucle() -> None:
+            while True:
+                time.sleep(max(5, min(30, self.settings.cli_inactivite_s or 30)))
+                with self._verrou:
+                    vide = not self._vivants
+                if vide:
+                    break
+                try:
+                    self._veiller_sans_relancer()
+                except Exception:  # noqa: BLE001 — la veille ne doit pas mourir
+                    pass
+
+        self._veilleur = threading.Thread(target=boucle, name="atelier-veilleur", daemon=True)
+        self._veilleur.start()
+
+    def _veiller_sans_relancer(self) -> None:
+        veilleur = self._veilleur
+        self._veilleur = None
+        try:
+            self._veiller()
+        finally:
+            if self._veilleur is None:
+                self._veilleur = veilleur
+
+    def processus_vivants(self) -> list[str]:
+        """Les conversations dont un processus est gardé — pour l'état et les tests."""
+        with self._verrou:
+            return [sid for sid, v in self._vivants.items() if v.proc.poll() is None]
+
     def tour_en_cours(self, session_id: str) -> bool:
+        with self._verrou:
+            en_tour = session_id in self._en_tour
         proc = self._procs.get(session_id)
-        return proc is not None and proc.poll() is None
+        return en_tour and proc is not None and proc.poll() is None
 
     def interrupt(self, session_id: str) -> bool:
         # Interrompre, c'est aussi renoncer aux questions du tour : le fil qui
         # attendait va voir le processus mort et cesser d'attendre, mais la
         # trace, elle, resterait sur le disque.
         self.decisions.abandonner(session_id)
-        proc = self._procs.get(session_id)
-        if not proc:
+        with self._verrou:
+            connu = session_id in self._vivants or session_id in self._procs
+        if not connu:
             return False
-        proc.send_signal(signal.SIGTERM)
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-        self._procs.pop(session_id, None)
+        proc = self._procs.get(session_id)
+        self._eteindre(session_id, de_force=True)
+        if proc is not None and proc.poll() is None:
+            proc.send_signal(signal.SIGTERM)
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
         return True
 
 
