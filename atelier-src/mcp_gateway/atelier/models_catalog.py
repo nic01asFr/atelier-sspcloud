@@ -14,7 +14,6 @@ def _settings_paths(settings: AtelierSettings) -> list[Path]:
     return [
         home / ".claude" / "settings.json",
         settings.work_dir / ".claude" / "settings.json",
-        Path("/home/onyxia/.claude/settings.json"),
     ]
 
 

@@ -154,9 +154,10 @@ def resoudre_commande(commande: str) -> str:
     if trouve:
         return trouve
     # Emplacements où un runtime embarqué se cache sur ce genre de poste.
+    outils = str(Path.home() / "work" / ".tools")
     motifs = [
-        f"/home/onyxia/work/.tools/*/lib/{commande}",
-        f"/home/onyxia/work/.tools/*/bin/{commande}",
+        f"{outils}/*/lib/{commande}",
+        f"{outils}/*/bin/{commande}",
         f"/usr/lib/*/bin/{commande}",
         f"/opt/*/bin/{commande}",
     ]

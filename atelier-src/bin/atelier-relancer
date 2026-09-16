@@ -5,9 +5,10 @@
 # propre ligne de commande contient le motif — et laissait des orphelins.
 # Quatre instances s'étaient ainsi accumulées, 364 Mo pour rien.
 #
-# À déposer dans ~/work/bin/ sur le pod.
+# Déposé dans ~/work/bin/ par install/atelier-init.sh.
 set -u
-PORT=8787
+PORT="${ATELIER_PORT:-8787}"
+WORK="${ATELIER_WORK:-$HOME/work}"
 
 # Qui détient le port : on le trouve par l'inode de sa socket d'écoute, non
 # par son âge ni par son nom. C'est le seul critère qui ne se trompe pas.
@@ -45,8 +46,11 @@ if [ -n "$PID" ]; then
   sleep 1
 fi
 
-cd /home/onyxia/work/atelier-src || exit 1
-setsid nohup python -m mcp_gateway.atelier.app --host 0.0.0.0 --port "$PORT" \
-  >>/home/onyxia/work/logs/atelier-uvicorn.log 2>&1 </dev/null &
+export ATELIER_WORK="$WORK"
+export ATELIER_VSCODE_INTERNAL_URL="${ATELIER_VSCODE_INTERNAL_URL:-http://127.0.0.1:8080}"
+export ATELIER_VSCODE_UPSTREAM_AUTH="${ATELIER_VSCODE_UPSTREAM_AUTH:-atelier}"
+cd "$WORK/atelier-src" || exit 1
+setsid nohup python3 -m mcp_gateway.atelier.app --host 0.0.0.0 --port "$PORT" \
+  >>"$WORK/logs/atelier-uvicorn.log" 2>&1 </dev/null &
 sleep 6
-printf 'relance : %s\n' "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:$PORT/v1/health)"
+printf 'relance : %s\n' "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/v1/health")"
