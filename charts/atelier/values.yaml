@@ -1,0 +1,77 @@
+# Valeurs du chart atelier. Onyxia en remplit la plupart lui-même à partir du
+# profil de l'utilisateur (voir values.schema.json, clés x-onyxia).
+
+image:
+  repository: ghcr.io/nic01asfr/atelier
+  tag: latest
+  pullPolicy: Always
+
+service:
+  port: 8787
+
+ingress:
+  enabled: true
+  # Injecté par Onyxia : user-<idep>-atelier.<domaine>
+  hostname: ""
+  ingressClassName: onyxia
+
+persistence:
+  enabled: true
+  size: 10Gi
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 2Gi
+  limits:
+    cpu: 4000m
+    memory: 8Gi
+
+# Le modèle de langage. Onyxia reprend la clé, l'URL et le modèle du profil
+# de l'utilisateur (Mon compte > Assistant IA), sous ses deux formats.
+llm:
+  apiKey: ""
+  baseUrl: "https://llm.lab.sspcloud.fr/api"
+  model: ""
+  provider:
+    apiKey: ""
+    apiBase: ""
+    selectedModel: ""
+
+oidc:
+  username: ""
+
+# L'identité git de la personne, reprise de son profil : c'est elle qui
+# signe les commits des projets. Le jeton sert à publier un projet.
+git:
+  enabled: true
+  name: ""
+  email: ""
+  token: ""
+
+# La clé owner ouvre l'Atelier. Fournie ici, elle apparaît dans Onyxia >
+# Mes services et dans les notes d'installation ; vide, le chart la tire au
+# sort et elle ne se lit plus que dans le Secret.
+security:
+  ownerKey: ""
+  networkPolicy:
+    enabled: true
+    from:
+      - ipBlock:
+          cidr: 10.233.103.0/32
+      - ipBlock:
+          cidr: 10.233.111.0/32
+      - ipBlock:
+          cidr: 10.233.116.0/32
+      - ipBlock:
+          cidr: 10.233.108.0/32
+
+wikichat:
+  enabled: true
+
+global:
+  suspend: false
+
+message:
+  fr: "**NB :** ce service pourrait être supprimé après 7 jours d'utilisation."
+  en: "**Warning:** this service may be deleted after 7 days."

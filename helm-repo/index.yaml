@@ -1,0 +1,23 @@
+apiVersion: v1
+entries:
+  atelier:
+  - apiVersion: v2
+    appVersion: latest
+    created: "2026-09-15T10:42:05.3561882+02:00"
+    description: L'Atelier — Claude Code sur votre pod SSPCloud, avec ses projets,
+      ses connecteurs et VS Code
+    digest: b8b4eabdd8f95a61e131d9760d74706a963b223fceb07f7b07f00cd61f5097fc
+    home: https://github.com/nic01asFr/atelier-sspcloud
+    keywords:
+    - claude-code
+    - agent
+    - mcp
+    - cerema
+    maintainers:
+    - name: nic01asfr
+    name: atelier
+    type: application
+    urls:
+    - https://raw.githubusercontent.com/nic01asFr/atelier-sspcloud/main/helm-repo/atelier-0.1.0.tgz
+    version: 0.1.0
+generated: "2026-09-15T10:42:05.3537938+02:00"

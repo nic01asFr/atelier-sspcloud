@@ -1,0 +1,32 @@
+name: Catalogue Helm
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - ".github/workflows/helm.yml"
+  workflow_dispatch:
+
+jobs:
+  publier:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Lint
+        run: helm lint charts/atelier
+      - name: Empaqueter et indexer
+        run: |
+          mkdir -p helm-repo
+          helm package charts/atelier -d helm-repo/
+          helm repo index helm-repo/ --url "https://raw.githubusercontent.com/nic01asFr/atelier-sspcloud/main/helm-repo"
+      - name: Publier
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add helm-repo/
+          git diff --staged --quiet || git commit -m "Publier le chart atelier"
+          git push

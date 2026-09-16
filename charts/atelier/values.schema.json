@@ -1,0 +1,164 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Atelier — Claude Code sur votre pod",
+  "description": "Conversations de projet menées par Claude Code, connecteurs MCP, face VS Code intégrée. Un pod par personne. La clé du modèle, l'identité git et l'adresse sont reprises de votre profil SSPCloud : rien à saisir.",
+  "type": "object",
+  "properties": {
+    "image": {
+      "type": "object",
+      "title": "Image",
+      "properties": {
+        "repository": { "type": "string", "title": "Dépôt de l'image", "default": "ghcr.io/nic01asfr/atelier" },
+        "tag": { "type": "string", "title": "Étiquette", "default": "latest" }
+      }
+    },
+    "persistence": {
+      "type": "object",
+      "title": "Volume de travail",
+      "description": "Projets, conversations, secrets et réglages vivent dans ~/work et survivent au pod.",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "size": { "type": "string", "title": "Taille", "default": "10Gi" }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "title": "Ressources",
+      "description": "Trois processus Claude Code gardés en mémoire font 750 Mo ; code-server et wikichat s'y ajoutent.",
+      "properties": {
+        "requests": {
+          "type": "object",
+          "properties": {
+            "cpu": { "type": "string", "default": "500m" },
+            "memory": { "type": "string", "default": "2Gi" }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "cpu": { "type": "string", "default": "4000m" },
+            "memory": { "type": "string", "default": "8Gi" }
+          }
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "title": "Adresse",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "hostname": {
+          "type": "string",
+          "title": "Nom d'hôte (automatique)",
+          "description": "user-<idep>-atelier.user.lab.sspcloud.fr",
+          "default": "",
+          "x-onyxia": {
+            "overwriteDefaultWith": "user-{{user.username}}-atelier.{{k8s.domain}}"
+          }
+        },
+        "ingressClassName": { "type": "string", "default": "onyxia" }
+      }
+    },
+    "llm": {
+      "type": "object",
+      "title": "Modèle de langage",
+      "description": "Repris de votre profil SSPCloud (Mon compte > Assistant IA). Sinon, créez une clé sur llm.lab.sspcloud.fr.",
+      "properties": {
+        "apiKey": {
+          "type": "string",
+          "title": "Clé API",
+          "default": "",
+          "x-onyxia": { "hidden": true, "overwriteDefaultWith": "user.profile.aiAssistant.apiKey" }
+        },
+        "baseUrl": {
+          "type": "string",
+          "title": "URL de l'API",
+          "default": "https://llm.lab.sspcloud.fr/api",
+          "x-onyxia": { "overwriteDefaultWith": "user.profile.aiAssistant.apiBase" }
+        },
+        "model": {
+          "type": "string",
+          "title": "Modèle",
+          "default": "",
+          "x-onyxia": { "overwriteDefaultWith": "user.profile.aiAssistant.model" }
+        },
+        "provider": {
+          "type": "object",
+          "title": "Fournisseur IA (format récent Onyxia)",
+          "description": "Repli si le profil historique est vide ; renseigné par Onyxia, pas à la main.",
+          "properties": {
+            "apiKey": {
+              "type": "string",
+              "default": "",
+              "x-onyxia": { "hidden": true, "overwriteDefaultWith": "{{ai.activeProvider.apiKey}}" }
+            },
+            "apiBase": {
+              "type": "string",
+              "default": "",
+              "x-onyxia": { "hidden": true, "overwriteDefaultWith": "{{ai.activeProvider.apiBase}}" }
+            },
+            "selectedModel": {
+              "type": "string",
+              "default": "",
+              "x-onyxia": { "hidden": true, "overwriteDefaultWith": "{{ai.activeProvider.selectedModel}}" }
+            }
+          }
+        }
+      }
+    },
+    "oidc": {
+      "type": "object",
+      "title": "Identifiant (automatique)",
+      "properties": {
+        "username": {
+          "type": "string",
+          "default": "",
+          "x-onyxia": { "overwriteDefaultWith": "{{user.username}}" }
+        }
+      }
+    },
+    "git": {
+      "type": "object",
+      "title": "Git (automatique)",
+      "description": "L'identité qui signe les commits de vos projets, reprise de votre profil.",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "name": { "type": "string", "x-onyxia": { "overwriteDefaultWith": "{{git.name}}" } },
+        "email": { "type": "string", "x-onyxia": { "overwriteDefaultWith": "{{git.email}}" } },
+        "token": {
+          "type": "string",
+          "x-onyxia": { "hidden": true, "overwriteDefaultWith": "{{git.token}}" }
+        }
+      }
+    },
+    "security": {
+      "type": "object",
+      "title": "Accès",
+      "description": "Une clé owner ouvre l'Atelier — un pod par personne.",
+      "properties": {
+        "ownerKey": {
+          "type": "string",
+          "title": "Clé owner",
+          "description": "Laissez vide : elle est tirée au sort et se lit dans les notes d'installation. Fournie ici, elle apparaît dans Mes services.",
+          "default": ""
+        },
+        "networkPolicy": {
+          "type": "object",
+          "properties": { "enabled": { "type": "boolean", "default": true } }
+        }
+      }
+    },
+    "wikichat": {
+      "type": "object",
+      "title": "wikichat",
+      "description": "Coordination et mémoire des agents (onglets Assistant et Agents). Sans lui, le reste de l'Atelier fonctionne.",
+      "properties": { "enabled": { "type": "boolean", "default": true } }
+    },
+    "global": {
+      "type": "object",
+      "properties": {
+        "suspend": { "type": "boolean", "title": "Suspendre (pod en pause)", "default": false }
+      }
+    }
+  }
+}

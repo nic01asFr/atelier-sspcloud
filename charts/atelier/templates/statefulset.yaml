@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "atelier.fullname" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+spec:
+  replicas: {{ if .Values.global.suspend }}0{{ else }}1{{ end }}
+  serviceName: {{ include "atelier.fullname" . }}
+  selector:
+    matchLabels:
+      {{- include "atelier.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "atelier.selectorLabels" . | nindent 8 }}
+    spec:
+      securityContext:
+        fsGroup: 100
+      {{- if .Values.persistence.enabled }}
+      volumes:
+        - name: work
+          persistentVolumeClaim:
+            claimName: {{ include "atelier.fullname" . }}
+      {{- end }}
+      containers:
+        - name: atelier
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            - name: ATELIER_WORK
+              value: /home/onyxia/work
+            - name: ATELIER_PORT
+              value: {{ .Values.service.port | quote }}
+            - name: ATELIER_PUBLIC_URL
+              value: "https://{{ .Values.ingress.hostname }}"
+            - name: ATELIER_CHART_VERSION
+              value: {{ .Chart.Version | quote }}
+            - name: ANTHROPIC_BASE_URL
+              value: {{ include "atelier.llm.baseUrl" . | quote }}
+            {{- with include "atelier.llm.model" . }}
+            - name: ATELIER_MODELE
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.git.enabled }}
+            - name: GIT_USER_NAME
+              value: {{ .Values.git.name | default "" | quote }}
+            - name: GIT_USER_EMAIL
+              value: {{ .Values.git.email | default "" | quote }}
+            {{- end }}
+            {{- if not .Values.wikichat.enabled }}
+            - name: ATELIER_SANS_WIKICHAT
+              value: "1"
+            {{- end }}
+            # Les secrets viennent du Secret du chart, jamais des values en
+            # clair dans le manifeste du pod.
+            - name: ATELIER_OWNER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "atelier.fullname" . }}-secrets
+                  key: ATELIER_OWNER_KEY
+            - name: ATELIER_LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "atelier.fullname" . }}-secrets
+                  key: ATELIER_LLM_API_KEY
+            - name: ATELIER_GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "atelier.fullname" . }}-secrets
+                  key: ATELIER_GITHUB_TOKEN
+          {{- if .Values.persistence.enabled }}
+          volumeMounts:
+            - name: work
+              mountPath: /home/onyxia/work
+          {{- end }}
+          # Le démarrage télécharge peu (tout est dans l'image) mais pose les
+          # secrets, les réglages, code-server et wikichat avant l'Atelier.
+          startupProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /v1/health
+              port: http
+            periodSeconds: 30
+            failureThreshold: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

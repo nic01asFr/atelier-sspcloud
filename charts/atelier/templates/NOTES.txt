@@ -1,0 +1,28 @@
+### Votre Atelier
+
+- Ouvrez-le : https://{{ .Values.ingress.hostname }}
+{{- if (.Values.security).ownerKey }}
+- Clé owner : `{{ (.Values.security).ownerKey }}`
+{{- else }}
+- La clé owner a été tirée au sort. Lisez-la avec :
+  `kubectl get secret {{ include "atelier.fullname" . }}-secrets -n {{ .Release.Namespace }} -o jsonpath='{.data.ATELIER_OWNER_KEY}' | base64 -d`
+  — ou, depuis un terminal du pod : `cat ~/work/.secrets/atelier_owner_key`
+{{- end }}
+
+La page demande cette clé une fois ; elle n'est jamais dans l'URL.
+
+{{- if include "atelier.llm.apiKey" . }}
+
+Modèle : clé reprise de votre profil SSPCloud{{ with include "atelier.llm.model" . }}, modèle `{{ . }}`{{ end }}. Rien à faire.
+{{- else }}
+
+Aucune clé de modèle dans votre profil SSPCloud : les conversations ne
+pourront pas répondre. Créez-en une sur https://llm.lab.sspcloud.fr, puis
+renseignez Mon compte > Assistant IA et relancez le service — ou écrivez-la
+dans `~/work/.secrets/llm_api_key` depuis un terminal du pod.
+{{- end }}
+
+Tout ce qui compte vit dans le volume `~/work` : projets, conversations,
+secrets, réglages. Il survit à la suppression du service.
+
+Documentation : https://github.com/nic01asFr/atelier-sspcloud

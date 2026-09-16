@@ -1,0 +1,67 @@
+name: Image de l'Atelier
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "atelier-src/**"
+      - "install/**"
+      - "deploy/Dockerfile"
+      - ".github/workflows/image.yml"
+  workflow_dispatch:
+
+env:
+  IMAGE: ghcr.io/nic01asfr/atelier
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "./atelier-src[dev]"
+      - name: Suite
+        working-directory: atelier-src
+        run: python -m pytest -q
+
+  image:
+    needs: tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Construire et pousser
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/Dockerfile
+          push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:main
+            ${{ env.IMAGE }}:${{ github.sha }}
+      # Docker ne lance pas le code : un import cassé passerait le build et
+      # tomberait au premier démarrage de pod.
+      - name: Fumée
+        run: |
+          docker run --rm --entrypoint python3 ${{ env.IMAGE }}:${{ github.sha }} \
+            -c "import mcp_gateway.atelier.app; print('import ok')"
+          docker run --rm --entrypoint bash ${{ env.IMAGE }}:${{ github.sha }} \
+            -c 'test -x "$(ls -d /opt/atelier/extensions/anthropic.claude-code-* | sort -V | tail -1)/resources/native-binary/claude" && /opt/atelier/outils/node-*/bin/node --version && test -f /opt/atelier/wikichat/server.mjs && echo outils ok'

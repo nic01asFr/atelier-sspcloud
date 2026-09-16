@@ -1,0 +1,29 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "atelier.fullname" . }}
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+  annotations:
+    # Les flux d'événements d'une conversation restent ouverts le temps d'un
+    # tour, et un tour peut attendre une autorisation une heure : sans ces
+    # délais, l'ingress coupe à 60 s.
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+spec:
+  ingressClassName: {{ .Values.ingress.ingressClassName }}
+  rules:
+    - host: {{ .Values.ingress.hostname }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "atelier.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}
