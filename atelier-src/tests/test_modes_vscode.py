@@ -21,6 +21,7 @@ from fastapi.testclient import TestClient
 from mcp_gateway.atelier.vscode_bridge import folder_abs
 from mcp_gateway.atelier.vscode_handoff import (
     ecrire_mode_du_dossier,
+    ecrire_mode_machine,
     mode_pour_extension,
     write_vscode_workspace_config,
 )
@@ -47,15 +48,45 @@ def test_le_mode_auto_ne_se_traduit_pas() -> None:
     assert mode_pour_extension("dontAsk") == ""
 
 
-def test_le_mode_est_ecrit_dans_les_reglages_du_dossier(tmp_path: Path, reglages) -> None:
-    write_vscode_workspace_config(reglages, "essai", tmp_path, "plan")
-    ecrit = json.loads((tmp_path / ".vscode/settings.json").read_text(encoding="utf-8"))
-    assert ecrit["claudeCode.initialPermissionMode"] == "plan"
+def _machine(donnees: Path) -> dict:
+    return json.loads((donnees / "Machine/settings.json").read_text(encoding="utf-8"))
 
 
-def test_un_mode_intraduisible_ne_laisse_pas_de_trace(tmp_path: Path, reglages) -> None:
+def test_le_mode_est_ecrit_la_ou_l_extension_le_lit(tmp_path: Path, reglages, monkeypatch) -> None:
+    """Portée machine : écrit dans le dossier, VS Code l'ignorait et affichait « Manual »."""
+    monkeypatch.setenv("ATELIER_CODE_SERVER_DATA", str(tmp_path / "cs"))
+    assert ecrire_mode_machine(reglages, "plan") == "plan"
+    assert _machine(tmp_path / "cs")["claudeCode.initialPermissionMode"] == "plan"
+
+
+def test_sans_mode_de_conversation_le_mode_du_service(tmp_path: Path, reglages, monkeypatch) -> None:
+    monkeypatch.setenv("ATELIER_CODE_SERVER_DATA", str(tmp_path / "cs"))
+    ecrire_mode_machine(reglages)
+    assert _machine(tmp_path / "cs")["claudeCode.initialPermissionMode"] == reglages.permission_mode
+
+
+def test_le_mode_ne_chasse_pas_les_autres_reglages_machine(tmp_path: Path, reglages, monkeypatch) -> None:
+    donnees = tmp_path / "cs"
+    (donnees / "Machine").mkdir(parents=True)
+    (donnees / "Machine/settings.json").write_text('{"editor.fontSize": 15}', encoding="utf-8")
+    monkeypatch.setenv("ATELIER_CODE_SERVER_DATA", str(donnees))
+    ecrire_mode_machine(reglages, "manual")
+    ecrit = _machine(donnees)
+    assert ecrit["editor.fontSize"] == 15
+    assert ecrit["claudeCode.initialPermissionMode"] == "manual"
+
+
+def test_un_mode_intraduisible_retire_la_cle(tmp_path: Path, reglages, monkeypatch) -> None:
     """Écrire une valeur hors de l'énumération ferait rejeter tout le fichier."""
-    write_vscode_workspace_config(reglages, "essai", tmp_path, "auto")
+    monkeypatch.setenv("ATELIER_CODE_SERVER_DATA", str(tmp_path / "cs"))
+    ecrire_mode_machine(reglages, "plan")
+    ecrire_mode_machine(reglages, "auto")
+    assert "claudeCode.initialPermissionMode" not in _machine(tmp_path / "cs")
+
+
+def test_le_dossier_ne_porte_plus_un_mode_ignore(tmp_path: Path, reglages) -> None:
+    """Une valeur que l'extension ignore laisserait croire que le mode passe."""
+    write_vscode_workspace_config(reglages, "essai", tmp_path, "plan")
     ecrit = json.loads((tmp_path / ".vscode/settings.json").read_text(encoding="utf-8"))
     assert "claudeCode.initialPermissionMode" not in ecrit
 
@@ -71,6 +102,7 @@ def test_ouvrir_vs_code_emporte_le_mode_de_la_conversation(
     monkeypatch.setattr(
         "mcp_gateway.atelier.claude_home.home_claude_dir", lambda: tmp_path / "faux-home"
     )
+    monkeypatch.setenv("ATELIER_CODE_SERVER_DATA", str(tmp_path / "cs"))
     entete = {"Authorization": f"Bearer {_cle(atelier)}"}
     sid = atelier.post(
         "/v1/sessions",
@@ -85,8 +117,7 @@ def test_ouvrir_vs_code_emporte_le_mode_de_la_conversation(
     assert r.status_code == 302
 
     dossier = Path(folder_abs(atelier.app.state.settings, "essai"))
-    ecrit = json.loads((dossier / ".vscode/settings.json").read_text(encoding="utf-8"))
-    assert ecrit["claudeCode.initialPermissionMode"] == "acceptEdits"
+    assert _machine(tmp_path / "cs")["claudeCode.initialPermissionMode"] == "acceptEdits"
     # Et le même mode dans le fichier que le CLI résout : les deux chemins
     # disent la même chose, faute de quoi ils se contrediraient en silence.
     assert _defaut(dossier) == "acceptEdits"

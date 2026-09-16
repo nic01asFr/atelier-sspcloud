@@ -50,7 +50,12 @@ from mcp_gateway.atelier.vscode_bridge import (
     load_vscode_password,
     save_vscode_password,
 )
-from mcp_gateway.atelier.vscode_handoff import prepare_vscode_handoff, write_claude_settings_env
+from mcp_gateway.atelier.claude_home import aligner_le_lien_claude
+from mcp_gateway.atelier.vscode_handoff import (
+    ecrire_mode_machine,
+    prepare_vscode_handoff,
+    write_claude_settings_env,
+)
 from mcp_gateway.atelier.vscode_proxy import (
     is_internal_request,
     register_vscode_proxy,
@@ -525,6 +530,16 @@ def build_app(
                 write_claude_settings_env(settings)
             except OSError:
                 pass
+            # Une seule version du CLI partout, et le mode du service comme
+            # point de départ de VS Code.
+            for alignement in (
+                lambda: aligner_le_lien_claude(settings),
+                lambda: ecrire_mode_machine(settings),
+            ):
+                try:
+                    alignement()
+                except OSError:
+                    pass
             await gateway_startup(app, settings)
         yield
         if not use_fake and hasattr(app.state, "pool"):

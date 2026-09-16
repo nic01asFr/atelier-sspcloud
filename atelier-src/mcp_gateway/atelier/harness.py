@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from mcp_gateway.atelier.claude_home import sync_claude_home
+from mcp_gateway.atelier.claude_home import binaire_claude_le_plus_recent, sync_claude_home
 from mcp_gateway.atelier.config import (
     EFFORT_SUR_LA_PASSERELLE,
     AtelierSettings,
@@ -506,6 +506,16 @@ class ClaudeHarness(Harness):
         return env
 
     def _resolve_claude_bin(self) -> Path:
+        """Le binaire de nos tours : celui de VS Code d'abord.
+
+        Une même conversation passe d'une surface à l'autre ; elle doit y
+        trouver les mêmes outils, les mêmes agents, le même comportement. Le
+        lien `~/work/bin/claude` ne vient qu'ensuite, pour un poste sans
+        extension.
+        """
+        recent = binaire_claude_le_plus_recent()
+        if recent is not None:
+            return recent
         claude = self.settings.claude_bin
         if claude.is_symlink():
             target = claude.resolve()
@@ -518,11 +528,6 @@ class ClaudeHarness(Harness):
         found = which("claude")
         if found:
             return Path(found)
-        ext_root = Path.home() / ".local/share/code-server/extensions"
-        for ext in sorted(ext_root.glob("anthropic.claude-code-*"), reverse=True):
-            native = ext / "resources/native-binary/claude"
-            if native.is_file():
-                return native
         raise FileNotFoundError(f"claude binary not found at {claude}")
 
     # Un battement pendant l'attente, pour que le flux vers le navigateur ne

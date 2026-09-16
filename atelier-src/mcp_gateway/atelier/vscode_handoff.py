@@ -8,6 +8,7 @@ import shutil
 from pathlib import Path
 
 from mcp_gateway.atelier.config import AtelierSettings, effort_accepte_partout
+from mcp_gateway.atelier.claude_home import donnees_code_server
 from mcp_gateway.atelier.claude_home import sync_claude_home as sync_claude_home_store
 
 CLAUDE_CODE_EXTENSION_ID = "anthropic.claude-code"
@@ -263,13 +264,10 @@ def write_vscode_workspace_config(
         # tiennent — leur nom se lit sur leur onglet, pas au-dessus.
         "window.title": _titre_du_projet(settings, slug),
     }
-    # Le mode de travail de la conversation, quand l'extension sait le dire.
-    # Sans lui, un fil qu'on avait mis en « Demande » repartait dans VS Code
-    # sous le mode par défaut du CLI : la précaution prise d'un côté ne valait
-    # pas de l'autre, sans qu'aucun des deux écrans ne le signale.
-    voulu = mode_pour_extension(mode_permission)
-    if voulu:
-        cfg["claudeCode.initialPermissionMode"] = voulu
+    # Le mode de travail ne s'écrit pas ici : l'extension déclare
+    # `claudeCode.initialPermissionMode` au niveau machine et ignore la valeur
+    # d'un dossier — mesuré, VS Code affichait « Manual » avec `acceptEdits`
+    # écrit dans ce fichier. Voir `ecrire_mode_machine`.
     (vscode_dir / "settings.json").write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
     (vscode_dir / "extensions.json").write_text(
         json.dumps({"recommendations": [CLAUDE_CODE_EXTENSION_ID]}, indent=2) + "\n",
@@ -277,8 +275,45 @@ def write_vscode_workspace_config(
     )
 
 
+CLE_MODE_EXTENSION = "claudeCode.initialPermissionMode"
+
+
+def ecrire_mode_machine(settings: AtelierSettings, mode_permission: str = "") -> str:
+    """Dit à l'extension VS Code dans quel mode ouvrir, là où elle le lit.
+
+    Mesuré le 16 septembre 2026, extension 2.1.273 : le réglage est de portée
+    machine. Écrit dans `.vscode/settings.json`, il était ignoré, et
+    `permissions.defaultMode` de `.claude/settings.local.json` l'est aussi par
+    le CLI lancé en flux — seul `--permission-mode` compte, et l'extension ne le
+    passe que d'après ce réglage. Écrit dans les réglages machine de
+    code-server, VS Code lance aussitôt `--permission-mode acceptEdits` et
+    affiche « Edit automatically ».
+
+    Portée machine veut dire : pour toute conversation ouverte ensuite dans
+    VS Code. On écrit le mode de la conversation qu'on ouvre, sinon celui du
+    service. Un mode que l'extension ne connaît pas (`auto`) retire la clé —
+    une valeur hors de son énumération ferait rejeter le fichier entier.
+    """
+    fichier = donnees_code_server() / "Machine" / "settings.json"
+    donnees: dict[str, object] = {}
+    if fichier.is_file():
+        try:
+            lu = json.loads(fichier.read_text(encoding="utf-8"))
+            donnees = lu if isinstance(lu, dict) else {}
+        except (json.JSONDecodeError, OSError):
+            donnees = {}
+    voulu = mode_pour_extension(mode_permission or settings.permission_mode)
+    if voulu:
+        donnees[CLE_MODE_EXTENSION] = voulu
+    else:
+        donnees.pop(CLE_MODE_EXTENSION, None)
+    fichier.parent.mkdir(parents=True, exist_ok=True)
+    fichier.write_text(json.dumps(donnees, indent=2) + chr(10), encoding="utf-8")
+    return voulu
+
+
 def write_user_code_server_settings(settings: AtelierSettings) -> None:
-    user_dir = Path.home() / ".local/share/code-server/User"
+    user_dir = donnees_code_server() / "User"
     user_dir.mkdir(parents=True, exist_ok=True)
     cfg = {
         **WORKBENCH_LAYOUT_SETTINGS,
@@ -622,6 +657,7 @@ def prepare_vscode_handoff(
     write_claude_settings_env(settings)
     write_vscode_workspace_config(settings, slug_v, dossier, mode_permission)
     ecrire_mode_du_dossier(dossier, mode_permission)
+    ecrire_mode_machine(settings, mode_permission)
     if connecteurs is not None:
         accorder_les_connecteurs(dossier, connecteurs)
     write_user_code_server_settings(settings)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -11,6 +12,72 @@ from mcp_gateway.atelier.config import AtelierSettings
 # skills/commands = overlay WikiChat (et autres) ; settings.json porte les hooks Stop
 _SYNC_DIRS = ("projects", "sessions", "session-env", "skills", "commands")
 _SYNC_FILES = ("settings.json",)
+
+
+def donnees_code_server() -> Path:
+    """Le dossier de données de code-server : réglages et extensions.
+
+    Celui du pod par défaut ; `ATELIER_CODE_SERVER_DATA` le déplace, pour une
+    image qui l'a mis ailleurs ou pour un test.
+    """
+    return Path(os.environ.get("ATELIER_CODE_SERVER_DATA") or Path.home() / ".local/share/code-server")
+
+
+def dossier_des_extensions() -> Path:
+    """Où l'extension Claude Code est installée."""
+    return Path(os.environ.get("ATELIER_EXTENSIONS") or donnees_code_server() / "extensions")
+
+
+def _version(dossier: Path) -> tuple[int, ...]:
+    """`anthropic.claude-code-2.1.273-linux-x64` donne (2, 1, 273)."""
+    nom = dossier.name.removeprefix("anthropic.claude-code-")
+    chiffres: list[int] = []
+    for morceau in nom.split("-")[0].split("."):
+        if not morceau.isdigit():
+            return ()
+        chiffres.append(int(morceau))
+    return tuple(chiffres)
+
+
+def binaire_claude_le_plus_recent() -> Path | None:
+    """Le binaire `claude` de la version d'extension la plus récente installée.
+
+    C'est celui que VS Code lance : l'extension se met à jour seule et prend
+    toujours la dernière. Le lien `~/work/bin/claude`, posé une fois à la main,
+    était resté sur la 2.1.248 quand VS Code tournait en 2.1.273 — deux jeux
+    d'outils et d'agents différents pour une même conversation. On choisit
+    comme VS Code choisit. Trier les noms comme du texte classerait 2.1.99
+    après 2.1.273 : on compare les numéros.
+    """
+    candidats = [
+        (_version(d), d / "resources/native-binary/claude")
+        for d in dossier_des_extensions().glob("anthropic.claude-code-*")
+    ]
+    valides = [(v, b) for v, b in candidats if v and b.is_file() and os.access(b, os.X_OK)]
+    if not valides:
+        return None
+    return max(valides)[1]
+
+
+def aligner_le_lien_claude(settings: AtelierSettings) -> Path | None:
+    """Fait pointer `~/work/bin/claude` sur le binaire que VS Code utilise.
+
+    wikichat et le terminal passent par ce lien ; l'aligner les met sur la même
+    version que l'extension. Un vrai fichier à cet endroit n'est pas un lien
+    qu'on aurait posé : on n'y touche pas.
+    """
+    cible = binaire_claude_le_plus_recent()
+    lien = settings.claude_bin
+    if cible is None or (lien.exists() and not lien.is_symlink()):
+        return None
+    if lien.is_symlink() and lien.resolve() == cible.resolve():
+        return cible
+    lien.parent.mkdir(parents=True, exist_ok=True)
+    temporaire = lien.with_name(lien.name + ".nouveau")
+    temporaire.unlink(missing_ok=True)
+    temporaire.symlink_to(cible)
+    temporaire.replace(lien)
+    return cible
 
 
 def durable_claude_dir(settings: AtelierSettings) -> Path:
