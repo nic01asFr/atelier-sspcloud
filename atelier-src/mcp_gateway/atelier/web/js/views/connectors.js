@@ -3,6 +3,28 @@
 import { $, rendreActivable } from "../core/dom.js";
 import { renderCompositionBuilder } from "./composition-builder.js";
 
+// Les états que le moteur de compositions écrit, dits dans la langue de
+// l'écran. Affichés tels quels, « production » ou « failed » côtoyaient
+// « Actives » et « Brouillons » dans la même liste.
+export const STATUTS_COMPOSITION = {
+  production: "active",
+  tested: "testée",
+  draft: "brouillon",
+  temporary: "brouillon",
+};
+export const ETATS_EXECUTION = {
+  completed: "terminée",
+  running: "en cours",
+  waiting: "en attente",
+  paused: "en attente",
+  failed: "échouée",
+  cancelled: "annulée",
+};
+
+export function statutLisible(statut, table = STATUTS_COMPOSITION) {
+  return table[statut] || statut || "";
+}
+
 function badgeClass(entry, upstreamKey, upstream) {
   if (entry.enabled === false) return "mcp-badge mcp-badge-off";
   const raw = upstream?.[upstreamKey] || "";
@@ -170,8 +192,7 @@ function renderDerniereExecution(state, comp, body) {
   sec.className = "agent-section composition-run";
   const h3 = document.createElement("h3");
   h3.className = "connectors-sub";
-  const fini = run.status === "completed";
-  h3.textContent = "Dernière exécution — " + (fini ? "terminée" : run.status || "?");
+  h3.textContent = "Dernière exécution — " + (statutLisible(run.status, ETATS_EXECUTION) || "?");
   sec.appendChild(h3);
 
   const entrees = Object.entries(run.inputs || {});
@@ -765,13 +786,13 @@ function renderDetail(entry, kind, state, actions) {
       title.textContent = c.name || c.id;
       const sub = document.createElement("span");
       sub.className = "agent-queue-sub";
-      sub.textContent = c.description || c.status || "";
+      sub.textContent = c.description || statutLisible(c.status);
       main.appendChild(title);
       if (sub.textContent) main.appendChild(sub);
       li.appendChild(main);
       const st = document.createElement("span");
       st.className = "mcp-badge mcp-badge-muted";
-      st.textContent = c.status || "composition";
+      st.textContent = statutLisible(c.status) || "composition";
       li.appendChild(st);
       tUl.appendChild(li);
     }

@@ -366,7 +366,7 @@ export function createChatController(ctx) {
   async function assurerConversation(texte) {
     let slug = state.pendingProjectSlug || "";
     if (!slug) {
-      const titre = S.projectNameFromMessage(texte) || "Nouveau projet";
+      const titre = S.projectNameFromMessage(texte) || "Projet sans nom";
       const base = S.slugifyProjectName(titre) || "projet";
       slug = S.uniqueProjectSlug(state, base);
       await api.createProject(state.token, { slug, kind: "code", title: titre });

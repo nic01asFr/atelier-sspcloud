@@ -581,7 +581,7 @@ function renderDiscussionTab(agent, state, actions) {
   const relancer = document.createElement("button");
   relancer.type = "button";
   relancer.className = "primary btn-sm";
-  relancer.textContent = "Reprendre la session";
+  relancer.textContent = "Reprendre la conversation";
   relancer.disabled = !agent.canResume;
   relancer.title = agent.canResume
     ? "Relance l’agent là où il s’était arrêté"

@@ -184,9 +184,10 @@ export async function getTranscript(token, sessionId) {
   return res.json();
 }
 
-export async function listProjects(token, { kind } = {}) {
+export async function listProjects(token, { kind, includeArchived = false } = {}) {
   const params = new URLSearchParams();
   if (kind) params.set("kind", kind);
+  if (includeArchived) params.set("include_archived", "true");
   const q = params.toString() ? `?${params}` : "";
   const res = await fetch(`/v1/projects${q}`, { headers: jsonHeaders(token) });
   if (!res.ok) await parseError(res);

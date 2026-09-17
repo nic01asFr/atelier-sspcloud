@@ -36,6 +36,10 @@ class ProjectRecord:
     path: str
     created_at: str = ""
     updated_at: str = ""
+    # Rangé : le projet existe toujours, il ne s'affiche plus par défaut.
+    # L'interface a besoin de le savoir pour le montrer autrement et proposer
+    # de le ressortir — sans quoi archiver revient à perdre.
+    archived: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -126,7 +130,8 @@ class ProjectStore:
                     continue
                 seen.add(slug)
                 entry = meta.get("projects", {}).get(slug, {})
-                if entry.get("archived") and not include_archived:
+                range = bool(entry.get("archived"))
+                if range and not include_archived:
                     continue
                 out.append(
                     ProjectRecord(
@@ -136,6 +141,7 @@ class ProjectStore:
                         path=str(child),
                         created_at=str(entry.get("created_at") or ""),
                         updated_at=str(entry.get("updated_at") or ""),
+                        archived=range,
                     )
                 )
 

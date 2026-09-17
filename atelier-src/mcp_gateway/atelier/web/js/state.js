@@ -61,6 +61,8 @@ export function normalizeView(view) {
 
 export function createState() {
   return {
+    // Montrer ce qui a été rangé : éteint par défaut, comme un tiroir fermé.
+    montrerArchives: false,
     token: loadOwnerKey(),
     view: "code",
     slug: "",
@@ -197,7 +199,14 @@ export function isCodeSession(session, state) {
 }
 
 export function codeSessions(state) {
-  return state.sessions.filter((s) => isCodeSession(s, state) && s.state !== "archived");
+  return state.sessions.filter(
+    (s) => isCodeSession(s, state) && (state.montrerArchives || s.state !== "archived")
+  );
+}
+
+/** Montrer, ou non, ce qui a été rangé — projets comme conversations. */
+export function setMontrerArchives(state, montrer) {
+  state.montrerArchives = !!montrer;
 }
 
 export function setProjects(state, projects) {
@@ -504,9 +513,30 @@ export function sessionLabel(session) {
   return sid.slice(0, 8) || "session";
 }
 
+// Ce qu'un état vaut en français. Le service parle la langue du CLI ; l'écran
+// parle celle de qui le lit, et les deux disaient autre chose l'un que l'autre
+// — la pastille annonçait « au repos » quand la ligne en dessous lisait
+// « idle ».
+export const ETATS = {
+  running: "en réponse",
+  failed: "en erreur",
+  timeout: "en erreur",
+  interrupted: "interrompue",
+  archived: "rangée",
+  created: "jamais lancée",
+  idle: "au repos",
+};
+
+export function etatLisible(etat) {
+  return ETATS[etat] || etat || "";
+}
+
 export function sessionMetaLine(session) {
   const parts = [];
-  if (session?.state) parts.push(session.state);
-  if (session?.turns != null) parts.push(`${session.turns} tour(s)`);
+  if (session?.attend_une_decision) parts.push("autorisation demandée");
+  else if (session?.state) parts.push(etatLisible(session.state));
+  if (session?.turns != null) {
+    parts.push(session.turns === 1 ? "1 tour" : `${session.turns} tours`);
+  }
   return parts.join(" · ");
 }

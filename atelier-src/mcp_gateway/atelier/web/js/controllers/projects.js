@@ -2,7 +2,7 @@
 
 import * as api from "../api.js";
 import * as S from "../state.js";
-import { refreshProjects } from "../services/catalog.js";
+import { refreshProjects, refreshSessions } from "../services/catalog.js";
 
 /**
  * @param {object} ctx
@@ -16,7 +16,7 @@ export function createProjectActions(ctx) {
    * qu'a l'envoi du premier message.
    */
   async function newProject() {
-    const titre = "Nouveau projet";
+    const titre = "Projet sans nom";
     const slug = S.uniqueProjectSlug(state, S.slugifyProjectName(titre) || "projet");
     try {
       await api.createProject(state.token, { slug, kind: "code", title: titre });
@@ -61,6 +61,19 @@ export function createProjectActions(ctx) {
     try {
       await api.patchProject(state.token, project.slug, { title: titre });
       await refreshProjects(state);
+      await refreshSessions(state);
+    } catch (err) {
+      S.setError(state, err.message || String(err));
+    }
+    render();
+  }
+
+  /** Montrer ou cacher ce qui a été rangé, projets et conversations ensemble. */
+  async function basculerArchives() {
+    S.setMontrerArchives(state, !state.montrerArchives);
+    try {
+      await refreshProjects(state);
+      await refreshSessions(state);
     } catch (err) {
       S.setError(state, err.message || String(err));
     }
@@ -68,10 +81,10 @@ export function createProjectActions(ctx) {
   }
 
   /** Le projet sort de la liste ; son dossier et son code restent intacts. */
-  async function archiveProject(project) {
+  async function archiveProject(project, ranger = true) {
     try {
-      await api.patchProject(state.token, project.slug, { archived: true });
-      if (state.slug === project.slug) {
+      await api.patchProject(state.token, project.slug, { archived: ranger });
+      if (ranger && state.slug === project.slug) {
         S.setSessionId(state, null);
         S.setMessages(state, []);
         S.setPendingProjectSlug(state, null);
@@ -117,6 +130,7 @@ export function createProjectActions(ctx) {
     cancelRename,
     commitRename,
     archiveProject,
+    basculerArchives,
     deleteProject,
   };
 }

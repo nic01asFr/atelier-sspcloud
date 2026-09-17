@@ -61,6 +61,7 @@ function createApp() {
     newProject: projectActions.newProject,
     startRenameProject: projectActions.startRename,
     archiveProject: projectActions.archiveProject,
+    basculerArchives: projectActions.basculerArchives,
     deleteProject: projectActions.deleteProject,
     cancelRenameProject: projectActions.cancelRename,
     commitRenameProject: projectActions.commitRename,

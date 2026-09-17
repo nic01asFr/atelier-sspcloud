@@ -479,7 +479,7 @@ const BAS_DU_FIL = 1e9;
     const titleEl = $("session-title-display");
     if (titleEl) {
       titleEl.textContent = enConversation
-        ? (current ? S.sessionLabel(current) : "Session")
+        ? (current ? S.sessionLabel(current) : "Conversation")
         : "Nouvelle conversation";
     }
 
@@ -497,7 +497,7 @@ const BAS_DU_FIL = 1e9;
         selectEl.innerHTML = "";
         const neuf = document.createElement("option");
         neuf.value = "";
-        neuf.textContent = "Nouveau projet";
+        neuf.textContent = "— créer un projet —";
         selectEl.appendChild(neuf);
         for (const p of S.codeProjects(state)) {
           const opt = document.createElement("option");

@@ -3611,3 +3611,8 @@ select option {
   color: var(--text);
   font-size: 0.78rem;
 }
+
+/* Rangé : présent, mais en retrait — on doit pouvoir le retrouver sans le
+   confondre avec ce sur quoi on travaille. */
+.project-title.project-archived { opacity: 0.6; font-style: italic; }
+.tree-archives[aria-pressed="true"] { background: var(--surface-2, rgba(255,255,255,0.08)); }

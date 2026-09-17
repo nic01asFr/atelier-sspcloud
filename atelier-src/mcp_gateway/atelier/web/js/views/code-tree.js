@@ -14,25 +14,27 @@ import { showContextMenu } from "../ui/context-menu.js";
 export function createCodeTreeView(ctx) {
   const { state, render, writeQuery, actions } = ctx;
 
-  // Contrat de pastilles commun : au repos / en reponse / en erreur.
+  // Contrat de pastilles commun : au repos / en reponse / en erreur. Le texte
+  // vient de la même table que la ligne de dessous, pour qu'ils ne se
+  // contredisent jamais.
   function sessionTone(session) {
     // Attendre une autorisation n'est pas répondre : l'agent est arrêté
     // jusqu'à ce qu'on vienne. Cela se voit d'abord, avant tout état.
     if (session?.attend_une_decision) return ["warn", "autorisation demandée"];
+    const dit = S.etatLisible(session?.state) || "au repos";
     switch (session?.state) {
       case "running":
-        return ["busy", "en réponse"];
+        return ["busy", dit];
       case "failed":
       case "timeout":
-        return ["err", "en erreur"];
+        return ["err", dit];
       case "interrupted":
-        return ["warn", "interrompue"];
+        return ["warn", dit];
       case "archived":
-        return ["off", "archivée"];
       case "created":
-        return ["off", "jamais lancée"];
+        return ["off", dit];
       default:
-        return ["ok", "au repos"];
+        return ["ok", dit];
     }
   }
 
@@ -114,7 +116,7 @@ export function createCodeTreeView(ctx) {
     menuBtn.type = "button";
     menuBtn.className = "ghost session-menu-btn";
     menuBtn.textContent = "⋯";
-    menuBtn.title = "Actions session";
+    menuBtn.title = "Actions de la conversation";
     menuBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       const rect = menuBtn.getBoundingClientRect();
@@ -179,8 +181,10 @@ export function createCodeTreeView(ctx) {
       titleBtn = document.createElement("button");
       titleBtn.type = "button";
       titleBtn.className = "project-title";
-      titleBtn.innerHTML = `<span>&#128193; ${project.title || project.slug}</span>`;
+      const range = project.archived ? " · rangé" : "";
+      titleBtn.innerHTML = `<span>&#128193; ${project.title || project.slug}${range}</span>`;
       titleBtn.title = project.path + " (" + project.slug + ")";
+      titleBtn.classList.toggle("project-archived", !!project.archived);
       titleBtn.addEventListener("click", () => {
         S.ensureExpanded(state, project.slug);
         S.setSlug(state, project.slug);
@@ -216,7 +220,7 @@ export function createCodeTreeView(ctx) {
       if (!sessions.length) {
         const li = document.createElement("li");
         li.className = "session-empty";
-        li.textContent = "Aucune session";
+        li.textContent = "Aucune conversation";
         ul.appendChild(li);
       } else {
         for (const s of sessions) {
@@ -260,7 +264,9 @@ export function createCodeTreeView(ctx) {
         action: () => actions.openVscode(project.slug, null),
       },
       { label: "Renommer le projet", action: () => actions.startRenameProject(project) },
-      { label: "Archiver le projet", action: () => actions.archiveProject(project) },
+      project.archived
+        ? { label: "Ressortir le projet", action: () => actions.archiveProject(project, false) }
+        : { label: "Ranger le projet", action: () => actions.archiveProject(project, true) },
       {
         label: "Supprimer le projet",
         danger: true,
@@ -283,6 +289,21 @@ export function createCodeTreeView(ctx) {
     addBtn.title = "Créer un projet code";
     addBtn.addEventListener("click", () => actions.newProject());
     headerRow.appendChild(addBtn);
+
+    // Ranger ne doit pas vouloir dire perdre : sans ce bouton, un projet rangé
+    // — et toutes ses conversations avec lui — disparaissait de l'écran sans
+    // aucun moyen de le revoir. Douze projets et cinq conversations étaient
+    // dans ce cas.
+    const archives = document.createElement("button");
+    archives.type = "button";
+    archives.className = "ghost tree-archives";
+    archives.textContent = state.montrerArchives ? "Masquer les rangés" : "Rangés";
+    archives.title = state.montrerArchives
+      ? "Ne plus afficher les projets et conversations rangés"
+      : "Afficher aussi les projets et conversations rangés";
+    archives.setAttribute("aria-pressed", state.montrerArchives ? "true" : "false");
+    archives.addEventListener("click", () => actions.basculerArchives());
+    headerRow.appendChild(archives);
     root.appendChild(headerRow);
 
     const projects = S.codeProjects(state);
@@ -296,7 +317,7 @@ export function createCodeTreeView(ctx) {
       orphanBlock.className = "project-block orphan-block";
       const orphanHead = document.createElement("div");
       orphanHead.className = "orphan-head";
-      orphanHead.textContent = "Sessions sans projet";
+      orphanHead.textContent = "Conversations sans projet";
       orphanBlock.appendChild(orphanHead);
       const ul = document.createElement("ul");
       ul.className = "session-list";
@@ -310,7 +331,9 @@ export function createCodeTreeView(ctx) {
     if (!projects.length && !orphans.length) {
       const empty = document.createElement("p");
       empty.className = "tree-empty";
-      empty.textContent = "Aucun projet code — créez le premier.";
+      empty.textContent = state.montrerArchives
+        ? "Aucun projet, même rangé."
+        : "Aucun projet — créez le premier.";
       root.appendChild(empty);
     }
   }

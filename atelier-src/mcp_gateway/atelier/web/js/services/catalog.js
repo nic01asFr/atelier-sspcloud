@@ -4,12 +4,17 @@ import * as api from "../api.js";
 import * as S from "../state.js";
 
 export async function refreshProjects(state) {
-  const projects = await api.listProjects(state.token);
+  const projects = await api.listProjects(state.token, {
+    includeArchived: !!state.montrerArchives,
+  });
   S.setProjects(state, projects);
 }
 
 export async function refreshSessions(state) {
-  const sessions = await api.listSessions(state.token, { syncTitles: true });
+  const sessions = await api.listSessions(state.token, {
+    syncTitles: true,
+    includeArchived: !!state.montrerArchives,
+  });
   S.setSessions(state, sessions);
 }
 

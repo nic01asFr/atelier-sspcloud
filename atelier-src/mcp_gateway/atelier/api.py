@@ -1035,10 +1035,7 @@ def build_app(
         # restaient listées « sans projet », comme orphelines — alors qu'un
         # projet archivé se rouvre, et ses conversations avec.
         if not include_archived:
-            visibles = {p.slug for p in projects.list_projects()}
-            ranges = {
-                p.slug for p in projects.list_projects(include_archived=True)
-            } - visibles
+            ranges = {p.slug for p in projects.list_projects(include_archived=True) if p.archived}
             sessions = [s for s in sessions if s.slug not in ranges]
         # Une conversation qui attend qu'on l'autorise n'est pas « en réponse »
         # : elle attend quelqu'un. La liste doit le dire, sinon l'agent reste
