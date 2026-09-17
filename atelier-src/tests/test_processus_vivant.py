@@ -162,3 +162,69 @@ def test_pendant_le_tour_le_processus_est_en_cours(harnais: ClaudeHarness) -> No
     assert vus == [True]
     assert not harnais.tour_en_cours("s1")
     assert threading.active_count() >= 1
+
+
+def _veilleurs() -> int:
+    """Les fils de veille vivants, toutes conversations confondues.
+
+    Un test voisin peut laisser le sien : on regarde donc les écarts, pas le
+    nombre absolu.
+    """
+    import threading
+
+    return sum(1 for f in threading.enumerate() if f.name == "atelier-veilleur" and f.is_alive())
+
+
+def test_un_seul_fil_de_veille_quoi_qu_il_arrive(harnais: ClaudeHarness) -> None:
+    """Le premier essai relançait la veille depuis la veille : 91 139 fils sur le pod.
+
+    Le service écoutait encore mais ne répondait plus — un fil de plus toutes
+    les trente secondes, qui doublait la population à chaque passage.
+    """
+    _tour(harnais, "s1", "a")
+    fil = harnais._veilleur
+    assert fil is not None and fil.is_alive(), "un fil de veille, pas zéro"
+    pendant = _veilleurs()
+    for _ in range(5):
+        harnais._veiller()
+    assert harnais._veilleur is fil, "le même fil, jamais un second"
+    assert _veilleurs() <= pendant, "aucun fil de plus n'est né"
+
+
+def test_le_nettoyage_ne_lance_aucun_fil(harnais: ClaudeHarness) -> None:
+    """Ce que le fil de veille appelle en boucle ne doit rien engendrer."""
+    _tour(harnais, "s1", "a")
+    avant = _veilleurs()
+    for _ in range(5):
+        harnais._nettoyer_les_processus()
+    assert _veilleurs() == avant
+
+
+def test_la_veille_s_arrete_quand_il_n_y_a_plus_rien(harnais: ClaudeHarness) -> None:
+    harnais.settings.cli_inactivite_s = 0
+    _tour(harnais, "s1", "a")
+    assert _attendre_la_mort(harnais, "s1")
+    fin = time.monotonic() + 20
+    while time.monotonic() < fin and harnais._veilleur is not None:
+        time.sleep(0.2)
+    assert harnais._veilleur is None, "le fil sort quand plus aucun processus n'est gardé"
+
+
+def test_la_veille_ne_se_reproduit_pas_en_tournant(
+    harnais: ClaudeHarness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Le fil doit pouvoir tourner cent fois sans jamais en engendrer un autre.
+
+    C'est la forme exacte du défaut : la veille se relançait depuis elle-même à
+    chaque passage. Pour l'observer en une seconde plutôt qu'en une heure, on
+    raccourcit son sommeil.
+    """
+    vrai_sommeil = time.sleep
+    monkeypatch.setattr(module.time, "sleep", lambda _s: vrai_sommeil(0.001))
+    _tour(harnais, "s1", "a")
+    fil = harnais._veilleur
+    assert fil is not None
+    compte = _veilleurs()
+    vrai_sommeil(0.5)
+    assert harnais._veilleur is fil, "toujours le même fil"
+    assert _veilleurs() <= compte, "et aucun autre n'est né entre-temps"

@@ -1121,13 +1121,11 @@ class ClaudeHarness(Harness):
                 proc.wait(timeout=5)
         vivant.attendre_les_erreurs()
 
-    def _veiller(self) -> None:
-        """Éteint ce qui a trop attendu, et ce qui dépasse le plafond.
+    def _nettoyer_les_processus(self) -> None:
+        """Éteint ce qui a trop attendu, ce qui est mort, et ce qui dépasse le plafond.
 
-        Jamais un processus dont un tour travaille. Le plafond retire les
-        moins récents d'abord. Appelée à la fin de chaque tour, et par un fil
-        qui repasse régulièrement — sans quoi un dernier processus resterait
-        garé tant que personne n'écrit.
+        Jamais un processus dont un tour travaille. Le plafond retire les moins
+        récents d'abord.
         """
         maintenant = time.monotonic()
         with self._verrou:
@@ -1153,37 +1151,57 @@ class ClaudeHarness(Harness):
         excedent = total - max(1, int(self.settings.cli_processus_max))
         for sid, _ in restants[: max(0, excedent)]:
             self._eteindre(sid)
-        self._lancer_le_veilleur()
 
-    def _lancer_le_veilleur(self) -> None:
-        if self._veilleur is not None and self._veilleur.is_alive():
-            return
+    def _veiller(self) -> None:
+        """Nettoie maintenant, et s'assure qu'un fil repassera.
+
+        Appelée à la fin de chaque tour : sans le fil, un dernier processus
+        resterait garé tant que personne n'écrit.
+        """
+        self._nettoyer_les_processus()
+        self._assurer_le_veilleur()
+
+    def _assurer_le_veilleur(self) -> None:
+        """Un seul fil de veille, jamais deux.
+
+        Le premier essai en lançait un depuis le fil de veille lui-même, à
+        chaque passage : sur le pod, 91 139 fils et 2,6 Go en une matinée, et un
+        service qui n'écoutait plus. Le fil ne relance donc rien ; il nettoie et
+        s'arrête quand il n'y a plus rien à garder, et c'est la fin d'un tour
+        qui en repose un au besoin, sous verrou.
+        """
         if not self.settings.cli_processus_vivant:
             return
 
         def boucle() -> None:
-            while True:
-                time.sleep(max(5, min(30, self.settings.cli_inactivite_s or 30)))
+            # On dort par tranches d'une seconde plutôt que d'un trait : le
+            # dernier processus éteint, le fil doit pouvoir sortir tout de
+            # suite au lieu de tenir jusqu'à son prochain réveil.
+            pause = max(5, min(30, self.settings.cli_inactivite_s or 30))
+            try:
+                while True:
+                    for _ in range(pause):
+                        time.sleep(1)
+                        with self._verrou:
+                            if not self._vivants:
+                                return
+                    try:
+                        self._nettoyer_les_processus()
+                    except Exception:  # noqa: BLE001 — la veille ne doit pas mourir
+                        pass
+            finally:
                 with self._verrou:
-                    vide = not self._vivants
-                if vide:
-                    break
-                try:
-                    self._veiller_sans_relancer()
-                except Exception:  # noqa: BLE001 — la veille ne doit pas mourir
-                    pass
+                    if self._veilleur is threading.current_thread():
+                        self._veilleur = None
 
-        self._veilleur = threading.Thread(target=boucle, name="atelier-veilleur", daemon=True)
-        self._veilleur.start()
-
-    def _veiller_sans_relancer(self) -> None:
-        veilleur = self._veilleur
-        self._veilleur = None
-        try:
-            self._veiller()
-        finally:
-            if self._veilleur is None:
-                self._veilleur = veilleur
+        with self._verrou:
+            if self._veilleur is not None and self._veilleur.is_alive():
+                return
+            self._veilleur = threading.Thread(
+                target=boucle, name="atelier-veilleur", daemon=True
+            )
+            fil = self._veilleur
+        fil.start()
 
     def processus_vivants(self) -> list[str]:
         """Les conversations dont un processus est gardé — pour l'état et les tests."""
