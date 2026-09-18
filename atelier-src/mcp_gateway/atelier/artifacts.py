@@ -22,6 +22,11 @@ from pathlib import Path
 # Le dossier, dans le projet, où un agent dépose ce qu'il veut montrer.
 NOM_DOSSIER = "artifacts"
 
+# Un dossier qui porte ce fichier est un « corpus » : un site à plusieurs
+# pièces — feuille de style partagée, pages qui se lient entre elles — et non
+# une page autonome. On le sert alors tel quel, ses sous-ressources autorisées.
+MARQUEUR_CORPUS = ".corpus"
+
 # Le contenu est produit par un agent. `sandbox` sans `allow-same-origin` met
 # le document dans une origine opaque : son script ne lit plus le cookie de
 # l'Atelier et ses requêtes ne sont plus créditées. `allow-scripts` laisse
@@ -34,8 +39,38 @@ CSP_SANDBOX = (
     "style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src data:"
 )
 
+# La CSP d'un corpus privé. On lâche l'origine opaque — sinon la feuille de
+# style partagée et les liens entre pages ne se résoudraient plus — mais on
+# garde le fil coupé : `connect-src 'none'` interdit tout fetch, XHR ou
+# WebSocket, et le cookie de l'Atelier est `HttpOnly`, donc hors de portée du
+# script. Un corpus voit son style et navigue ; il ne parle à personne. C'est
+# le prix pour servir un site à plusieurs pièces, et pourquoi il reste privé :
+# jamais partagé par lien, seulement derrière la porte de son propriétaire.
+CSP_CORPUS = (
+    "default-src 'self'; connect-src 'none'; img-src 'self' data: blob:; "
+    "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+    "font-src 'self' data:; frame-ancestors 'self'; base-uri 'none'; "
+    "form-action 'none'"
+)
+
 # Ce qui exécute du script si on l'ouvre : c'est là que le bac à sable compte.
 TYPES_ACTIFS = ("text/html", "image/svg+xml")
+
+
+def est_sous_corpus(base: Path, cible: Path) -> bool:
+    """La cible relève-t-elle d'un dossier marqué comme corpus ?
+
+    On remonte de la cible jusqu'à la base : le premier dossier qui porte le
+    marqueur fait de tout ce qu'il contient un corpus.
+    """
+    base = base.resolve()
+    dossier = cible if cible.is_dir() else cible.parent
+    while True:
+        if (dossier / MARQUEUR_CORPUS).is_file():
+            return True
+        if dossier == base or base not in dossier.parents:
+            return False
+        dossier = dossier.parent
 
 # Ce qu'on ne montre pas dans l'index : les serveurs bricolés d'hier, les
 # restes de dépendances. L'agent expose du contenu, pas de la plomberie.

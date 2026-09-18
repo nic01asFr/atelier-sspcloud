@@ -141,3 +141,74 @@ def test_sans_la_porte_rien_ne_sort(atelier: TestClient, reglages: AtelierSettin
     _depose(reglages, "recherche")
     r = atelier.get("/v1/artifacts/recherche")
     assert r.status_code == 401
+
+
+# ── le mode corpus ─────────────────────────────────────────────────────
+
+def _depose_corpus(reglages: AtelierSettings, slug: str) -> Path:
+    base = reglages.projects_dir / slug / "artifacts" / "cerveau"
+    (base / "systeme").mkdir(parents=True, exist_ok=True)
+    base.joinpath(".corpus").write_text("", encoding="utf-8")
+    base.joinpath("systeme", "cerveau.css").write_text("body{color:red}", encoding="utf-8")
+    base.joinpath("index.html").write_text(
+        '<!doctype html><link rel="stylesheet" href="systeme/cerveau.css"><h1>Corpus</h1>',
+        encoding="utf-8",
+    )
+    base.joinpath("note.html").write_text(
+        '<!doctype html><link rel="stylesheet" href="systeme/cerveau.css"><h1>Une note</h1>',
+        encoding="utf-8",
+    )
+    return base
+
+
+def test_un_corpus_garde_sa_feuille_de_style(
+    atelier: TestClient, reglages: AtelierSettings, cle_du_proprietaire: str
+) -> None:
+    """Le bac à sable strict couperait le CSS externe ; le corpus l'autorise."""
+    _depose_corpus(reglages, "recherche")
+    r = atelier.get(
+        "/v1/artifacts/recherche/cerveau/note.html",
+        headers={"Authorization": f"Bearer {cle_du_proprietaire}"},
+    )
+    assert r.status_code == 200
+    csp = r.headers["content-security-policy"]
+    assert "sandbox" not in csp  # sinon origine opaque, 'self' inutile
+    assert "connect-src 'none'" in csp  # mais le réseau reste coupé
+    assert "default-src 'self'" in csp
+
+
+def test_un_corpus_sert_son_propre_index(
+    atelier: TestClient, reglages: AtelierSettings, cle_du_proprietaire: str
+) -> None:
+    _depose_corpus(reglages, "recherche")
+    r = atelier.get(
+        "/v1/artifacts/recherche/cerveau/",
+        headers={"Authorization": f"Bearer {cle_du_proprietaire}"},
+    )
+    assert r.status_code == 200
+    assert "<h1>Corpus</h1>" in r.text  # l'index du corpus, pas notre listing
+
+
+def test_le_css_du_corpus_se_sert_avec_son_type(
+    atelier: TestClient, reglages: AtelierSettings, cle_du_proprietaire: str
+) -> None:
+    _depose_corpus(reglages, "recherche")
+    r = atelier.get(
+        "/v1/artifacts/recherche/cerveau/systeme/cerveau.css",
+        headers={"Authorization": f"Bearer {cle_du_proprietaire}"},
+    )
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/css")
+    assert "color:red" in r.text
+
+
+def test_hors_corpus_le_bac_a_sable_reste_strict(
+    atelier: TestClient, reglages: AtelierSettings, cle_du_proprietaire: str
+) -> None:
+    """Un artefact ordinaire n'hérite pas de l'indulgence du corpus."""
+    _depose(reglages, "recherche")
+    r = atelier.get(
+        "/v1/artifacts/recherche/page.html",
+        headers={"Authorization": f"Bearer {cle_du_proprietaire}"},
+    )
+    assert "sandbox" in r.headers["content-security-policy"]
