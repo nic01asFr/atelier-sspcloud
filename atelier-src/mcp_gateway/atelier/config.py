@@ -82,6 +82,12 @@ class AtelierSettings(BaseSettings):
     # 0 désactive.
     contexte_plafond_jetons: int = 32000
 
+    # Combien de fois de suite un tour peut être arrêté, résumé, puis repris.
+    # Une seule reprise ne suffit pas : le lot L7-1a a demandé 69 000 unités
+    # d'un seul tenant, soit deux plafonds. On s'arrête quand le résumé ne
+    # rend plus la main — c'est le signe qu'il n'y a plus rien à gagner.
+    contexte_reprises_max: int = 3
+
     # Ce que le CLI, lui, doit croire de sa propre fenêtre. Son compte de
     # jetons sous-estime d'environ 2,7 fois ce que le modèle servi facture :
     # une conversation qu'il situait à 50 000 a été refusée à 122 881. On lui

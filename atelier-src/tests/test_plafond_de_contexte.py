@@ -154,14 +154,38 @@ class HarnaisQuiDebordeToujours(FakeHarness):
         )
 
 
-def test_on_ne_reprend_qu_une_fois(reglages: AtelierSettings) -> None:
+def test_les_reprises_ont_une_fin(reglages: AtelierSettings) -> None:
     """Sinon deux tours trop lourds se relanceraient l'un l'autre sans fin."""
+    reglages.contexte_reprises_max = 3
     harnais = HarnaisQuiDebordeToujours()
     store = SessionStore(reglages, harnais)
     rec = store.create(slug="essai")
 
     store.send(rec.session_id, "fais le lot L7")
 
-    assert harnais.tours == 2, "un tour, une reprise, et l'on s'arrête"
+    assert harnais.tours == 4, "le tour, puis trois reprises, et l'on s'arrête"
+    fiche = store.get(rec.session_id)
+    assert fiche.state == "timeout" and fiche.cause == "contexte_plafond"
+
+
+class HarnaisDontLeResumeEchoue(HarnaisQuiDebordeToujours):
+    """Le cas qui rend la reprise vaine : la conversation ne se résume plus."""
+
+    def run_turn(self, session_id: str, message: str, **kw: Any) -> TurnResult:  # type: ignore[override]
+        if message.startswith("/compact"):
+            raise RuntimeError("API Error: 400 ContextWindowExceeded")
+        return super().run_turn(session_id, message, **kw)
+
+
+def test_sans_resume_on_ne_reprend_pas(reglages: AtelierSettings) -> None:
+    """Reprendre sans avoir résumé buterait au même endroit, une fois de plus."""
+    reglages.contexte_reprises_max = 3
+    harnais = HarnaisDontLeResumeEchoue()
+    store = SessionStore(reglages, harnais)
+    rec = store.create(slug="essai")
+
+    store.send(rec.session_id, "fais le lot L7")
+
+    assert harnais.tours == 1, "un seul tour : le résumé n'ayant pas abouti, on s'arrête"
     fiche = store.get(rec.session_id)
     assert fiche.state == "timeout" and fiche.cause == "contexte_plafond"

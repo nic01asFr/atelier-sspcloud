@@ -1075,7 +1075,7 @@ class SessionStore:
         attachment_ids: list[str] | None = None,
         on_event: Callable[[AtelierEvent], None] | None = None,
         peut_attendre: bool = False,
-        apres_plafond: bool = False,
+        reprises: int = 0,
     ) -> TurnResult:
         """Joue un tour.
 
@@ -1218,7 +1218,7 @@ class SessionStore:
         plafond_atteint = any(
             e.kind == "erreur" and e.cause == "contexte_plafond" for e in result.events
         )
-        if plafond_atteint and not apres_plafond:
+        if plafond_atteint and reprises < self.settings.contexte_reprises_max:
             rec.turns += 1
             rec.state = "idle"
             rec.cause = ""
@@ -1232,13 +1232,19 @@ class SessionStore:
                         text=MESSAGE_DE_REPRISE,
                     )
                 )
-            self._compacter_si_besoin(rec, claude_cli_id, force=True)
+            if not self._compacter_si_besoin(rec, claude_cli_id, force=True):
+                # Le résumé n'a pas abouti : reprendre ne ferait que buter au
+                # même endroit, une fois de plus.
+                rec.state = "timeout"
+                rec.cause = "contexte_plafond"
+                self.save(rec)
+                return result
             return self.send(
                 session_id,
                 MESSAGE_DE_REPRISE,
                 on_event=on_event,
                 peut_attendre=peut_attendre,
-                apres_plafond=True,
+                reprises=reprises + 1,
             )
 
         # Un tour peut traiter plusieurs messages depuis qu'on écrit pendant
