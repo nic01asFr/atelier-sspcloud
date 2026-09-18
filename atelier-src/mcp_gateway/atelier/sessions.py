@@ -129,6 +129,16 @@ PREAMBULES_SYNTHETIQUES = (
     "<local-command-stdout>",
 )
 
+# Ce qu'on dit à un tour qu'on a dû arrêter en route, une fois la conversation
+# résumée. Écrit du point de vue de qui reprend : il ne se souvient plus du
+# détail, seulement du résumé qu'on vient de lui faire.
+MESSAGE_DE_REPRISE = (
+    "Ton tour précédent a été arrêté : la conversation devenait trop lourde "
+    "pour le modèle, et elle vient d'être résumée. Reprends où tu en étais, "
+    "à partir de ce résumé. Si tu ne sais plus où tu en étais, dis-le et "
+    "attends plutôt que de recommencer."
+)
+
 # Au-delà, on renonce : un transcript de plusieurs milliers de lignes dont
 # aucune n'est de quelqu'un n'aura pas de titre plus bas non plus.
 LIGNES_CHERCHEES_POUR_LE_TITRE = 500
@@ -983,7 +993,9 @@ class SessionStore:
         # tout, la compaction elle-même n'y tenant plus.
         return caracteres // 3
 
-    def _compacter_si_besoin(self, rec: SessionRecord, claude_cli_id: str) -> bool:
+    def _compacter_si_besoin(
+        self, rec: SessionRecord, claude_cli_id: str, force: bool = False
+    ) -> bool:
         """Fait résumer la conversation avant qu'elle ne dépasse la fenêtre.
 
         Claude Code sait compacter tout seul, et l'Atelier l'a longtemps cru
@@ -1000,10 +1012,10 @@ class SessionStore:
         le seul à pouvoir mesurer.
         """
         seuil = self.settings.compaction_seuil_jetons
-        if seuil <= 0:
+        if seuil <= 0 and not force:
             return False
         poids = self.poids_de_la_conversation(rec)
-        if poids < seuil:
+        if poids < seuil and not force:
             return False
         log.info(
             "conversation %s à ~%d jetons (seuil %d) — compaction demandée",
@@ -1040,6 +1052,7 @@ class SessionStore:
         attachment_ids: list[str] | None = None,
         on_event: Callable[[AtelierEvent], None] | None = None,
         peut_attendre: bool = False,
+        apres_plafond: bool = False,
     ) -> TurnResult:
         """Joue un tour.
 
@@ -1147,6 +1160,7 @@ class SessionStore:
                 peut_attendre=peut_attendre,
                 effort=rec.effort or self.settings.effort,
                 agent_name=self._nom_wikichat(rec),
+                poids_initial=self.poids_de_la_conversation(rec) if resume else 0,
                 on_event=on_event,
             )
         except Exception as exc:  # noqa: BLE001 — surface cause to API
@@ -1154,6 +1168,36 @@ class SessionStore:
             rec.cause = str(exc)
             self.save(rec)
             raise
+
+        # Le tour a été arrêté parce que la conversation devenait trop lourde :
+        # on la fait résumer, puis on la fait reprendre là où elle en était.
+        # Une seule fois — si le tour repris pèse encore trop, c'est qu'il n'y
+        # a plus rien à gagner à recommencer, et la personne doit le savoir.
+        plafond_atteint = any(
+            e.kind == "erreur" and e.cause == "contexte_plafond" for e in result.events
+        )
+        if plafond_atteint and not apres_plafond:
+            rec.turns += 1
+            rec.state = "idle"
+            rec.cause = ""
+            self.save(rec)
+            if on_event is not None:
+                on_event(
+                    AtelierEvent(
+                        kind="systeme",
+                        session_id=session_id,
+                        cause="contexte_compacte",
+                        text=MESSAGE_DE_REPRISE,
+                    )
+                )
+            self._compacter_si_besoin(rec, claude_cli_id, force=True)
+            return self.send(
+                session_id,
+                MESSAGE_DE_REPRISE,
+                on_event=on_event,
+                peut_attendre=peut_attendre,
+                apres_plafond=True,
+            )
 
         # Un tour peut traiter plusieurs messages depuis qu'on écrit pendant
         # qu'il travaille : celui qu'on lui a donné, puis ceux qui attendaient.
@@ -1171,6 +1215,9 @@ class SessionStore:
         if sur_disque is not None and sur_disque.state == "interrupted":
             rec.state = "interrupted"
             rec.cause = "interrupted"
+        elif plafond_atteint:
+            rec.state = "timeout"
+            rec.cause = "contexte_plafond"
         elif any(e.kind == "erreur" and e.cause == "timeout_mural" for e in result.events):
             rec.state = "timeout"
             rec.cause = "timeout_mural"

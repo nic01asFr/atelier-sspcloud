@@ -72,6 +72,16 @@ class AtelierSettings(BaseSettings):
     # le tour qui suit.
     compaction_seuil_jetons: int = 25000
 
+    # Le même mal, mais pendant un tour : l'Atelier ne pouvait agir qu'entre
+    # deux, et un seul tour peut ajouter cent mille jetons. Mesuré le
+    # 17 septembre : un agent parti pour un lot de travail a enchaîné quatre-
+    # vingts appels d'outils, s'est mis à inventer une revue qu'on ne lui
+    # avait pas faite vers 38 800 de nos unités, et a fini au-delà de la
+    # fenêtre du modèle — conversation perdue. Au-delà de ce poids estimé, le
+    # harnais arrête le tour ; l'Atelier compacte et le fait reprendre.
+    # 0 désactive.
+    contexte_plafond_jetons: int = 32000
+
     # Ce que le CLI, lui, doit croire de sa propre fenêtre. Son compte de
     # jetons sous-estime d'environ 2,7 fois ce que le modèle servi facture :
     # une conversation qu'il situait à 50 000 a été refusée à 122 881. On lui

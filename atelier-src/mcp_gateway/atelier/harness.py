@@ -171,6 +171,7 @@ class Harness(ABC):
         effort: str = "",
         peut_attendre: bool = False,
         agent_name: str = "",
+        poids_initial: int = 0,
         on_event: Callable[[AtelierEvent], None] | None = None,
     ) -> TurnResult: ...
 
@@ -219,6 +220,7 @@ class FakeHarness(Harness):
         effort: str = "",
         peut_attendre: bool = False,
         agent_name: str = "",
+        poids_initial: int = 0,
         on_event: Callable[[AtelierEvent], None] | None = None,
     ) -> TurnResult:
         self._running[session_id] = True
@@ -744,6 +746,7 @@ class ClaudeHarness(Harness):
         effort: str = "",
         peut_attendre: bool = False,
         agent_name: str = "",
+        poids_initial: int = 0,
         on_event: Callable[[AtelierEvent], None] | None = None,
     ) -> TurnResult:
         claude = self._resolve_claude_bin()
@@ -868,6 +871,12 @@ class ClaudeHarness(Harness):
             return ev
 
         texts: list[str] = []
+        # Ce que pèse la conversation, mis à jour à mesure qu'elle s'écrit.
+        # Même compte que `poids_de_la_conversation` : des caractères divisés
+        # par trois. Il ne s'agit pas de facturer, mais de savoir quand
+        # s'arrêter.
+        poids = poids_initial
+        plafond = self.settings.contexte_plafond_jetons
         deadline = time.monotonic() + timeout_s
         assert proc.stdout is not None
         assert proc.stderr is not None
@@ -909,6 +918,24 @@ class ClaudeHarness(Harness):
                         if ligne_a_conserver(line):
                             tf.write(line)
                             tf.flush()
+                            poids += len(line) // 3
+                            if plafond > 0 and poids > plafond:
+                                # Le tour a grossi au-delà de ce que le modèle
+                                # pourra relire. Le laisser continuer, c'est le
+                                # perdre : mesuré, il se met à inventer ce
+                                # qu'on ne lui a pas dit, puis la compaction
+                                # elle-même ne passe plus. On l'arrête ici ;
+                                # l'Atelier compactera et le fera reprendre.
+                                self._eteindre(session_id, de_force=True)
+                                emettre(
+                                    AtelierEvent(
+                                        kind="erreur",
+                                        session_id=session_id,
+                                        cause="contexte_plafond",
+                                        text=str(poids),
+                                    )
+                                )
+                                break
                         if est_un_resultat(line):
                             # Un message a fini. S'il en attend un autre, on
                             # l'écrit dans le même tour : le CLI le traitera à

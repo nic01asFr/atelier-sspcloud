@@ -7,7 +7,8 @@ signe ses réponses de son PID — c'est ainsi qu'un test sait si deux tours ont
 exactement comme le vrai.
 
 Mots reconnus dans le message : `crash` écrit une erreur sur la sortie
-d'erreur ; `dors N` met N secondes à répondre.
+d'erreur ; `dors N` met N secondes à répondre ; `bavard N` écrit N réponses
+d'affilée avant de conclure, pour éprouver ce qui compte le poids d'un tour.
 """
 
 from __future__ import annotations
@@ -43,6 +44,25 @@ def main() -> None:
             premier = False
         if texte.startswith("dors "):
             time.sleep(float(texte.split()[1]))
+        if texte.startswith("bavard "):
+            # De quoi faire grossir la conversation sans jamais conclure :
+            # c'est ainsi qu'on éprouve le plafond de contexte.
+            for numero in range(int(texte.split()[1])):
+                print(
+                    json.dumps(
+                        {
+                            "type": "assistant",
+                            "message": {
+                                "content": [
+                                    {"type": "text", "text": str(numero) + " " + "x" * 400}
+                                ]
+                            },
+                        },
+                        separators=(",", ":"),
+                    )
+                )
+                sys.stdout.flush()
+                time.sleep(0.01)
         if texte == "crash":
             sys.stderr.write("Error: boom" + chr(10))
             sys.stderr.flush()
