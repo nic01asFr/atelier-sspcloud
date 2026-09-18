@@ -163,3 +163,83 @@ def test_l_ide_ne_peut_pas_reposer_un_preambule(
 
     store.sync_claude_titles()
     assert store.get(rec.session_id).title == "Répare le build"
+
+
+def test_nom_provisoire_ecarte(
+    reglages, monkeypatch, tmp_path: Path
+) -> None:
+    """« nouveau-projet-6d » ne dit pas de quoi l'on parle.
+
+    Le CLI se nomme ainsi en attendant un vrai nom, qu'il ne pose qu'après un
+    premier tour abouti. Une conversation dont le premier tour échouait
+    gardait ce nom pour titre ; le premier message, lui, est déjà là.
+    """
+    from mcp_gateway.atelier.vscode_handoff import dossier_transcripts_claude
+
+    store = _atelier_jetable(reglages, monkeypatch, tmp_path)
+    rec = store.create(slug="essai")
+    rec.claude_session_id = "cli-1"
+    store.save(rec)
+
+    sessions = reglages.work_dir / ".claude" / "sessions"
+    sessions.mkdir(parents=True, exist_ok=True)
+    (sessions / "x.json").write_text(
+        json.dumps(
+            {
+                "sessionId": "cli-1",
+                "name": "essai-6d",
+                "nameSource": "derived",
+                "cwd": rec.cwd,
+            }
+        ),
+        encoding="utf-8",
+    )
+    dossier = dossier_transcripts_claude(Path(rec.cwd))
+    dossier.mkdir(parents=True, exist_ok=True)
+    _transcript(dossier / "cli-1.jsonl", [_dire("Pose le bureau Chrome")])
+
+    store.sync_claude_titles()
+    assert store.get(rec.session_id).title == "Pose le bureau Chrome"
+
+
+def test_nom_provisoire_repare(
+    reglages, monkeypatch, tmp_path: Path
+) -> None:
+    """Trois conversations du pod le portaient déjà."""
+    from mcp_gateway.atelier.vscode_handoff import dossier_transcripts_claude
+
+    store = _atelier_jetable(reglages, monkeypatch, tmp_path)
+    rec = store.create(slug="essai", title="essai-d5")
+    rec.claude_session_id = "cli-1"
+    rec.turns = 16
+    store.save(rec)
+
+    dossier = dossier_transcripts_claude(Path(rec.cwd))
+    dossier.mkdir(parents=True, exist_ok=True)
+    _transcript(dossier / "cli-1.jsonl", [_dire("Reprends le build")])
+
+    store.sync_claude_titles()
+    assert store.get(rec.session_id).title == "Reprends le build"
+
+
+def test_nom_provisoire_motif_exact(
+    reglages, monkeypatch, tmp_path: Path
+) -> None:
+    """Seul le motif exact dossier-deux-hexadécimaux est provisoire."""
+    from mcp_gateway.atelier.sessions import _est_un_nom_derive
+
+    assert _est_un_nom_derive("essai-6d", "essai") is True
+    assert _est_un_nom_derive("essai-v2", "essai") is False
+    assert _est_un_nom_derive("essai-6d4", "essai") is False
+    assert _est_un_nom_derive("autre-6d", "essai") is False
+
+
+def test_une_fiche_ready_se_relit_au_repos(reglages, monkeypatch, tmp_path: Path) -> None:
+    """« ready » n'est pas un état de l'Atelier ; la liste l'affichait en anglais."""
+    store = _atelier_jetable(reglages, monkeypatch, tmp_path)
+    rec = store.create(slug="essai")
+    chemin = store._path(rec.session_id)
+    donnees = json.loads(chemin.read_text(encoding="utf-8"))
+    donnees["state"] = "ready"
+    chemin.write_text(json.dumps(donnees), encoding="utf-8")
+    assert store.get(rec.session_id).state == "idle"

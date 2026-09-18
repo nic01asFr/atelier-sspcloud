@@ -17,6 +17,7 @@ test("les états se lisent en français, comme la pastille", () => {
   assert.equal(S.etatLisible("failed"), "en erreur");
   assert.equal(S.etatLisible("archived"), "rangée");
   assert.equal(S.etatLisible("created"), "jamais lancée");
+  assert.equal(S.etatLisible("done"), "au repos");
 });
 
 test("un état inconnu se montre tel quel plutôt que de disparaître", () => {

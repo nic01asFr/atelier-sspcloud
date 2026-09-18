@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import {
   buildStreamBlocks,
   fusionnerReflexion,
+  verserTexte,
   texteAssemble,
 } from "../mcp_gateway/atelier/web/js/controllers/chat.js";
 import { ceQueToujoursAccorde } from "../mcp_gateway/atelier/web/js/ui/message-render.js";
@@ -48,6 +49,7 @@ test("une question masque les détails bruts de son outil", () => {
 test("le raisonnement se fusionne sans se doubler", () => {
   assert.equal(fusionnerReflexion("", "abc", "thinking_delta"), "abc");
   assert.equal(fusionnerReflexion("abc", "def", "thinking_delta"), "abcdef");
+  assert.equal(fusionnerReflexion("ab3", "3", "thinking_delta"), "ab33", "un fragment répété reste un fragment");
   assert.equal(fusionnerReflexion("abc", "abc", "thinking"), "abc");
   assert.equal(fusionnerReflexion("ab", "abcd", "thinking"), "abcd", "un texte plus complet remplace");
 });
@@ -73,4 +75,33 @@ test("« Toujours » nomme toutes les commandes suggérées", () => {
     ceQueToujoursAccorde({ outil: "Write", suggestions: [{ type: "addDirectories", directories: ["/a"] }] }),
     "Ne plus demander dans /a"
   );
+});
+
+test("un fragment qui répète la fin du tampon s'ajoute quand même", () => {
+  const bloc = { type: "text", text: "" };
+  for (const f of ["Tous passent (", "3", "3", " tests)"]) verserTexte(bloc, f, "content_block_delta");
+  assert.equal(bloc.text, "Tous passent (33 tests)");
+});
+
+test("le bloc complet remplace ses fragments au lieu de s'y ajouter", () => {
+  const bloc = { type: "text", text: "" };
+  for (const f of ["Point 0 ", "terminé"]) verserTexte(bloc, f, "content_block_delta");
+  verserTexte(bloc, "Point 0 terminé.", "assistant");
+  assert.equal(bloc.text, "Point 0 terminé.");
+});
+
+test("le bloc complet ne remplace que ce que ses fragments ont dit", () => {
+  const bloc = { type: "text", text: "" };
+  verserTexte(bloc, "Premier.", "assistant");
+  verserTexte(bloc, "Sec", "content_block_delta");
+  verserTexte(bloc, "ond", "content_block_delta");
+  verserTexte(bloc, "Second.", "assistant");
+  assert.equal(bloc.text, "Premier.Second.");
+});
+
+test("le raisonnement complet remplace aussi ses fragments", () => {
+  const bloc = { type: "thinking", text: "" };
+  for (const f of ["je ", "vois"]) verserTexte(bloc, f, "thinking_delta");
+  verserTexte(bloc, "je vois bien", "thinking");
+  assert.equal(bloc.text, "je vois bien");
 });

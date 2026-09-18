@@ -214,10 +214,12 @@ function outil(id, nom, extra = {}) {
     "la fusion du raisonnement accumule bien les fragments successifs",
   );
 
+  // Un fragment n'est jamais une redite : jeter celui qui ressemblait à la fin
+  // du tampon changeait « 33 tests » en « 3 tests », mesuré sur le pod.
   egal(
-    fusionnerReflexion("Il faut lire", "lire", "thinking_delta"),
-    "Il faut lire",
-    "un fragment redit à l’identique en fin de tampon ne se double pas",
+    fusionnerReflexion("Il faut 3", "3", "thinking_delta"),
+    "Il faut 33",
+    "un fragment identique à la fin du tampon s’ajoute quand même",
   );
   egal(
     fusionnerReflexion("Il faut", "Il faut lire le fichier.", "thinking"),

@@ -525,6 +525,7 @@ export const ETATS = {
   archived: "rangée",
   created: "jamais lancée",
   idle: "au repos",
+  done: "au repos",
 };
 
 export function etatLisible(etat) {

@@ -155,7 +155,17 @@ def _is_auto_title(title: str, slug: str, session_id: str) -> bool:
         return True
     if re.match(r"^[a-f0-9]{8}$", t):
         return True
-    return False
+    return _est_un_nom_derive(t, slug)
+
+
+def _est_un_nom_derive(nom: str, slug: str) -> bool:
+    """Le nom que le CLI se donne en attendant d'en avoir un.
+
+    Il prend le dossier et deux caractères au hasard, « nouveau-projet-6d » :
+    rien de ce dont on parle. Une conversation dont le premier tour n'a pas
+    abouti le gardait pour titre, et la liste en alignait trois pareils.
+    """
+    return bool(slug) and re.fullmatch(re.escape(slug) + r"-[0-9a-f]{2}", nom) is not None
 
 
 def _est_un_tour(message: dict[str, Any]) -> bool:
@@ -249,6 +259,12 @@ class SessionRecord:
                 continue
             if k == "state" and v == "archived":
                 clean[k] = v
+                continue
+            # L'adoption écrivait « ready », qu'aucun écran ne savait lire : la
+            # liste affichait le mot anglais à côté de « au repos ». Ce que
+            # cela voulait dire, c'est au repos.
+            if k == "state" and v == "ready":
+                clean[k] = "idle"
                 continue
             clean[k] = v
         rec = cls(**{k: clean[k] for k in clean if k in fields})
@@ -610,7 +626,7 @@ class SessionStore:
                 journal = Path(rec.transcript_path)
                 journal.parent.mkdir(parents=True, exist_ok=True)
                 journal.write_text(chr(10).join(reprises) + chr(10), encoding="utf-8")
-                rec.state = "ready"
+                rec.state = "idle"
                 rec.updated_at = self._now()
                 self.save(rec)
                 pris.add(sid)
@@ -775,9 +791,12 @@ class SessionStore:
             # préambule d'une reprise en guise de titre, posé par une version
             # de ce code qui prenait la première prise de parole sans regarder
             # de qui elle venait. Elles ne se seraient jamais renommées seules.
-            if rec.title and not titre_utilisable(rec.title):
+            if rec.title and (
+                not titre_utilisable(rec.title)
+                or _is_auto_title(rec.title, rec.slug, rec.session_id)
+            ):
                 retrouve = self._titre_du_transcript_claude(rec)
-                if retrouve:
+                if retrouve and retrouve != rec.title:
                     rec.title = retrouve
                     self.save(rec)
                     updated.append(rec.session_id)
@@ -854,8 +873,11 @@ class SessionStore:
                 rec.claude_session_id = claude_sid
                 changed = True
 
+            # Un nom provisoire ne vaut pas mieux que le premier message qu'on
+            # vient peut-être de retrouver : le prendre l'effacerait.
             should_update_title = (
                 name != rec.title
+                and str(data.get("nameSource") or "") != "derived"
                 and rec.title_source != "user"
                 and (
                     _is_auto_title(rec.title, rec.slug, rec.session_id)
@@ -1141,7 +1163,15 @@ class SessionStore:
             1 for e in result.events if e.kind == "systeme" and e.cause == "message_suivant"
         )
         rec.last_text = result.text
-        if any(e.kind == "erreur" and e.cause == "timeout_mural" for e in result.events):
+        # Arrêté à la main pendant qu'il travaillait : l'interruption a déjà
+        # écrit « interrupted » sur la fiche, puis le processus tué rend un code
+        # non nul et une erreur. Juger sur ces seuls signes affichait « en
+        # erreur » une conversation qu'on venait d'arrêter soi-même.
+        sur_disque = self.get(session_id)
+        if sur_disque is not None and sur_disque.state == "interrupted":
+            rec.state = "interrupted"
+            rec.cause = "interrupted"
+        elif any(e.kind == "erreur" and e.cause == "timeout_mural" for e in result.events):
             rec.state = "timeout"
             rec.cause = "timeout_mural"
         elif result.exit_code != 0 and any(e.kind == "erreur" for e in result.events):

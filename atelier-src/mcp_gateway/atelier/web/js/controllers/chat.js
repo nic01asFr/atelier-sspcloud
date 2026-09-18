@@ -44,9 +44,43 @@ export function fusionnerReflexion(buf, chunk, rawType) {
   if (!chunk) return buf || "";
   if (!buf) return chunk;
   if (chunk === buf) return buf;
-  if (rawType === "thinking_delta") return buf.endsWith(chunk) ? buf : buf + chunk;
+  if (rawType === "thinking_delta") return buf + chunk;
   if (chunk.startsWith(buf)) return chunk;
   return buf + chunk;
+}
+
+/**
+ * Verse dans un bloc ce qui arrive du tour : fragments en direct, puis le bloc
+ * complet que le CLI renvoie quand il l'a fini.
+ *
+ * Un fragment s'ajoute toujours. On jetait celui qui répétait la fin du
+ * tampon, pour se garder d'un doublon qui n'arrive pas : « 33 tests » devenait
+ * « 3 tests ». Le bloc complet, qui ne ressemblait plus au tampon, s'ajoutait
+ * alors derrière lui au lieu de le remplacer, et chaque parole de l'agent se
+ * lisait deux fois, la première fausse.
+ *
+ * Le bloc complet fait foi sur ce que ses fragments ont dit, et seulement
+ * là-dessus : ce qui précédait dans le bloc reste.
+ */
+export function verserTexte(cible, texte, rawType = "") {
+  const fragment =
+    rawType === "content_block_delta" ||
+    rawType === "text_delta" ||
+    rawType === "thinking_delta";
+  if (fragment) {
+    if (cible.debutDirect === undefined) cible.debutDirect = cible.text.length;
+    cible.text += texte;
+    return cible;
+  }
+  if (cible.debutDirect !== undefined) {
+    cible.text = cible.text.slice(0, cible.debutDirect) + texte;
+    delete cible.debutDirect;
+    return cible;
+  }
+  cible.text = api.isThinkingRawType(rawType)
+    ? fusionnerReflexion(cible.text, texte, rawType)
+    : api.mergeAssistantText(cible.text, texte, rawType);
+  return cible;
 }
 
 /** Ce que l'agent a dit, tous segments confondus — pour la copie et le repli. */
@@ -192,9 +226,7 @@ function appliquerEvenement(ctx, stream, ev) {
         cible = { type, text: "" };
         stream.blocs.push(cible);
       }
-      cible.text = reflexion
-        ? fusionnerReflexion(cible.text, ev.text, ev.raw_type)
-        : api.mergeAssistantText(cible.text, ev.text, ev.raw_type || "");
+      verserTexte(cible, ev.text, ev.raw_type || "");
       pushStreamToUi(state, stream);
       views.codeChat.renderThread();
     } else if (ev.kind === "outil_debut") {

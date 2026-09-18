@@ -607,7 +607,7 @@ export function mergeAssistantText(buf, chunk, rawType = "") {
   if (!buf) return chunk;
   if (chunk === buf) return buf;
   if (rawType === "text_delta" || rawType === "content_block_delta") {
-    if (buf.endsWith(chunk)) return buf;
+    // Un fragment n'est jamais une répétition : « 33 » arrive en « 3 » puis « 3 ».
     return buf + chunk;
   }
   if (rawType === "result_text") return chunk;
