@@ -50,6 +50,35 @@ def ligne_a_conserver(ligne: str) -> bool:
     return bool(trouve) and trouve.group(1) in TYPES_UTILES
 
 
+# Les trois façons dont la même phrase nous arrive : en fragments pendant
+# qu'elle s'écrit, en bloc quand elle est finie, et une dernière fois dans la
+# ligne de résultat.
+FRAGMENTS = ("content_block_delta", "text_delta")
+REFLEXION = ("thinking", "thinking_delta")
+
+
+def retenir_le_texte(retenus: list[str], ev: AtelierEvent) -> list[str]:
+    """Ce que l'agent a dit, une fois — pas trois.
+
+    Mesuré : « Le fichier a1.txt contient 120 lignes. » revenait trois fois
+    dans le résultat d'un tour, parce qu'on additionnait les fragments, puis
+    le bloc complet, puis la ligne de résultat. Ce texte-là est ce qu'un agent
+    piloté rend à qui l'a lancé : le tripler, c'est tripler la réponse.
+
+    On ne garde donc que les blocs complets. La ligne de résultat ne sert que
+    si rien n'est venu avant elle — c'est le cas d'un CLI qui n'émet pas ses
+    messages en cours de route.
+    """
+    if ev.kind != "texte" or not ev.text:
+        return retenus
+    if ev.raw_type in REFLEXION or ev.raw_type in FRAGMENTS:
+        return retenus
+    if ev.raw_type == "result_text" and retenus:
+        return retenus
+    retenus.append(ev.text)
+    return retenus
+
+
 def enregistrement_utilisateur(message: str, session_id: str, horodatage: str) -> str:
     """Ce que quelqu'un vient d'ecrire, tel que le journal doit le garder.
 
@@ -979,11 +1008,7 @@ class ClaudeHarness(Harness):
                                 self._fermer_entree(proc)
                         for ev in parse_stream_json_line(session_id, line):
                             emettre(ev)
-                            if ev.kind == "texte" and ev.text and ev.raw_type not in (
-                                "thinking",
-                                "thinking_delta",
-                            ):
-                                texts.append(ev.text)
+                            retenir_le_texte(texts, ev)
                         if termine:
                             # La ligne de résultat est lue et dite ; le tour
                             # est fini, le processus reste.
