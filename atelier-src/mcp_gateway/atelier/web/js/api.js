@@ -672,6 +672,13 @@ export function vscodeOpenUrl(slug, sessionId) {
   return `/v1/vscode/open${qs ? `?${qs}` : ""}`;
 }
 
+// Les livrables qu'un agent a déposés dans le dossier `artifacts/` du projet,
+// servis derrière la porte de l'Atelier. On garde le slug tel quel ; chaque
+// segment sera de toute façon réencodé par le serveur.
+export function artifactsUrl(slug) {
+  return `/v1/artifacts/${encodeURIComponent(slug)}`;
+}
+
 export async function listMcpServers(token) {
   const res = await fetch("/v1/mcp/servers", { headers: jsonHeaders(token) });
   if (!res.ok) await parseError(res);

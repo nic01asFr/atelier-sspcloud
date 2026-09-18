@@ -528,6 +528,21 @@ const BAS_DU_FIL = 1e9;
         link.removeAttribute("href");
       }
     }
+
+    // Les artefacts du projet : ce qu'un agent a déposé pour être vu. Le lien
+    // s'ouvre à côté de VS Code, dès qu'un projet porte la conversation ; la
+    // page dit elle-même s'il n'y a encore rien à montrer.
+    const artLink = $("session-artifacts-link");
+    if (artLink) {
+      if (enConversation && slug) {
+        artLink.hidden = false;
+        artLink.href = api.artifactsUrl(slug);
+        artLink.title = "Artefacts du projet";
+      } else {
+        artLink.hidden = true;
+        artLink.removeAttribute("href");
+      }
+    }
   }
 
   function renderCodeChat() {

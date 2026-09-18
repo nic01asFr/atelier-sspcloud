@@ -1001,6 +1001,66 @@ def build_app(
             q += f"&atelier_session={quote(session, safe='')}"
         return RedirectResponse(url=f"/vscode/?{q}", status_code=302)
 
+    def _servir_artefact(slug: str, rel: str) -> Response:
+        """Rend un dossier d'artefacts ou l'un de ses fichiers, rendu inerte.
+
+        Le contenu vient d'un agent : chaque réponse porte la CSP bac à sable,
+        qui met le document en origine opaque et lui retire l'accès au cookie
+        de l'Atelier et à son API.
+        """
+        from mcp_gateway.atelier import artifacts as art
+
+        base = art.dossier_des_artefacts(Path(folder_abs(settings, slug)))
+        entetes = {
+            "Content-Security-Policy": art.CSP_SANDBOX,
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+        }
+
+        def _html(texte: str) -> Response:
+            return Response(texte, media_type="text/html; charset=utf-8", headers=entetes)
+
+        # Un dossier — la racine, ou un sous-dossier : on liste. La racine
+        # d'un projet sans dossier `artifacts/` n'est pas une erreur : elle dit
+        # simplement qu'il n'y a encore rien à montrer.
+        entrees = art.lister(base, rel)
+        if entrees is None and not rel:
+            entrees = []
+        if entrees is not None:
+            return _html(art.page_index(base, slug, rel.strip("/"), entrees))
+
+        cible = art._sous(base, rel) if rel else None
+        if cible is None or not cible.is_file():
+            corps = art.page_index(base, slug, rel.strip("/"), [])
+            return Response(
+                corps, status_code=404, media_type="text/html; charset=utf-8", headers=entetes
+            )
+
+        type_mime = art.type_du_fichier(cible)
+        if type_mime == "text/markdown":
+            texte = cible.read_text(encoding="utf-8", errors="replace")
+            return _html(art.rendre_markdown(texte, art._joli_nom(cible.name)))
+        if type_mime in art.TYPES_ACTIFS:
+            texte = cible.read_text(encoding="utf-8", errors="replace")
+            return Response(texte, media_type=f"{type_mime}; charset=utf-8", headers=entetes)
+        return FileResponse(cible, media_type=type_mime, headers=entetes)
+
+    @router.get("/artifacts/{slug}")
+    async def artifacts_racine(
+        slug: str,
+        _owner: str = Depends(require_owner_nav),
+    ) -> Response:
+        """Ce qu'un projet donne à voir : le dossier `artifacts/`, derrière la porte."""
+        return _servir_artefact(slug, "")
+
+    @router.get("/artifacts/{slug}/{chemin:path}")
+    async def artifacts_chemin(
+        slug: str,
+        chemin: str,
+        _owner: str = Depends(require_owner_nav),
+    ) -> Response:
+        return _servir_artefact(slug, chemin)
+
     @router.post("/sessions")
     def create_session(
         body: CreateSessionBody,
