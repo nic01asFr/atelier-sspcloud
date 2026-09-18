@@ -993,6 +993,29 @@ class SessionStore:
         # tout, la compaction elle-même n'y tenant plus.
         return caracteres // 3
 
+    def _ce_qui_deborde(self, rec: SessionRecord) -> str:
+        """Dit ce qui empêche cette conversation de repartir, ou rien.
+
+        Une conversation qui a franchi la fenêtre du modèle ne se rattrape
+        plus : le résumé passe par le même modèle, qui ne peut pas la lire non
+        plus. Quatorze conversations du pod étaient dans ce cas, et chaque
+        message qu'on leur adressait rejouait la même erreur 400.
+        """
+        plafond = self.settings.contexte_plafond_jetons
+        if plafond <= 0:
+            return ""
+        poids = self.poids_de_la_conversation(rec)
+        if poids <= plafond:
+            return ""
+        return (
+            "Cette conversation pèse environ "
+            + str(poids)
+            + " unités, au-delà de ce que le modèle peut relire ("
+            + str(plafond)
+            + "). Elle ne peut plus ni repartir ni être résumée : "
+            + "ouvrez-en une neuve dans le même projet, avec ce qu'il faut en retenir."
+        )
+
     def _compacter_si_besoin(
         self, rec: SessionRecord, claude_cli_id: str, force: bool = False
     ) -> bool:
@@ -1124,6 +1147,25 @@ class SessionStore:
         # Avant d'envoyer : la conversation tient-elle encore dans la fenêtre ?
         if resume:
             self._compacter_si_besoin(rec, claude_cli_id)
+            trop_lourde = self._ce_qui_deborde(rec)
+            if trop_lourde:
+                # Même le résumé n'y tient plus : la relancer ne ferait que
+                # rejouer l'erreur du modèle, un tour à chaque fois. On le dit
+                # une bonne fois, et la conversation reste telle quelle — c'est
+                # d'une reprise au frais qu'elle a besoin, pas d'un tour de
+                # plus.
+                rec.state = "idle"
+                rec.cause = "contexte_plafond"
+                self.save(rec)
+                evenement = AtelierEvent(
+                    kind="erreur",
+                    session_id=session_id,
+                    cause="contexte_plafond",
+                    text=trop_lourde,
+                )
+                if on_event is not None:
+                    on_event(evenement)
+                return TurnResult(session_id=session_id, exit_code=0, events=[evenement])
         rec.state = "running"
         self.save(rec)
         mcp_config_path: Path | None = None
