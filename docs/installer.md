@@ -11,7 +11,11 @@ la clé du modèle et l'identité git viennent de son profil.
    `https://llm.lab.sspcloud.fr` et, si vous voulez, le modèle. *Mon compte ›
    Git* : nom et courriel — ce sont eux qui signeront les commits des projets.
 2. **Le catalogue.** Ajoutez, une fois, le dépôt de charts de l'Atelier :
-   `https://raw.githubusercontent.com/nic01asFr/atelier-sspcloud/main/helm-repo`.
+   `https://nic01asfr.github.io/atelier-sspcloud`.
+   L'ancienne adresse,
+   `https://raw.githubusercontent.com/nic01asFr/atelier-sspcloud/main/helm-repo`,
+   est dépréciée : elle reste servie pendant une version de transition, puis
+   sera retirée.
 3. **Lancer « Atelier ».** Le formulaire est pré-rempli ; la taille du volume
    (10 Go) et les ressources (2 à 8 Go de mémoire) suffisent d'ordinaire.
 4. **Ouvrir.** L'adresse est `https://user-<idep>-atelier.user.lab.sspcloud.fr`.
@@ -28,6 +32,31 @@ qui ne laisse entrer que l'ingress.
 
 Mettre à jour : relancer le service (l'image `latest` est tirée à chaque
 démarrage). Le volume garde tout.
+
+## Depuis un terminal, sans le catalogue
+
+Depuis un service Onyxia (Jupyter, VS Code) lancé avec *Kubernetes › accès
+depuis le service : oui* et *rôle : edit* :
+
+```bash
+curl -fsSL https://nic01asfr.github.io/atelier-sspcloud/install.sh | bash
+```
+
+Le script ajoute le dépôt Helm, pose l'adresse
+`https://user-<idep>-atelier.user.lab.sspcloud.fr`, reprend l'identité git du
+service et, si elle est dans l'environnement, la clé du modèle
+(`ATELIER_LLM_API_KEY=... bash install.sh`), puis lance
+`helm upgrade --install`. Relancé, il met à jour sans perdre ni la clé owner
+ni la clé du modèle. Il finit par les notes d'installation et la clé owner.
+
+À la main, c'est la même chose :
+
+```bash
+helm repo add atelier https://nic01asfr.github.io/atelier-sspcloud
+helm upgrade --install atelier atelier/atelier \
+  --set ingress.hostname=user-<idep>-atelier.user.lab.sspcloud.fr \
+  --set-string llm.apiKey=<clé de llm.lab.sspcloud.fr>
+```
 
 ## Sur un Jupyter du catalogue officiel — le chemin de secours
 
