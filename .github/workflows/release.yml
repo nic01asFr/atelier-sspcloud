@@ -1,0 +1,247 @@
+name: Tester et publier
+
+# Un seul workflow pour le chart et la vitrine : tester chaque configuration
+# du chart, générer le site, puis, sur main seulement, publier le tout sur
+# GitHub Pages (dépôt Helm et vitrine à la même adresse). Remplace helm.yml.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'charts/**'
+      - 'site/**'
+      - 'install.sh'
+      - '.github/workflows/release.yml'
+  pull_request:
+    paths:
+      - 'charts/**'
+      - 'site/**'
+      - 'install.sh'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PAGES_URL: https://nic01asfr.github.io/atelier-sspcloud
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.21.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Helm 3 joint le cluster même en --dry-run=client : un kind éphémère
+      # permet de rendre les notes comme lors d'une vraie installation.
+      - uses: helm/kind-action@v1
+
+      - name: Lint
+        run: helm lint charts/atelier --set ingress.hostname=atelier.example.org
+
+      # helm lint ne voit pas les branches conditionnelles : chaque cas est
+      # rendu, manifestes et notes.
+      - name: Rendre chaque configuration
+        run: |
+          set -euo pipefail
+          HOST="--set ingress.hostname=atelier.example.org"
+          KEY="abcdefghij0123456789"
+          render() {
+            local nom="$1"; shift
+            echo "::group::$nom"
+            helm template t charts/atelier $HOST "$@" > /tmp/out.yaml
+            helm install t charts/atelier $HOST "$@" --dry-run=client > /tmp/install.txt
+            sed -n '/^NOTES:/,$p' /tmp/install.txt > /tmp/notes.txt
+            cat /tmp/notes.txt
+            echo "::endgroup::"
+          }
+          # « ! grep » ne fait pas échouer un script sous set -e : l'absence
+          # attendue d'un motif passe par cette fonction.
+          absent() {
+            if grep -q -- "$1" "$2"; then echo "motif inattendu dans $2 : $1"; exit 1; fi
+          }
+          # Un document du rendu, choisi par son `kind`.
+          document() {
+            awk -v k="kind: $1" 'BEGIN { RS = "\n---\n" } index($0, "\n" k "\n")' /tmp/out.yaml
+          }
+          # Bouton « Ouvrir » : même extraction qu'Onyxia (première URL
+          # d'Ingress citée, suivie de tout sauf espace et « ) »). Doit
+          # donner la racine de l'Atelier, barre finale comprise.
+          bouton_ouvrir() {
+            node -e '
+              const notes = require("fs").readFileSync("/tmp/notes.txt", "utf8");
+              const re = /https:\/\/atelier\.example\.org(?:[\/?#][^\s)]*)?/i;
+              const m = re.exec(notes);
+              if (!m || m[0] !== "https://atelier.example.org/") {
+                console.error("URL du bouton Ouvrir :", m && m[0]); process.exit(1);
+              }
+            '
+          }
+
+          render "clé fournie, clé de modèle, MCP désactivé" \
+            --set security.ownerKey=$KEY --set llm.apiKey=sk-test --set llm.model=qwen
+          # Bouton « Copier le mot de passe » : « password: <valeur> », sans
+          # mise en forme autour.
+          grep -qx -- "- Clé owner / password: $KEY" /tmp/notes.txt
+          grep -q 'modèle `qwen`' /tmp/notes.txt
+          absent '/mcp' /tmp/notes.txt
+          grep -q 'kind: Ingress' /tmp/out.yaml
+          bouton_ouvrir
+
+          render "clé tirée au sort, sans clé de modèle"
+          absent 'password:' /tmp/notes.txt
+          grep -q "kubectl get secret t-atelier-secrets" /tmp/notes.txt
+          grep -q 'Aucune clé de modèle' /tmp/notes.txt
+          bouton_ouvrir
+
+          render "clé de modèle au format récent d'Onyxia" --set llm.provider.apiKey=sk-test
+          absent 'Aucune clé de modèle' /tmp/notes.txt
+
+          render "MCP activé" --set mcp.enabled=true --set security.ownerKey=$KEY
+          grep -q 'claude mcp add atelier --transport http https://atelier.example.org/mcp' /tmp/notes.txt
+          grep -q '"url": "https://atelier.example.org/mcp"' /tmp/notes.txt
+          absent 'Authorization: Bearer' /tmp/notes.txt
+          grep -qx -- "- Clé owner / password: $KEY" /tmp/notes.txt
+          bouton_ouvrir
+
+          render "notes en anglais" --set userPreferences.language=en --set security.ownerKey=$KEY --set mcp.enabled=true
+          grep -q '### Your Atelier' /tmp/notes.txt
+          grep -q 'Connect the Atelier to an assistant' /tmp/notes.txt
+          grep -qx -- "- Owner key / password: $KEY" /tmp/notes.txt
+          grep -qx -- '- Project applications: https://atelier-apps.example.org/' /tmp/notes.txt
+          absent 'Votre Atelier' /tmp/notes.txt
+          bouton_ouvrir
+
+          render "notes en anglais, clé tirée au sort" --set userPreferences.language=en
+          grep -q 'The owner key was generated' /tmp/notes.txt
+          grep -q 'No model key in your SSPCloud profile' /tmp/notes.txt
+
+          render "mise en veille" --set global.suspend=true
+          render "sans ingress ni NetworkPolicy" --set ingress.enabled=false --set security.networkPolicy.enabled=false
+          absent 'kind: Ingress' /tmp/out.yaml
+          # Sans second hôte, pas d'adresse d'applications : jamais de repli
+          # sous un chemin de l'origine de l'Atelier.
+          grep -A1 'name: ATELIER_APPS_PUBLIC_URL' /tmp/out.yaml | grep -q 'value: ""'
+          absent 'Applications des projets' /tmp/notes.txt
+
+          # Applications des projets (docs/atelier-applications.md) : un
+          # second Ingress sur un second hôte, le port 8788 ouvert du
+          # Service à la NetworkPolicy.
+          render "applications : deux hôtes" --set security.ownerKey=$KEY
+          test "$(grep -c '^kind: Ingress' /tmp/out.yaml)" = 2
+          grep -q 'host: atelier.example.org$' /tmp/out.yaml
+          grep -q 'host: atelier-apps.example.org$' /tmp/out.yaml
+          grep -q 'name: t-atelier-apps$' /tmp/out.yaml
+          grep -q 'proxy-buffering: "off"' /tmp/out.yaml
+          grep -q 'proxy-request-buffering: "off"' /tmp/out.yaml
+          document Service | grep -q 'port: 8788'
+          document NetworkPolicy | grep -q 'port: 8788'
+          document StatefulSet | grep -q 'containerPort: 8788'
+          grep -A1 'name: ATELIER_APPS_PUBLIC_URL' /tmp/out.yaml | grep -q 'value: "https://atelier-apps.example.org"'
+          grep -A1 'name: ATELIER_APPS_PORTS' /tmp/out.yaml | grep -q 'value: "19000-19099"'
+          grep -qx -- '- Applications des projets : https://atelier-apps.example.org/' /tmp/notes.txt
+          grep -qx -- "- Clé owner / password: $KEY" /tmp/notes.txt
+          bouton_ouvrir
+
+          render "applications : hôte dérivé d'une adresse Onyxia"             --set ingress.hostname=user-nic01asfr-atelier.user.lab.sspcloud.fr
+          grep -q 'host: user-nic01asfr-atelier.user.lab.sspcloud.fr$' /tmp/out.yaml
+          grep -q 'host: user-nic01asfr-atelier-apps.user.lab.sspcloud.fr$' /tmp/out.yaml
+          grep -q 'https://user-nic01asfr-atelier-apps.user.lab.sspcloud.fr/' /tmp/notes.txt
+
+          render "applications : hôte donné, corps limité" --set apps.hostname=apps.example.org --set apps.bodySize=512m
+          grep -q 'host: apps.example.org$' /tmp/out.yaml
+          grep -q 'proxy-body-size: "512m"' /tmp/out.yaml
+
+          render "applications désactivées" --set apps.enabled=false
+          test "$(grep -c '^kind: Ingress' /tmp/out.yaml)" = 1
+          absent 't-atelier-apps' /tmp/out.yaml
+          absent '8788' /tmp/out.yaml
+          absent 'ATELIER_APPS_' /tmp/out.yaml
+          absent 'Applications des projets' /tmp/notes.txt
+          bouton_ouvrir
+
+      - name: install.sh
+        run: bash -n install.sh
+
+      - name: Tester la vitrine
+        run: node --test site/generate.test.mjs
+
+      - name: Générer la vitrine
+        run: |
+          node site/generate.mjs
+          test -f site/dist/index.html
+          test -f site/dist/en/index.html
+
+  release:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # miroir helm-repo/ poussé sur main
+      pages: write
+      id-token: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.21.4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Générer la vitrine
+        run: node site/generate.mjs
+
+      # GitHub Pages remplace tout le site à chaque déploiement : les paquets
+      # déjà publiés sont repris de helm-repo/ pour que les versions installées
+      # restent téléchargeables.
+      - name: Dépôt Helm sur Pages
+        run: |
+          set -euo pipefail
+          cp helm-repo/*.tgz site/dist/ 2>/dev/null || true
+          helm package charts/atelier -d site/dist/
+          helm repo index site/dist --url "$PAGES_URL"
+          install -m 0755 install.sh site/dist/install.sh
+
+      # Miroir de transition : l'ancienne adresse raw.githubusercontent.com
+      # reste servie pendant une version, le temps que les catalogues Onyxia
+      # passent à GitHub Pages. À retirer à la version suivante, avec ce pas
+      # et le dossier helm-repo/.
+      - name: Miroir helm-repo/ (transition)
+        run: |
+          set -euo pipefail
+          helm package charts/atelier -d helm-repo/
+          helm repo index helm-repo/ --url "https://raw.githubusercontent.com/nic01asFr/atelier-sspcloud/main/helm-repo"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add helm-repo/
+          if ! git diff --staged --quiet; then
+            git commit -m "Publier le chart atelier"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/dist
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

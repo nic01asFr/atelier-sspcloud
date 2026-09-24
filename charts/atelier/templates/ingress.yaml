@@ -27,3 +27,40 @@ spec:
                 port:
                   number: {{ .Values.service.port }}
 {{- end }}
+{{- if include "atelier.appsExposees" . }}
+---
+{{/*
+L'hôte des applications des projets (docs/atelier-applications.md). Seconde
+origine : ce qu'un agent sert ne s'exécute jamais dans celle de l'Atelier.
+Les applications relaient des flux (WebSocket, SSE, envois de fichiers) :
+pas de tampon nginx dans un sens ni dans l'autre, et des délais d'une heure.
+Pas de bloc `tls` : le certificat wildcard de la classe `onyxia` couvre
+l'hôte, comme celui de l'Atelier.
+*/}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "atelier.fullname" . }}-apps
+  labels:
+    {{- include "atelier.labels" . | nindent 4 }}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-body-size: {{ .Values.apps.bodySize | default "0" | quote }}
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+spec:
+  ingressClassName: {{ .Values.ingress.ingressClassName }}
+  rules:
+    - host: {{ include "atelier.appsHostname" . }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "atelier.fullname" . }}
+                port:
+                  name: apps
+{{- end }}

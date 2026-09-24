@@ -2,7 +2,7 @@ apiVersion: v2
 name: atelier
 description: L'Atelier — Claude Code sur votre pod SSPCloud, avec ses projets, ses connecteurs et VS Code
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "latest"
 home: https://github.com/nic01asFr/atelier-sspcloud
 keywords:

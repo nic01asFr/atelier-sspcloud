@@ -12,5 +12,12 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
+    {{- if (.Values.apps).enabled }}
+    # L'hôte des applications : même processus, seconde application ASGI.
+    - port: {{ .Values.apps.port }}
+      targetPort: apps
+      protocol: TCP
+      name: apps
+    {{- end }}
   selector:
     {{- include "atelier.selectorLabels" . | nindent 4 }}

@@ -31,6 +31,11 @@ spec:
             - name: http
               containerPort: {{ .Values.service.port }}
               protocol: TCP
+            {{- if (.Values.apps).enabled }}
+            - name: apps
+              containerPort: {{ .Values.apps.port }}
+              protocol: TCP
+            {{- end }}
           env:
             - name: ATELIER_WORK
               value: /home/onyxia/work
@@ -40,6 +45,21 @@ spec:
               value: "https://{{ .Values.ingress.hostname }}"
             - name: ATELIER_CHART_VERSION
               value: {{ .Chart.Version | quote }}
+            {{- if (.Values.apps).enabled }}
+            # Applications des projets. Sans second hôte (pas d'Ingress),
+            # l'adresse reste vide : « Ouvrir » est grisé, et rien n'est
+            # jamais servi sous un chemin de l'origine de l'Atelier.
+            - name: ATELIER_APPS_PORT
+              value: {{ .Values.apps.port | quote }}
+            - name: ATELIER_APPS_PUBLIC_URL
+              value: {{ if include "atelier.appsExposees" . }}{{ printf "https://%s" (include "atelier.appsHostname" .) | quote }}{{ else }}""{{ end }}
+            - name: ATELIER_APPS_PORTS
+              value: "19000-19099"
+            - name: ATELIER_APPS_MAX
+              value: {{ .Values.apps.max | quote }}
+            - name: ATELIER_APPS_IDLE_MINUTES
+              value: {{ .Values.apps.idleMinutes | quote }}
+            {{- end }}
             - name: ANTHROPIC_BASE_URL
               value: {{ include "atelier.llm.baseUrl" . | quote }}
             {{- with include "atelier.llm.model" . }}
