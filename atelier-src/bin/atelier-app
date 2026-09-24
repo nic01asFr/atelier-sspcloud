@@ -1,0 +1,86 @@
+#!/bin/sh
+# Les artefacts des projets, pour un agent qui n'a pas les outils MCP.
+#
+#   atelier-app liste    [projet]
+#   atelier-app creer    <projet> <nom> [autonome|serveur]
+#   atelier-app verifier <projet>
+#   atelier-app demarrer <projet> <nom> [--forcer]
+#   atelier-app arreter  <projet> <nom> [--forcer]
+#   atelier-app journal  <projet> <nom> [lignes]
+#
+# Un artefact est un dossier <projet>/artifacts/<nom>/, servi sur l'hôte des
+# applications : ses fichiers en bac à sable, ou, s'il porte un
+# artefact.json de service, le processus que l'Atelier lance pour lui. Ce
+# script ne fait que parler à l'API locale de l'Atelier, avec la clé du
+# propriétaire lue sur le disque : il ne lance rien lui-même.
+#
+# L'auteur est $WIKICHAT_AGENT (ou $ATELIER_AUTEUR) : on n'agit pas sur
+# l'artefact d'une autre conversation sans --forcer.
+#
+# Déposé dans ~/work/bin/ par install/atelier-init.sh.
+set -u
+WORK="${ATELIER_WORK:-$HOME/work}"
+URL="${ATELIER_URL:-http://127.0.0.1:${ATELIER_PORT:-8787}}"
+AUTEUR="${ATELIER_AUTEUR:-${WIKICHAT_AGENT:-}}"
+
+CLE=""
+for f in "$WORK/secrets/atelier_owner_key" "$WORK/.secrets/atelier_owner_key"; do
+  if [ -r "$f" ]; then CLE=$(tr -d '\r\n' < "$f"); break; fi
+done
+if [ -z "$CLE" ]; then
+  echo "atelier-app : clé du propriétaire introuvable dans $WORK/.secrets" >&2
+  exit 1
+fi
+
+appel() {
+  # $1 méthode, $2 chemin. La clé passe par un en-tête lu sur l'entrée
+  # standard : elle n'apparaît pas dans la liste des processus.
+  printf 'Authorization: Bearer %s\n' "$CLE" | curl -sS -X "$1" -H @- \
+    -w '\n' --max-time 120 "$URL$2"
+}
+
+encoder() {
+  python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"
+}
+
+usage() {
+  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+  exit 2
+}
+
+suite_auteur() {
+  # Les paramètres de voisinage : l'auteur, et --forcer s'il est demandé.
+  q="auteur=$(encoder "$AUTEUR")"
+  for a in "$@"; do
+    [ "$a" = "--forcer" ] && q="$q&forcer=true"
+  done
+  if [ "${q#*forcer}" = "$q" ]; then q="$q&forcer=false"; fi
+  printf '%s' "$q"
+}
+
+commande="${1:-}"
+[ -n "$commande" ] || usage
+shift
+case "$commande" in
+  liste)
+    if [ -n "${1:-}" ]; then appel GET "/v1/apps?slug=$1"; else appel GET "/v1/apps"; fi ;;
+  verifier)
+    [ -n "${1:-}" ] || usage
+    appel GET "/v1/apps?slug=$1" ;;
+  creer)
+    [ -n "${2:-}" ] || usage
+    appel POST "/v1/apps/$1/$2/creer?mode=${3:-autonome}&auteur=$(encoder "$AUTEUR")" ;;
+  demarrer)
+    [ -n "${2:-}" ] || usage
+    p="$1"; n="$2"; shift 2
+    appel POST "/v1/apps/$p/$n/demarrer?attendre=true&$(suite_auteur "$@")" ;;
+  arreter)
+    [ -n "${2:-}" ] || usage
+    p="$1"; n="$2"; shift 2
+    appel POST "/v1/apps/$p/$n/arreter?$(suite_auteur "$@")" ;;
+  journal)
+    [ -n "${2:-}" ] || usage
+    appel GET "/v1/apps/$1/$2/journal?lignes=${3:-200}" ;;
+  *)
+    usage ;;
+esac
