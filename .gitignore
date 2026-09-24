@@ -29,3 +29,10 @@ deploy-patches/*
 
 # Divers
 *.log
+
+# Ce que Claude Code dépose localement : worktrees des agents, réglages du poste.
+.claude/worktrees/
+.claude/settings.local.json
+
+# Sauvegardes de configuration MCP faites à la main.
+*.bak-*
