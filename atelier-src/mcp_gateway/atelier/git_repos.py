@@ -160,18 +160,21 @@ def _identite(settings: AtelierSettings, chemin: Path) -> None:
     <atelier@localhost> » parce que notre réglage local recouvrait tout ;
     on ne pose le nôtre que faute de mieux, et on retire celui qu'on avait
     posé dès qu'une identité globale existe.
+
+    Clé par clé : une machine qui ne donne que le courriel n'a pas de nom, et
+    git refuse alors de signer (« empty ident name ») là où l'utilisateur n'a
+    pas de nom complet dans le système — un conteneur Linux, typiquement. On
+    complète donc ce qui manque sans recouvrir ce que la personne a donné.
     """
-    globale = _git(chemin, "config", "--global", "--get", "user.email", verifier=False)
-    if globale:
-        for cle, defaut in (
-            ("user.name", settings.git_user_name),
-            ("user.email", settings.git_user_email),
-        ):
+    for cle, defaut in (
+        ("user.name", settings.git_user_name),
+        ("user.email", settings.git_user_email),
+    ):
+        if _git(chemin, "config", "--global", "--get", cle, verifier=False):
             if _git(chemin, "config", "--local", "--get", cle, verifier=False) == defaut:
                 _git(chemin, "config", "--local", "--unset", cle, verifier=False)
-        return
-    _git(chemin, "config", "user.name", settings.git_user_name)
-    _git(chemin, "config", "user.email", settings.git_user_email)
+        else:
+            _git(chemin, "config", cle, defaut)
 
 
 # Les lignes du .gitignore que l'Atelier doit à ses propres dépôts : un
