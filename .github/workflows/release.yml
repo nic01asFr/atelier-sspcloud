@@ -151,10 +151,10 @@ jobs:
           grep -qx -- "- Clé owner / password: $KEY" /tmp/notes.txt
           bouton_ouvrir
 
-          render "applications : hôte dérivé d'une adresse Onyxia"             --set ingress.hostname=user-nic01asfr-atelier.user.lab.sspcloud.fr
-          grep -q 'host: user-nic01asfr-atelier.user.lab.sspcloud.fr$' /tmp/out.yaml
-          grep -q 'host: user-nic01asfr-atelier-apps.user.lab.sspcloud.fr$' /tmp/out.yaml
-          grep -q 'https://user-nic01asfr-atelier-apps.user.lab.sspcloud.fr/' /tmp/notes.txt
+          render "applications : hôte dérivé d'une adresse Onyxia"             --set ingress.hostname=user-jdupont-atelier.user.lab.sspcloud.fr
+          grep -q 'host: user-jdupont-atelier.user.lab.sspcloud.fr$' /tmp/out.yaml
+          grep -q 'host: user-jdupont-atelier-apps.user.lab.sspcloud.fr$' /tmp/out.yaml
+          grep -q 'https://user-jdupont-atelier-apps.user.lab.sspcloud.fr/' /tmp/notes.txt
 
           render "applications : hôte donné, corps limité" --set apps.hostname=apps.example.org --set apps.bodySize=512m
           grep -q 'host: apps.example.org$' /tmp/out.yaml

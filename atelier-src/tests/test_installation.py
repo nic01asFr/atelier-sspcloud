@@ -30,11 +30,15 @@ A_INSTALLER = [
     *sorted((RACINE / ".github" / "workflows").glob("*.yml")),
 ]
 # Un nom de compte n'est admis que dans l'adresse d'un dépôt ou d'une image
-# publics, ou comme mainteneur du chart ; jamais un pod, un hôte ou un chemin
-# de machine. `/home/onyxia` est le foyer de l'utilisateur de l'image, pas un
-# poste : seul ce qui s'y accroche (hors `work`, le volume) est personnel.
+# publics — le dépôt GitHub, l'image, et le dépôt Helm publié sur Pages avec
+# la vitrine (`nic01asfr.github.io/atelier-sspcloud`, qu'on ajoute au
+# catalogue Onyxia) —, ou comme mainteneur du chart ; jamais un pod, un hôte
+# ou un chemin de machine. `/home/onyxia` est le foyer de l'utilisateur de
+# l'image, pas un poste : seul ce qui s'y accroche (hors `work`, le volume)
+# est personnel.
 PERSONNEL = re.compile(
-    r"nic01asfr(?!/(?:atelier|wikichat|Qgis)|\s*$)|/home/onyxia(?!/work)(?=\S)|user-[a-z0-9]+-proj-",
+    r"nic01asfr(?!/(?:atelier|wikichat|Qgis)|\.github\.io/atelier-sspcloud|\s*$)"
+    r"|/home/onyxia(?!/work)(?=\S)|user-[a-z0-9]+-proj-",
     re.I,
 )
 
@@ -64,9 +68,24 @@ def test_les_pieces_de_l_installation_sont_la() -> None:
         CHART / "templates" / "pvc.yaml",
         CHART / "templates" / "NOTES.txt",
         RACINE / ".github" / "workflows" / "image.yml",
-        RACINE / ".github" / "workflows" / "helm.yml",
+        RACINE / ".github" / "workflows" / "release.yml",
     ):
         assert attendu.is_file(), f"{attendu.relative_to(RACINE)} manque"
+
+
+def test_le_chart_est_eprouve_puis_publie_depuis_main_seulement() -> None:
+    """`release.yml` a remplacé `helm.yml` : il éprouve le chart, puis le publie.
+
+    Le dépôt Helm que le catalogue Onyxia interroge ne doit recevoir qu'un
+    chart qui a passé `helm lint`, et seulement depuis `main`.
+    """
+    texte = (RACINE / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert "helm lint charts/atelier" in texte
+    assert "helm package charts/atelier" in texte and "helm repo index" in texte
+    publication = texte.split(chr(10) + "  release:", 1)
+    assert len(publication) == 2, "un job `release` publie le chart"
+    assert "needs: test" in publication[1], "on ne publie qu'après les tests"
+    assert "github.ref == 'refs/heads/main'" in publication[1], "on ne publie que depuis main"
 
 
 def test_le_code_du_service_ne_cite_aucun_poste() -> None:
