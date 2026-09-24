@@ -34,6 +34,9 @@ jobs:
 
   image:
     needs: tests
+    # Les étiquettes `latest` et `main` ne viennent que de main : lancé à la
+    # main sur une autre branche, le workflow ne fait que les tests.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
