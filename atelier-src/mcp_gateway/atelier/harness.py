@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import queue
 import re
 import select
 import signal
@@ -366,6 +367,15 @@ class ProcessusVivant:
     Sa sortie d'erreur est lue par un fil à part dès sa naissance : lue à la
     fin du tour, comme avant, elle attendrait un processus qui ne finit plus
     — et un tube jamais lu finit par bloquer celui qui y écrit.
+
+    Sa sortie standard aussi, ligne à ligne, dans une file. Surveiller le
+    tube avec `select` puis lire par `readline` perdait des lignes de vue :
+    `readline` avale tout ce qui est arrivé d'un bloc, en rend une ligne et
+    garde le reste dans sa mémoire tampon, que `select` ne voit pas. Quand le
+    CLI écrivait sa réponse et son `result` d'un même trait, le `result`
+    restait en mémoire et le tour attendait l'échéance, marqué
+    `timeout_mural`. Constaté sous Linux, en CI ; Windows y échappait parce
+    que `select` n'y écoute pas un tube.
     """
 
     proc: subprocess.Popen[Any]
@@ -375,6 +385,46 @@ class ProcessusVivant:
     dernier_usage: float = field(default_factory=time.monotonic)
     erreurs: list[str] = field(default_factory=list)
     lecteur: threading.Thread | None = None
+    sortie: queue.Queue[str] = field(default_factory=queue.Queue)
+    lecteur_sortie: threading.Thread | None = None
+
+    def lire_la_sortie(self) -> None:
+        flux = self.proc.stdout
+        if flux is None:
+            return
+
+        def lire() -> None:
+            try:
+                for ligne in flux:
+                    self.sortie.put(ligne)
+            except (OSError, ValueError):
+                pass
+
+        self.lecteur_sortie = threading.Thread(target=lire, name="atelier-stdout", daemon=True)
+        self.lecteur_sortie.start()
+
+    def sortie_epuisee(self, delai: float = 0.5) -> bool:
+        """Vrai quand plus aucune ligne ne viendra : tube fermé, file vide.
+
+        Un processus mort peut laisser des lignes dans le tube que le fil n'a
+        pas encore rangées ; on lui laisse `delai` pour finir. Au-delà — un
+        petit-enfant qui garde le tube ouvert —, on ne l'attend pas.
+        """
+        if self.lecteur_sortie is not None:
+            self.lecteur_sortie.join(timeout=delai)
+        return self.sortie.empty()
+
+    def purger_la_sortie(self) -> None:
+        """Jette ce que le processus a pu écrire entre deux tours.
+
+        Rien n'est attendu là — le CLI se tait quand on ne lui parle pas —
+        mais une ligne oubliée serait lue comme le début du tour suivant.
+        """
+        while True:
+            try:
+                self.sortie.get_nowait()
+            except queue.Empty:
+                return
 
     def lire_les_erreurs(self) -> None:
         flux = self.proc.stderr
@@ -399,6 +449,9 @@ class ProcessusVivant:
 def ligne_disponible(flux: Any, delai: float) -> str:
     """Lit une ligne, ou rend la main au bout de `delai` secondes.
 
+    `flux` est d'ordinaire la file où un fil range la sortie du CLI (voir
+    `ProcessusVivant`) ; un flux ouvert est encore accepté.
+
     `readline` seul bloque tant que le CLI n'écrit rien. L'échéance du tour se
     trouvait alors hors d'atteinte : elle n'est vérifiée qu'entre deux lignes,
     et un CLI silencieux — le temps d'un appel réseau, ou d'une série de refus
@@ -410,6 +463,11 @@ def ligne_disponible(flux: Any, delai: float) -> str:
     lecture bloquante, qui reste correcte : c'est le pod qui fait tourner des
     tours, et il est POSIX.
     """
+    if isinstance(flux, queue.Queue):
+        try:
+            return flux.get(timeout=delai)
+        except queue.Empty:
+            return ""
     try:
         prets, _, _ = select.select([flux], [], [], delai)
     except (OSError, ValueError, TypeError):
@@ -907,12 +965,13 @@ class ClaudeHarness(Harness):
             )
             vivant = ProcessusVivant(proc=proc, cli_id=cli_id, empreinte=empreinte, log_path=log_path)
             vivant.lire_les_erreurs()
+            vivant.lire_la_sortie()
             with self._verrou:
                 self._vivants[session_id] = vivant
         else:
             with log_path.open("a", encoding="utf-8") as lf:
                 lf.write("processus repris (pid %s)" % vivant.proc.pid + chr(10))
-            self._purger_la_sortie(vivant.proc)
+            vivant.purger_la_sortie()
         proc = vivant.proc
         self._procs[session_id] = proc
         with self._verrou:
@@ -971,7 +1030,7 @@ class ClaudeHarness(Harness):
                             )
                         )
                         break
-                    line = ligne_disponible(proc.stdout, 1.0)
+                    line = ligne_disponible(vivant.sortie, 1.0)
                     if line:
                         demande = demande_de_decision(session_id, line)
                         if demande is not None:
@@ -1054,9 +1113,8 @@ class ClaudeHarness(Harness):
                             # est fini, le processus reste.
                             break
                         continue
-                    if proc.poll() is not None:
+                    if proc.poll() is not None and vivant.sortie_epuisee():
                         break
-                    time.sleep(0.05)
                 if termine:
                     code = None
                 else:
@@ -1169,25 +1227,6 @@ class ClaudeHarness(Harness):
             return vivant
         self._eteindre(session_id, de_force=vivant.proc.poll() is None)
         return None
-
-    @staticmethod
-    def _purger_la_sortie(proc: subprocess.Popen[Any]) -> None:
-        """Jette ce que le processus a pu écrire entre deux tours.
-
-        Rien n'est attendu là — le CLI se tait quand on ne lui parle pas —
-        mais une ligne oubliée serait lue comme le début du tour suivant.
-        Sans `select` (Windows), on ne lit pas : on ne bloquerait pas un
-        tour pour vider un tube qui est vide.
-        """
-        if proc.stdout is None:
-            return
-        for _ in range(1000):
-            try:
-                prets, _, _ = select.select([proc.stdout], [], [], 0)
-            except (OSError, ValueError, TypeError):
-                return
-            if not prets or not proc.stdout.readline():
-                return
 
     def _eteindre(self, session_id: str, *, de_force: bool = False) -> None:
         """Referme un processus gardé : l'entrée d'abord, la force ensuite.
