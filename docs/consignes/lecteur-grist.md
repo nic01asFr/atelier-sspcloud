@@ -2,12 +2,87 @@
 
 Ce projet transforme un document `.grist` en application consultable et
 éditable dans le navigateur, sans instance Grist : un seul fichier HTML,
-aucun serveur. C'est la bonne forme pour l'Atelier, qui sait servir une page
-statique derrière sa connexion.
+aucun serveur. La cible principale est le **fichier local** (`file://`,
+double-clic, n'importe quelle machine) ; l'Atelier peut aussi le servir comme
+artefact statique derrière sa connexion.
+
+## Ce que doit être le lecteur (spécification de Nicolas, 24/09/2026)
+
+Elle prime sur tout ce qui suit.
+
+1. Un seul fichier HTML, qui marche en `file://` sans installation, sans
+   serveur, **sans aucune connexion à un serveur Grist**.
+2. Il lit des `.grist` **normaux, non modifiés** : pré-embarquer par un outil
+   n'est jamais nécessaire.
+3. Les widgets tournent comme dans Grist : chargés **à leur adresse** (GitHub
+   Pages, jsDelivr…) sur une machine connectée, y compris leurs requêtes web
+   (tuiles, `?scene=…`, API) ; **hors ligne**, depuis une copie (cache du
+   navigateur, et/ou copie rangée dans un `.grist` enregistré — optionnelle) ;
+   « construits si besoin » ; Builder et embarqués depuis le document ;
+   widget inaccessible signalé avec sa raison, sans casser le reste.
+4. Toutes les pages et vues utilisables (grilles, fiches, listes de fiches,
+   graphiques, formulaires ; signaler ce qui ne l'est pas).
+5. Jetons (`app_token=…`) jamais affichés en clair. Pas de dépendance réseau
+   pour le lecteur lui-même.
+6. À terme, le lecteur servira de **modèle d'application** servi par un petit
+   serveur (fichier SQLite de l'application côté serveur, accès public réglé
+   par les ACL du document) : tout accès aux données passe par `Donnees`, tout
+   accès réseau pour les widgets par `ReseauWidgets` (voir le readme).
+
+## Lot « widgets par leur adresse » (24/09/2026, nuit)
+
+- **Côté hôte de grain-rpc** (`HoteWidget`, d'après `WidgetFrame.ts`,
+  `CustomView.ts`) pour un cadre **à l'adresse réelle** du widget, sans
+  sandbox, avec son propre `grist-plugin-api.js` : paramètres d'adresse de
+  Grist (`access`, `readonly`, `culture`, `language`, `timeZone`,
+  `currency`), événements retenus jusqu'au `Ready`, thème GristLight
+  (couleurs calculées depuis grist-core, nécessaires au calendrier),
+  `fetchTable` des tables de métadonnées, bandeau quand un widget demande
+  `getAccessToken`. Le remplaçant local de grist-plugin-api ne sert plus
+  qu'aux `srcdoc` (Builder, embarqués, copies) et parle le même protocole
+  (thème compris).
+- **Sonde** de l'adresse avant de charger (CORS, puis `no-cors`) : 404,
+  hôte injoignable, `localhost` d'une autre machine, pas de réponse → raison
+  affichée. Page servie en `text/plain` (jsDelivr, raw) → exécutée depuis son
+  code avec `<base href>` (« construire si besoin »).
+- **Copies hors ligne** : copie du document d'abord, sinon **copie gardée par
+  le navigateur** (IndexedDB, prise en arrière-plan quand la page a tourné en
+  ligne, refaite après 7 jours, jamais pour une adresse à jeton). « Rendre ce
+  document autonome » reprend ces copies sans réseau.
+- **Jetons masqués** partout à l'affichage (`masquerUrl`).
+- Un widget qui n'appelle pas `grist.ready` n'est plus déclaré en panne
+  (l'Atlas n'en appelle pas).
+- **Vues** : graphiques natifs redessinés en SVG (barres, lignes, aires,
+  nuage, camembert, anneau, multiséries ; Kaplan-Meier signalé), liste de
+  fiches, formulaires (mise en page `layoutSpec`, envoi = ligne ajoutée),
+  calendrier natif (`custom.calendar` = widget calendrier de gristlabs).
+  Valeurs marshalées toutes décodées ; dates en secondes (le lecteur les
+  prenait pour des jours).
+- **Deux interfaces** : `Donnees` (`ouvrir`, `requete`, `appliquerActions`,
+  `ecrireMeta`, `exporter` ; aujourd'hui `SourceMemoire`) et `ReseauWidgets`
+  (`fetch`, `disponible`).
+
+Vérifié en `file://` dans Chrome 153, Edge 153 et Firefox 155 (Playwright),
+réseau puis hors ligne (`offline` et résolution DNS coupée) : « Saint
+Martin.grist » d'origine (Etude/Builder, Atlas avec scène et fond de carte en
+ligne, scène sans fond hors ligne depuis la copie du navigateur, Coder par son
+adresse avec jeton masqué, Atlas (copy) `localhost:8443` signalé) ; carte,
+markdown et calendrier gristlabs (« Modèle gestion du patrimoine », document
+d'essai) ; markdown servi par jsDelivr construit ; graphiques de
+« Pression_Fonciere_Sete », « Untitled document » ; formulaire de
+« flood_grist_v3 » envoyé. Puis `outils/verifier_artefact.py` (CSP de
+l'Atelier). Captures : scratchpad de la session, `lecteur-final/`.
+
+Limites par navigateur (`file://`) : copies partagées par tous les fichiers
+locaux dans Chrome et Edge, propres au fichier dans Firefox (déplacer le
+lecteur repart d'un cache vide) ; rien de gardé en navigation privée ;
+`allow="clipboard-write"` ignoré par Firefox ; hôtes sans CORS
+(`uicdn.toast.com`) : le widget tourne en ligne, mais sa copie navigateur est
+incomplète (l'outil Python ou un pack la complète).
 
 ## Ce qui existe (au 24/09/2026, après le lot « artefact »)
 
-- `index.html` (1,52 Mo) : l'application, seule source. Elle embarque tout :
+- `index.html` (1,74 Mo) : l'application, seule source. Elle embarque tout :
   sql.js 1.14.2 en asm.js (`sql-asm-memory-growth.js`, pur JavaScript, sans
   WebAssembly, licence MIT recopiée, 1,33 Mo), l'exemple CRESO (64 Ko de
   `.grist`, 87 Ko en base64), le code. Aucun appel réseau pour lire ou éditer.
@@ -39,7 +114,8 @@ allow-modals; default-src 'none'; …`), vérifié dans Chrome 153 :
 | Éditer (renommer, écrire par un widget) | oui | oui, en mémoire |
 | Enregistrer `.grist`, exporter CSV | oui | **non** : téléchargement bloqué |
 | Widgets embarqués (`data:`, `_html`/`_js`), Builder, externes rangés hors ligne | oui, sans réseau | oui |
-| Widgets externes sans copie (`https://…`) | par leur adresse ; « Récupérer » les range dans le document | non, signalés avec la marche à suivre |
+| Widgets externes, machine connectée | par leur adresse, comme Grist ; copie gardée par le navigateur | depuis la copie du document |
+| Widgets externes hors ligne | copie du document, sinon du navigateur ; sinon signalés avec la raison | copie du document, sinon signalés |
 
 Ce qui a été fait, et comment :
 
@@ -107,9 +183,8 @@ l'artefact, après outils/embarquer_widgets.py, après import de pack, et après
 **Calendrier gristlabs : ne tourne pas** (`tui is not defined`, CORS de
 uicdn.toast.com depuis le lecteur) : côté récupérateur.
 
-Sections natives non rendues (données brutes + bandeau) : graphiques
-(`chart` : bar, pie, line, kaplan_meier), formulaires (`form`), calendrier
-natif (`custom.calendar`). `detail` est affichée comme une fiche.
+(Les sections natives graphiques, formulaires, calendrier et listes de
+fiches sont rendues depuis le lot « widgets par leur adresse ».)
 
 ## Widgets externes hors ligne (outils, au 24/09/2026)
 
@@ -170,8 +245,13 @@ Objectif : faire tourner sans réseau tout un document, widgets compris.
 - Vérification par l'Atelier réel (derrière sa connexion) : faite ici avec un
   serveur local qui reproduit ses en-têtes, pas à travers l'Atelier.
 - Remplaçant de grist-plugin-api : pas de `cellFormat: 'typed'`, pas de tri
-  de section, pas de thème, pas de modification des colonnes associées.
-- Calendrier gristlabs hors ligne ; graphiques natifs de Grist ; formulaires.
+  de section, pas de modification des colonnes associées.
+- Calendrier gristlabs hors ligne depuis la copie du navigateur (CSS de
+  `uicdn.toast.com` sans CORS) ; graphiques Kaplan-Meier ; pièces jointes
+  (formulaires, `Donnees.pieceJointe`) ; disposition des sections selon
+  `layoutSpec` (elles s'empilent).
+- Implémentations serveur de `Donnees` et `ReseauWidgets` (modèle
+  d'application).
 - Rouvrir dans Grist un `.grist` portant des copies `_lecteur_hors_ligne`
   (non vérifié : pas d'instance Grist dans le pod).
 
@@ -180,8 +260,15 @@ Objectif : faire tourner sans réseau tout un document, widgets compris.
 - Le fichier `.grist` produit doit se rouvrir dans Grist. Tout changement de
   l'enregistrement se vérifie en rouvrant le fichier dans une vraie instance
   Grist, et le compte rendu le dit.
-- Aucune donnée ne sort du navigateur : pas d'appel réseau pendant la lecture
-  ou l'édition, ni télémétrie, ni polices ou scripts externes.
+- Le document ne sort pas du navigateur : ni télémétrie, ni polices ou
+  scripts externes pour le lecteur lui-même. Seuls les widgets vont sur le
+  réseau, comme dans Grist : chargés à leur adresse, ils reçoivent ce que
+  leur niveau d'accès permet ; le lecteur demande leur page (sans cookie)
+  pour la sonder et en garder une copie. Toute autre requête passe par
+  `ReseauWidgets`.
+- Tout accès aux données passe par `Donnees` : rien d'autre ne touche à
+  SQLite.
+- Aucune adresse ne s'affiche avec un jeton (`masquerUrl`).
 - Pas d'emoji dans l'interface (« Enregistrer .grist », pas une disquette).
 - Joindre une instance Grist en ligne (lire ou écrire un document distant) est
   hors du périmètre actuel : cela demande un relais côté serveur qui garde la
