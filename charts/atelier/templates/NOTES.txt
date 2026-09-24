@@ -1,11 +1,29 @@
+{{/*
+Onyxia affiche ce fichier en markdown dans la fenêtre du service. Règles
+reprises des charts n8n-onyxia et sspcloud-mcp :
+  - le bouton « Ouvrir » suit la première URL d'Ingress citée ici : l'adresse
+    de l'Atelier vient donc en premier, avec sa barre finale. Onyxia prend
+    l'URL suivie de tout ce qui n'est ni espace ni « ) » : le texte d'un lien
+    ne doit pas être l'URL elle-même ;
+  - le bouton « Copier le mot de passe » cherche « password: <valeur> » : la
+    ligne de la clé owner reste sans mise en forme.
+Ces notes sont conservées par Helm dans le Secret de la release : quiconque lit
+les Secrets du namespace lit aussi la clé qu'elles affichent.
+*/}}
+{{- $fr := eq (.Values.userPreferences.language | default "fr") "fr" -}}
+{{- $base := printf "https://%s" .Values.ingress.hostname -}}
+{{- $ownerKey := (.Values.security).ownerKey | default "" | trim -}}
+{{- $secret := printf "%s-secrets" (include "atelier.fullname" .) -}}
+{{- $mcp := (.Values.mcp).enabled -}}
+{{- if $fr }}
 ### Votre Atelier
 
-- Ouvrez-le : https://{{ .Values.ingress.hostname }}
-{{- if (.Values.security).ownerKey }}
-- Clé owner : `{{ (.Values.security).ownerKey }}`
+- Ouvrez-le : [ouvrir l'Atelier]({{ $base }}/)
+{{- if $ownerKey }}
+- Clé owner / password: {{ $ownerKey }}
 {{- else }}
 - La clé owner a été tirée au sort. Lisez-la avec :
-  `kubectl get secret {{ include "atelier.fullname" . }}-secrets -n {{ .Release.Namespace }} -o jsonpath='{.data.ATELIER_OWNER_KEY}' | base64 -d`
+  `kubectl get secret {{ $secret }} -n {{ .Release.Namespace }} -o jsonpath='{.data.ATELIER_OWNER_KEY}' | base64 -d`
   — ou, depuis un terminal du pod : `cat ~/work/.secrets/atelier_owner_key`
 {{- end }}
 
@@ -21,8 +39,109 @@ pourront pas répondre. Créez-en une sur https://llm.lab.sspcloud.fr, puis
 renseignez Mon compte > Assistant IA et relancez le service — ou écrivez-la
 dans `~/work/.secrets/llm_api_key` depuis un terminal du pod.
 {{- end }}
+{{- if $mcp }}
+
+### Brancher l'Atelier dans un assistant (MCP)
+
+Adresse du connecteur :
+
+```
+{{ $base }}/mcp
+```
+
+Authentification OAuth : au premier branchement, une page s'ouvre et demande
+la clé owner, une fois. Aucun en-tête `Authorization` à écrire dans la
+configuration du client.
+
+Claude Code :
+
+```bash
+claude mcp add atelier --transport http {{ $base }}/mcp
+```
+
+Cursor (`.cursor/mcp.json`) :
+
+```json
+{
+  "mcpServers": {
+    "atelier": {
+      "type": "http",
+      "url": "{{ $base }}/mcp"
+    }
+  }
+}
+```
+
+Claude (web, bureau, mobile) : Paramètres > Connecteurs > Ajouter un
+connecteur personnalisé, avec la même adresse.
+{{- end }}
 
 Tout ce qui compte vit dans le volume `~/work` : projets, conversations,
 secrets, réglages. Il survit à la suppression du service.
 
-Documentation : https://github.com/nic01asFr/atelier-sspcloud
+Documentation : [nic01asfr.github.io/atelier-sspcloud](https://nic01asfr.github.io/atelier-sspcloud/)
+{{- else }}
+### Your Atelier
+
+- Open it: [open the Atelier]({{ $base }}/)
+{{- if $ownerKey }}
+- Owner key / password: {{ $ownerKey }}
+{{- else }}
+- The owner key was generated. Read it with:
+  `kubectl get secret {{ $secret }} -n {{ .Release.Namespace }} -o jsonpath='{.data.ATELIER_OWNER_KEY}' | base64 -d`
+  or, from a terminal in the pod: `cat ~/work/.secrets/atelier_owner_key`
+{{- end }}
+
+The page asks for this key once; it is never part of the URL.
+
+{{- if include "atelier.llm.apiKey" . }}
+
+Model: key taken from your SSPCloud profile{{ with include "atelier.llm.model" . }}, model `{{ . }}`{{ end }}. Nothing to do.
+{{- else }}
+
+No model key in your SSPCloud profile: conversations will not be able to
+answer. Create one at https://llm.lab.sspcloud.fr, fill in My account > AI
+assistant and restart the service, or write it to `~/work/.secrets/llm_api_key`
+from a terminal in the pod.
+{{- end }}
+{{- if $mcp }}
+
+### Connect the Atelier to an assistant (MCP)
+
+Connector address:
+
+```
+{{ $base }}/mcp
+```
+
+OAuth authentication: on first connection, a page opens and asks for the
+owner key, once. No `Authorization` header goes in the client configuration.
+
+Claude Code:
+
+```bash
+claude mcp add atelier --transport http {{ $base }}/mcp
+```
+
+Cursor (`.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "atelier": {
+      "type": "http",
+      "url": "{{ $base }}/mcp"
+    }
+  }
+}
+```
+
+Claude (web, desktop, mobile): Settings > Connectors > Add custom connector,
+with the same address.
+{{- end }}
+
+Everything that matters lives on the `~/work` volume: projects, conversations,
+secrets, settings. It survives deleting the service.
+
+Documentation: [nic01asfr.github.io/atelier-sspcloud/en](https://nic01asfr.github.io/atelier-sspcloud/en/)
+{{- end }}

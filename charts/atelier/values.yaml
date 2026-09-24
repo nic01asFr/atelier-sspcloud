@@ -69,6 +69,17 @@ security:
 wikichat:
   enabled: true
 
+# L'Atelier comme connecteur MCP d'un client distant (Claude, Cursor), à
+# l'adresse https://<hôte>/mcp, authentifié par OAuth. Désactivé tant que le
+# flux OAuth distant n'est pas livré : seul le bloc des notes en dépend.
+mcp:
+  enabled: false
+
+userPreferences:
+  # Langue des notes affichées dans « Mes services » : fr, ou en pour toute
+  # autre valeur. Onyxia y met la langue de l'interface.
+  language: fr
+
 global:
   suspend: false
 

@@ -154,6 +154,24 @@
       "description": "Coordination et mémoire des agents (onglets Assistant et Agents). Sans lui, le reste de l'Atelier fonctionne.",
       "properties": { "enabled": { "type": "boolean", "default": true } }
     },
+    "mcp": {
+      "type": "object",
+      "title": "Connecteur MCP distant",
+      "description": "Affiche dans les notes comment brancher l'Atelier dans Claude ou Cursor (adresse /mcp, OAuth). Désactivé tant que le flux OAuth distant n'est pas livré.",
+      "properties": { "enabled": { "type": "boolean", "default": false } }
+    },
+    "userPreferences": {
+      "type": "object",
+      "x-onyxia": { "hidden": true },
+      "properties": {
+        "language": {
+          "type": "string",
+          "description": "Notes en français pour 'fr', en anglais sinon.",
+          "default": "fr",
+          "x-onyxia": { "hidden": true, "overwriteDefaultWith": "{{user.lang}}" }
+        }
+      }
+    },
     "global": {
       "type": "object",
       "properties": {
