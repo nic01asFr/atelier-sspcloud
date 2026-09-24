@@ -11,6 +11,8 @@ dependencies = [
   "pydantic>=2.0",
   "pydantic-settings>=2.0",
   "python-multipart>=0.0.9",
+  # Les artefacts Markdown arrivent rendus en HTML ; sans lui, en texte brut.
+  "mistune>=3.0",
 ]
 
 [build-system]
