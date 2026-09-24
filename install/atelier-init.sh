@@ -148,7 +148,7 @@ if [ -n "$DEPOT_ATELIER" ] || ! python3 -c "import mcp_gateway.atelier" 2>/dev/n
   dire "paquet Python"
   python3 -m pip install -q -e "$SOURCE_ATELIER" 2>&1 | tail -1 || avertir "pip install a échoué"
 fi
-for script in atelier-relancer atelier-figer-le-travail.sh; do
+for script in atelier-relancer atelier-figer-le-travail.sh atelier-app; do
   if [ -f "$SOURCE_ATELIER/bin/$script" ]; then
     cp -f "$SOURCE_ATELIER/bin/$script" "$BIN/$script" && chmod +x "$BIN/$script"
   fi
@@ -278,7 +278,11 @@ demarrer_code_server() {
   mkdir -p "$config" "$JOURNAUX/code-server"
   # Loopback et sans mot de passe : c'est l'Atelier qui le sert, derrière sa
   # propre porte (/vscode), et lui seul l'atteint.
-  printf 'bind-addr: 127.0.0.1:%s\nauth: none\ncert: false\n' "$PORT_CODE_SERVER" > "$config/config.yaml"
+  # disable-proxy : sans lui, /vscode/proxy/<port>/ menait, derrière la porte
+  # de l'Atelier, à n'importe quel service en boucle locale du pod. L'Atelier
+  # refuse aussi ces chemins ; ceci ferme la route à la source. Une instance
+  # déjà lancée ne le prend qu'à son redémarrage.
+  printf 'bind-addr: 127.0.0.1:%s\nauth: none\ncert: false\ndisable-proxy: true\n' "$PORT_CODE_SERVER" > "$config/config.yaml"
   if curl -fsS -o /dev/null "http://127.0.0.1:$PORT_CODE_SERVER/" 2>/dev/null; then
     dire "code-server déjà en route"
     return

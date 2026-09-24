@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -41,6 +42,9 @@ from mcp_gateway.tools_exposure import (
 from mcp_gateway.upstream.pool import UpstreamPool
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
+
+
+_log = logging.getLogger("mcp_gateway.mcp.gateway")
 
 
 def _texte(texte: str, *, erreur: bool | None = None) -> dict:
@@ -132,12 +136,18 @@ class McpGateway:
         compositions: CompositionService | None = None,
         *,
         tools_change_tracker: ToolsChangeTracker | None = None,
+        outils_locaux: Any | None = None,
     ) -> None:
         self.catalog = catalog
         self.bundles = bundles
         self.pool = pool
         self.compositions = compositions
         self.tools_change_tracker = tools_change_tracker or ToolsChangeTracker()
+        # Une famille d'outils servie par le processus qui porte la passerelle,
+        # et non par un serveur amont. L'Atelier s'en sert pour offrir ses
+        # propres verbes — conduire une conversation — que personne d'autre ne
+        # peut offrir à sa place. Doit exposer `definitions()` et `appeler()`.
+        self.outils_locaux = outils_locaux
 
     def _resolve_exposed(self, session_id: str | None) -> dict[str, Any]:
         conn = self.pool.db
@@ -177,6 +187,17 @@ class McpGateway:
         bundle = self.catalog.bundles.get(self.bundles.get(session_id))
         return getattr(bundle, "tool_exposure", "full") or "full"
 
+    def _definitions_locales(self) -> list[dict]:
+        if self.outils_locaux is None:
+            return []
+        try:
+            return list(self.outils_locaux.definitions())
+        except Exception:  # noqa: BLE001
+            # Une famille d'outils qui ne sait pas se décrire ne doit pas
+            # emporter la liste entière : le reste du pool reste utilisable.
+            _log.exception("définitions des outils locaux")
+            return []
+
     async def tools_list(self, session_id: str | None) -> list[dict]:
         payload = self._resolve_exposed(session_id)
         tools = payload["tools"]
@@ -188,7 +209,11 @@ class McpGateway:
                 t for t in tools
                 if str(t.get("kind") or "") in ("meta", "composition", "compositions")
             ]
-        return tools_to_mcp_format(tools)
+        # Les outils du service portant la passerelle s'annoncent toujours :
+        # ils sont peu nombreux, ce sont des points d'entrée métier, et les
+        # masquer en mode découverte les rendrait introuvables — `find_tools`
+        # cherche dans le pool, où ils ne sont pas.
+        return tools_to_mcp_format(tools) + self._definitions_locales()
 
     def _enrich_call_failure(self, result: dict, target: str, session_id: str | None) -> dict:
         """Rend un échec exploitable : schéma d'appel, ou noms proches.
@@ -325,6 +350,14 @@ class McpGateway:
         *,
         internal: bool = False,
     ) -> dict:
+        # Avant tout le reste : ces outils ne viennent ni du pool ni d'un
+        # profil, ils appartiennent au service. Les faire passer par la
+        # résolution de profil les ferait refuser comme « hors périmètre ».
+        if self.outils_locaux is not None and name.startswith("atelier_"):
+            reponse = await self.outils_locaux.appeler(name, arguments)
+            if reponse is not None:
+                return reponse
+
         allowed: set[str] | None = None
         profile = None
         if not internal and self.pool.db and self.compositions:

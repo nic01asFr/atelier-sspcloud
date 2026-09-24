@@ -130,6 +130,19 @@ class AtelierSettings(BaseSettings):
     assistant_slug: str = "wikichat-memory"
     anthropic_base_url: str = "https://llm.lab.sspcloud.fr/api"
     wikichat_url: str = "http://127.0.0.1:3777/sse"
+    # Navigateur intégré (Chrome DevTools MCP), adresse interne de son `/mcp`
+    # (ex. `http://chrome-devtools-mcp:3100/mcp`). Vide = pas de navigateur :
+    # l'Atelier ne le déclare pas. Jamais l'ingress public.
+    chrome_mcp_url: str = ""
+    # Jeton du service (sa `CDM_API_KEY`). Le fichier `chrome_mcp_token` du
+    # dossier de secrets prime ; cette variable sert à l'amorçage. Il ne
+    # s'écrit jamais dans un `.mcp.json` : seulement sa référence.
+    chrome_mcp_token: str = ""
+    # Adresse à laquelle ce service répond depuis l'extérieur, celle que sert
+    # l'ingress. Vide = on retombe sur celle que voit uvicorn, qui derrière un
+    # ingress est interne : un client MCP distant y enverrait son flux OAuth et
+    # n'arriverait nulle part. À renseigner dès que le service est exposé.
+    public_url: str = ""
     # URL publique VS Code / code-server du compte (vide = pas de lien hub)
     vscode_url: str = ""
     # code-server sur le même pod (loopback) — un seul PVC ~/work
@@ -145,6 +158,21 @@ class AtelierSettings(BaseSettings):
     # Compte ou organisation GitHub sous lequel publier un projet. Vide =
     # la publication n'est pas proposee, et le depot reste local.
     github_owner: str = ""
+    # Applications des projets (docs/atelier-applications.md). Elles sont
+    # servies sur une seconde origine, jamais sous un chemin de celle-ci :
+    # vide = pas de second hôte, et « Ouvrir » reste grisé.
+    apps_public_url: str = ""
+    # Port de la seconde application ASGI, celle de l'hôte des applications.
+    apps_port: int = 8788
+    # Plage où l'Atelier attribue les ports des applications, bornes
+    # comprises. Le proxy n'atteint que ceux qu'il a attribués.
+    apps_ports: str = "19000-19099"
+    # Applications lancées en même temps, au plus. Chacune coûte de la
+    # mémoire sur un pod sans zone d'échange.
+    apps_max: int = 4
+    # Arrêt d'une application restée sans requête ni connexion ouverte, quand
+    # son manifeste ne dit rien.
+    apps_idle_minutes: int = 30
 
     @property
     def sessions_dir(self) -> Path:
@@ -232,6 +260,11 @@ class AtelierSettings(BaseSettings):
     def github_token_path(self) -> Path:
         """Jeton GitHub, en 0600. Absent = pas de publication possible."""
         return self.secrets_dir / "github_token"
+
+    @property
+    def chrome_mcp_token_path(self) -> Path:
+        """Jeton du service navigateur, en 0600. Absent = pas de navigateur."""
+        return self.secrets_dir / "chrome_mcp_token"
 
     @property
     def internal_secret_path(self) -> Path:

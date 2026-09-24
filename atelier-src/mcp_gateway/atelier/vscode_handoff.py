@@ -60,6 +60,27 @@ def claude_extension_env(
             cle = ""
         if cle:
             env.append({"name": "ATELIER_MCP_KEY", "value": cle})
+        # Les secrets des connecteurs : le `.mcp.json` d'un projet n'en porte
+        # que des références `${ATELIER_MCP_<SERVICE>_…}`. L'extension lance
+        # son `claude` avec ces variables-ci et nulle autre — code-server ne
+        # lui transmet rien de l'environnement de l'Atelier. Ils ne vont, comme
+        # la clé ci-dessus, que dans les réglages utilisateur, hors du projet.
+        from mcp_gateway.atelier.mcp_secrets import variables_du_pool
+
+        for nom, valeur in sorted(variables_du_pool(settings).items()):
+            env.append({"name": nom, "value": valeur})
+        # Les variables que les projets demandent par `.atelier/env.json`.
+        # Les réglages de l'extension valent pour tous les dossiers : on y met
+        # celles de tous les projets (voir `env_projet`), jamais dans un
+        # fichier du projet.
+        from mcp_gateway.atelier.env_projet import variables_de_tous_les_projets
+
+        deja = {e["name"] for e in env}
+        for nom, valeur in sorted(
+            variables_de_tous_les_projets(settings.secrets_dir, settings.projects_dir).items()
+        ):
+            if nom not in deja:
+                env.append({"name": nom, "value": valeur})
     model = (settings.default_model or "").strip()
     if model:
         env.append({"name": "ANTHROPIC_MODEL", "value": model})
@@ -604,7 +625,9 @@ def accorder_les_connecteurs(dossier: Path, effectifs: set[str]) -> list[str]:
     # du pool, et la conversation peut l'avoir restreint.
     binding = _load_json_object_local(dossier / ".mcp.json")
     pool |= set(binding)
-    a_masquer = sorted(pool - effectifs)
+    from mcp_gateway.atelier.mcp_sync import est_amont_de_la_gateway
+
+    a_masquer = sorted((pool - effectifs) | {n for n in pool if est_amont_de_la_gateway(n)})
 
     projets = data.setdefault("projects", {})
     if not isinstance(projets, dict):

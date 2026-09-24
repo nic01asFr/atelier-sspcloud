@@ -13,7 +13,7 @@
       <p class="tagline">Compte perso — clé owner du pod</p>
       <form id="login-form">
         <label class="sr-only" for="owner-key">Clé owner</label>
-        <input id="owner-key" name="key" type="password" autocomplete="off" placeholder="Bearer owner key" required />
+        <input id="owner-key" name="key" type="password" autocomplete="off" placeholder="Clé propriétaire" required />
         <button type="submit">Entrer</button>
       </form>
       <p id="login-error" class="error" hidden></p>
@@ -48,10 +48,12 @@
             <select id="session-project-select" class="session-project-select" hidden></select>
           </div>
           <div class="session-bar-actions">
-            <a id="session-artifacts-link" class="session-face-link" hidden target="_blank" rel="noopener">Artefacts</a>
+            <button type="button" id="session-apps-button" class="session-face-link" hidden aria-expanded="false" aria-controls="apps-panel">Applications</button>
+            <a id="session-chrome-link" class="session-face-link" hidden target="_blank" rel="noopener">Bureau</a>
             <a id="session-vscode-link" class="session-face-link" hidden target="_blank" rel="noopener">VS Code</a>
           </div>
         </div>
+        <div id="apps-panel" class="apps-panel" hidden></div>
         <div id="banner" class="banner" hidden></div>
         <div id="thread" class="thread" aria-live="polite"></div>
         <form id="composer" class="composer">

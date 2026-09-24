@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-import asyncio
 import logging
+import posixpath
 from typing import Any, Callable
+from urllib.parse import unquote
 
 import httpx
-import websockets
-from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket
 from starlette.responses import Response, StreamingResponse
 
 from mcp_gateway.atelier.config import AtelierSettings
+from mcp_gateway.atelier.relais_ws import refus_websocket, relayer
 from mcp_gateway.atelier.vscode_bridge import (
     COOKIE_NAME,
     load_vscode_password,
@@ -52,6 +53,44 @@ NE_PAS_TRANSMETTRE = HOP_BY_HOP | {"authorization", "cookie"}
 def entetes_amont(entetes: Mapping[str, str]) -> dict[str, str]:
     """Les en-têtes du client, dépouillés de ce qui ne doit pas remonter."""
     return {k: v for k, v in entetes.items() if k.lower() not in NE_PAS_TRANSMETTRE}
+
+
+# Les routes par lesquelles code-server relaie n'importe quel port local du
+# pod (`/proxy/<port>/`, `/absproxy/<port>/`). Passées par `/vscode`, elles
+# donnaient, derrière la porte de l'Atelier, un accès à tout service en
+# boucle locale — wikichat, le MCP du navigateur, un serveur d'agent. Ce
+# n'était voulu par personne. code-server est en plus lancé avec
+# `disable-proxy` (install/atelier-init.sh) ; ceci vaut pour une instance
+# qui ne l'aurait pas.
+_PREFIXES_INTERDITS = frozenset({"proxy", "absproxy"})
+
+
+def chemin_de_proxy_interdit(chemin: str) -> bool:
+    """Vrai si `chemin` (relatif à /vscode) mène aux routes proxy de code-server.
+
+    Normalisé comme le ferait un serveur tolérant : décodage répété (`%2F`,
+    `%252F`), barres inverses, barres doublées, segments `.` et `..`, casse.
+    """
+    brut = chemin or ""
+    for _ in range(3):
+        decode = unquote(brut)
+        if decode == brut:
+            break
+        brut = decode
+    brut = brut.replace("\\", "/")
+    normal = posixpath.normpath("/" + brut).lstrip("/")
+    premier = normal.split("/", 1)[0].strip().lower()
+    return premier in _PREFIXES_INTERDITS
+
+
+def _chemin_brut_apres_prefixe(scope: Mapping[str, Any], prefixe: str) -> str:
+    """Le chemin tel que reçu, avant le décodage de Starlette."""
+    brut = scope.get("raw_path") or b""
+    texte = brut.decode("latin-1") if isinstance(brut, bytes) else str(brut)
+    texte = texte.split("?", 1)[0]
+    if texte.lower().startswith(prefixe):
+        texte = texte[len(prefixe):]
+    return texte
 
 
 def is_internal_request(request: Request) -> bool:
@@ -237,34 +276,6 @@ class VscodeUpstream:
         )
 
 
-async def _relay_websocket(client: WebSocket, remote: Any) -> None:
-    async def to_remote() -> None:
-        try:
-            while True:
-                msg = await client.receive()
-                if msg["type"] == "websocket.disconnect":
-                    break
-                if msg.get("bytes") is not None:
-                    await remote.send(msg["bytes"])
-                elif msg.get("text") is not None:
-                    await remote.send(msg["text"])
-        except WebSocketDisconnect:
-            pass
-
-    async def to_client() -> None:
-        try:
-            while True:
-                data = await remote.recv()
-                if isinstance(data, bytes):
-                    await client.send_bytes(data)
-                else:
-                    await client.send_text(data)
-        except websockets.ConnectionClosed:
-            pass
-
-    await asyncio.gather(to_remote(), to_client())
-
-
 def register_vscode_proxy(
     app: FastAPI,
     settings: AtelierSettings,
@@ -286,22 +297,27 @@ def register_vscode_proxy(
         path: str = "",
         _owner: str = Depends(auth_dep),
     ) -> Response:
+        if chemin_de_proxy_interdit(path) or chemin_de_proxy_interdit(
+            _chemin_brut_apres_prefixe(request.scope, prefix)
+        ):
+            raise HTTPException(404)
         upstream: VscodeUpstream = app.state.vscode_upstream
         return await upstream.proxy_http(request, path)
 
     @app.websocket(f"{prefix}")
     @app.websocket(f"{prefix}/{{path:path}}")
     async def vscode_ws_proxy(websocket: WebSocket, path: str = "") -> None:
-        # Même règle que les routes de navigation : la clé au porteur, ou la
-        # session que le cookie désigne. Le cookie ne porte plus la clé.
-        auth = app.state.auth
-        try:
-            # Pas de clé dans l'adresse ici non plus : le navigateur joint son
-            # cookie de lui-même, et une URL de WebSocket se journalise comme
-            # les autres.
-            auth.check_navigation(None, websocket.cookies.get(COOKIE_NAME))
-        except HTTPException:
-            await websocket.close(code=4401)
+        if chemin_de_proxy_interdit(path) or chemin_de_proxy_interdit(
+            _chemin_brut_apres_prefixe(websocket.scope, prefix)
+        ):
+            await websocket.close(code=4404)
+            return
+        # La clé au porteur, ou la session que le cookie désigne — et, pour
+        # un cookie, une Origin qui est bien la nôtre (voir relais_ws).
+        # Pas de clé dans l'adresse : une URL de WebSocket se journalise.
+        refus = refus_websocket(websocket)
+        if refus is not None:
+            await websocket.close(code=refus)
             return
 
         upstream: VscodeUpstream = app.state.vscode_upstream
@@ -309,20 +325,14 @@ def register_vscode_proxy(
             await websocket.close(code=1013)
             return
 
-        await websocket.accept()
         ws_base = upstream.base.replace("https://", "wss://").replace("http://", "ws://")
         ws_path = f"/{path}" if path else "/"
         ws_url = f"{ws_base}{ws_path}"
+        # code-server a besoin de sa requête (jeton de reconnexion, etc.).
         if websocket.query_params:
             ws_url = f"{ws_url}?{websocket.query_params}"
         extra: list[tuple[str, str]] = []
         cookie = upstream.cookie_header()
         if cookie:
             extra.append(("Cookie", cookie))
-
-        try:
-            async with websockets.connect(ws_url, additional_headers=extra, max_size=None) as remote:
-                await _relay_websocket(websocket, remote)
-        except (OSError, websockets.WebSocketException) as exc:
-            log.warning("vscode ws proxy: %s", exc)
-            await websocket.close(code=1011)
+        await relayer(websocket, ws_url, entetes=extra, journal="vscode ws")

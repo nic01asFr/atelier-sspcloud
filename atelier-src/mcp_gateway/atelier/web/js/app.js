@@ -284,7 +284,7 @@ function createApp() {
     // premier message y ouvre une conversation. Sans cela il créait un projet
     // neuf, nommé d'après ses premiers mots — un dossier fantôme par lien.
     if (q.slug && !q.session) S.setPendingProjectSlug(state, q.slug);
-    if (state.token) {
+    if (await auth.reprendre()) {
       await auth.enterHub();
     } else {
       render();

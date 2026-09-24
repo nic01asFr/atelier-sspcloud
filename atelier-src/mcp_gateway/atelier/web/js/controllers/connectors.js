@@ -16,8 +16,29 @@ export function createConnectorActions(ctx) {
   async function refreshAll() {
     await refreshMcpOverview(state);
     await chargerCompositions();
+    await chargerClientsDistants();
     S.syncShellModeFromSelection(state);
     render();
+  }
+
+  /** Qui s'est branché sur cet Atelier depuis l'extérieur. */
+  async function chargerClientsDistants() {
+    try {
+      const j = await api.listerClientsDistants(state.token);
+      S.setClientsDistants(state, j.clients || []);
+    } catch {
+      S.setClientsDistants(state, []);
+    }
+  }
+
+  /** Débrancher un client : son accord, ses jetons et lui-même. */
+  async function revoquerClientDistant(client) {
+    const nom = client.nom || client.client_id;
+    if (!window.confirm(`Débrancher « ${nom} » ? Il devra être réautorisé.`)) return;
+    await withErreur(async () => {
+      await api.revoquerClientDistant(state.token, client.client_id);
+      await chargerClientsDistants();
+    });
   }
 
   async function chargerCompositions() {
@@ -477,6 +498,8 @@ export function createConnectorActions(ctx) {
   return {
     select,
     chargerCompositions,
+    chargerClientsDistants,
+    revoquerClientDistant,
     selectComposition,
     toggleComposition,
     runComposition,

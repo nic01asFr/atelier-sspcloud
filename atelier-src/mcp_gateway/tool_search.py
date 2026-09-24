@@ -115,6 +115,27 @@ def _server_of(tool: dict[str, Any]) -> str:
     return name.split("__", 1)[0] if "__" in name else ""
 
 
+def _correspond_au_serveur(tool: dict[str, Any], server: str) -> bool:
+    """Le filtre `server` accepte le préfixe d'outil *ou* la clé de pool.
+
+    Les outils du registre portent `source=registry:chrome-devtools-mcp` alors
+    que le nom s'écrit `chrome-devtools-mcp__raise_window`. Exiger l'égalité
+    stricte faisait rater le navigateur dès qu'on cherchait par son nom de
+    service — celui que décrit le schéma de `gateway_find_tools`.
+    """
+    voulu = str(server or "").strip()
+    if not voulu:
+        return True
+    origin = _server_of(tool)
+    nom = str(tool.get("name") or "")
+    prefixe = nom.split("__", 1)[0] if "__" in nom else ""
+    if voulu in {origin, prefixe}:
+        return True
+    if origin.endswith(f":{voulu}") or voulu.endswith(f":{origin}"):
+        return True
+    return False
+
+
 def _usage_bonus(name: str, usage: dict[str, int] | None) -> float:
     """Léger avantage aux outils réellement utilisés, plafonné pour ne pas
     écraser la pertinence lexicale."""
@@ -149,7 +170,7 @@ def search_tools(
     for tool in tools:
         if kind and str(tool.get("kind") or "") != kind:
             continue
-        if server and _server_of(tool) != server:
+        if server and not _correspond_au_serveur(tool, server):
             continue
         score = lexical_score(tool, terms)
         if terms and score == 0:

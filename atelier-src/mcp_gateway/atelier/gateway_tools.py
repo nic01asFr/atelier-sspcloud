@@ -38,6 +38,7 @@ GROUPE_ACCES = "Accès aux outils"
 GROUPE_COMPOSITIONS = "Compositions"
 GROUPE_COORDINATION = "Coordination et mémoire"
 GROUPE_FICHIERS = "Accès aux fichiers"
+GROUPE_NAVIGATEUR = "Navigateur web"
 GROUPE_POOL = "Mes connecteurs"
 
 
@@ -57,6 +58,18 @@ def _est_le_pilote(config: dict[str, Any], wikichat_url: str) -> bool:
     def racine(u: str) -> str:
         return u.split("://", 1)[-1].split("/", 1)[0]
     return racine(url) == racine(wikichat_url)
+
+
+def _est_le_navigateur(config: dict[str, Any], nom: str = "") -> bool:
+    """Vrai si ce service est le navigateur intégré à l'Atelier.
+
+    Une seule règle pour toute la maison (`navigateur.est_le_navigateur`) :
+    l'identifiant du service que l'Atelier déclare. Un connecteur tiers dont
+    l'adresse contient « chrome-devtools » reste un connecteur tiers.
+    """
+    from mcp_gateway.atelier.navigateur import est_le_navigateur
+
+    return est_le_navigateur(nom, config)
 
 
 def _repertoires_autorises(config: dict[str, Any]) -> list[str]:
@@ -93,6 +106,8 @@ def nature_service(
         # compositions, et ne se retire pas comme un connecteur qu'on aurait
         # branché.
         return {"group": GROUPE_ACCES, "system": True, "scope": []}
+    if _est_le_navigateur(config, nom):
+        return {"group": GROUPE_NAVIGATEUR, "system": True, "scope": []}
     if _est_le_pilote(config, wikichat_url):
         return {"group": GROUPE_COORDINATION, "system": True, "scope": []}
     repertoires = _repertoires_autorises(config)
@@ -373,7 +388,10 @@ def build_tools_by_service(request: Request) -> dict[str, Any]:
                 )
             continue
         nom = key.replace("registry:", "")
-        if chemins:
+        if _est_le_navigateur(config, nom):
+            groupe = GROUPE_NAVIGATEUR
+            libelle = "Navigateur web"
+        elif chemins:
             # Un service de fichiers est seul de sa famille : répéter son nom
             # technique sous l'intitulé du groupe n'apprend rien. Ce qui
             # compte, c'est jusqu'où il ouvre.

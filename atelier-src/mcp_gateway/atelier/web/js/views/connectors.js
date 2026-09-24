@@ -2,6 +2,7 @@
 
 import { $, rendreActivable } from "../core/dom.js";
 import { renderCompositionBuilder } from "./composition-builder.js";
+import { chromeHealth } from "../api.js";
 
 // Les états que le moteur de compositions écrit, dits dans la langue de
 // l'écran. Affichés tels quels, « production » ou « failed » côtoyaient
@@ -448,6 +449,65 @@ function renderHome(state, actions) {
   }
   sec.appendChild(ul);
   body.appendChild(sec);
+
+  renderClientsDistants(state, actions, body);
+}
+
+/**
+ * Qui est branché sur cet Atelier depuis l'extérieur.
+ *
+ * S'enregistrer ne prouve rien et n'ouvre rien : c'est le consentement, sous
+ * la clé, qui accorde. Mais sans cette liste rien ne montrait ce qui était
+ * branché, et la seule sortie était de renouveler la clé — qui coupe tout le
+ * reste avec.
+ */
+export function renderClientsDistants(state, actions, body) {
+  const clients = state.clientsDistants || [];
+  const sec = document.createElement("section");
+  sec.className = "agent-section";
+  sec.innerHTML = `<h3 class="connectors-sub">Clients distants</h3>`;
+
+  const ul = document.createElement("ul");
+  ul.className = "agent-queue";
+  if (!clients.length) {
+    const li = document.createElement("li");
+    li.className = "mcp-empty";
+    li.textContent =
+      "Aucun client branché. Collez l’adresse de cet Atelier comme connecteur MCP : la page qui s’ouvre demande votre clé.";
+    ul.appendChild(li);
+  }
+  for (const c of clients) {
+    const li = document.createElement("li");
+    li.className = "agent-queue-item";
+    const main = document.createElement("div");
+    main.className = "agent-queue-main";
+    const titre = document.createElement("strong");
+    titre.textContent = c.nom || c.client_id;
+    const sub = document.createElement("span");
+    sub.className = "agent-queue-sub";
+    // L'accord et les jetons se disent séparément : un client accordé sans
+    // jeton vivant n'est plus branché, il est seulement déjà connu.
+    const etat = c.accorde ? "autorisé" : "enregistré, jamais autorisé";
+    const jetons = c.jetons
+      ? `${c.jetons} jeton${c.jetons > 1 ? "s" : ""} en cours`
+      : "aucun jeton en cours";
+    sub.textContent = `${etat} · ${jetons} · depuis le ${c.enregistre_le || "?"}`;
+    main.appendChild(titre);
+    main.appendChild(sub);
+    const dot = document.createElement("span");
+    dot.className = c.jetons ? "status-dot status-dot-ok" : "status-dot status-dot-off";
+    const couper = document.createElement("button");
+    couper.type = "button";
+    couper.className = "btn-sm";
+    couper.textContent = "Débrancher";
+    couper.addEventListener("click", () => actions.revoquerClientDistant(c));
+    li.appendChild(dot);
+    li.appendChild(main);
+    li.appendChild(couper);
+    ul.appendChild(li);
+  }
+  sec.appendChild(ul);
+  body.appendChild(sec);
 }
 
 /** Panel « nouveau » — pleine page, meme archetype que la creation d'agent. */
@@ -685,7 +745,9 @@ function renderDetail(entry, kind, state, actions) {
     (x) => String(x.key).split("#")[0] === key
   )?.group;
   const socle =
-    famille === "Coordination et mémoire" || famille === "Accès aux fichiers";
+    famille === "Coordination et mémoire" ||
+    famille === "Accès aux fichiers" ||
+    famille === "Navigateur web";
   h.textContent = socle ? famille : entry.name || entry.id;
   const lead = document.createElement("p");
   lead.className = "connectors-lead";
@@ -695,7 +757,9 @@ function renderDetail(entry, kind, state, actions) {
   lead.textContent = socle
     ? famille === "Accès aux fichiers"
       ? "Ce que l’Atelier peut lire et écrire hors du dossier d’un projet."
-      : "Ce qui relie les agents entre eux : messages, mémoire, suivi de projet."
+      : famille === "Navigateur web"
+        ? "Le navigateur de l’Atelier : pages, captures, et un bureau gardé par la clé."
+        : "Ce qui relie les agents entre eux : messages, mémoire, suivi de projet."
     : decrit?.resume ||
       entry.description ||
       `${kind === "org" ? "Service plateforme" : "Connecteur personnel"}`;
@@ -734,6 +798,23 @@ function renderDetail(entry, kind, state, actions) {
     });
     toolbar.appendChild(toggle);
     toolbar.appendChild(del);
+    head.appendChild(toolbar);
+  }
+  if (famille === "Navigateur web") {
+    const toolbar = document.createElement("div");
+    toolbar.className = "agent-head-actions";
+    const ouvrir = document.createElement("a");
+    ouvrir.className = "ghost btn-sm";
+    ouvrir.href = "/chrome/view";
+    ouvrir.target = "_blank";
+    ouvrir.rel = "noopener";
+    ouvrir.textContent = "Ouvrir le bureau";
+    // Caché tant que le service n'a pas dit que son bureau est disponible.
+    ouvrir.hidden = true;
+    chromeHealth().then((etat) => {
+      ouvrir.hidden = !(etat && etat.bureau === true);
+    });
+    toolbar.appendChild(ouvrir);
     head.appendChild(toolbar);
   }
   body.appendChild(head);
@@ -852,7 +933,11 @@ export function createConnectorsView(ctx) {
    * d'outils d'un agent : un service ne change pas de nature selon l'écran
    * où on le regarde.
    */
-  const FAMILLES_SOCLE = ["Coordination et mémoire", "Accès aux fichiers"];
+  const FAMILLES_SOCLE = [
+    "Coordination et mémoire",
+    "Accès aux fichiers",
+    "Navigateur web",
+  ];
 
   /** Nombre d'outils d'un service, toutes familles confondues. */
   function compteDe(cle) {
@@ -876,6 +961,9 @@ export function createConnectorsView(ctx) {
         (a) => typeof a === "string" && a.startsWith("/") && !a.endsWith(".js")
       );
       return chemins.length ? `ouvre ${chemins[0]}` : "accès aux dossiers";
+    }
+    if (groupe === "Navigateur web") {
+      return "pages, captures, bureau";
     }
     return "coordination, mémoire, agents";
   }

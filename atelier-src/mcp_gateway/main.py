@@ -138,6 +138,9 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
     cfg = cfg or settings
     app = FastAPI(title="Atelier Gateway", version=__version__, lifespan=lifespan)
     app.state.settings = cfg
+    # Le flux OAuth lit l'adresse publique dans l'état, pas dans les réglages :
+    # il sert aussi l'Atelier, qui range la sienne ailleurs. Même valeur ici.
+    app.state.host_url = cfg.host_url
 
     @app.middleware("http")
     async def owner_lock_guard(request: Request, call_next):
@@ -168,7 +171,7 @@ def create_app(cfg: Settings | None = None) -> FastAPI:
             headers={
                 "WWW-Authenticate": (
                     'Bearer realm="passerelle", '
-                    f'resource_metadata="{base}/.well-known/oauth-protected-resource"'
+                    f'resource_metadata="{base}/.well-known/oauth-protected-resource/mcp"'
                 )
             },
         )

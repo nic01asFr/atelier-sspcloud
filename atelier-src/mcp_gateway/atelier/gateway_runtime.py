@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import FastAPI
 
-from mcp_gateway.auth import migrate_auth_schema, resolve_owner_key
+from mcp_gateway.auth import migrate_auth_schema
 from mcp_gateway.bundles import BundleSession
 from mcp_gateway.catalog import load_catalog, validate_catalog
 from mcp_gateway.catalog_sync import catalog_sync_status
@@ -29,6 +29,7 @@ from mcp_gateway.upstream import UpstreamPool
 
 from mcp_gateway.atelier.auth import ensure_owner_key
 from mcp_gateway.atelier.config import AtelierSettings
+from mcp_gateway.atelier.outils_conversation import OutilsAtelier
 
 log = logging.getLogger("atelier.gateway")
 
@@ -77,10 +78,16 @@ def migrate_legacy_registry_json(conn: Any, registry_path: Path) -> bool:
 async def gateway_startup(app: FastAPI, atelier_settings: AtelierSettings) -> None:
     cfg = build_gateway_settings(atelier_settings)
     app.state.gateway_settings = cfg
-    app.state.db = connect(cfg.db_path)
+    # La base est déjà ouverte par l'Atelier au montage : les tables
+    # d'authentification servent au flux OAuth, qui répond avant que la
+    # passerelle démarre. Une seconde connexion sur le même fichier n'apporte
+    # rien et complique l'arrêt.
+    app.state.db = getattr(app.state, "db", None) or connect(cfg.db_path)
     migrate_auth_schema(app.state.db)
     migrer_notifications(app.state.db)
-    app.state.gateway_owner_key = resolve_owner_key(app.state.db, cfg)
+    # La clé propriétaire n'est plus recopiée dans `gateway_meta` : c'est déjà
+    # celle du fichier de l'Atelier (voir build_gateway_settings), personne ne
+    # lisait cette copie, et un secret de moins au repos est un secret de moins.
     migrate_legacy_registry_json(app.state.db, atelier_settings.mcp_registry_path)
 
     app.state.catalog = load_catalog(cfg.catalog_path)
@@ -88,6 +95,12 @@ async def gateway_startup(app: FastAPI, atelier_settings: AtelierSettings) -> No
     app.state.catalog_sync = catalog_sync_status(app)
     app.state.bundles = BundleSession(app.state.catalog)
     app.state.pool = UpstreamPool(app.state.catalog, app.state.db)
+    try:
+        from mcp_gateway.atelier.chrome_ensure import ensure_chrome_mcp_connector
+
+        ensure_chrome_mcp_connector(atelier_settings)
+    except Exception as exc:  # noqa: BLE001 — un Chrome absent ne doit pas empêcher le démarrage
+        log.warning("chrome connector: %s", exc)
     mcp_holder: dict[str, McpGateway] = {}
 
     async def composition_tool_call(
@@ -102,12 +115,25 @@ async def gateway_startup(app: FastAPI, atelier_settings: AtelierSettings) -> No
     app.state.tools_change_tracker = ToolsChangeTracker()
     app.state.compositions = CompositionService(app.state.db, composition_tool_call)
     app.state.upstream_status: dict[str, str] = {"status": "probing"}
+    # Les verbes de l'Atelier — conduire une conversation — servis par la même
+    # porte que le pool. Ils tiennent aux magasins du service, que seul ce
+    # processus a : c'est pourquoi ils ne peuvent venir d'aucun serveur amont.
+    outils_atelier = None
+    if getattr(app.state, "store", None) is not None:
+        outils_atelier = OutilsAtelier(
+            store=app.state.store,
+            projects=app.state.projects,
+            harness=app.state.harness,
+            apps=getattr(app.state, "apps", None),
+        )
+    app.state.outils_atelier = outils_atelier
     app.state.mcp = McpGateway(
         app.state.catalog,
         app.state.bundles,
         app.state.pool,
         app.state.compositions,
         tools_change_tracker=app.state.tools_change_tracker,
+        outils_locaux=outils_atelier,
     )
     mcp_holder["mcp"] = app.state.mcp
     app.state.compositions.bind_call_tool(composition_tool_call)

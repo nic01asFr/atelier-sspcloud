@@ -84,6 +84,7 @@ export function createComposerMcpController(ctx) {
     const APPORTS = {
       "Accès aux outils": "chercher un outil, lancer une composition",
       "Coordination et mémoire": "messages, mémoire, agents",
+      "Navigateur web": "pages, captures, bureau",
     };
     const options = connecteurs.map((c) => ({
       value: c.id,

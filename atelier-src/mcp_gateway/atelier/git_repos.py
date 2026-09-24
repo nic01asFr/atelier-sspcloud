@@ -40,11 +40,17 @@ log = logging.getLogger("atelier.git")
 
 # Ce que l'Atelier dépose lui-même dans un projet et qui n'appartient pas à
 # l'histoire du travail : état de session, réglages de la machine, réponses
-# déjà données. Le reste — CLAUDE.md, .mcp.json — dit ce qu'est le projet et
-# se versionne.
+# déjà données. Le reste — CLAUDE.md — dit ce qu'est le projet et se versionne.
+#
+# `.mcp.json` ne se versionne pas. Il a longtemps été rangé avec CLAUDE.md,
+# comme une description du projet ; mais l'Atelier y recopiait les en-têtes
+# `Authorization` des connecteurs, et un jeton est parti ainsi sur GitHub. Il
+# ne porte plus que des références `${ATELIER_MCP_…}` : l'ignorer est la
+# seconde ceinture, pour ce qu'une main y écrirait en clair.
 GITIGNORE = """# Écrit par l'Atelier.
 
 # Ce qu'il dépose lui-même : état de session, réglages de la machine.
+.mcp.json
 .claude/settings.local.json
 .claude/projects/
 .atelier/
@@ -103,6 +109,10 @@ class EtatDepot:
     commits: int = 0
     en_attente: int = 0
     distant: str = ""
+    # `.mcp.json` suivi malgré le .gitignore : il l'était avant la règle.
+    # L'Atelier ne le dé-suit pas lui-même — c'est l'histoire de la personne —
+    # mais le dit, pour qu'elle décide.
+    mcp_json_suivi: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -111,6 +121,7 @@ class EtatDepot:
             "commits": self.commits,
             "pending": self.en_attente,
             "remote": self.distant,
+            "mcp_json_tracked": self.mcp_json_suivi,
         }
 
 
@@ -167,6 +178,7 @@ def _identite(settings: AtelierSettings, chemin: Path) -> None:
 # fichier écrit avant qu'une ligne existe ne la connaît pas, et un agent qui
 # « commite tout » emporte alors ce qu'on dépose — `.vscode/` l'a été.
 LIGNES_DE_L_ATELIER = (
+    ".mcp.json",
     ".claude/settings.local.json",
     ".claude/projects/",
     ".atelier/",
@@ -207,7 +219,7 @@ def etat(chemin: Path) -> EtatDepot:
         modifies = _git(chemin, "status", "--porcelain", verifier=False)
         distant = _git(chemin, "remote", "get-url", "origin", verifier=False)
     except (ErreurDepot, ValueError, OSError, subprocess.SubprocessError):
-        return EtatDepot(depot=True)
+        return EtatDepot(depot=True, mcp_json_suivi=mcp_json_suivi(chemin))
     return EtatDepot(
         depot=True,
         branche=branche,
@@ -216,7 +228,18 @@ def etat(chemin: Path) -> EtatDepot:
         # L'URL peut porter un jeton si elle a été posée à la main ailleurs :
         # on ne rend que l'adresse, jamais ce qui la précède.
         distant=_url_sans_secret(distant),
+        mcp_json_suivi=mcp_json_suivi(chemin),
     )
+
+
+def mcp_json_suivi(chemin: Path) -> bool:
+    """Vrai si le dépôt suit `.mcp.json`, que le .gitignore n'y peut plus rien."""
+    if not (chemin / ".git").is_dir():
+        return False
+    try:
+        return bool(_git(chemin, "ls-files", "--", ".mcp.json", verifier=False))
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def _url_sans_secret(url: str) -> str:

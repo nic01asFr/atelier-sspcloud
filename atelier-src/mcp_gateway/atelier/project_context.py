@@ -43,6 +43,24 @@ def bloc_contexte(slug: str, chemin: Path) -> str:
             f" conversations de **{slug}**. C'est ce nom de projet qu'attendent"
             " les outils qui en demandent un.",
             "",
+            "### Montrer ce que tu produis",
+            "",
+            "Un port ouvert sur le pod n'est joignable par personne : ne cherche pas"
+            " d'URL publique, ne lance pas de serveur à la main pour le montrer. Un"
+            " artefact = un dossier `artifacts/<nom>/` = une adresse sur l'hôte des"
+            " applications ; `atelier_artefacts` la donne.",
+            "",
+            "- **Autonome** (fichiers) : `atelier_artefact_creer(projet, nom)`, dépose"
+            " tes fichiers dans `artifacts/<nom>/` (`index.html` s'ouvre à la racine,"
+            " liens relatifs, tout embarqué : bac à sable sans réseau extérieur).",
+            "- **Serveur** (processus) : `atelier_artefact_creer(projet, nom,"
+            " mode=\"serveur\")`, complète `artifacts/<nom>/artefact.json` (`commande`"
+            " en liste avec `{port}`, `sante`, `protocoles`, `repertoire` relatif au"
+            " dossier), puis `atelier_artefact_verifier` et `atelier_artefact_demarrer`.",
+            "- Même adresse dans les deux modes. On n'agit pas sur l'artefact d'une"
+            " autre conversation (`forcer` seulement si on te le demande) ; sans MCP,"
+            " `~/work/bin/atelier-app`.",
+            "",
             "_Section tenue par l'Atelier ; le reste du fichier est à vous._",
             FIN,
         ]

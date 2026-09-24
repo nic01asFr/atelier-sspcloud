@@ -15,7 +15,13 @@ from mcp_gateway.atelier.ui_settings import load_ui_settings, resolve_vscode_url
 
 log = logging.getLogger("atelier.vscode_bridge")
 
-COOKIE_NAME = "atelier_owner"
+# Le cookie de la session de navigation. `__Host-` oblige le navigateur à ne
+# l'accepter que `Secure`, sur `/` et sans `Domain` : un pod voisin sous
+# `*.lab.sspcloud.fr` — même site, `sspcloud.fr` n'étant pas un suffixe public —
+# ne peut plus en poser un à notre place. L'ancien nom n'est plus lu qu'une
+# fois, pour être remplacé (voir `auth.GardeDesCookies`).
+COOKIE_NAME = "__Host-atelier_session"
+COOKIE_ANCIEN = "atelier_owner"
 VSCODE_PASSWORD_FILE = "vscode_password"
 
 

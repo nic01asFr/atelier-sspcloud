@@ -18,7 +18,19 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from mcp_gateway.atelier import __version__, git_repos
-from mcp_gateway.atelier.auth import OwnerAuth, bearer_from_header
+from mcp_gateway.atelier.auth import (
+    ENTETE_INTERFACE,
+    GardeDesCookies,
+    OwnerAuth,
+    bearer_from_header,
+)
+from mcp_gateway.auth import (
+    lister_clients,
+    migrate_auth_schema,
+    revoquer_client,
+)
+from mcp_gateway.db import connect
+from mcp_gateway.oauth import adresse_publique, router as oauth_router
 from mcp_gateway.atelier.config import AtelierSettings, get_settings
 from mcp_gateway.atelier.events import AtelierEvent
 from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
@@ -45,6 +57,7 @@ from mcp_gateway.atelier.ui_settings import (
     save_ui_settings,
 )
 from mcp_gateway.atelier.vscode_bridge import (
+    COOKIE_ANCIEN,
     COOKIE_NAME,
     folder_abs,
     load_vscode_password,
@@ -62,6 +75,7 @@ from mcp_gateway.atelier.vscode_proxy import (
     resolve_vscode_password,
     VscodeUpstream,
 )
+from mcp_gateway.atelier.chrome_proxy import register_chrome_proxy
 from mcp_gateway.atelier.wikichat_pilote_proxy import proxy_wikichat_pilote
 
 log = logging.getLogger("atelier.api")
@@ -492,6 +506,11 @@ def build_app(
     projects = ProjectStore(settings)
     auth = OwnerAuth(settings)
     diffusion = DiffusionDesTours()
+    # Les applications des projets : leur superviseur et le passage vers
+    # l'hôte qui les sert (docs/atelier-applications.md).
+    from mcp_gateway.atelier.apps.service import ServiceApps
+
+    service_apps = ServiceApps(settings)
 
     def _registres_de(session_id: str) -> list[Path]:
         """Les fichiers où cette conversation peut grossir, ici ou ailleurs."""
@@ -541,17 +560,63 @@ def build_app(
                 except OSError:
                     pass
             await gateway_startup(app, settings)
+        # Les groupes laissés par un Atelier mort sans rien arrêter, puis la
+        # surveillance des applications.
+        try:
+            await service_apps.superviseur.nettoyer_orphelins()
+        except OSError as exc:
+            log.warning("applications orphelines : %s", exc)
+        service_apps.superviseur.lancer()
         yield
+        await service_apps.superviseur.fermer()
+        etat_apps = getattr(getattr(app.state.app_apps, "interne", None), "state", None)
+        if etat_apps is not None:
+            await etat_apps.fermer_clients()
         if not use_fake and hasattr(app.state, "pool"):
             await gateway_shutdown(app)
+        else:
+            # La passerelle ferme la base quand elle a démarré ; sinon c'est à
+            # nous, puisque c'est nous qui l'avons ouverte.
+            base = getattr(app.state, "db", None)
+            if base is not None:
+                base.close()
 
     app = FastAPI(title="Atelier", version=__version__, lifespan=lifespan)
     app.state.settings = settings
+    # Ce que le flux OAuth lit dans l'état : la clé que le propriétaire tape
+    # pour consentir, et l'adresse publique qu'annoncent ses métadonnées.
+    # La base est ouverte ici et non au démarrage de la passerelle : l'écran de
+    # consentement répond avant elle, et en mode factice elle ne démarre pas.
+    app.state.owner_key = auth.owner_key
+    app.state.host_url = (settings.public_url or "").strip()
+    # Ce que le cookie de session autorise, et d'où : voir `GardeDesCookies`.
+    # Posé sur toute l'application — /v1, /pilote, /vscode — et non route par
+    # route, pour qu'une route ajoutée demain n'y échappe pas.
+    app.add_middleware(GardeDesCookies, public_url=app.state.host_url)
+    app.state.db = connect(settings.gateway_db_path)
+    migrate_auth_schema(app.state.db)
+    # Le flux OAuth : c'est par lui qu'un client distant — Claude — obtient un
+    # jeton pour `/mcp`, après que le propriétaire a tapé sa clé sur l'écran de
+    # consentement. Aucune de ses routes n'est gardée : leur garde est la clé
+    # demandée à l'écran. Monté avant le reste pour ne rien masquer.
+    app.include_router(oauth_router)
     app.state.store = store
     app.state.projects = projects
     app.state.auth = auth
     app.state.harness = harness
     app.state.use_fake = use_fake
+    app.state.apps = service_apps
+    # L'application de l'hôte des applications, servie sur son propre port
+    # par `app.main` (voir `apps.serveur`). Construite ici pour partager les
+    # magasins de ce processus ; rien de ses routes ne vit dans celle-ci.
+    from mcp_gateway.atelier.apps.serveur import construire_app_apps
+    from mcp_gateway.atelier.artifacts import secret_des_jetons
+
+    app.state.app_apps = construire_app_apps(
+        service_apps,
+        origine_atelier=lambda: app.state.host_url,
+        secret_artefacts=lambda: secret_des_jetons(auth.owner_key),
+    )
 
     def _mcp_store() -> IntegratedMcpStore:
         if app.state.use_fake:
@@ -568,8 +633,13 @@ def build_app(
 
     router = APIRouter(prefix="/v1")
 
-    def require_owner(authorization: Annotated[str | None, Header()] = None) -> str:
-        return auth.require(authorization)
+    def require_owner(request: Request, authorization: Annotated[str | None, Header()] = None) -> str:
+        """Clé au porteur (CLI, MCP), ou session de l'interface (voir `check_api`)."""
+        return auth.check_api(
+            bearer_from_header(authorization),
+            request.cookies.get(COOKIE_NAME),
+            request.headers.get(ENTETE_INTERFACE) == "1",
+        )
 
     def require_owner_nav(request: Request, authorization: Annotated[str | None, Header()] = None) -> str:
         """Clé au porteur, ou session de navigation (liens /v1/vscode/open)."""
@@ -586,6 +656,7 @@ def build_app(
             "vscode_url": vs,
             "vscode_ready": st["ready"],
             "vscode_password_configured": st["password_configured"],
+            "chrome_view": "/chrome/view",
             "default_slug": settings.default_slug,
             "assistant_slug": settings.assistant_slug,
             "projects_root": str(settings.projects_dir),
@@ -699,25 +770,74 @@ def build_app(
         changer pour qui détient l'ancienne. La réponse porte la nouvelle clé
         — c'est le seul moment où elle transite, et l'appelant venait de
         prouver qu'il détenait la précédente.
+
+        Les jetons des clients distants tombent aussi (voir `faire_tourner`),
+        et l'écran de consentement doit réclamer la nouvelle clé dès le tour
+        suivant : il la lit dans l'état de l'application, qu'on remet à jour ici.
         """
         neuve = auth.faire_tourner()
-        response.delete_cookie(COOKIE_NAME, path="/")
-        log.warning("clé propriétaire renouvelée — sessions de navigation fermées")
+        app.state.owner_key = neuve
+        service_apps.passage.fermer_tout()
+        _effacer_cookies(response)
+        log.warning(
+            "clé propriétaire renouvelée — sessions de navigation fermées, "
+            "jetons des clients distants révoqués"
+        )
         return {"owner_key": neuve}
+
+    @router.get("/oauth/clients")
+    def list_oauth_clients(_owner: str = Depends(require_owner)) -> dict[str, Any]:
+        """Qui s'est enregistré auprès de ce service, et qui a été accordé.
+
+        S'enregistrer ne prouve rien et n'ouvre rien : c'est le consentement,
+        sous la clé, qui accorde. Mais sans cette liste le propriétaire ne
+        voyait pas ce qui était branché chez lui, et n'avait pour sortir qu'un
+        renouvellement de clé — qui coupe tout le reste avec.
+        """
+        return {"clients": lister_clients(app.state.db)}
+
+    @router.delete("/oauth/clients/{client_id}")
+    def revoke_oauth_client(
+        client_id: str, _owner: str = Depends(require_owner)
+    ) -> dict[str, Any]:
+        """Débranche un client : son accord, ses jetons et lui-même."""
+        retire = revoquer_client(app.state.db, client_id)
+        if not retire:
+            raise HTTPException(404, "client inconnu")
+        log.warning("client distant révoqué : %s", client_id)
+        return {"status": "ok"}
+
+    def _effacer_cookies(response: Response) -> None:
+        """Efface le cookie de session, et l'ancien nom s'il traîne encore.
+
+        `__Host-` n'est accepté par le navigateur que `Secure` : un effacement
+        posé sans cet attribut serait ignoré, et la session resterait là.
+        """
+        response.delete_cookie(
+            COOKIE_NAME, path="/", secure=True, httponly=True, samesite="lax"
+        )
+        response.delete_cookie(COOKIE_ANCIEN, path="/")
 
     @router.post("/auth/cookie")
     def set_auth_cookie(
         response: Response,
-        _owner: str = Depends(require_owner),
+        authorization: Annotated[str | None, Header()] = None,
     ) -> dict[str, str]:
-        """Ouvre une session de navigation, pour les liens VS Code.
+        """Échange la clé contre une session de navigation — une fois.
 
         Le cookie portait la clé propriétaire elle-même, trente jours durant.
         Or cette clé ouvre tout — le harnais lance `claude` en
         `bypassPermissions` — et rien ne permettait de la révoquer sans se
         connecter au pod. Il porte désormais un identifiant de session, sans
         pouvoir propre, daté et révocable.
+
+        C'est aussi le seul moment où l'interface montre la clé : elle la
+        gardait dans `localStorage`, où le script de n'importe quelle page
+        servie dans notre origine la lisait. Elle s'en sert ici, puis
+        l'oublie ; tout le reste passe par ce cookie `HttpOnly`. D'où la garde
+        par la clé seule : une session n'en ouvre pas une autre.
         """
+        auth.check_token(bearer_from_header(authorization))
         sid = auth.ouvrir_session()
         response.set_cookie(
             key=COOKIE_NAME,
@@ -738,7 +858,9 @@ def build_app(
         ailleurs resterait valable jusqu'à son expiration.
         """
         ferme = auth.fermer_session(request.cookies.get(COOKIE_NAME))
-        response.delete_cookie(key=COOKIE_NAME, path="/")
+        # Les sessions de l'hôte des applications nées de celle-ci tombent avec.
+        service_apps.passage.fermer_pour(request.cookies.get(COOKIE_NAME))
+        _effacer_cookies(response)
         return {"status": "ok", "session_fermee": "oui" if ferme else "non"}
 
     @router.get("/meta")
@@ -1001,76 +1123,144 @@ def build_app(
             q += f"&atelier_session={quote(session, safe='')}"
         return RedirectResponse(url=f"/vscode/?{q}", status_code=302)
 
-    def _servir_artefact(slug: str, rel: str) -> Response:
-        """Rend un dossier d'artefacts ou l'un de ses fichiers.
+    # ── Les artefacts ───────────────────────────────────────────────────
+    #
+    # Tout ce qui sort d'ici est produit par un agent et servi en bac à sable,
+    # sans `allow-same-origin` : ni la clé, ni le cookie, ni l'API ne sont à
+    # portée de son script. Deux régimes seulement diffèrent par ce qu'ils
+    # chargent. Un artefact ordinaire est autonome (`CSP_SANDBOX`). Un corpus
+    # charge ses feuilles de style, scripts et pages relatifs (`CSP_CORPUS`) ;
+    # comme ces requêtes partent d'une origine opaque sans cookie, il est lu
+    # sous un jeton porté dans le chemin (`artifacts.signer_jeton`).
 
-        Deux régimes. Un artefact ordinaire est rendu inerte : la CSP bac à
-        sable met le document en origine opaque, hors d'atteinte du cookie et
-        de l'API. Un dossier marqué « corpus » est un site à plusieurs pièces —
-        on le sert tel quel, ses sous-ressources autorisées mais le réseau
-        coupé (voir `CSP_CORPUS`).
+    from urllib.parse import quote as _quote_artefact
+
+    from mcp_gateway.atelier import artifacts as art
+    from mcp_gateway.atelier.apps.routes import enregistrer_routes_apps, renvoi_par_code
+    from mcp_gateway.atelier.artefacts_servis import ServeurArtefacts
+
+    def _secret_artefacts() -> bytes:
+        return art.secret_des_jetons(auth.owner_key)
+
+    artefacts = ServeurArtefacts(
+        settings.projects_dir, _secret_artefacts, lambda slug: f"/v1/artifacts/{slug}/"
+    )
+
+    def _session_owner(request: Request) -> str | None:
+        """L'identifiant de la session owner du navigateur, s'il vaut encore."""
+        sid = request.cookies.get(COOKIE_NAME)
+        return sid if sid and auth.session_valide(sid) else None
+
+    def _vers_l_hote_des_apps(request: Request, slug: str, rel: str, dossier: bool) -> Response | None:
+        """Avec un second hôte, un navigateur lit les artefacts là-bas, pas ici.
+
+        Rien de ce qu'un agent dépose ne doit s'exécuter dans l'origine de
+        l'Atelier : la lecture passe par l'échange de code, vers
+        `/<slug>/…` sur l'hôte des applications. Un client hors
+        navigateur (clé au porteur) est encore servi ici. Sans second hôte, on
+        sert ici comme avant : c'est le palier de secours.
         """
-        from mcp_gateway.atelier import artifacts as art
-
-        base = art.dossier_des_artefacts(Path(folder_abs(settings, slug)))
-        cible = art._sous(base, rel) if rel else base.resolve()
-        corpus = cible is not None and art.est_sous_corpus(base, cible)
-
-        def entetes() -> dict[str, str]:
-            return {
-                "Content-Security-Policy": art.CSP_CORPUS if corpus else art.CSP_SANDBOX,
-                "X-Content-Type-Options": "nosniff",
-                "Cache-Control": "no-store",
-            }
-
-        def _brut(texte: str, type_mime: str) -> Response:
-            return Response(
-                texte, media_type=f"{type_mime}; charset=utf-8", headers=entetes()
-            )
-
-        # Un dossier : la racine, ou un sous-dossier. Un corpus qui a son propre
-        # `index.html` le sert lui-même ; sinon on liste. La racine d'un projet
-        # sans `artifacts/` n'est pas une erreur : rien à montrer, simplement.
-        if cible is not None and (cible.is_dir() or not rel):
-            if corpus and (cible / "index.html").is_file():
-                cible = cible / "index.html"  # sert l'index du corpus plus bas
-            else:
-                entrees = art.lister(base, rel) or []
-                return _brut(art.page_index(base, slug, rel.strip("/"), entrees), "text/html")
-
-        if cible is None or not cible.is_file():
-            corps = art.page_index(base, slug, rel.strip("/"), [])
-            return Response(
-                corps, status_code=404, media_type="text/html; charset=utf-8", headers=entetes()
-            )
-
-        type_mime = art.type_du_fichier(cible)
-        # Hors corpus, le Markdown se rend en page autonome. Dans un corpus,
-        # tout est servi tel quel : c'est lui qui gère son rendu et ses liens.
-        if not corpus and type_mime == "text/markdown":
-            texte = cible.read_text(encoding="utf-8", errors="replace")
-            return _brut(art.rendre_markdown(texte, art._joli_nom(cible.name)), "text/html")
-        type_servi = "text/plain" if type_mime == "text/markdown" else type_mime
-        if type_servi.startswith("text/") or type_servi == "application/javascript":
-            texte = cible.read_text(encoding="utf-8", errors="replace")
-            return _brut(texte, type_servi)
-        return FileResponse(cible, media_type=type_mime, headers=entetes())
+        if not service_apps.expose or request.headers.get("authorization"):
+            return None
+        sid = _session_owner(request)
+        if not sid:
+            return None
+        artefacts.base(slug)
+        destination = f"/{_quote_artefact(slug, safe='')}/"
+        rel = rel.strip("/")
+        if rel:
+            destination += _quote_artefact(rel, safe="/") + ("/" if dossier else "")
+        return renvoi_par_code(service_apps, sid, slug, destination)
 
     @router.get("/artifacts/{slug}")
     async def artifacts_racine(
+        request: Request,
         slug: str,
         _owner: str = Depends(require_owner_nav),
     ) -> Response:
         """Ce qu'un projet donne à voir : le dossier `artifacts/`, derrière la porte."""
-        return _servir_artefact(slug, "")
+        artefacts.base(slug)
+        ailleurs = _vers_l_hote_des_apps(request, slug, "", True)
+        if ailleurs is not None:
+            return ailleurs
+        return artefacts.redirection(artefacts.url(slug, "", None, True), 308)
 
     @router.get("/artifacts/{slug}/{chemin:path}")
     async def artifacts_chemin(
+        request: Request,
         slug: str,
         chemin: str,
-        _owner: str = Depends(require_owner_nav),
+        authorization: Annotated[str | None, Header()] = None,
     ) -> Response:
-        return _servir_artefact(slug, chemin)
+        brut, rel = artefacts.separer_jeton(chemin)
+        if brut is None:
+            require_owner_nav(request, authorization)
+            ailleurs = _vers_l_hote_des_apps(request, slug, rel, chemin.endswith("/"))
+            if ailleurs is not None:
+                return ailleurs
+            return artefacts.servir(request, slug, rel)
+        jeton = artefacts.lire_jeton(slug, brut)
+        if jeton is None or jeton.perime() or service_apps.expose:
+            # Un jeton périmé ne se rejoue pas. Une navigation qui porte encore
+            # le cookie (un clic dans l'onglet ouvert depuis l'interface) est
+            # renvoyée vers l'adresse sans jeton, qui en émet un neuf — ou,
+            # avec un second hôte, qui mène à celui-ci.
+            try:
+                require_owner_nav(request, authorization)
+            except HTTPException:
+                return artefacts.refus(401, "jeton de lecture invalide ou périmé", True)
+            return artefacts.redirection(
+                artefacts.url(slug, rel, None, chemin.endswith("/")), 302
+            )
+        return artefacts.servir(request, slug, rel, jeton, brut)
+
+    @router.options("/artifacts/{slug}/{chemin:path}")
+    async def artifacts_preflight(slug: str, chemin: str) -> Response:
+        """La requête préalable d'une page de corpus qui veut écrire chez elle."""
+        brut, _ = artefacts.separer_jeton(chemin)
+        return artefacts.preflight(brut is not None)
+
+    @router.put("/artifacts/{slug}/{chemin:path}")
+    async def artifacts_ecrire(
+        request: Request,
+        slug: str,
+        chemin: str,
+        authorization: Annotated[str | None, Header()] = None,
+        if_match: Annotated[str | None, Header()] = None,
+        if_none_match: Annotated[str | None, Header()] = None,
+    ) -> Response:
+        """Écrit un fichier d'un corpus — à l'adresse même où on le lit.
+
+        Une page d'édition déposée dans un corpus ne pouvait rien enregistrer :
+        elle appelait un serveur bricolé sur un port du pod, que le navigateur
+        de son propriétaire ne joint pas. Lire et écrire à la même adresse : ce
+        que `GET` rend, `PUT` le remplace.
+
+        Depuis la page, c'est le jeton du chemin qui autorise — le cookie ne
+        part pas d'une origine opaque — et il borne l'écriture à son corpus.
+        Hors navigateur, la clé au porteur. Avec un second hôte, la page vit
+        là-bas et y écrit : ici ne reste que la clé au porteur.
+        """
+        brut, _ = artefacts.separer_jeton(chemin)
+        if brut is not None and service_apps.expose:
+            return artefacts.refus(410, "les corpus s'écrivent sur l'hôte des applications", True)
+        return await artefacts.ecrire(
+            request,
+            slug,
+            chemin,
+            sans_jeton=lambda: require_owner(request, authorization),
+            if_match=if_match,
+            if_none_match=if_none_match,
+        )
+
+    # ── Les applications des projets (docs/atelier-applications.md) ─────
+    enregistrer_routes_apps(
+        router,
+        service_apps,
+        require_owner=require_owner,
+        require_owner_nav=require_owner_nav,
+        session_de=_session_owner,
+    )
 
     @router.post("/sessions")
     def create_session(
@@ -2325,6 +2515,7 @@ def build_app(
         register_mcp_endpoint(app, auth)
 
     register_vscode_proxy(app, settings, require_owner_nav)
+    register_chrome_proxy(app, settings, require_owner_nav)
 
     @app.get("/pilote")
     @app.api_route("/pilote/{rest:path}", methods=["GET", "POST", "DELETE"])
@@ -2343,10 +2534,16 @@ def build_app(
 
         @app.get("/")
         def ui_index() -> FileResponse:
+            # `frame-ancestors 'self'` : l'interface ne se laisse encadrer que
+            # par elle-même. Une page d'un voisin, ou un artefact en origine
+            # opaque, ne peut plus l'ouvrir dans un cadre pour agir en dessous.
             return FileResponse(
                 WEB_DIR / "index.html",
                 media_type="text/html; charset=utf-8",
-                headers={"Cache-Control": "no-store"},
+                headers={
+                    "Cache-Control": "no-store",
+                    "Content-Security-Policy": "frame-ancestors 'self'",
+                },
             )
 
         css_dir = WEB_DIR / "css"

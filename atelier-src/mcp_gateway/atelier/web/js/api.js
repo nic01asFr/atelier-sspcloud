@@ -1,7 +1,13 @@
 /** Client HTTP/SSE Atelier — seul module qui parle au réseau. */
 
-const jsonHeaders = (token) => ({
-  Authorization: `Bearer ${token}`,
+// L'interface ne porte plus la clé : elle parle à l'API par le cookie de
+// session (`HttpOnly`, joint de lui-même en même origine) et par cet en-tête,
+// qu'une page d'une autre origine ne peut pas poser. Le paramètre `token` des
+// fonctions ci-dessous n'est plus qu'un reste de signature : il n'est pas lu.
+export const ENTETE_INTERFACE = { "X-Atelier-Interface": "1" };
+
+const jsonHeaders = (_token) => ({
+  ...ENTETE_INTERFACE,
   "Content-Type": "application/json",
   Accept: "application/json",
 });
@@ -85,7 +91,7 @@ export async function uploadSessionAttachment(token, sessionId, file) {
     `/v1/sessions/${encodeURIComponent(sessionId)}/attachments`,
     {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: { ...ENTETE_INTERFACE },
       body: form,
     }
   );
@@ -631,19 +637,45 @@ export async function listModels(token) {
   return res.json();
 }
 
-export async function setAuthCookie(token) {
+/**
+ * Échange la clé propriétaire contre une session de navigation.
+ *
+ * C'est le seul appel qui porte la clé, et la seule fois où l'interface la
+ * tient : l'appelant ne la garde nulle part ensuite. Tout le reste passe par
+ * le cookie que cette réponse pose.
+ */
+export async function ouvrirSession(cle) {
   const res = await fetch("/v1/auth/cookie", {
     method: "POST",
-    headers: jsonHeaders(token),
+    credentials: "same-origin",
+    headers: { Authorization: `Bearer ${cle}`, Accept: "application/json" },
   });
   if (!res.ok) await parseError(res);
   return res.json();
 }
 
+/**
+ * Migration : une version précédente gardait la clé dans `localStorage`.
+ * On l'échange contre le cookie, puis on l'efface — qu'elle vaille encore ou
+ * non. Rend vrai si une session a été ouverte ainsi.
+ */
+export async function migrerAncienneCle(lire, oublier) {
+  const cle = lire();
+  if (!cle) return false;
+  try {
+    await ouvrirSession(cle);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    oublier();
+  }
+}
+
 /** Ferme la session de navigation côté serveur, pas seulement le cookie. */
 export async function clearAuthCookie() {
   try {
-    await fetch("/v1/auth/cookie", { method: "DELETE" });
+    await fetch("/v1/auth/cookie", { method: "DELETE", headers: { ...ENTETE_INTERFACE } });
   } catch {
     // Se déconnecter ne doit jamais échouer faute de réseau : l'état local
     // est nettoyé de toute façon, et la session expirera d'elle-même.
@@ -672,11 +704,80 @@ export function vscodeOpenUrl(slug, sessionId) {
   return `/v1/vscode/open${qs ? `?${qs}` : ""}`;
 }
 
+export function chromeViewUrl() {
+  return "/chrome/view";
+}
+
+// L'état du navigateur, tel que le service le dit lui-même. Le lien « Bureau »
+// n'apparaît que si `bureau` est vrai : sans service, ou sans bureau, il
+// menait à une page morte. Mis en cache quelques secondes, parce que
+// l'en-tête de conversation se redessine souvent.
+let chromeEtatCache = null;
+let chromeEtatDate = 0;
+let chromeEtatEnCours = null;
+
+export async function chromeHealth({ maxAgeMs = 30000 } = {}) {
+  if (chromeEtatCache && Date.now() - chromeEtatDate < maxAgeMs) return chromeEtatCache;
+  if (chromeEtatEnCours) return chromeEtatEnCours;
+  chromeEtatEnCours = (async () => {
+    try {
+      const res = await fetch("/chrome/health", { headers: { ...ENTETE_INTERFACE, Accept: "application/json" } });
+      const etat = res.ok ? await res.json() : { bureau: false };
+      chromeEtatCache = { ...(etat || {}), bureau: Boolean(etat && etat.bureau === true) };
+    } catch {
+      chromeEtatCache = { bureau: false };
+    }
+    chromeEtatDate = Date.now();
+    chromeEtatEnCours = null;
+    return chromeEtatCache;
+  })();
+  return chromeEtatEnCours;
+}
+
+/** Dernier état connu, sans appel réseau (null tant qu'on n'a rien demandé). */
+export function chromeHealthConnu() {
+  return chromeEtatCache;
+}
+
 // Les livrables qu'un agent a déposés dans le dossier `artifacts/` du projet,
-// servis derrière la porte de l'Atelier. On garde le slug tel quel ; chaque
-// segment sera de toute façon réencodé par le serveur.
+// servis derrière la porte de l'Atelier, en bac à sable. La barre finale : un
+// dossier sans elle est redirigé, pour que ses liens relatifs se résolvent.
 export function artifactsUrl(slug) {
-  return `/v1/artifacts/${encodeURIComponent(slug)}`;
+  return `/v1/artifacts/${encodeURIComponent(slug)}/`;
+}
+
+// Les applications d'un projet (docs/atelier-applications.md). L'ouverture
+// passe par un lien (`fiche.ouvrir`), pas par ce module : c'est une
+// navigation, que l'Atelier renvoie vers l'hôte des applications.
+function cheminApp(slug, nom) {
+  return `/v1/apps/${encodeURIComponent(slug)}/${encodeURIComponent(nom)}`;
+}
+
+export async function listApps(slug) {
+  const res = await fetch(`/v1/apps?slug=${encodeURIComponent(slug)}`, { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+export async function startApp(slug, nom) {
+  const res = await fetch(`${cheminApp(slug, nom)}/demarrer`, { method: "POST", headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+export async function stopApp(slug, nom) {
+  const res = await fetch(`${cheminApp(slug, nom)}/arreter`, { method: "POST", headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Le journal, en texte : l'appelant le pose en `textContent`, jamais en HTML. */
+export async function appJournal(slug, nom, lignes = 200) {
+  const res = await fetch(`${cheminApp(slug, nom)}/journal?lignes=${lignes}`, {
+    headers: { ...ENTETE_INTERFACE, Accept: "text/plain" },
+  });
+  if (!res.ok) await parseError(res);
+  return res.text();
 }
 
 export async function listMcpServers(token) {
@@ -898,6 +999,23 @@ export async function createToolVariant(token, body) {
 /** Outils exposes par chaque service du pool. */
 export async function mcpTools(token) {
   const res = await fetch("/v1/mcp/tools", { headers: jsonHeaders(token) });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Les clients distants enregistres auprès de cet Atelier. */
+export async function listerClientsDistants(token) {
+  const res = await fetch("/v1/oauth/clients", { headers: jsonHeaders(token) });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Debranche un client distant : son accord, ses jetons et lui-meme. */
+export async function revoquerClientDistant(token, clientId) {
+  const res = await fetch(`/v1/oauth/clients/${encodeURIComponent(clientId)}`, {
+    method: "DELETE",
+    headers: jsonHeaders(token),
+  });
   if (!res.ok) await parseError(res);
   return res.json();
 }

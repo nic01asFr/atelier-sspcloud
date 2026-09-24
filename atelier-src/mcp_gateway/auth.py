@@ -11,6 +11,7 @@ Restent publics : `/health`, le widget statique et les endpoints du flux OAuth.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import secrets
 import sqlite3
@@ -31,6 +32,11 @@ PUBLIC_PREFIXES = (
     "/oauth/",
     "/register",
     "/favicon.ico",
+    # Claude Code colle `…/mcp` : il interpolé le chemin dans le well-known
+    # (RFC 9728 / RFC 8414) et cherche `/mcp/authorize`. Sans ces préfixes,
+    # le verrou propriétaire recouvre le flux d'autorisation.
+    "/mcp/.well-known/",
+    "/mcp/authorize",
 )
 
 
@@ -258,6 +264,110 @@ def issue_token(
 def revoke_token(conn: sqlite3.Connection, token: str) -> bool:
     migrate_auth_schema(conn)
     cur = conn.execute("DELETE FROM oauth_tokens WHERE token = ?", (token,))
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def revoquer_tous_les_jetons(conn: sqlite3.Connection) -> int:
+    """Retire tous les jetons émis. Rend combien sont tombés.
+
+    Appelé quand la clé maître est renouvelée : elle se renouvelle parce
+    qu'elle a fui, et ce qu'elle a accordé ne doit pas lui survivre.
+    """
+    migrate_auth_schema(conn)
+    cur = conn.execute("DELETE FROM oauth_tokens")
+    conn.commit()
+    return cur.rowcount
+
+
+# Un client s'enregistre sans rien prouver — le flux le veut ainsi, et la vraie
+# porte est le consentement. Mais rien ne bornait la table : elle grossissait
+# sans fin, sous le nom que l'appelant choisit, et personne ne la regardait.
+PLAFOND_CLIENTS = 50
+DELAI_CLIENT_INERTE_S = 24 * 3600
+
+
+def purger_clients_inertes(
+    conn: sqlite3.Connection, delai_s: int = DELAI_CLIENT_INERTE_S
+) -> int:
+    """Efface les clients que le propriétaire n'a jamais reconnus.
+
+    Un client sans accord et sans jeton n'est qu'une ligne déposée par un
+    inconnu : passé le délai, elle ne dit plus rien d'utile. Ce qui a été
+    accordé une fois, ou qui porte un jeton, reste — c'est une trace.
+    """
+    migrate_auth_schema(conn)
+    cur = conn.execute(
+        """
+        DELETE FROM oauth_clients
+         WHERE created_at < datetime('now', ?)
+           AND client_id NOT IN (SELECT client_id FROM oauth_grants)
+           AND client_id NOT IN (SELECT client_id FROM oauth_tokens)
+        """,
+        (f"-{int(delai_s)} seconds",),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def compter_clients(conn: sqlite3.Connection) -> int:
+    migrate_auth_schema(conn)
+    row = conn.execute("SELECT COUNT(*) AS n FROM oauth_clients").fetchone()
+    return int(row["n"] if row else 0)
+
+
+def lister_clients(conn: sqlite3.Connection) -> list[dict]:
+    """Qui s'est enregistré, qui a été accordé, qui détient un jeton.
+
+    Sans cette vue, le propriétaire ne pouvait ni voir ni révoquer ce qu'il
+    avait branché : la seule sortie était de renouveler la clé, ce qui coupe
+    tout le reste avec.
+    """
+    migrate_auth_schema(conn)
+    _ajouter_colonne_portee(conn)
+    rows = conn.execute(
+        """
+        SELECT c.client_id, c.client_name, c.redirect_uris, c.created_at,
+               (SELECT COUNT(*) FROM oauth_grants g
+                 WHERE g.client_id = c.client_id) AS accords,
+               (SELECT COUNT(*) FROM oauth_tokens t
+                 WHERE t.client_id = c.client_id
+                   AND t.expires_at > ?) AS jetons
+          FROM oauth_clients c
+         ORDER BY c.created_at DESC
+        """,
+        (time.time(),),
+    ).fetchall()
+    clients = []
+    for row in rows:
+        try:
+            uris = json.loads(row["redirect_uris"] or "[]")
+        except (TypeError, ValueError):
+            uris = []
+        clients.append(
+            {
+                "client_id": row["client_id"],
+                "nom": row["client_name"] or "",
+                "destinations": uris if isinstance(uris, list) else [],
+                "enregistre_le": row["created_at"],
+                "accorde": bool(row["accords"]),
+                "jetons": int(row["jetons"] or 0),
+            }
+        )
+    return clients
+
+
+def revoquer_client(conn: sqlite3.Connection, client_id: str) -> bool:
+    """Retire un client, ses jetons et l'accord qu'il avait obtenu.
+
+    Les trois ensemble : laisser l'accord derrière lui rendrait la
+    réautorisation silencieuse au client suivant qui reprendrait son
+    identifiant.
+    """
+    migrate_auth_schema(conn)
+    cur = conn.execute("DELETE FROM oauth_clients WHERE client_id = ?", (client_id,))
+    conn.execute("DELETE FROM oauth_tokens WHERE client_id = ?", (client_id,))
+    conn.execute("DELETE FROM oauth_grants WHERE client_id = ?", (client_id,))
     conn.commit()
     return cur.rowcount > 0
 

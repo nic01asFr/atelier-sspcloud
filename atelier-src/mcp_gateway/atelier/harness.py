@@ -487,7 +487,15 @@ class ClaudeHarness(Harness):
         self.decisions = RegistreDesDecisions(settings.decisions_dir)
         self.messages = FileDesMessages()
 
-    def _env(self, agent_name: str = "") -> dict[str, str]:
+    def _variables_du_projet(self, cwd: Path | None) -> dict[str, str]:
+        """Ce que le projet demande par `.atelier/env.json` (voir `env_projet`)."""
+        from mcp_gateway.atelier.env_projet import variables_du_projet
+
+        return variables_du_projet(self.settings.secrets_dir, Path(cwd) if cwd else None)
+
+    def _env(
+        self, agent_name: str = "", cwd: Path | None = None, session_id: str = ""
+    ) -> dict[str, str]:
         env = os.environ.copy()
         env["ANTHROPIC_BASE_URL"] = self.settings.anthropic_base_url
         key_path = self.settings.llm_key_path
@@ -522,6 +530,17 @@ class ClaudeHarness(Harness):
             cle = ""
         if cle:
             env["ATELIER_MCP_KEY"] = cle
+        # Les secrets des connecteurs, même raison : le `.mcp.json` d'un
+        # projet n'en porte que les références `${ATELIER_MCP_<SERVICE>_…}`,
+        # que le CLI développe avec ce qu'il trouve ici. Lus dans le pool à
+        # chaque lancement, pour qu'un jeton renouvelé serve au tour suivant.
+        from mcp_gateway.atelier.mcp_secrets import variables_du_pool
+
+        env.update(variables_du_pool(self.settings))
+        # Les variables que le projet demande, tirées de secrets par
+        # référence : un `.mcp.json` qui écrit `${VOICE_TOKEN}` les trouve ici.
+        # Résolues à chaque lancement, comme celles du pool.
+        env.update(self._variables_du_projet(cwd))
         # Identité de la session auprès du coordinateur. Le `.mcp.json` la
         # relaie dans l'adresse SSE (`?agent=`). Sans elle, la session se
         # présente sans nom : sa mémoire s'écrit dans un sac anonyme et son
@@ -534,6 +553,17 @@ class ClaudeHarness(Harness):
         # leur dossier de travail.
         if agent_name:
             env["WIKICHAT_AGENT"] = agent_name
+        # La conversation, pour les références `${ATELIER_SESSION}` que le
+        # fichier effectif n'a pas résolues lui-même : un `.mcp.json` qu'un
+        # outil lancé par l'agent relirait, un sous-processus `claude`. Le
+        # processus n'est gardé d'un tour à l'autre que pour la même
+        # conversation (`_vivants[session_id]`) : la valeur ne peut pas vieillir.
+        # Hérité du poste, `ATELIER_SESSION` serait celui d'une autre : on
+        # l'efface plutôt que de le laisser mentir.
+        if session_id:
+            env["ATELIER_SESSION"] = session_id
+        else:
+            env.pop("ATELIER_SESSION", None)
         return env
 
     def _resolve_claude_bin(self) -> Path:
@@ -852,13 +882,23 @@ class ClaudeHarness(Harness):
         # qui le configure n'a changé : dossier, modèle, mode, effort, agent,
         # connecteurs. Sinon on l'éteint et on repart — un mode de permission
         # se donne à la ligne de commande, il ne se change pas en vol.
-        empreinte = self._empreinte(cwd, model, permission_mode, effort, agent_name, mcp_cfg)
+        from mcp_gateway.atelier.env_projet import empreinte as empreinte_env
+
+        empreinte = self._empreinte(
+            cwd,
+            model,
+            permission_mode,
+            effort,
+            agent_name,
+            mcp_cfg,
+            empreinte_env(self._variables_du_projet(cwd)),
+        )
         vivant = self._reprendre(session_id, empreinte)
         if vivant is None:
             proc = subprocess.Popen(
                 cmd,
                 cwd=str(cwd),
-                env=self._env(agent_name),
+                env=self._env(agent_name, cwd, session_id),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -1084,6 +1124,7 @@ class ClaudeHarness(Harness):
         effort: str,
         agent_name: str,
         mcp_cfg: Path | None,
+        env_projet: str = "",
     ) -> str:
         """Ce qui, en changeant, oblige à relancer le processus.
 
@@ -1107,6 +1148,9 @@ class ClaudeHarness(Harness):
                 effort_valide(effort),
                 agent_name,
                 hashlib.sha256(contenu).hexdigest(),
+                # Un secret de `.atelier/env.json` qui change : le processus
+                # vivant a l'ancien dans son environnement, on le relance.
+                env_projet,
             ]
         )
         return clef

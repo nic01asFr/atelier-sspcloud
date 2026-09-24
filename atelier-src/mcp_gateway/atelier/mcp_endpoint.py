@@ -16,10 +16,15 @@ import logging
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, Header, Request, Response
+from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from mcp_gateway.auth import bearer_from_header, client_key
+from mcp_gateway.auth import (
+    bearer_from_header,
+    client_key,
+    validate_credential as valider,
+)
+from mcp_gateway.oauth import adresse_publique
 
 log = logging.getLogger("atelier.mcp_endpoint")
 
@@ -49,13 +54,32 @@ def _renommer(resultat: object) -> None:
 
 
 def register_mcp_endpoint(app: FastAPI, auth: Any) -> None:
-    """Branche `/mcp` sur la passerelle intégrée, sous la clé propriétaire."""
+    """Branche `/mcp` sur la passerelle intégrée.
 
-    def _autoriser(request: Request) -> str:
-        # Même garde que le reste du service : la porte MCP n'ouvre pas un
-        # accès distinct, elle donne au processus agent ce que l'interface a
-        # déjà. Un agent la franchit avec la clé, lue par son helper d'en-têtes.
-        return auth.check_token(bearer_from_header(request.headers.get("Authorization")))
+    Deux porteurs la franchissent : la clé propriétaire, qu'un agent du pod lit
+    dans son helper d'en-têtes, et un jeton OAuth émis à un client distant
+    après consentement. Ce jeton ne vaut que pour cette porte — il n'ouvre ni
+    `/v1`, ni l'interface.
+    """
+
+    def _autoriser(request: Request) -> None:
+        jeton = bearer_from_header(request.headers.get("Authorization"))
+        if valider(request.app.state.db, jeton or "", auth.owner_key):
+            return
+        # RFC 9728 : un client MCP qui se heurte à un 401 sans cet en-tête n'a
+        # aucun moyen de savoir où demander son jeton. Il abandonne, et le
+        # branchement reste à faire à la main.
+        base = adresse_publique(request)
+        raise HTTPException(
+            status_code=401,
+            detail="unauthorized",
+            headers={
+                "WWW-Authenticate": (
+                    'Bearer realm="atelier", '
+                    f'resource_metadata="{base}/.well-known/oauth-protected-resource/mcp"'
+                )
+            },
+        )
 
     @app.post("/mcp")
     async def mcp_post(
@@ -87,7 +111,19 @@ def register_mcp_endpoint(app: FastAPI, auth: Any) -> None:
             if assigne:
                 bundles.restore_for_client(cle, mcp_session_id)
 
-        resultat = await passerelle.handle_jsonrpc(body, mcp_session_id)
+        # Qui appelle : les outils `atelier_artefact*` s'en servent pour ne
+        # pas agir sur l'artefact d'une autre conversation. Un en-tête, pas
+        # une preuve : c'est une règle de voisinage entre agents du même
+        # propriétaire, pas une frontière.
+        from mcp_gateway.atelier.outils_conversation import CONVERSATION_APPELANTE
+
+        jeton = CONVERSATION_APPELANTE.set(
+            (request.headers.get("x-atelier-conversation") or "").strip()[:200]
+        )
+        try:
+            resultat = await passerelle.handle_jsonrpc(body, mcp_session_id)
+        finally:
+            CONVERSATION_APPELANTE.reset(jeton)
         _renommer(resultat)
         entetes = {"Mcp-Session-Id": assigne} if assigne else None
         return JSONResponse(content=resultat or {}, headers=entetes)

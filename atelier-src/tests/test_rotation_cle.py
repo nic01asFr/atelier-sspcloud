@@ -55,10 +55,10 @@ def test_les_sessions_ouvertes_tombent_avec_elle(atelier: TestClient) -> None:
         == 200
     )
     # Le cookie seul suffit avant la rotation.
-    assert atelier.get("/v1/sessions/x/events?message=a").status_code == 404
+    assert atelier.get("/v1/sessions/x/events?message=a", headers={"Sec-Fetch-Site": "same-origin"}).status_code == 404
 
     atelier.post("/v1/auth/rotate", headers={"Authorization": f"Bearer {ancienne}"})
-    assert atelier.get("/v1/sessions/x/events?message=a").status_code == 401
+    assert atelier.get("/v1/sessions/x/events?message=a", headers={"Sec-Fetch-Site": "same-origin"}).status_code == 401
 
 
 def test_sans_la_cle_on_ne_fait_pas_tourner(atelier: TestClient) -> None:

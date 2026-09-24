@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -312,7 +313,20 @@ class SessionStore:
             json.dumps(rec.to_dict(), ensure_ascii=False, indent=2) + chr(10),
             encoding="utf-8",
         )
-        os.replace(provisoire, path)
+        # Sous Windows, remplacer un fichier qu'un lecteur tient encore ouvert
+        # échoue — là où Linux l'accepte. Depuis qu'un tour peut être conduit
+        # d'un côté pendant qu'on le suit de l'autre, les deux se croisent : le
+        # tour mourait alors d'un refus d'accès, pour une lecture qui durait un
+        # millième de seconde. On réessaie brièvement plutôt que de perdre le
+        # tour ; au-delà, l'erreur remonte, car elle ne vient plus de là.
+        for essai in range(10):
+            try:
+                os.replace(provisoire, path)
+                return
+            except PermissionError:
+                if essai == 9:
+                    raise
+                time.sleep(0.02)
 
     def get(self, session_id: str) -> SessionRecord | None:
         path = self._path(session_id)

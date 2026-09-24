@@ -18,6 +18,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 CHEMIN = "/v1/sessions/inexistante/events"
+MEME_ORIGINE = {"Sec-Fetch-Site": "same-origin"}
 
 
 def _cle(atelier: TestClient) -> str:
@@ -48,7 +49,9 @@ def test_le_cookie_de_session_suffit(atelier: TestClient) -> None:
         "/v1/auth/cookie", headers={"Authorization": f"Bearer {_cle(atelier)}"}
     )
     assert ouverture.status_code == 200
-    r = atelier.get(f"{CHEMIN}?message=bonjour")
+    # Comme l'`EventSource` de l'interface : même origine. Ce GET lance un
+    # tour ; venu d'ailleurs, il est refusé (voir `GardeDesCookies`).
+    r = atelier.get(f"{CHEMIN}?message=bonjour", headers=MEME_ORIGINE)
     assert r.status_code == 404
 
 

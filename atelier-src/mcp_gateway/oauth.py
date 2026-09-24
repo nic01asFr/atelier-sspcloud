@@ -7,9 +7,15 @@ et l'état est persisté en SQLite plutôt qu'en JSON.
 Endpoints :
   GET  /.well-known/oauth-authorization-server   (RFC 8414)
   GET  /.well-known/oauth-protected-resource     (RFC 9728)
+  GET  /.well-known/oauth-authorization-server/mcp
+  GET  /.well-known/oauth-protected-resource/mcp
+  GET  /mcp/.well-known/oauth-authorization-server
+  GET  /mcp/.well-known/oauth-protected-resource
   POST /register                                 (RFC 7591 — DCR)
   GET  /authorize                                (code + PKCE S256)
+  GET  /mcp/authorize
   POST /authorize/confirm
+  POST /mcp/authorize/confirm
   POST /oauth/token
 """
 from __future__ import annotations
@@ -35,8 +41,10 @@ from mcp_gateway.auth import (
     owner_session_valid,
     registered_redirect_uris,
     remember_grant,
-    resolve_owner_key,
     est_le_proprietaire,
+    PLAFOND_CLIENTS,
+    compter_clients,
+    purger_clients_inertes,
 )
 
 router = APIRouter(tags=["oauth"])
@@ -44,16 +52,90 @@ router = APIRouter(tags=["oauth"])
 AUTH_CODE_TTL = 600
 # Le cookie ne porte plus la clé maître : son nom le disait, il gardait un
 # secret permanent dans le navigateur pendant quatre-vingt-dix jours.
-COOKIE_NAME = "gateway_owner_session"
+#
+# `__Host-` : sans `Domain`, `Secure`, `Path=/` — le navigateur refuse qu'un
+# autre hôte du domaine le pose ou l'écrase. L'ancien nom est encore lu, le
+# temps qu'il expire, et remplacé à la première occasion.
+COOKIE_NAME = "__Host-gateway_owner_session"
+COOKIE_ANCIEN = "gateway_owner_session"
 SESSION_TTL_SECONDS = 12 * 3600
 _pending_codes: dict[str, dict] = {}
 
 
-def _base_url(request: Request) -> str:
-    configured = (request.app.state.settings.host_url or "").rstrip("/")
-    if configured:
-        return configured
+def adresse_publique(request: Request) -> str:
+    """L'adresse à laquelle ce service répond, vue de l'extérieur.
+
+    Le réglage explicite d'abord : il vient de l'état de l'application, car
+    deux services montent ce routeur — la passerelle autonome et l'Atelier —
+    et ils ne rangent pas leur adresse au même endroit.
+
+    Sinon, ce que le proxy a écrit devant. Sans cela, l'adresse annoncée est
+    celle que voit uvicorn : interne dès qu'il y a un ingress, et en clair.
+    Un client distant qui la suit n'arrive nulle part. C'est aussi le seul
+    moyen de servir juste quand deux hôtes mènent au même processus, ce qui
+    est le cas ici — chacun s'annonce alors sous le nom par lequel on l'a
+    atteint.
+
+    Ces en-têtes ne prouvent rien et ne décident d'aucune autorisation : ils
+    ne servent qu'à répondre « voici où tu m'as trouvé » à qui les a envoyés.
+    """
+    configure = (getattr(request.app.state, "host_url", "") or "").strip().rstrip("/")
+    if configure:
+        return configure
+    entetes = request.headers
+    hote = (entetes.get("x-forwarded-host") or entetes.get("host") or "").split(",")[0]
+    schema = (entetes.get("x-forwarded-proto") or request.url.scheme or "http").split(",")[0]
+    if hote.strip():
+        return f"{schema.strip()}://{hote.strip()}"
     return str(request.base_url).rstrip("/")
+
+
+def _base_url(request: Request) -> str:
+    return adresse_publique(request)
+
+
+def _sid(request: Request) -> tuple[str, bool]:
+    """L'identifiant de session, et s'il vient de l'ancien cookie."""
+    neuf = request.cookies.get(COOKIE_NAME, "")
+    if neuf:
+        return neuf, False
+    ancien = request.cookies.get(COOKIE_ANCIEN, "")
+    return ancien, bool(ancien)
+
+
+def _provenance(request: Request) -> str:
+    """D'où vient ce consentement : « ici », « ailleurs », ou « inconnu ».
+
+    `sspcloud.fr` n'est pas dans la liste des suffixes publics : une page
+    d'un pod voisin est « même site », et le cookie `SameSite=Lax` part avec
+    son formulaire. Sans cette garde, elle enregistrait un client à elle puis
+    postait le consentement en silence avec la session du propriétaire.
+    `inconnu` : ni `Sec-Fetch-Site` ni `Origin`, donc pas un navigateur
+    récent — la session ne suffit pas, seule la clé tapée vaut.
+    """
+    site = (request.headers.get("sec-fetch-site") or "").lower()
+    origine = request.headers.get("origin")
+    if site == "same-origin":
+        return "ici"
+    if site in ("same-site", "cross-site"):
+        return "ailleurs"
+    if origine is not None:
+        return "ici" if origine.rstrip("/").lower() == _base_url(request).rstrip("/").lower() else "ailleurs"
+    return "inconnu"
+
+
+def _poser_session(response, sid: str, *, depuis_ancien: bool) -> None:
+    response.set_cookie(
+        COOKIE_NAME,
+        sid,
+        max_age=SESSION_TTL_SECONDS,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/",
+    )
+    if depuis_ancien:
+        response.delete_cookie(COOKIE_ANCIEN, path="/")
 
 
 def _db(request: Request) -> sqlite3.Connection:
@@ -63,7 +145,11 @@ def _db(request: Request) -> sqlite3.Connection:
 
 
 def _owner_key(request: Request) -> str:
-    return resolve_owner_key(request.app.state.db, request.app.state.settings)
+    # La clé que le propriétaire tape sur l'écran de consentement est celle qui
+    # garde déjà son service, posée dans l'état au démarrage. La relire ici
+    # depuis des réglages supposait ceux de la passerelle autonome ; l'Atelier
+    # n'en a pas de ce type, et l'écran tombait avant de s'afficher.
+    return getattr(request.app.state, "owner_key", "") or ""
 
 
 def _clean_expired_codes() -> None:
@@ -72,8 +158,7 @@ def _clean_expired_codes() -> None:
         del _pending_codes[key]
 
 
-@router.get("/.well-known/oauth-authorization-server")
-def authorization_server_metadata(request: Request) -> dict:
+def _authorization_server_metadata(request: Request) -> dict:
     base = _base_url(request)
     return {
         "issuer": base,
@@ -87,15 +172,33 @@ def authorization_server_metadata(request: Request) -> dict:
     }
 
 
-@router.get("/.well-known/oauth-protected-resource")
-def protected_resource_metadata(request: Request) -> dict:
+def _protected_resource_metadata(request: Request, *, porte_mcp: bool = False) -> dict:
     base = _base_url(request)
     return {
-        "resource": base,
+        "resource": f"{base}/mcp" if porte_mcp else base,
         "authorization_servers": [base],
         "bearer_methods_supported": ["header"],
         "scopes_supported": ["mcp"],
     }
+
+
+@router.get("/.well-known/oauth-authorization-server")
+@router.get("/.well-known/oauth-authorization-server/mcp")
+@router.get("/mcp/.well-known/oauth-authorization-server")
+def authorization_server_metadata(request: Request) -> dict:
+    return _authorization_server_metadata(request)
+
+
+@router.get("/.well-known/oauth-protected-resource")
+def protected_resource_metadata(request: Request) -> dict:
+    return _protected_resource_metadata(request)
+
+
+@router.get("/.well-known/oauth-protected-resource/mcp")
+@router.get("/mcp/.well-known/oauth-protected-resource")
+def protected_resource_metadata_mcp(request: Request) -> dict:
+    """RFC 9728 : insertion du chemin `/mcp` dans le well-known."""
+    return _protected_resource_metadata(request, porte_mcp=True)
 
 
 @router.post("/register")
@@ -106,6 +209,22 @@ async def register(request: Request) -> JSONResponse:
     except Exception:
         body = {}
     conn = _db(request)
+    # S'enregistrer ne donne rien — ni jeton, ni code — mais laissait une ligne,
+    # et rien ne bornait leur nombre. On efface d'abord celles que personne n'a
+    # jamais reconnues, puis on refuse au-delà du plafond : la table reste
+    # lisible par qui doit décider ce qu'il branche.
+    purger_clients_inertes(conn)
+    if compter_clients(conn) >= PLAFOND_CLIENTS:
+        return JSONResponse(
+            {
+                "error": "invalid_client_metadata",
+                "error_description": (
+                    "Trop de clients enregistrés sur ce service. "
+                    "Révoquez-en depuis l'onglet Connecteurs."
+                ),
+            },
+            status_code=429,
+        )
     client_id = secrets.token_urlsafe(16)
     redirect_uris = body.get("redirect_uris") or []
     conn.execute(
@@ -221,6 +340,7 @@ def _check_client(conn: sqlite3.Connection, client_id: str, redirect_uri: str) -
 
 
 @router.get("/authorize", response_model=None)
+@router.get("/mcp/authorize", response_model=None)
 def authorize(request: Request):
     _clean_expired_codes()
     conn = _db(request)
@@ -249,7 +369,7 @@ def authorize(request: Request):
     # propre, et il ne suffit plus à lui seul : le couple client + destination
     # doit avoir été approuvé une première fois. Sinon une page tierce qui
     # amène le navigateur du propriétaire ici repartait avec un code.
-    sid = request.cookies.get(COOKIE_NAME, "")
+    sid, _ancien = _sid(request)
     if owner_session_valid(conn, sid) and grant_exists(conn, client_id, redirect_uri):
         return _issue_code(
             conn,
@@ -283,6 +403,7 @@ def authorize(request: Request):
 
 
 @router.post("/authorize/confirm", response_model=None)
+@router.post("/mcp/authorize/confirm", response_model=None)
 def authorize_confirm(request: Request, owner_key: str = Form(default="")):
     conn = _db(request)
     q = request.query_params
@@ -299,8 +420,15 @@ def authorize_confirm(request: Request, owner_key: str = Form(default="")):
             _REFUS_TEMPLATE.format(motif="Défi PKCE absent."), status_code=400
         )
 
-    sid = request.cookies.get(COOKIE_NAME, "")
-    reconnu = owner_session_valid(conn, sid)
+    provenance = _provenance(request)
+    if provenance == "ailleurs":
+        return HTMLResponse(
+            _REFUS_TEMPLATE.format(motif="Consentement venu d'une autre page que celle-ci : refusé."),
+            status_code=403,
+        )
+    sid, depuis_ancien = _sid(request)
+    # La session ne dispense de la clé que pour un formulaire posté d'ici.
+    reconnu = provenance == "ici" and owner_session_valid(conn, sid)
     # Une session ouverte dispense de retaper la clé, jamais de consentir.
     # La clé maître, et elle seule : autoriser un client neuf est un geste
     # de propriétaire. Un jeton qui pourrait consentir se multiplierait.
@@ -329,15 +457,9 @@ def authorize_confirm(request: Request, owner_key: str = Form(default="")):
     if not reconnu:
         # Le cookie ne transporte plus la clé maître : un identifiant de
         # session sans pouvoir propre, révocable, et qui ne sert qu'ici.
-        response.set_cookie(
-            COOKIE_NAME,
-            open_owner_session(conn, SESSION_TTL_SECONDS),
-            max_age=SESSION_TTL_SECONDS,
-            httponly=True,
-            secure=True,
-            samesite="lax",
-            path="/",
-        )
+        _poser_session(response, open_owner_session(conn, SESSION_TTL_SECONDS), depuis_ancien=depuis_ancien)
+    elif depuis_ancien:
+        _poser_session(response, sid, depuis_ancien=True)
     return response
 
 

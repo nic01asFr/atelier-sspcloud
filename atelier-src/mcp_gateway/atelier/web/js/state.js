@@ -1,26 +1,36 @@
 /** État applicatif pur — pas de fetch, pas de DOM. */
 
-const KEY_OWNER = "atelier.ownerKey";
+// L'ancien emplacement de la clé propriétaire. On ne l'écrit plus jamais : le
+// script de n'importe quelle page servie dans l'origine de l'Atelier la lisait
+// là. On ne le lit plus que pour migrer — échanger la clé contre le cookie de
+// session, puis l'effacer (voir `api.migrerAncienneCle`).
+const KEY_OWNER_ANCIENNE = "atelier.ownerKey";
 const KEY_EXPANDED = "atelier.expandedSlugs";
+
+// Ce que vaut `state.token` quand l'interface est connectée. Ce n'est plus la
+// clé : la session vit dans un cookie `HttpOnly` que ce script ne voit pas.
+// Le champ garde son nom pour ne pas changer les cent appels qui le passent.
+export const SESSION_OUVERTE = "session";
 
 function turnsKey(sessionId) {
   return `atelier.turns.${sessionId}`;
 }
 
-export function loadOwnerKey() {
+/** La clé laissée par une version précédente de l'interface, s'il en reste une. */
+export function lireAncienneCle() {
   try {
-    return localStorage.getItem(KEY_OWNER) || "";
+    return localStorage.getItem(KEY_OWNER_ANCIENNE) || "";
   } catch {
     return "";
   }
 }
 
-export function saveOwnerKey(token) {
-  localStorage.setItem(KEY_OWNER, token);
-}
-
-export function clearOwnerKey() {
-  localStorage.removeItem(KEY_OWNER);
+export function oublierAncienneCle() {
+  try {
+    localStorage.removeItem(KEY_OWNER_ANCIENNE);
+  } catch {
+    /* stockage indisponible : rien à effacer */
+  }
 }
 
 export function loadExpandedSlugs() {
@@ -63,7 +73,9 @@ export function createState() {
   return {
     // Montrer ce qui a été rangé : éteint par défaut, comme un tiroir fermé.
     montrerArchives: false,
-    token: loadOwnerKey(),
+    // Vide tant que la session n'est pas confirmée par le service (au
+    // démarrage, `enterHub` le vérifie par le cookie) ; `SESSION_OUVERTE` ensuite.
+    token: "",
     view: "code",
     slug: "",
     sessionId: null,
@@ -105,6 +117,8 @@ export function createState() {
     compositionRun: null,
     // Composition ouverte dans l'onglet Connecteurs.
     compositions: [],
+    // Les clients distants branchés sur cet Atelier (Claude et consorts).
+    clientsDistants: [],
     toolsByService: [],
     selectedCompositionId: null,
     /** @type {"home" | "create" | "detail"} */
@@ -124,6 +138,7 @@ export function createState() {
     sessionMcp: null,
     meta: {
       vscode_url: null,
+      chrome_view: "/chrome/view",
       projects_root: "",
       assistant_slug: "wikichat-memory",
     },
@@ -139,15 +154,15 @@ export function createState() {
 export function setMeta(state, meta) {
   state.meta = meta || {
     vscode_url: null,
+    chrome_view: "/chrome/view",
     projects_root: "",
     assistant_slug: "wikichat-memory",
   };
 }
 
+/** Connecté ou non. Rien n'est écrit dans le navigateur : la session est un cookie. */
 export function setToken(state, token) {
-  state.token = token;
-  if (token) saveOwnerKey(token);
-  else clearOwnerKey();
+  state.token = token ? SESSION_OUVERTE : "";
 }
 
 export function setError(state, msg) {
@@ -264,6 +279,10 @@ export function setToolsByService(state, services) {
 
 export function setCompositions(state, liste) {
   state.compositions = Array.isArray(liste) ? liste : [];
+}
+
+export function setClientsDistants(state, liste) {
+  state.clientsDistants = Array.isArray(liste) ? liste : [];
 }
 
 export function setSelectedCompositionId(state, id) {

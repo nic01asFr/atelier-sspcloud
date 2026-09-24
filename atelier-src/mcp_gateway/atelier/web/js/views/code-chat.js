@@ -4,6 +4,7 @@ import * as api from "../api.js";
 import * as S from "../state.js";
 import { $ } from "../core/dom.js";
 import { appendMessageBody } from "../ui/message-render.js";
+import { chargerPanneauApplications } from "./applications.js";
 
 /**
  * @param {object} ctx
@@ -529,18 +530,48 @@ const BAS_DU_FIL = 1e9;
       }
     }
 
-    // Les artefacts du projet : ce qu'un agent a déposé pour être vu. Le lien
-    // s'ouvre à côté de VS Code, dès qu'un projet porte la conversation ; la
-    // page dit elle-même s'il n'y a encore rien à montrer.
-    const artLink = $("session-artifacts-link");
-    if (artLink) {
+    // Le lien « Bureau » n'existe que si le service navigateur dit que son
+    // bureau est disponible : sinon il menait à une page morte.
+    const bureau = $("session-chrome-link");
+    if (bureau) {
+      const montrer = (etat) => {
+        if (enConversation && etat && etat.bureau === true) {
+          bureau.hidden = false;
+          bureau.href = api.chromeViewUrl();
+          bureau.title = "Bureau du navigateur intégré";
+        } else {
+          bureau.hidden = true;
+          bureau.removeAttribute("href");
+        }
+      };
+      montrer(api.chromeHealthConnu());
+      if (enConversation) api.chromeHealth().then(montrer);
+    }
+
+    // Ce que le projet montre : ses applications et ses artefacts, dans un
+    // panneau qui s'ouvre sous la barre (voir `views/applications.js`). Il
+    // remplace l'ancien lien « Artefacts », qui y a désormais sa ligne.
+    const appsBouton = $("session-apps-button");
+    const appsPanneau = $("apps-panel");
+    if (appsBouton && appsPanneau) {
       if (enConversation && slug) {
-        artLink.hidden = false;
-        artLink.href = api.artifactsUrl(slug);
-        artLink.title = "Artefacts du projet";
+        appsBouton.hidden = false;
+        appsBouton.title = "Applications et artefacts du projet";
+        appsBouton.onclick = () => {
+          const ouvrir = appsPanneau.hidden;
+          appsPanneau.hidden = !ouvrir;
+          appsBouton.setAttribute("aria-expanded", ouvrir ? "true" : "false");
+          if (ouvrir) chargerPanneauApplications(appsPanneau, slug, api);
+        };
+        if (appsPanneau.dataset.slug !== slug) {
+          appsPanneau.dataset.slug = slug;
+          appsPanneau.hidden = true;
+          appsBouton.setAttribute("aria-expanded", "false");
+        }
       } else {
-        artLink.hidden = true;
-        artLink.removeAttribute("href");
+        appsBouton.hidden = true;
+        appsPanneau.hidden = true;
+        appsBouton.onclick = null;
       }
     }
   }

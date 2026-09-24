@@ -12,6 +12,11 @@ from typing import Any, Literal
 from mcp_gateway.db import connect
 from mcp_gateway.atelier.config import AtelierSettings
 from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
+from mcp_gateway.atelier.mcp_secrets import (
+    en_references,
+    est_une_reference,
+    secrets_en_clair,
+)
 
 log = logging.getLogger("atelier.mcp_sync")
 
@@ -19,6 +24,90 @@ WorkspaceKind = Literal["assistant", "code"]
 
 # La passerelle de l'Atelier, telle qu'un projet la désigne.
 SERVICE_ATELIER = "atelier"
+# Le navigateur de l'Atelier : son adresse, son jeton (par référence), et
+# l'en-tête de conversation vivent dans `navigateur` ; réexportés ici pour les
+# appelants existants.
+from mcp_gateway.atelier.navigateur import (  # noqa: E402
+    CONVERSATION_HORS_ATELIER,
+    ENTETE_CONVERSATION,
+    SERVICE_CHROME,
+    chrome_http_origin,
+    chrome_mcp_url_configuree,
+    declaration_chrome,
+    est_le_navigateur,
+)
+
+
+def est_alias_onyxia_deguise(nom: str) -> bool:
+    """Onyxia_nic01asfr n'est pas le service Onyxia : c'est Atelier `/mcp`.
+
+    Le vrai connecteur s'appelle `Onyxia`. Les agents Code l'ouvrent en
+    natif (`mcp__Onyxia__*`) — pas via `gateway_find_tools`, qui n'existait
+    pas encore quand cet accès tenait déjà.
+    """
+    cle = nom.lower()
+    return cle.startswith("onyxia") and cle != "onyxia"
+
+
+def est_amont_de_la_gateway(nom: str) -> bool:
+    """Compat : l'alias déguisé seulement, plus le service Onyxia lui-même."""
+    return est_alias_onyxia_deguise(nom)
+
+
+def sans_amonts_gateway(servers: dict[str, Any]) -> dict[str, Any]:
+    """Hors les portes Atelier mal nommées Onyxia_*."""
+    return {
+        nom: cfg for nom, cfg in servers.items() if not est_alias_onyxia_deguise(nom)
+    }
+
+
+def pour_le_home(servers: dict[str, Any]) -> dict[str, Any]:
+    """Le HOME porte Onyxia : les projets sans `.mcp.json` en héritent.
+
+    On n'écarte que l'alias déguisé (`Onyxia_nic01asfr`), qui n'est pas
+    le service Onyxia — c'est la porte `/mcp` de l'Atelier.
+
+    Le navigateur y porte `${ATELIER_SESSION:-poste}` : VS Code lit ce
+    fichier sans connaître de conversation, et partage donc la conversation
+    « poste ». Le cloisonnement se fait dans le fichier effectif de chaque
+    conversation, où l'Atelier résout la variable.
+    """
+    propre = sans_amonts_gateway(servers)
+    sortie: dict[str, Any] = {}
+    for nom, cfg in propre.items():
+        if est_le_navigateur(nom) and isinstance(cfg, dict) and _est_notre_declaration(cfg):
+            sortie[nom] = _declaration_hors_conversation(cfg)
+        else:
+            sortie[nom] = cfg
+    return sortie
+
+
+def _est_notre_declaration(cfg: dict[str, Any]) -> bool:
+    entetes = cfg.get("headers")
+    return isinstance(entetes, dict) and "X-Atelier-Conversation" in entetes
+
+
+def _declaration_hors_conversation(cfg: dict[str, Any]) -> dict[str, Any]:
+    sortie = dict(cfg)
+    entetes = dict(cfg.get("headers") or {})
+    entetes["X-Atelier-Conversation"] = "${ATELIER_SESSION:-poste}"
+    sortie["headers"] = entetes
+    return sortie
+
+
+def assurer_onyxia_natif(
+    merged: dict[str, dict[str, Any]],
+    pool: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """Un agent Code a Onyxia en MCP natif dès que le pool l'a.
+
+    La case Connecteurs d'un projet pouvait l'oublier ; les tools directs
+    n'en dépendaient pas.
+    """
+    if "Onyxia" in pool and "Onyxia" not in merged:
+        merged = dict(merged)
+        merged["Onyxia"] = pool["Onyxia"]
+    return sans_amonts_gateway(merged)
 
 
 def _load_json_object(path: Path) -> dict[str, Any] | None:
@@ -72,10 +161,16 @@ def compute_binding_merged(
     pool = _pool_enabled(settings)
     if kind == "code":
         binding = _load_json_object(cwd / ".mcp.json")
-        return merge_session_mcp_servers(pool, binding)
+        merged = assurer_onyxia_natif(merge_session_mcp_servers(pool, binding), pool)
+        return integrer_l_atelier(integrer_le_navigateur(merged, settings))
     global_binding = _load_json_object(settings.assistant_root / ".mcp.json")
     session_binding = _load_json_object(cwd / ".mcp.json")
-    return merge_assistant_bindings(pool, global_binding, session_binding)
+    return integrer_l_atelier(
+        integrer_le_navigateur(
+            merge_assistant_bindings(pool, global_binding, session_binding),
+            settings,
+        )
+    )
 
 
 def merge_assistant_bindings(
@@ -102,7 +197,7 @@ def merge_assistant_bindings(
                 continue
             if active is False and name in merged:
                 del merged[name]
-    return merged
+    return sans_amonts_gateway(merged)
 
 
 def _assistant_binding_paths(settings: AtelierSettings, session_cwd: Path) -> tuple[Path, Path]:
@@ -153,7 +248,7 @@ def merge_session_mcp_servers(
             if active is False and name in merged:
                 del merged[name]
 
-    return merged
+    return sans_amonts_gateway(merged)
 
 
 def declaration_atelier(settings: AtelierSettings) -> dict[str, Any]:
@@ -165,12 +260,78 @@ def declaration_atelier(settings: AtelierSettings) -> dict[str, Any]:
 
     La clé passe par l'environnement du processus agent, jamais par ce
     fichier — il vit dans le dossier du projet.
+
+    La conversation aussi, par référence : `X-Atelier-Conversation` dit aux
+    outils `atelier_artefact_*` qui les appelle, sans que l'agent ait à le
+    répéter en argument. Même mécanisme que le navigateur : le fichier
+    effectif d'un tour la résout (`resoudre_les_variables`), et un client
+    hors conversation — VS Code, qui lit le `.mcp.json` du projet — tombe
+    sur le repli « poste », qu'il partage avec le navigateur.
     """
     return {
         "type": "http",
         "url": f"http://127.0.0.1:{settings.port}/mcp",
-        "headers": {"Authorization": "Bearer ${ATELIER_MCP_KEY}"},
+        "headers": {
+            "Authorization": "Bearer ${ATELIER_MCP_KEY}",
+            ENTETE_CONVERSATION: _CONVERSATION_PAR_REFERENCE,
+        },
     }
+
+
+_CONVERSATION_PAR_REFERENCE = "${ATELIER_SESSION:-" + CONVERSATION_HORS_ATELIER + "}"
+
+
+def integrer_l_atelier(servers: dict[str, Any]) -> dict[str, Any]:
+    """La déclaration de l'Atelier porte l'en-tête de conversation, même ancienne.
+
+    Un `.mcp.json` de projet écrit avant l'en-tête ne le porte pas, et le
+    binding y prime sur tout : sans ce complément, ses conversations
+    appelleraient les outils d'artefact sans auteur jusqu'à ce qu'on
+    réenregistre ses connecteurs. On n'ajoute que l'en-tête manquant ; le
+    reste de la déclaration reste tel que le projet l'a écrit.
+    """
+    cfg = servers.get(SERVICE_ATELIER)
+    if not isinstance(cfg, dict):
+        return servers
+    entetes = cfg.get("headers")
+    entetes = dict(entetes) if isinstance(entetes, dict) else {}
+    if any(str(k).lower() == ENTETE_CONVERSATION.lower() for k in entetes):
+        return servers
+    entetes[ENTETE_CONVERSATION] = _CONVERSATION_PAR_REFERENCE
+    sortie = dict(servers)
+    sortie[SERVICE_ATELIER] = {**cfg, "headers": entetes}
+    return sortie
+
+
+def chrome_mcp_url_effective(settings: AtelierSettings) -> str:
+    """Compat : l'adresse configurée du navigateur, ou "" s'il n'y en a pas.
+
+    Il n'y a plus d'adresse devinée (Service cluster, loopback) : sans
+    `ATELIER_CHROME_MCP_URL`, l'Atelier ne déclare pas de navigateur.
+    """
+    return chrome_mcp_url_configuree(settings)
+
+
+def integrer_le_navigateur(
+    servers: dict[str, Any],
+    settings: AtelierSettings,
+) -> dict[str, Any]:
+    """Remplace la déclaration du navigateur de l'Atelier par celle du contrat.
+
+    Seule l'entrée `SERVICE_CHROME` est touchée, et seulement si l'Atelier
+    connaît l'adresse du service : un connecteur tiers qui parle de Chrome
+    reste tel que la personne l'a écrit. La déclaration écrite ne porte que
+    des références — `${ATELIER_SESSION}` et la variable du jeton.
+    """
+    if not chrome_mcp_url_configuree(settings):
+        return dict(servers)
+    sortie: dict[str, Any] = {}
+    for nom, cfg in servers.items():
+        if est_le_navigateur(nom):
+            sortie[nom] = declaration_chrome(settings)
+        else:
+            sortie[nom] = cfg
+    return sortie
 
 
 # Les variables qu'un connecteur peut demander dans son adresse. Le fichier
@@ -201,25 +362,44 @@ def resoudre_les_variables(config: dict[str, Any], *, session: str, agent: str) 
     une adresse visiblement fautive se répare, une adresse silencieusement vidée
     de son identité donne un service qui mélange deux conversations sans le dire.
     """
-    url = str(config.get("url") or "")
-    if "${" not in url:
-        return config
     valeurs = {"ATELIER_SESSION": session, "ATELIER_AGENT": agent}
 
-    def remplacer(m: re.Match[str]) -> str:
-        nom, repli = m.group(1), m.group(2)
-        if nom in valeurs and valeurs[nom]:
-            return quote(valeurs[nom], safe="")
-        if repli is not None:
-            return quote(repli, safe="")
-        return m.group(0)
+    def remplaceur(encoder: bool) -> Any:
+        def remplacer(m: re.Match[str]) -> str:
+            nom, repli = m.group(1), m.group(2)
+            if nom in valeurs and valeurs[nom]:
+                return quote(valeurs[nom], safe="") if encoder else valeurs[nom]
+            # Dans un en-tête, une variable qu'on ne fournit pas (le jeton
+            # d'un connecteur, `${ATELIER_MCP_…}`) reste au client, repli
+            # compris : c'est lui qui la développe depuis son environnement.
+            if not encoder and nom not in VARIABLES_CONNUES:
+                return m.group(0)
+            if repli is not None:
+                return quote(repli, safe="") if encoder else repli
+            return m.group(0)
 
-    resolue = _VARIABLE.sub(remplacer, url)
-    if resolue == url:
-        return config
+        return remplacer
+
     sortie = dict(config)
-    sortie["url"] = resolue
-    return sortie
+    change = False
+    url = str(config.get("url") or "")
+    if "${" in url:
+        resolue = _VARIABLE.sub(remplaceur(True), url)
+        if resolue != url:
+            sortie["url"] = resolue
+            change = True
+    # Les en-têtes aussi : c'est par là que le navigateur reçoit la
+    # conversation. Pas d'encodage d'URL dans un en-tête.
+    entetes = config.get("headers")
+    if isinstance(entetes, dict) and any("${" in str(v) for v in entetes.values()):
+        nouveaux = {
+            k: _VARIABLE.sub(remplaceur(False), v) if isinstance(v, str) else v
+            for k, v in entetes.items()
+        }
+        if nouveaux != entetes:
+            sortie["headers"] = nouveaux
+            change = True
+    return sortie if change else config
 
 
 def _avec_identite(config: dict[str, Any], nom: str, wikichat_url: str) -> dict[str, Any]:
@@ -327,6 +507,12 @@ def write_project_binding(
 
     On recopie la config plutôt qu'un simple nom : le fichier reste lisible
     par Claude Code seul, sans l'Atelier pour l'interpréter.
+
+    Mais jamais ses secrets : le fichier vit dans le dossier du projet, qui
+    se commite et se pousse — un jeton de la passerelle est parti ainsi sur
+    GitHub. Chaque en-tête secret devient une référence `${ATELIER_MCP_…}`
+    que Claude Code développe, et dont l'Atelier fournit la valeur à
+    l'environnement des sessions qu'il lance (voir `mcp_secrets`).
     """
     pool = _pool_enabled(settings)
     chemin = cwd / ".mcp.json"
@@ -334,22 +520,99 @@ def write_project_binding(
     deja = existant.get("mcpServers")
     deja = deja if isinstance(deja, dict) else {}
     # La déclaration du projet prime sur celle du pool : elle porte souvent
-    # ce que le pool ignore — un jeton, un helper d'en-têtes, une variable
-    # d'environnement. La reprendre du pool reviendrait à la casser.
+    # ce que le pool ignore — un helper d'en-têtes, une variable
+    # d'environnement. La reprendre du pool reviendrait à la casser. Ses
+    # secrets en clair, eux, sont migrés quand le pool les connaît.
     retenus: dict[str, Any] = {}
     for nom in actifs:
+        if est_alias_onyxia_deguise(nom):
+            # Porte Atelier collée sous un nom Onyxia_* : pas le service.
+            continue
         if nom == SERVICE_ATELIER:
             # Toujours reconstruite : son adresse suit le port du service.
             retenus[nom] = declaration_atelier(settings)
+        elif est_le_navigateur(nom) and chrome_mcp_url_configuree(settings):
+            # Loopback sans placeholder : VS Code lit ce fichier.
+            retenus[nom] = declaration_chrome(settings, cloisonner=False)
         elif nom in deja and isinstance(deja[nom], dict):
             config = dict(deja[nom])
             config.pop("enabled", None)
-            retenus[nom] = config
+            retenus[nom] = _migrer_les_secrets(nom, config, pool.get(nom), chemin)
         elif nom in pool:
-            retenus[nom] = pool[nom]
+            retenus[nom], _ = en_references(nom, pool[nom])
     existant["mcpServers"] = retenus
     _atomic_write_json(chemin, existant)
+    _proteger_du_depot(cwd)
     return project_binding_state(settings, cwd)
+
+
+def _migrer_les_secrets(
+    nom: str,
+    config: dict[str, Any],
+    du_pool: dict[str, Any] | None,
+    chemin: Path,
+) -> dict[str, Any]:
+    """Remplace par leur référence les secrets en clair qu'on sait fournir.
+
+    Un en-tête que le pool déclare pour ce service a sa variable : l'Atelier
+    la remplit, la valeur en clair peut partir. Un en-tête que le pool ne
+    connaît pas a été écrit par la personne, pour un service que nous ne
+    servons pas : l'écraser le casserait, et nous n'aurions rien à mettre
+    dans la variable. On le laisse, et on le dit.
+    """
+    references: dict[str, Any] = {}
+    if isinstance(du_pool, dict):
+        references, _ = en_references(nom, du_pool)
+    sortie = dict(config)
+    for champ in ("headers", "env"):
+        bloc = config.get(champ)
+        if not isinstance(bloc, dict):
+            continue
+        connus = references.get(champ) if isinstance(references.get(champ), dict) else {}
+        # La casse d'un en-tête HTTP ne compte pas : `authorization` écrit à
+        # la main désigne bien l'`Authorization` du pool.
+        par_nom = {str(k).lower(): v for k, v in connus.items()}
+        nouveau = dict(bloc)
+        for cle in secrets_en_clair({champ: bloc}):
+            nom_cle = cle.split(".", 1)[1]
+            reference = par_nom.get(nom_cle.lower())
+            if est_une_reference(reference):
+                nouveau[nom_cle] = reference
+            else:
+                log.warning(
+                    "secret en clair laissé dans %s : %s.%s (inconnu du pool,"
+                    " écrit hors de l'Atelier)",
+                    chemin,
+                    nom,
+                    cle,
+                )
+        sortie[champ] = nouveau
+    return sortie
+
+
+def _proteger_du_depot(cwd: Path) -> None:
+    """Garde `.mcp.json` hors du dépôt, en plus de n'y rien mettre de secret.
+
+    Le .gitignore est complété, pas réécrit. Un fichier déjà suivi le reste :
+    le dé-suivre réécrirait l'histoire de la personne sans qu'elle l'ait
+    demandé. On le signale, ici et dans l'état du dépôt.
+    """
+    if not (cwd / ".git").is_dir():
+        return
+    from mcp_gateway.atelier import git_repos
+
+    try:
+        git_repos.completer_le_gitignore(cwd)
+        if git_repos.mcp_json_suivi(cwd):
+            log.warning(
+                "%s/.mcp.json est suivi par git : le .gitignore ne l'en retire pas."
+                " Ses secrets sont désormais des références, mais les versions"
+                " déjà commitées peuvent en porter — `git rm --cached .mcp.json`"
+                " et une rotation des jetons si elles sont parties.",
+                cwd,
+            )
+    except OSError as exc:
+        log.warning("protection de .mcp.json impossible dans %s : %s", cwd, exc)
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -410,11 +673,11 @@ def materialize_mcp_config(settings: AtelierSettings) -> Path:
     conn = connect(settings.gateway_db_path)
     try:
         store = IntegratedMcpStore(conn)
-        servers = store.enabled_mcp_servers()
+        servers = integrer_le_navigateur(sans_amonts_gateway(store.enabled_mcp_servers()), settings)
     finally:
         conn.close()
 
-    payload = {"mcpServers": servers}
+    payload = {"mcpServers": pour_le_home(servers)}
     cfg_path = settings.mcp_config_path
     _atomic_write_json(cfg_path, payload)
 
@@ -449,7 +712,7 @@ def _merge_user_claude_json(path: Path, servers: dict[str, dict[str, Any]]) -> N
                 data = loaded
         except json.JSONDecodeError:
             data = {}
-    data["mcpServers"] = servers
+    data["mcpServers"] = pour_le_home(servers)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

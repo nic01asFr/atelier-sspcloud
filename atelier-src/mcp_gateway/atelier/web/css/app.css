@@ -3616,3 +3616,86 @@ select option {
    confondre avec ce sur quoi on travaille. */
 .project-title.project-archived { opacity: 0.6; font-style: italic; }
 .tree-archives[aria-pressed="true"] { background: var(--surface-2, rgba(255,255,255,0.08)); }
+
+/* ── Panneau « Applications » du projet (views/applications.js) ──────── */
+
+button.session-face-link {
+  background: none;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+}
+
+.apps-panel {
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-elev);
+  padding: 0.6rem 1rem 0.8rem;
+  font-size: 0.82rem;
+}
+
+.apps-titre {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.4rem;
+}
+
+.apps-ligne {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.9rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.apps-nom {
+  font-weight: 600;
+  min-width: 8rem;
+}
+
+.apps-etat {
+  color: var(--muted);
+  min-width: 7rem;
+}
+
+.apps-etat-pret {
+  color: var(--accent);
+}
+
+.apps-etat-en_echec,
+.apps-etat-invalide,
+.apps-erreur {
+  color: #f0a8a0;
+}
+
+.apps-erreur {
+  flex-basis: 100%;
+  font-size: 0.75rem;
+}
+
+.apps-note {
+  color: var(--muted);
+  margin: 0.3rem 0;
+}
+
+.apps-action[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.apps-journal {
+  max-height: 18rem;
+  overflow: auto;
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.6rem;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+}

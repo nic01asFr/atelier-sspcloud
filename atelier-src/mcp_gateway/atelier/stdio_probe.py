@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import shutil
+from pathlib import Path
 from typing import Any
 
 log = logging.getLogger("mcp_gateway.atelier.stdio_probe")

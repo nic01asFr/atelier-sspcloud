@@ -50,11 +50,6 @@ export function createAuthController(ctx) {
     try {
       const meta = await api.getMeta(state.token);
       S.setMeta(state, meta);
-      try {
-        await api.setAuthCookie(state.token);
-      } catch {
-        /* ignore */
-      }
       await refreshProjects(state);
       await refreshSessions(state);
       veillerLesSessions(state, render);
@@ -85,7 +80,7 @@ export function createAuthController(ctx) {
       }
     } catch (err) {
       if (err.status === 401) {
-        logout("Clé invalide");
+        logout("Session expirée : saisissez à nouveau la clé.");
         return;
       }
       S.setError(state, err.message || String(err));
@@ -95,12 +90,16 @@ export function createAuthController(ctx) {
 
   async function onLogin(ev) {
     ev.preventDefault();
-    const key = $("owner-key").value.trim();
+    const champ = $("owner-key");
+    const key = champ.value.trim();
+    // La clé ne sert qu'à ouvrir la session : on la retire du champ tout de
+    // suite, et on ne la garde nulle part — ni état, ni stockage.
+    champ.value = "";
     if (!key) return;
-    S.setToken(state, key);
     $("login-error").hidden = true;
     try {
-      await api.listSessions(state.token);
+      await api.ouvrirSession(key);
+      S.setToken(state, S.SESSION_OUVERTE);
       await enterHub();
     } catch (err) {
       S.setToken(state, "");
@@ -111,5 +110,24 @@ export function createAuthController(ctx) {
     }
   }
 
-  return { logout, enterHub, onLogin };
+  /**
+   * Au démarrage : une session déjà ouverte se reprend par son cookie.
+   *
+   * Une clé laissée dans `localStorage` par une version précédente est
+   * d'abord échangée contre ce cookie, puis effacée. Rend vrai si l'interface
+   * est connectée.
+   */
+  async function reprendre() {
+    await api.migrerAncienneCle(S.lireAncienneCle, S.oublierAncienneCle);
+    try {
+      await api.getMeta("");
+    } catch {
+      S.setToken(state, "");
+      return false;
+    }
+    S.setToken(state, S.SESSION_OUVERTE);
+    return true;
+  }
+
+  return { logout, enterHub, onLogin, reprendre };
 }
