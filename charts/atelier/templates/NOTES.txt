@@ -6,7 +6,9 @@ reprises des charts n8n-onyxia et sspcloud-mcp :
     l'URL suivie de tout ce qui n'est ni espace ni « ) » : le texte d'un lien
     ne doit pas être l'URL elle-même ;
   - le bouton « Copier le mot de passe » cherche « password: <valeur> » : la
-    ligne de la clé owner reste sans mise en forme.
+    ligne de la clé owner reste sans mise en forme ;
+  - l'adresse des applications des projets vient après celle de l'Atelier,
+    pour ne jamais devenir celle du bouton « Ouvrir ».
 Ces notes sont conservées par Helm dans le Secret de la release : quiconque lit
 les Secrets du namespace lit aussi la clé qu'elles affichent.
 */}}
@@ -15,6 +17,8 @@ les Secrets du namespace lit aussi la clé qu'elles affichent.
 {{- $ownerKey := (.Values.security).ownerKey | default "" | trim -}}
 {{- $secret := printf "%s-secrets" (include "atelier.fullname" .) -}}
 {{- $mcp := (.Values.mcp).enabled -}}
+{{- $apps := include "atelier.appsExposees" . -}}
+{{- $appsBase := printf "https://%s" (include "atelier.appsHostname" .) -}}
 {{- if $fr }}
 ### Votre Atelier
 
@@ -25,6 +29,9 @@ les Secrets du namespace lit aussi la clé qu'elles affichent.
 - La clé owner a été tirée au sort. Lisez-la avec :
   `kubectl get secret {{ $secret }} -n {{ .Release.Namespace }} -o jsonpath='{.data.ATELIER_OWNER_KEY}' | base64 -d`
   — ou, depuis un terminal du pod : `cat ~/work/.secrets/atelier_owner_key`
+{{- end }}
+{{- if $apps }}
+- Applications des projets : {{ $appsBase }}/
 {{- end }}
 
 La page demande cette clé une fois ; elle n'est jamais dans l'URL.
@@ -90,6 +97,9 @@ Documentation : [nic01asfr.github.io/atelier-sspcloud](https://nic01asfr.github.
 - The owner key was generated. Read it with:
   `kubectl get secret {{ $secret }} -n {{ .Release.Namespace }} -o jsonpath='{.data.ATELIER_OWNER_KEY}' | base64 -d`
   or, from a terminal in the pod: `cat ~/work/.secrets/atelier_owner_key`
+{{- end }}
+{{- if $apps }}
+- Project applications: {{ $appsBase }}/
 {{- end }}
 
 The page asks for this key once; it is never part of the URL.

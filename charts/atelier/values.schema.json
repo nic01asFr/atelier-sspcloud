@@ -154,6 +154,29 @@
       "description": "Coordination et mémoire des agents (onglets Assistant et Agents). Sans lui, le reste de l'Atelier fonctionne.",
       "properties": { "enabled": { "type": "boolean", "default": true } }
     },
+    "apps": {
+      "type": "object",
+      "title": "Applications",
+      "description": "Ce que vos projets servent (une interface, une API, un tableau de bord) est exposé sur un second hôte, séparé de l'Atelier, et ne s'ouvre qu'avec votre session.",
+      "properties": {
+        "enabled": { "type": "boolean", "title": "Activer", "default": true },
+        "port": { "type": "integer", "title": "Port interne", "default": 8788, "x-onyxia": { "hidden": true } },
+        "hostname": {
+          "type": "string",
+          "title": "Nom d'hôte des applications (automatique)",
+          "description": "Vide : déduit de l'adresse de l'Atelier, user-<idep>-atelier-apps.user.lab.sspcloud.fr.",
+          "default": ""
+        },
+        "bodySize": {
+          "type": "string",
+          "title": "Taille maximale d'une requête",
+          "description": "Pour l'ingress ; \"0\" = sans limite, chaque application déclarant la sienne.",
+          "default": "0"
+        },
+        "max": { "type": "integer", "title": "Applications simultanées", "default": 4, "minimum": 1, "maximum": 16 },
+        "idleMinutes": { "type": "integer", "title": "Arrêt après inactivité (minutes)", "default": 30, "minimum": 1, "maximum": 1440 }
+      }
+    },
     "mcp": {
       "type": "object",
       "title": "Connecteur MCP distant",

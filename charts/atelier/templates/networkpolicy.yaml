@@ -22,4 +22,8 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.service.port }}
+        {{- if (.Values.apps).enabled }}
+        - protocol: TCP
+          port: {{ .Values.apps.port }}
+        {{- end }}
 {{- end }}

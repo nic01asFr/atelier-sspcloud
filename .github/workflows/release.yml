@@ -68,6 +68,10 @@ jobs:
           absent() {
             if grep -q -- "$1" "$2"; then echo "motif inattendu dans $2 : $1"; exit 1; fi
           }
+          # Un document du rendu, choisi par son `kind`.
+          document() {
+            awk -v k="kind: $1" 'BEGIN { RS = "\n---\n" } index($0, "\n" k "\n")' /tmp/out.yaml
+          }
           # Bouton « Ouvrir » : même extraction qu'Onyxia (première URL
           # d'Ingress citée, suivie de tout sauf espace et « ) »). Doit
           # donner la racine de l'Atelier, barre finale comprise.
@@ -112,6 +116,7 @@ jobs:
           grep -q '### Your Atelier' /tmp/notes.txt
           grep -q 'Connect the Atelier to an assistant' /tmp/notes.txt
           grep -qx -- "- Owner key / password: $KEY" /tmp/notes.txt
+          grep -qx -- '- Project applications: https://atelier-apps.example.org/' /tmp/notes.txt
           absent 'Votre Atelier' /tmp/notes.txt
           bouton_ouvrir
 
@@ -122,6 +127,46 @@ jobs:
           render "mise en veille" --set global.suspend=true
           render "sans ingress ni NetworkPolicy" --set ingress.enabled=false --set security.networkPolicy.enabled=false
           absent 'kind: Ingress' /tmp/out.yaml
+          # Sans second hôte, pas d'adresse d'applications : jamais de repli
+          # sous un chemin de l'origine de l'Atelier.
+          grep -A1 'name: ATELIER_APPS_PUBLIC_URL' /tmp/out.yaml | grep -q 'value: ""'
+          absent 'Applications des projets' /tmp/notes.txt
+
+          # Applications des projets (docs/atelier-applications.md) : un
+          # second Ingress sur un second hôte, le port 8788 ouvert du
+          # Service à la NetworkPolicy.
+          render "applications : deux hôtes" --set security.ownerKey=$KEY
+          test "$(grep -c '^kind: Ingress' /tmp/out.yaml)" = 2
+          grep -q 'host: atelier.example.org$' /tmp/out.yaml
+          grep -q 'host: atelier-apps.example.org$' /tmp/out.yaml
+          grep -q 'name: t-atelier-apps$' /tmp/out.yaml
+          grep -q 'proxy-buffering: "off"' /tmp/out.yaml
+          grep -q 'proxy-request-buffering: "off"' /tmp/out.yaml
+          document Service | grep -q 'port: 8788'
+          document NetworkPolicy | grep -q 'port: 8788'
+          document StatefulSet | grep -q 'containerPort: 8788'
+          grep -A1 'name: ATELIER_APPS_PUBLIC_URL' /tmp/out.yaml | grep -q 'value: "https://atelier-apps.example.org"'
+          grep -A1 'name: ATELIER_APPS_PORTS' /tmp/out.yaml | grep -q 'value: "19000-19099"'
+          grep -qx -- '- Applications des projets : https://atelier-apps.example.org/' /tmp/notes.txt
+          grep -qx -- "- Clé owner / password: $KEY" /tmp/notes.txt
+          bouton_ouvrir
+
+          render "applications : hôte dérivé d'une adresse Onyxia"             --set ingress.hostname=user-nic01asfr-atelier.user.lab.sspcloud.fr
+          grep -q 'host: user-nic01asfr-atelier.user.lab.sspcloud.fr$' /tmp/out.yaml
+          grep -q 'host: user-nic01asfr-atelier-apps.user.lab.sspcloud.fr$' /tmp/out.yaml
+          grep -q 'https://user-nic01asfr-atelier-apps.user.lab.sspcloud.fr/' /tmp/notes.txt
+
+          render "applications : hôte donné, corps limité" --set apps.hostname=apps.example.org --set apps.bodySize=512m
+          grep -q 'host: apps.example.org$' /tmp/out.yaml
+          grep -q 'proxy-body-size: "512m"' /tmp/out.yaml
+
+          render "applications désactivées" --set apps.enabled=false
+          test "$(grep -c '^kind: Ingress' /tmp/out.yaml)" = 1
+          absent 't-atelier-apps' /tmp/out.yaml
+          absent '8788' /tmp/out.yaml
+          absent 'ATELIER_APPS_' /tmp/out.yaml
+          absent 'Applications des projets' /tmp/notes.txt
+          bouton_ouvrir
 
       - name: install.sh
         run: bash -n install.sh

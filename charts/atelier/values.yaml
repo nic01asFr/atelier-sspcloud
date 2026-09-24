@@ -69,6 +69,22 @@ security:
 wikichat:
   enabled: true
 
+# Applications des projets (docs/atelier-applications.md) : ce qu'un projet
+# sert est exposé sur un second hôte, jamais sous l'adresse de l'Atelier.
+# Vide, `hostname` se déduit de ingress.hostname :
+# user-<idep>-atelier.<domaine> donne user-<idep>-atelier-apps.<domaine>.
+apps:
+  enabled: true
+  port: 8788
+  hostname: ""
+  # Taille maximale d'une requête, pour nginx ("0" = sans limite : chaque
+  # application déclare la sienne dans son manifeste).
+  bodySize: "0"
+  # Applications lancées en même temps, au plus.
+  max: 4
+  # Arrêt d'une application sans requête ni connexion ouverte.
+  idleMinutes: 30
+
 # L'Atelier comme connecteur MCP d'un client distant (Claude, Cursor), à
 # l'adresse https://<hôte>/mcp, authentifié par OAuth. Désactivé tant que le
 # flux OAuth distant n'est pas livré : seul le bloc des notes en dépend.
