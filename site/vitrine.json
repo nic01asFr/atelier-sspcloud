@@ -1,0 +1,359 @@
+{
+  "nom": "Atelier",
+  "pitch": {
+    "fr": "Claude Code sur ton pod SSPCloud, avec une page pour travailler avec lui : des conversations rangées par projet, les connecteurs MCP que tu branches, et VS Code qui rouvre la même conversation. Un service Onyxia, un pod par personne, ta propre clé de modèle.",
+    "en": "Claude Code on your SSPCloud pod, with a page to work alongside it: conversations filed by project, the MCP connectors you plug in, and VS Code reopening the same conversation. One Onyxia service, one pod per person, your own model key."
+  },
+  "couleur": "#D6B27A",
+  "depot": "https://github.com/nic01asFr/atelier-sspcloud",
+  "tags": [
+    "Claude Code",
+    "MCP",
+    "VS Code",
+    "Onyxia",
+    "SSPCloud",
+    "Helm"
+  ],
+  "interface": {
+    "eyebrow": { "fr": "Service Onyxia", "en": "Onyxia service" },
+    "boutonInstaller": { "fr": "Installer", "en": "Install" },
+    "boutonCode": { "fr": "Code source", "en": "Source code" },
+    "choixLangue": { "fr": "Langue", "en": "Language" },
+    "labelPromesse": { "fr": "Promesse", "en": "Promise" },
+    "titrePromesse": { "fr": "Ce que ça change", "en": "What changes" },
+    "labelCapacites": { "fr": "Capacités", "en": "Features" },
+    "labelParcours": { "fr": "Parcours", "en": "Walkthrough" },
+    "labelInstaller": { "fr": "Installer", "en": "Install" },
+    "labelApercu": { "fr": "Aperçu", "en": "Preview" },
+    "labelUsages": { "fr": "Usages", "en": "Uses" },
+    "labelAVenir": { "fr": "À venir", "en": "Coming next" },
+    "labelStack": { "fr": "Stack", "en": "Stack" },
+    "labelJournal": { "fr": "Journal", "en": "Changelog" },
+    "titreJournal": { "fr": "Versions", "en": "Versions" },
+    "chart": { "fr": "chart", "en": "chart" },
+    "piedLicence": {
+      "fr": "Atelier sous licence Apache-2.0. Claude Code s'installe à part et reste soumis aux conditions d'Anthropic.",
+      "en": "Atelier is licensed under Apache-2.0. Claude Code is installed separately and remains subject to Anthropic's terms."
+    },
+    "piedProjet": {
+      "fr": "Documentation technique dans le dépôt. Projet indépendant, non affilié à Anthropic.",
+      "en": "Technical documentation lives in the repository. Independent project, not affiliated with Anthropic."
+    }
+  },
+  "chiffres": [
+    { "valeur": "{{version}}", "libelle": { "fr": "version du chart", "en": "chart version" } },
+    { "valeur": "4", "libelle": { "fr": "onglets : Code, Assistant, Connecteurs, Agents", "en": "tabs: Code, Assistant, Connectors, Agents" } },
+    { "valeur": "1", "libelle": { "fr": "pod par personne", "en": "pod per person" } },
+    { "valeur": "0", "libelle": { "fr": "champ à remplir dans le formulaire", "en": "form field to fill in" } }
+  ],
+  "produit": {
+    "accroche": {
+      "fr": "L'Atelier lance Claude Code dans ton espace SSPCloud et te donne une page pour le suivre. Chaque conversation appartient à un projet, et chaque projet de code est un dépôt git sur ton volume. L'inférence passe par la passerelle de modèles du SSPCloud avec la clé de ton profil Onyxia, pas par un compte partagé. Le même fil s'ouvre dans l'onglet Code ou dans VS Code, et ce qui se dit d'un côté apparaît de l'autre.",
+      "en": "Atelier runs Claude Code in your SSPCloud space and gives you a page to follow it. Every conversation belongs to a project, and every code project is a git repository on your volume. Inference goes through the SSPCloud model gateway with the key from your Onyxia profile, not through a shared account. The same thread opens in the Code tab or in VS Code, and what is said on one side shows up on the other."
+    },
+    "titreSequence": { "fr": "Le parcours", "en": "How it goes" },
+    "sequence": [
+      {
+        "titre": { "fr": "Tu remplis ton profil", "en": "You fill in your profile" },
+        "texte": {
+          "fr": "Dans Onyxia, « Mon compte › Assistant IA » : la clé d'API de llm.lab.sspcloud.fr. « Mon compte › Git » : ton nom et ton courriel, qui signeront les commits de tes projets.",
+          "en": "In Onyxia, “My account › AI assistant”: your API key for llm.lab.sspcloud.fr. “My account › Git”: your name and email, which will sign your projects' commits."
+        }
+      },
+      {
+        "titre": { "fr": "Tu lances « Atelier »", "en": "You launch “Atelier”" },
+        "texte": {
+          "fr": "Depuis le catalogue Onyxia. Le formulaire est déjà rempli ; 10 Go de volume et 2 à 8 Go de mémoire suffisent d'ordinaire.",
+          "en": "From the Onyxia catalog. The form is already filled in; 10 GB of volume and 2 to 8 GB of memory are usually enough."
+        }
+      },
+      {
+        "titre": { "fr": "Tu ouvres le service", "en": "You open the service" },
+        "texte": {
+          "fr": "L'adresse est user-<idep>-atelier.user.lab.sspcloud.fr. La page demande la clé owner, que tu lis dans les notes du service.",
+          "en": "The address is user-<idep>-atelier.user.lab.sspcloud.fr. The page asks for the owner key, which you read in the service notes."
+        }
+      },
+      {
+        "titre": { "fr": "Tu écris un premier message", "en": "You write a first message" },
+        "texte": {
+          "fr": "Le projet naît avec la conversation, déjà en dépôt git. Les suivantes s'y rangent, chacune avec son historique.",
+          "en": "The project is born with the conversation, already a git repository. Later conversations are filed there, each with its own history."
+        }
+      }
+    ],
+    "titreContextes": { "fr": "Quand ça sert", "en": "When it helps" },
+    "contextes": [
+      {
+        "titre": { "fr": "Modifier une couche de données", "en": "Edit a data layer" },
+        "texte": {
+          "fr": "Tu demandes d'ajouter l'entité qui manque à un GeoJSON ; Claude dit quel fichier il a modifié et ce qu'il n'a pas touché, puis vous discutez de la suite.",
+          "en": "You ask for the missing feature to be added to a GeoJSON file; Claude says which file it changed and what it left alone, then you discuss what comes next."
+        },
+        "pourquoi": {
+          "fr": "Le travail se fait dans le dépôt du projet, sur ton volume.",
+          "en": "The work happens in the project repository, on your volume."
+        }
+      },
+      {
+        "titre": { "fr": "Comparer deux millésimes", "en": "Compare two vintages" },
+        "texte": {
+          "fr": "Deux versions d'un même jeu de données, l'OCS GE 2019 et 2021 par exemple : tu fais écrire l'analyse dans le projet, et tu la relis dans le fil.",
+          "en": "Two versions of the same dataset, say OCS GE 2019 and 2021: you have the analysis written into the project, and you review it in the thread."
+        },
+        "pourquoi": {
+          "fr": "Le calcul tourne sur ton pod, près de tes données.",
+          "en": "The computation runs on your pod, next to your data."
+        }
+      },
+      {
+        "titre": { "fr": "Suivre depuis un téléphone", "en": "Follow along from a phone" },
+        "texte": {
+          "fr": "L'interface tient sur un petit écran : tu relis une réponse, tu réponds à une demande d'autorisation, tu relances.",
+          "en": "The interface fits a small screen: you read a reply, answer a permission request, send the next message."
+        },
+        "pourquoi": {
+          "fr": "Le tour tourne sur le pod, pas dans ton navigateur.",
+          "en": "The turn runs on the pod, not in your browser."
+        }
+      },
+      {
+        "titre": { "fr": "Reprendre dans l'éditeur", "en": "Pick it up in the editor" },
+        "texte": {
+          "fr": "Un changement à relire de près : tu passes dans VS Code sur la même conversation, tu corriges, tu reviens.",
+          "en": "A change to review closely: you switch to VS Code on the same conversation, fix things, come back."
+        },
+        "pourquoi": {
+          "fr": "code-server tourne dans le même pod, sur le même volume.",
+          "en": "code-server runs in the same pod, on the same volume."
+        }
+      }
+    ]
+  },
+  "captures": {
+    "titre": { "fr": "Les onglets, tels qu'ils sont", "en": "The tabs, as they are" },
+    "hero": {
+      "fichier": "01-code.png",
+      "alt": {
+        "fr": "Onglet Code : conversations rangées par projet à gauche, fil de la conversation au centre, lien VS Code en haut à droite.",
+        "en": "Code tab: conversations filed by project on the left, the conversation thread in the middle, the VS Code link at the top right."
+      }
+    },
+    "liste": [
+      {
+        "fichier": "03-connecteurs.png",
+        "alt": {
+          "fr": "Onglet Connecteurs : services de l'Atelier, compositions et connecteurs personnels, avec leur état et leur nombre d'outils.",
+          "en": "Connectors tab: Atelier services, compositions and personal connectors, with their status and tool count."
+        },
+        "legende": {
+          "fr": "Connecteurs : ce que l'Atelier fournit, ce que tu as branché, ce que tu as composé.",
+          "en": "Connectors: what Atelier provides, what you plugged in, what you composed."
+        }
+      },
+      {
+        "fichier": "04-agents.png",
+        "alt": {
+          "fr": "Onglet Agents : agents personnels et agents d'entretien, avec leur planning, et la file des actions à valider.",
+          "en": "Agents tab: personal and maintenance agents with their schedule, and the queue of actions to approve."
+        },
+        "legende": {
+          "fr": "Agents : leur planning, et les actions qu'ils te proposent.",
+          "en": "Agents: their schedule, and the actions they propose to you."
+        }
+      },
+      {
+        "fichier": "05-code-mobile.png",
+        "alt": {
+          "fr": "Onglet Code sur un écran de téléphone.",
+          "en": "Code tab on a phone screen."
+        },
+        "legende": {
+          "fr": "La même conversation, sur un téléphone.",
+          "en": "The same conversation, on a phone."
+        }
+      }
+    ]
+  },
+  "points": [
+    {
+      "titre": { "fr": "Ton pod, tes données", "en": "Your pod, your data" },
+      "texte": {
+        "fr": "Projets, conversations et connecteurs vivent sur le volume ~/work de ton namespace, qui survit au service. Relancer le service met l'image à jour sans toucher au volume.",
+        "en": "Projects, conversations and connectors live on the ~/work volume in your namespace, which outlives the service. Restarting the service updates the image without touching the volume."
+      }
+    },
+    {
+      "titre": { "fr": "Rien à recopier", "en": "Nothing to copy by hand" },
+      "texte": {
+        "fr": "Onyxia remplit le formulaire depuis ton profil : adresse, clé du modèle, identité git. Il te reste à ouvrir.",
+        "en": "Onyxia fills in the form from your profile: address, model key, git identity. All that is left is to open it."
+      }
+    },
+    {
+      "titre": { "fr": "Pas de compte partagé", "en": "No shared account" },
+      "texte": {
+        "fr": "Claude Code appelle la passerelle de modèles du SSPCloud avec ta clé. La clé owner et celle du modèle restent dans ~/work/.secrets, jamais dans un dossier de projet.",
+        "en": "Claude Code calls the SSPCloud model gateway with your key. The owner key and the model key stay in ~/work/.secrets, never in a project folder."
+      }
+    }
+  ],
+  "titreFonctionnalites": { "fr": "Ce que tu peux faire", "en": "What you can do" },
+  "fonctionnalites": [
+    {
+      "titre": { "fr": "Des conversations rangées par projet", "en": "Conversations filed by project" },
+      "texte": {
+        "fr": "Une conversation crée son projet au premier message, et un projet de code est un dépôt git dès sa création. Plusieurs fils partagent le même dépôt, chacun avec son historique.",
+        "en": "A conversation creates its project on the first message, and a code project is a git repository from the start. Several threads share the same repository, each with its own history."
+      },
+      "pourQui": {
+        "fr": "Pour qui : toute personne qui mène plusieurs chantiers de front.",
+        "en": "For: anyone running several pieces of work at once."
+      }
+    },
+    {
+      "titre": { "fr": "La même conversation dans VS Code", "en": "The same conversation in VS Code" },
+      "texte": {
+        "fr": "Le lien « VS Code » ouvre code-server sur le pod, avec l'extension Claude Code sur cette conversation. Celles nées dans VS Code entrent dans l'Atelier. Le mode de permission et les connecteurs choisis valent des deux côtés.",
+        "en": "The “VS Code” link opens code-server on the pod, with the Claude Code extension on that conversation. Conversations started in VS Code show up in Atelier. The permission mode and the chosen connectors apply on both sides."
+      },
+      "pourQui": {
+        "fr": "Pour qui : celles et ceux qui relisent un diff dans l'éditeur.",
+        "en": "For: people who review a diff in the editor."
+      }
+    },
+    {
+      "titre": { "fr": "Les autorisations dans le fil", "en": "Permissions in the thread" },
+      "texte": {
+        "fr": "En mode acceptEdits, le mode par défaut, Claude demande avant d'agir : une carte s'affiche et le tour attend ta réponse. Tu peux accorder pour tout le fil. Claude peut aussi te poser une question à choix, avec un champ libre.",
+        "en": "In acceptEdits mode, the default, Claude asks before acting: a card appears and the turn waits for your answer. You can grant it for the whole thread. Claude can also ask you a multiple-choice question, with a free-text field."
+      },
+      "pourQui": {
+        "fr": "Pour qui : qui veut voir passer chaque commande avant qu'elle parte.",
+        "en": "For: anyone who wants to see each command before it runs."
+      }
+    },
+    {
+      "titre": { "fr": "Écrire pendant qu'il travaille", "en": "Write while it works" },
+      "texte": {
+        "fr": "Un message écrit pendant un tour se met en file et part dès que le précédent a fini. Un second onglet ou VS Code regardent la conversation sans la relancer.",
+        "en": "A message written during a turn is queued and sent as soon as the previous one is done. A second tab or VS Code can watch the conversation without triggering it."
+      },
+      "pourQui": {
+        "fr": "Pour qui : qui pense à la suite avant la fin de la réponse.",
+        "en": "For: anyone who thinks of the next step before the reply is over."
+      }
+    },
+    {
+      "titre": { "fr": "Tes connecteurs MCP", "en": "Your MCP connectors" },
+      "texte": {
+        "fr": "Les services de l'Atelier, ceux que tu branches (stdio, SSE, HTTP) et tes compositions forment un seul registre. Chaque conversation choisit dans le menu « + » ceux qu'elle utilise ; un projet garde son choix dans son .mcp.json.",
+        "en": "Atelier's own services, the ones you plug in (stdio, SSE, HTTP) and your compositions form a single registry. Each conversation picks the ones it uses from the “+” menu; a project keeps its choice in its .mcp.json."
+      },
+      "pourQui": {
+        "fr": "Pour qui : qui relie Claude à GitHub, GitLab, n8n ou à ses propres outils.",
+        "en": "For: anyone connecting Claude to GitHub, GitLab, n8n or their own tools."
+      }
+    },
+    {
+      "titre": { "fr": "Un processus gardé entre les tours", "en": "A process kept between turns" },
+      "texte": {
+        "fr": "Le processus de chaque conversation reste en vie entre deux messages : près de quatre secondes de démarrage et de reconnexion en moins par tour, mesurées. Il s'éteint après dix minutes de silence, trois au plus restent ouverts.",
+        "en": "Each conversation's process stays alive between messages: close to four seconds of startup and reconnection saved per turn, as measured. It shuts down after ten minutes of silence, and at most three stay open."
+      },
+      "pourQui": {
+        "fr": "Pour qui : les échanges courts et nombreux.",
+        "en": "For: short, frequent exchanges."
+      }
+    },
+    {
+      "titre": { "fr": "Des agents planifiés", "en": "Scheduled agents" },
+      "texte": {
+        "fr": "L'onglet Agents liste les agents d'entretien de l'Atelier et les tiens, leur planning, et les actions qu'ils proposent en attendant ta validation. Onglet en rodage.",
+        "en": "The Agents tab lists Atelier's maintenance agents and your own, their schedule, and the actions they propose while waiting for your approval. This tab is still being broken in."
+      },
+      "pourQui": {
+        "fr": "Pour qui : les tâches qui reviennent chaque jour.",
+        "en": "For: tasks that come back every day."
+      }
+    }
+  ],
+  "installer": {
+    "titre": { "fr": "Trois façons de lancer l'Atelier", "en": "Three ways to launch Atelier" },
+    "cartes": [
+      {
+        "titre": { "fr": "Catalogue Onyxia", "en": "Onyxia catalog" },
+        "texte": {
+          "fr": "Le chemin normal. Ajoute une fois ce dépôt de charts à ton Onyxia, puis lance « Atelier » : le formulaire se remplit depuis ton profil.",
+          "en": "The usual path. Add this chart repository to your Onyxia once, then launch “Atelier”: the form fills itself from your profile."
+        },
+        "code": "{{pages}}/",
+        "note": {
+          "fr": "Adresse du dépôt Helm à déclarer côté Onyxia.",
+          "en": "Helm repository address to declare in Onyxia."
+        }
+      },
+      {
+        "titre": { "fr": "Jupyter du catalogue officiel", "en": "Official catalog Jupyter" },
+        "texte": {
+          "fr": "Le chemin de secours, sur un pod déjà garni. Dans le service Jupyter python : 2 CPU et 6 Go au moins, volume persistant, port personnalisé 8787, ATELIER_LLM_API_KEY dans Vault, et ce script d'initialisation :",
+          "en": "The fallback path, on a pod you already use. In the Jupyter python service: at least 2 CPU and 6 GB, persistent volume, custom port 8787, ATELIER_LLM_API_KEY in Vault, and this init script:"
+        },
+        "code": "https://raw.githubusercontent.com/nic01asFr/atelier-sspcloud/main/install/atelier-init.sh",
+        "note": {
+          "fr": "Rejoué à chaque démarrage, il ne refait que ce qui manque et finit par dire où lire la clé owner.",
+          "en": "It runs again at each start, only redoes what is missing, and ends by telling you where to read the owner key."
+        }
+      },
+      {
+        "titre": { "fr": "Helm", "en": "Helm" },
+        "texte": {
+          "fr": "Pour régler chaque valeur toi-même :",
+          "en": "To set every value yourself:"
+        },
+        "code": "helm repo add atelier {{pages}}\nhelm install atelier atelier/atelier --version {{version}} \\\n  --set ingress.hostname=user-IDEP-atelier.user.lab.sspcloud.fr \\\n  --set llm.apiKey=$LLM_API_KEY \\\n  --set git.name=\"$GIT_USER_NAME\" --set git.email=$GIT_USER_EMAIL"
+      }
+    ]
+  },
+  "aVenir": {
+    "titre": { "fr": "L'Atelier comme connecteur de Claude", "en": "Atelier as a Claude connector" },
+    "texte": {
+      "fr": "Aujourd'hui l'Atelier consomme des connecteurs MCP. Le chantier en cours le rend connecteur à son tour : tu colles son adresse dans un client Claude distant, tu tapes ta clé sur une page de consentement, et tu retrouves tes projets et tes conversations. Pas encore livré.",
+      "en": "Today Atelier consumes MCP connectors. The work in progress turns it into one: you paste its address into a remote Claude client, type your key on a consent page, and find your projects and conversations there. Not shipped yet."
+    }
+  },
+  "encart": {
+    "titre": { "fr": "Un pod, une personne", "en": "One pod, one person" },
+    "texte": {
+      "fr": "Qui ouvre l'Atelier peut exécuter du code sur le pod et lire ses secrets. Il n'a donc qu'une identité, la tienne, gardée par la clé owner et par l'ingress authentifié d'Onyxia. Ne l'expose pas sans cet ingress, et ne le partage pas.",
+      "en": "Whoever opens Atelier can run code on the pod and read its secrets. So it has a single identity, yours, guarded by the owner key and by Onyxia's authenticated ingress. Do not expose it without that ingress, and do not share it."
+    },
+    "lien": {
+      "libelle": { "fr": "Lire le modèle de sécurité", "en": "Read the security model" },
+      "url": "https://github.com/nic01asFr/atelier-sspcloud/blob/main/SECURITY.md"
+    }
+  },
+  "stack": {
+    "titre": { "fr": "Stack ouverte", "en": "Open stack" },
+    "texte": {
+      "fr": "Le service, l'interface, le chart et le script d'installation sont publics, sous Apache-2.0. Claude Code n'est pas distribué avec l'Atelier.",
+      "en": "The service, the interface, the chart and the install script are public, under Apache-2.0. Claude Code is not distributed with Atelier."
+    },
+    "items": [
+      "Claude Code",
+      "FastAPI",
+      "code-server",
+      "wikichat",
+      "Helm, Kubernetes, Onyxia"
+    ]
+  },
+  "journal": [
+    {
+      "version": "chart 0.1.0",
+      "texte": {
+        "fr": "Premier chart publié : image ghcr.io/nic01asfr/atelier avec node, code-server, l'extension Claude Code et wikichat ; formulaire rempli depuis le profil Onyxia ; volume ~/work ; NetworkPolicy qui ne laisse entrer que l'ingress.",
+        "en": "First published chart: ghcr.io/nic01asfr/atelier image with node, code-server, the Claude Code extension and wikichat; form filled from the Onyxia profile; ~/work volume; NetworkPolicy that only lets the ingress in."
+      }
+    }
+  ]
+}
