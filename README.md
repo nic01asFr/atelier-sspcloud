@@ -1,5 +1,7 @@
 # Atelier
 
+[![Helm chart](https://img.shields.io/badge/dynamic/yaml?url=https%3A%2F%2Fnic01asfr.github.io%2Fatelier-sspcloud%2Findex.yaml&query=%24.entries.atelier%5B0%5D.version&label=Helm%20chart&logo=helm)](https://nic01asfr.github.io/atelier-sspcloud/index.yaml) [![Licence Apache 2.0](https://img.shields.io/badge/licence-Apache%202.0-blue)](LICENSE) [![Vitrine FR](https://img.shields.io/badge/vitrine-FR-0063cb)](https://nic01asfr.github.io/atelier-sspcloud/) [![Showcase EN](https://img.shields.io/badge/showcase-EN-0063cb)](https://nic01asfr.github.io/atelier-sspcloud/en/)
+
 Un hub qui fait travailler Claude Code sur un pod SSPCloud : conversations de
 projet, agents, connecteurs MCP, et une face VS Code intégrée. Un pod par
 personne, un Atelier par pod : ce dépôt en porte le code, l'installation et la
