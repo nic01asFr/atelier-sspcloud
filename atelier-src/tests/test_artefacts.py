@@ -81,6 +81,15 @@ def test_les_deux_csp_sont_des_bacs_a_sable_sans_meme_origine() -> None:
     assert "form-action 'none'" in art.CSP_CORPUS
 
 
+def test_un_worker_ne_vient_que_du_code_de_la_page() -> None:
+    # Une carte MapLibre dessine dans un worker `blob:` ; rien d'autre n'est
+    # admis, et le réseau reste fermé à l'artefact ordinaire.
+    assert "worker-src blob:" in art.CSP_SANDBOX
+    assert "worker-src 'self' blob:" in art.CSP_CORPUS
+    assert "connect-src" not in art.CSP_SANDBOX
+    assert "default-src 'none'" in art.CSP_SANDBOX
+
+
 def test_les_liens_de_l_index_sont_encodes_pas_echappes() -> None:
     """`#` et `?` dans un nom coupaient le lien : `html.escape` n'y touche pas."""
     page = art.page_index("p", "", [art.Entree("a #b?.html", "a #b?.html", False, 3)])

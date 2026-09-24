@@ -48,11 +48,14 @@ MARQUEUR_CORPUS = ".corpus"
 # autonome, tout en lui : c'est aussi ce qu'est un artefact chez Claude.
 # `allow-downloads` : une page qui produit un fichier (un export, le lecteur
 # Grist qui enregistre) doit pouvoir le donner ; sans lui, le clic ne fait rien.
+# `worker-src blob:` : une carte MapLibre dessine ses couches dans un worker
+# créé depuis un `blob:` du code de la page. Un tel worker hérite de cette CSP —
+# ni réseau ni cookie — et n'exécute que ce que la page contenait déjà.
 CSP_SANDBOX = (
     "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads; "
     "default-src 'none'; img-src data: blob:; media-src data: blob:; "
     "style-src 'unsafe-inline'; script-src 'unsafe-inline'; font-src data:; "
-    "base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+    "worker-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
 )
 
 # La CSP d'un corpus : le même bac à sable, et des sous-ressources en plus.
@@ -73,7 +76,8 @@ CSP_CORPUS = (
     "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; "
     "media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
     "script-src 'self' 'unsafe-inline'; font-src 'self' data:; "
-    "base-uri 'none'; form-action 'none'; frame-ancestors 'self'"
+    "worker-src 'self' blob:; base-uri 'none'; form-action 'none'; "
+    "frame-ancestors 'self'"
 )
 
 # Ce qu'un corpus peut écrire d'un seul geste. Une note, une page, un index :
