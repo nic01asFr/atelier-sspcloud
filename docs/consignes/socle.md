@@ -14,10 +14,11 @@ un port que tu ouvres, tous les agents peuvent l'appeler ; un fichier que tu
 
 - Aucun jeton, clé ou mot de passe dans un fichier suivi par git, dans une URL
   de remote, dans un commit, dans un message de log, dans un artefact.
-- `.mcp.json` porte aujourd'hui des en-têtes `Authorization` recopiés par
-  l'Atelier. Tant que ce n'est pas corrigé : il ne se commite pas. Vérifie
-  `git check-ignore .mcp.json` avant ton premier commit ; s'il n'est pas
-  ignoré, ajoute-le au `.gitignore` et dis-le.
+- `.mcp.json` est écrit par l'Atelier avec des références
+  (`Bearer ${ATELIER_MCP_…}`), jamais des secrets ; il reste hors de git
+  (l'Atelier l'ajoute au `.gitignore`). N'y écris jamais une valeur en clair :
+  si un serveur du projet a besoin d'un jeton, voir `.atelier/env.json`
+  ci-dessous.
 - Une variable dont une session a besoin (un jeton qu'un `.mcp.json` du
   projet référence en `${VOICE_TOKEN}`, par exemple) se demande dans
   `.atelier/env.json` : `{"VOICE_TOKEN": "voice_token"}`, où la valeur est un
