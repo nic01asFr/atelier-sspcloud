@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 from pathlib import Path
 
 from mcp_gateway.atelier.config import (
@@ -206,15 +205,17 @@ def write_claude_settings_env(settings: AtelierSettings) -> None:
 
 
 def sync_claude_home(settings: AtelierSettings, slug: str) -> None:
-    """PVC durable + projet → $HOME/.claude pour resume CLI/extension."""
+    """PVC durable ↔ $HOME/.claude, pour la reprise par le CLI et l'extension.
+
+    Rien du projet n'y passe. Le `.claude/settings.json` d'un projet était
+    recopié sur `~/.claude/settings.json` : le réglage global — modèle,
+    `apiKeyHelper`, crochets, adresse du relais — devenait celui du dernier
+    projet ouvert, pour toutes les surfaces et tous les projets. Claude Code
+    lit de lui-même le `.claude/settings.json` du dossier où il tourne ; il
+    n'y a rien à copier.
+    """
+    del slug
     sync_claude_home_store(settings)
-    project_claude = settings.projects_dir / slug / ".claude"
-    home_claude = Path.home() / ".claude"
-    if project_claude.is_dir():
-        home_claude.mkdir(parents=True, exist_ok=True)
-        settings_file = project_claude / "settings.json"
-        if settings_file.is_file():
-            shutil.copy2(settings_file, home_claude / "settings.json")
 
 
 def _titre_du_projet(settings: AtelierSettings, slug: str) -> str:

@@ -95,6 +95,9 @@ def sync_claude_home(settings: AtelierSettings) -> dict[str, str]:
     - Après un tour : HOME → PVC (persister nouvelles sessions).
 
     Stratégie : pour chaque entrée, copier si source plus récente ou cible absente.
+
+    Seuls `~/work/.claude` et `~/.claude` se répondent : aucun réglage de
+    projet (`<projet>/.claude/`) n'entre dans cette synchronisation.
     """
     durable = durable_claude_dir(settings)
     home = home_claude_dir()
