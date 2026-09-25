@@ -1,0 +1,384 @@
+# Lecteur Grist, mode application — conception
+
+Version 1, 24/09/2026. **À valider par Nicolas.** Lots 0, 1 et 2 réalisés
+le 25/09/2026 (voir « État », en fin de document) ; le reste est une
+proposition, non implémentée.
+Sources : grist-core 1.7.3 (Apache-2.0 ; attention, le clone local est le fork
+nic01asFr, le moteur à reprendre est celui de gristlabs), grist-static,
+`docs/consignes/lecteur-grist.md`, `docs/atelier-applications.md`.
+« Estimé » = à mesurer au lot 0.
+
+## 0. Décisions proposées
+
+| Question | Proposition |
+|---|---|
+| Forme | Serveur **Python** léger (Starlette + uvicorn) + le lecteur HTML actuel comme client, qui passe en « mode serveur » quand il est servi par l'application. |
+| Formules | **Moteur de données Python d'origine de grist-core** (`sandbox/grist`, figé sur une version gristlabs), en sous-processus CPython natif, protocole marshal déjà utilisé par Grist. Pas de traduction JS, pas de Pyodide côté serveur. |
+| Stockage | Le `.grist` (SQLite, WAL) est la base de l'application ; un seul écrivain (file d'actions, comme `ActiveDoc`). |
+| ACL | Appliquées **côté serveur**, portage fidèle de `PredicateFormula.ts` et `PermissionInfo.ts` ; tout ce qu'on ne sait pas évaluer est refusé. |
+| Identité | `aucune` (127.0.0.1 seulement), `motdepasse`, `jetons`, `oidc`, `entete` (Atelier, oauth2-proxy), `anonyme`. Rôles (`user.Access`) dans la config. |
+| Widgets | Récupérés et mis en cache par le serveur (plus de CORS), servis sous `/widgets/<clé>/…` en origine opaque ; protocole grain-rpc inchangé côté client. |
+| Config | `application.json` ; copie portable (sans secret) dans `_gristsys_PluginData` du `.grist`. |
+| API | Sous-ensemble **compatible REST Grist** (`/api/docs/{docId}/…`) + `/api/app`, `/api/evenements` (SSE), `/api/admin/…`. |
+
+## 1. Forme du produit
+
+**Pourquoi Python** : le moteur de formules est du Python (~22 000 lignes,
+230 fonctions de tableur) et les formules des documents sont du Python
+arbitraire ; seul un interpréteur Python les calcule fidèlement. grist-core
+complet comme moteur est écarté comme voie principale (image > 1 Go, modèle
+org/espace surdimensionné, l'application redeviendrait « une instance Grist »)
+mais gardé comme **référence de test** en CI.
+
+Commandes (paquet `lecteur_grist`, dossier `serveur/` du projet) :
+
+```
+lecteur-grist init  <doc.grist> <dossier> [--titre T] [--purger-historique] [--recuperer-widgets]
+lecteur-grist serve <dossier> [--hote 127.0.0.1] [--port 8080] [--auth aucune|motdepasse|jetons|oidc|entete]
+lecteur-grist widgets recuperer <dossier> [--section N] [--tout]
+lecteur-grist acl verifier <dossier>
+lecteur-grist utilisateurs ajouter|retirer|role <dossier> <email> [--role owners|editors|viewers]
+lecteur-grist jetons creer|revoquer <dossier> <nom> [--role viewers]
+lecteur-grist sauvegarder|restaurer <dossier> [<id>]
+lecteur-grist exporter <dossier> <sortie.grist> [--purger-historique]
+lecteur-grist verifier <dossier>
+```
+
+`serve` refuse `--auth aucune` hors 127.0.0.1/::1, et `--auth entete` sans
+écoute locale. `init` **copie** le `.grist` (application décorrélée de
+l'original), vérifie intégrité et `schemaVersion`, charge le moteur une fois,
+produit les rapports ACL et widgets.
+
+Dossier d'application :
+
+```
+<dossier>/
+  application.json        config non secrète
+  document.grist          base vivante (WAL)
+  journal.sqlite          actions appliquées (qui, quand, undo)
+  widgets/<clé>/          copies des widgets + meta.json ; widgets/_api/grist-plugin-api.js
+  sauvegardes/            <horodatage>.grist + .json
+  secrets/                0700 : clé de session, utilisateurs (scrypt), jetons (sha256)
+  .gitignore              données, sauvegardes, secrets hors git
+```
+
+Trois déploiements :
+
+- **localhost** : `lecteur-grist serve ./mon-app --port 8080`, sans auth, la
+  personne est propriétaire.
+- **Artefact serveur de l'Atelier** : le dossier d'application est
+  `artifacts/<nom>/` ; manifeste `artefact.json` (commande `python -m
+  lecteur_grist serve artifacts/<nom> --hote 127.0.0.1 --port {port} --auth
+  entete --entete-utilisateur X-Atelier-Utilisateur`, `sante: /_sante`,
+  protocoles `http`, `sse`). Adresses relatives, battement SSE 20 s, écriture
+  des widgets par grain-rpc (l'anti-CSRF de l'Atelier refuse `Origin: null`),
+  démarrage à froid après inactivité (estimé 1–5 s).
+- **Serveur public** : image OCI `python:3.12-slim`, `VOLUME /data`, `--auth
+  oidc` ; chart SSPCloud à **1 réplique** (SQLite + moteur en mémoire), PVC,
+  Ingress TLS, NetworkPolicy de sortie limitée ; sous-domaine séparé pour les
+  widgets.
+
+## 2. Données et persistance
+
+- **Chargement** (reproduit d'`ActiveDoc`) : WAL, `trusted_schema=OFF`,
+  `integrity_check` ; document plus récent que le moteur → lecture seule ; plus
+  ancien → sauvegarde puis migrations ; chargement des tables dans le moteur
+  (marshal) ; `Calculate`.
+- **Écriture** : file unique. Contrôle préalable (schéma, règles d'accès,
+  actions internes interdites au client) → moteur `apply_user_actions` →
+  contrôle ACL des actions **directes** (comme `canApplyBundle`) → refus = défaire
+  par `ApplyUndoActions` et 403 → transaction SQLite (portage de
+  `DocStorage._process_*`, ~400 lignes) → journal → SSE d'invalidation (chaque
+  client relit via l'API filtrée) → réponse `{actionNum, retValues}`. Échec de
+  transaction : redémarrage du moteur, rien de commité.
+- **Concurrence** : écritures sérialisées, dernier écrivain gagne par cellule
+  (comme Grist), lectures parallèles (WAL), verrou de dossier, pas de
+  multi-réplique.
+- **Sauvegardes** : `VACUUM INTO`, horaires (48) et quotidiennes (14), avant
+  migration/restauration, à la demande ; restauration à chaud.
+- **Export `.grist`** : réservé à qui a `FullCopies` ; option de purge de
+  `_gristsys_ActionHistory` (qui contient d'anciennes valeurs). Toute
+  modification de l'écriture se vérifie par réouverture dans un vrai Grist.
+
+## 3. Formules
+
+**Traduire le moteur en JavaScript ?** Non : les formules des documents sont du
+Python arbitraire ; traduire le moteur obligerait à écrire un interpréteur
+Python en JS, ce que fait Pyodide avec le vrai CPython. Une traduction partielle
+des formules simples produirait des écarts **silencieux** (`None + 1`, division,
+arrondis, dates) : rejetée. En mode navigateur, les colonnes formule dont une
+entrée a changé sont signalées « valeurs figées ».
+
+**Pyodide** : grist-core l'utilise déjà côté Node (`sandbox/pyodide/`,
+`GRIST_SANDBOX_FLAVOR=pyodide`) ; grist-static le fait tourner dans le
+navigateur (Web Worker, moteur empaqueté en roue). Poids : ~15,5 Mo bruts
+(~8 Mo gzip) ; démarrage estimé 3–8 s.
+
+| Option | Fidélité | Coût | Choix |
+|---|---|---|---|
+| Valeurs stockées figées (actuel) | exacte à l'ouverture | nul | mode navigateur |
+| Moteur CPython côté serveur | celle de Grist | moyen | **recommandé** |
+| Pyodide dans le navigateur | celle de Grist | +21 Mo (fichier ~23 Mo), CSP | plus tard, variante optionnelle `lecteur-grist-formules.html` |
+| Traduction JS | faible, divergences silencieuses | élevé | rejeté |
+
+Sous la CSP des artefacts de l'Atelier, Pyodide est impossible sans
+`'wasm-unsafe-eval'` : on ne le demande pas ; l'artefact serveur calcule côté
+serveur.
+
+Sécurité : une formule est du code exécuté sur le serveur. Sous-processus à
+environnement vide, `RLIMIT_AS`, `nice`, réseau coupé (`unshare -n`) si le
+cluster le permet ; formules modifiables par les propriétaires seuls ; `init`
+signale les imports sensibles.
+
+## 4. Widgets côté serveur
+
+Récupération par le serveur (réutilise `outils/embarquer_widgets.py` : refus des
+adresses privées, plafonds), rangée en **miroir par chemin** (le widget reste
+« à son adresse », CDN réécrits sous `/widgets/<clé>/_ext/…`) ou en copie
+autonome. Service : miroir > copie du document > relais direct si autorisé >
+« non disponible ». CSP `sandbox` sans `allow-same-origin` (origine opaque) ;
+`--port-widgets`/sous-domaine pour une vraie origine distincte. Accès réseau
+d'un widget à l'exécution : liste blanche par section, jamais accordée
+automatiquement. `getAccessToken` : jeton HMAC 15 min, lecture seule pour un
+widget `read table`.
+
+## 5. Authentification et ACL
+
+`_grist_ACLRules` porte `aclFormulaParsed` (arbre déjà analysé) : **toutes** les
+formules d'ACL sont évaluables fidèlement (portage de `compilePredicateFormula`,
+~150 lignes). Appliqué en v1 : combinaison par `rulePos` et ressources
+colonne/table/`*:*`/défaut ; lecture (tables et colonnes absentes, lignes
+filtrées, cellules censurées, métadonnées filtrées) ; écriture C/U/D par
+colonne avec `rec`/`newRec` ; `S`, `FullCopies`, `SchemaEdit` ; attributs
+utilisateur. Non pris en charge en v1 : liens de partage (`LinkKey`), partages,
+« voir comme », mémos, modification des règles dans l'application.
+
+Règle par défaut : une règle non évaluable refuse ce qu'elle accorderait ;
+`serve` multi-utilisateur **refuse de démarrer** s'il en existe (sauf option
+explicite) ; un utilisateur sans rôle n'a **aucun** accès.
+
+Derrière l'Atelier : identité par `X-Atelier-Utilisateur` (propriétaire seul
+en v1), traduite en e-mail par `identites` ; domaine de confiance = l'utilisateur
+Unix du pod. Public : OIDC Keycloak SSPCloud (client à demander aux
+administrateurs) ou oauth2-proxy en mode `entete`.
+
+## 6. Configuration
+
+`application.json` fait foi (titre, pages visibles et ordre, sections en lecture
+seule, widgets et leur réseau, apparence, édition, recalcul, auth, rôles,
+sauvegardes) ; copié sans secret dans `_gristsys_PluginData` à l'export, relu
+par `init`. Modifiable par les `owners` (`PUT /api/admin/config` avec `If-Match`,
+ou CLI) ; `auth` et `roles` par la CLI seule en v1. Masquer une page n'est pas
+une ACL.
+
+## 7. API HTTP (relative au préfixe)
+
+- `GET /_sante` ; `GET /` (lecteur) ; `GET /api/app` (bascule le lecteur en mode
+  serveur).
+- Compatibles Grist : `GET /api/docs/{docId}/tables`, `…/columns`, `…/data`,
+  `…/records` ; `POST …/apply` ; `POST|PATCH|PUT …/records` ; `…/sql` ;
+  pièces jointes ; `…/download`.
+- Propres : `GET /api/evenements` (SSE), `POST /api/jeton`, `GET /widgets/…`,
+  `/api/admin/*` (config, sauvegardes, widgets, rapport ACL, journal),
+  connexion/déconnexion/retour OIDC.
+
+## 8. Lots
+
+- **L0 — Mesures (2–3 j)** : moteur gristlabs en sous-processus sur CRESO et
+  documents d'essai, temps et mémoire ; réouverture dans un vrai Grist en CI.
+- **L1 — Serveur en lecture seule** : `init`, `serve`, routes GET, lecteur en
+  mode serveur ; parité serveur/navigateur.
+- **L2 — Écriture avec formules** : moteur, stockage, file, journal, SSE,
+  sauvegardes, export ; **test de parité contre `gristlabs/grist`** cellule par
+  cellule.
+- **L3 — Widgets côté serveur** (en parallèle de L2) : miroir, service, CSP,
+  jetons ; calendrier gristlabs compris.
+- **L4 — Identité et ACL** : **test différentiel contre Grist** par
+  utilisateur ; règles non évaluables qui bloquent `serve`.
+- **L5 — Artefact serveur Atelier**.
+- **L6 — Configuration**.
+- **L7 — Public** : image, chart, OIDC, anonyme, revue de sécurité.
+- **L8 (optionnel)** : variante HTML avec Pyodide ; `REQUEST()` sur liste
+  blanche.
+
+Ordre : L0 → L1 → L2 → L4 → L7, L3 et L5 après L1/L2. **Rien n'est exposé à
+plusieurs utilisateurs avant L4.**
+
+## 9. Risques
+
+Version du moteur contre version des documents ; portage du stockage
+(`ModifyColumn`) ; subtilités ACL ; formules = code arbitraire sur le serveur ;
+historique d'actions dans les exports ; pièces jointes externes (Grist ≥ 1.4) ;
+Atelier mono-utilisateur ; client OIDC SSPCloud à obtenir ; licences des widgets
+redistribués ; une seule réplique.
+
+## 10. État (25/09/2026)
+
+Projet `projet-sans-nom-5` (pod), dossier `serveur/`, paquet `lecteur_grist`.
+Détail des mesures : `serveur/MESURES.md` ; usage : readme du projet.
+
+### Fait et vérifié
+
+- **L0** : moteur de **gristlabs**/grist-core **v1.7.19** (`sandbox/grist`,
+  sans retouche, tests retirés, LICENSE/NOTICE/`RETOUCHES.md`), `.venv`
+  Python 3.11 (uv) ; client sous-processus `PIPE_MODE=minimal` ; chargement
+  dans l'ordre d'ActiveDoc, migrations comprises ; portage de
+  `DocStorage._process_*` (y compris `ModifyColumn`). Mesuré sur 6 documents
+  réels (Saint Martin ×2, CRM, 🟢CRM 111 Mo, Charts v4, Grist Tasks) et 2
+  fixtures migrées.
+
+  | | petit doc | CRM (22 k lignes, 55 formules) | 🟢CRM (111 Mo, 85 k lignes) |
+  |---|---|---|---|
+  | démarrage du moteur | 0,7–0,8 s | 0,7 s | 0,9 s |
+  | chargement + Calculate | 0,15–0,4 s | 3,6 s (Calculate 3,0) | 7,4 s (Calculate 4,2) |
+  | mémoire chargé / pic | 73–76 / 91 Mo | 191 / 217 Mo | 363 / 493 Mo |
+  | action courante (médiane) | 1,5–3 ms | 4,6 ms | 4,7 ms |
+  | `RenameColumn` | 0,5 s | 1,1 s | 1,4 s |
+  | fidélité après Calculate | 0 écart | 190 écarts (date du jour), **les mêmes dans Grist** | 144 (idem) |
+
+  Écriture : 25 actions par document (formule dépendante, lookup, colonne
+  déclenchée, AddOrUpdate, renommage, undo…), écrites par `stockage.py`,
+  rouvertes dans un moteur neuf (0 recalcul, 0 écart) **et dans un vrai
+  Grist**.
+- **Réouverture dans Grist** : grist-core 1.7.19 **construit depuis les
+  sources** avec Node 22 (sur le pod en 2,5 min ; sur le poste Windows, où
+  sont les documents réels, lancé en `unsandboxed`), import par
+  `POST /api/docs` et comparaison cellule par cellule
+  (`serveur/outils/verifier_dans_grist.py`) : « Saint Martin_local_test »
+  (enregistré par le lecteur) et 5 documents écrits par le moteur s'ouvrent,
+  mêmes tables, 0 écart ; copies `_lecteur_hors_ligne` conservées.
+- **L1** : `lecteur-grist init|serve|verifier` ; dossier d'application
+  (`application.json`, `document.grist`, `widgets/`, `sauvegardes/`,
+  `secrets/` 0700, `.gitignore`) ; `init` refuse un document sans
+  `schemaVersion`, migre un document ancien après sauvegarde, charge le
+  moteur une fois ; `serve` (Starlette/uvicorn) : `/_sante`, `/`, `/api/app`,
+  `GET /api/docs/{docId}/tables|columns|data|records` (`filter`, `sort`,
+  `limit`, `hidden`), `/api/evenements` (SSE, battement 20 s), préfixe
+  (`X-Forwarded-Prefix`), refus de `--auth aucune` hors 127.0.0.1/::1.
+  Lecteur : `SourceServeur` implémente `Donnees` sur l'API (réplique sql.js
+  rangée comme DocStorage), activée quand `api/app` répond ; mode fichier
+  inchangé.
+  Vérifié : 14 tests (`serveur/tests`, Windows et pod) ; routes comparées à
+  grist-core sur Saint Martin et Charts v4 (**0 écart** sur tables, colonnes,
+  données, métadonnées) et CRM (seuls écarts : date du jour, table cachée par
+  une règle d'accès) ; Chrome sans tête (`outils/verifier_serveur.py`) sur
+  Saint Martin ×2, Charts v4, CRM : tables lues par le lecteur et données des
+  widgets identiques en mode fichier et serveur, mêmes pages et widgets
+  (Builder, Coder prêts ; Atlas affiché en ligne), SSE connecté, même
+  résultat derrière un relais à préfixe ; dans le pod, même parité sur le
+  document d'essai des tests et 4 fixtures de grist-core en schéma 46 (dont
+  `TypeEncoding`). Mode fichier intact : `outils/verifier_artefact.py`,
+  32 étapes sur 32 (`file://` et CSP de l'Atelier), dans le pod, après
+  `outils/publier.sh`. Commits locaux (pas de push) : 12 commits, du moteur
+  recopié (`6d48fea`) à `04d5d75`, arbres identiques entre le poste et le
+  pod.
+- **L2** : écriture par le moteur, chargé par `serve`.
+  - `serve` prend un **verrou de dossier** (`.verrou`, un seul serveur), passe
+    le document en WAL (`synchronous=FULL`), le charge dans le moteur et
+    **range ce que `Calculate` change à l'ouverture** comme action système
+    (comme ActiveDoc : seulement si elle stocke quelque chose).
+  - **File d'écriture unique** : le moteur applique, puis une transaction
+    SQLite range les actions stockées (`stockage.py`) et l'historique ; si
+    la transaction échoue ou si le moteur meurt pendant l'action, **rien
+    n'est écrit**, le moteur est relancé et rechargé depuis le fichier.
+  - Routes **au format de l'API REST de Grist** : `POST /api/docs/{id}/apply`
+    (réponse `actionNum`, `actionHash`, `retValues`, `isModification`),
+    `POST|PATCH|PUT …/records`, `…/records/delete`, `POST …/data` ; analyse
+    et erreurs reprises de `TableOperationsImpl`/`DocApi` (400 `Invalid
+    payload`, 404 table ou colonne absente, 500 `[Sandbox] …` pour
+    `/apply`, 403 pour les actions que Grist refuse faute de contrôle).
+  - **`_gristsys_ActionHistory` tenu comme Grist** (`ActionHistoryImpl`) :
+    même corps marshalé et même `actionHash` (vérifié octet pour octet sur
+    390 lignes d'historique écrites par Grist), élagage identique.
+    `journal.sqlite` : qui, quand, origine, actions, de quoi défaire.
+  - **SSE** : événement `actions` {actionNum, tables} ;
+    `/api/modifications?depuis=N` pour rattraper. Lecteur en mode serveur :
+    `appliquerActions` passe par `/apply`, puis la page relit les tables
+    touchées ; les modifications des autres clients arrivent par le flux.
+  - **Sauvegardes** par `VACUUM INTO` : toutes les heures si le document a
+    changé, avant migration, à la demande (`lecteur-grist sauvegarder`) ;
+    rétention 48 dernières + une par jour sur 14 jours ; `restaurer`
+    (serveur arrêté, sauvegarde de l'état courant avant). `GET …/download`
+    (`nohistory=true` purge l'historique) et `lecteur-grist exporter
+    [--purger-historique]`.
+  - Vérifié :
+    - **parité contre grist-core 1.7.19** (`serveur/outils/parite_grist.py`) :
+      même suite de 33 à 36 requêtes jouée contre Grist et contre `serve`,
+      réponses comparées, puis **toutes les tables** (utilisateur et 24
+      `_grist_*`) cellule par cellule avec `comparer_avec_grist.py`,
+      l'historique action par action, et notre `/download` **rouvert dans
+      Grist**. Poste : Saint Martin, Charts v4, CRM, Grist Tasks (migré), un
+      document d'essai : 0 écart (hors table `Artefacts` de CRM, cachée par
+      une règle d'accès : L4). Pod : 12 documents (fixtures de grist-core,
+      dont 5 en stockage 7 et 8, migrés) : 0 écart, historique identique
+      (30 actions sur 30) partout, réouverture sans écart ;
+    - tests (`serveur/tests`, 27, poste et pod) : **deux clients** qui
+      écrivent en même temps (40 actions, rien de perdu, `actionNum`
+      continus), **moteur tué au milieu d'une action** (500, rien d'écrit,
+      moteur relancé, écriture suivante normale), transaction refusée,
+      verrou, SSE, historique, sauvegardes, rétention, restauration,
+      migration de stockage ;
+    - **Chrome** (`outils/verifier_ecriture_navigateur.py`, poste sur Saint
+      Martin, pod sur le document d'essai) : le widget Markdown de
+      gristlabs, chargé à son adresse, écrit par ses propres boutons ; un
+      widget du Builder d'Étude ajoute une ligne ; un deuxième onglet voit
+      la modification par SSE ; elle est là après rechargement, puis après
+      arrêt et relance du serveur ;
+    - lecture inchangée : fichier contre serveur (`verifier_serveur.py`)
+      identiques, sauf les formules « date du jour », que le serveur tient à
+      jour ; mode fichier : `verifier_artefact.py` 32/32 dans le pod.
+  - Temps (poste) : démarrage de `serve` 1,6 s (Saint Martin, 10 Mo), 5,0 s
+    (CRM), 7,8 s (🟢CRM, 111 Mo) ; `POST /apply` d'une cellule 31 ms en
+    médiane (écriture durable) ; `/download` 0,2 à 0,9 s.
+  - Commits locaux (pas de push) : 12 commits, de `eee185d` à
+    `16315c4`, arbres identiques entre le poste et le pod.
+
+
+### Écarts à la conception
+
+- **Stockage** : la conception prévoyait de refuser à `init` les documents
+  qui demandent une migration de stockage. Les migrations 8 et 9 de
+  DocStorage (un index, une colonne) ont été portées : les documents en
+  stockage 7 et 8 sont migrés après sauvegarde, comme Grist le fait ;
+  avant 7, `init` refuse (« ouvrir dans Grist puis réexporter »).
+- **parseStrings partiel** : seules les chaînes numériques simples envoyées
+  dans une colonne Numeric/Int sont lues comme Grist (point décimal, sauf
+  langues où il sépare les milliers) ; le moteur convertit le reste comme il
+  sait. Dates et nombres localisés : non.
+- **Règles d'accès non appliquées** (L4) ; toute écriture est faite au nom du
+  propriétaire (`--proprietaire` à `init`).
+- Restauration **serveur arrêté** seulement ; pas de pièces jointes
+  (`_gristsys_Files` non servi) ; `REQUEST()` refusé.
+- Lecteur : la réplique est construite à l'ouverture depuis `/data`, puis
+  relue par table après chaque modification (pas de lecture paresseuse). Une
+  colonne Bool rangée en blobs marshal par le fichier (CRM `Agents.actif`) se
+  lit `true` en mode fichier, `1` en mode serveur (même valeur pour Grist).
+- `sort` : tri simple (sans options `:naturalSort`, etc.).
+- `--auth` : seul `aucune` existe, sur 127.0.0.1/::1 ; les autres modes sont
+  refusés (L4).
+- **L'exemple CRESO embarqué n'a pas été remplacé** : c'est un sous-ensemble
+  SQLite fait à la main (ni `schemaVersion`, ni `_grist_Pages`), que le
+  moteur ne sait migrer depuis aucune version supposée (1 à 40). En
+  produire un vrai export demande de reconstruire le document dans Grist à
+  partir de ses données : ni facile ni sûrement fidèle ; laissé en l'état.
+
+### Non vérifié
+
+- À travers l'Atelier réel (artefact serveur, L5) : préfixe vérifié derrière
+  un relais local qui reproduit `X-Forwarded-Prefix`.
+- Écriture sur 🟢CRM (111 Mo) dans Chrome ; charge soutenue (au-delà de deux
+  clients et 40 actions) ; long fonctionnement (rétention sur plusieurs
+  jours : testée avec des dates simulées).
+- Pièces jointes, `REQUEST()`, documents `onDemand`, stockage avant 7.
+
+### Recommandation pour la suite
+
+L2 tient : parité exacte avec grist-core sur 16 documents, écriture durable
+en une trentaine de millisecondes, reprise propre sur incident. Suite
+proposée : **L4 (identité et ACL)** avant toute exposition : c'est lui qui
+permet plusieurs utilisateurs, et le seul écart de parité restant (CRM) en
+relève ; test différentiel par utilisateur contre Grist, avec le même outil.
+**L3** (widgets servis) peut avancer en parallèle, puis **L5** (artefact
+serveur de l'Atelier). À traiter au passage : parseStrings complet (dates,
+nombres localisés) si des widgets envoient des chaînes, et pièces jointes
+(Builder d'Étude, formulaires).

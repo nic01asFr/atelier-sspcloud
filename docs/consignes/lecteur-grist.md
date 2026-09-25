@@ -29,6 +29,76 @@ Elle prime sur tout ce qui suit.
    par les ACL du document) : tout accès aux données passe par `Donnees`, tout
    accès réseau pour les widgets par `ReseauWidgets` (voir le readme).
 
+## Mode application, lots 0 à 2 (25/09/2026)
+
+Conception : `docs/lecteur-grist-application.md` (dépôt de l'Atelier). Code
+dans `serveur/` du projet (paquet `lecteur_grist`), installé par
+`sh serveur/installer.sh` dans `.venv` (Python 3.11 par uv, rangé sous
+`~/work/.tools/uv-python` dans le pod).
+
+- **Moteur** : `serveur/lecteur_grist/moteur_grist/` = `sandbox/grist` de
+  **gristlabs**/grist-core v1.7.19, sans retouche (tests retirés ; LICENSE,
+  NOTICE, `RETOUCHES.md`). Client en sous-processus (`moteur.py`,
+  `PIPE_MODE=minimal`, marshal ; tube lu **tamponné**, sinon marshal croit à
+  une fin de fichier), chargement comme ActiveDoc (`document.py`), écriture
+  des actions stockées comme DocStorage (`stockage.py`).
+- **Mesures (lot 0)** : `serveur/MESURES.md`. Démarrage 0,7–0,9 s ;
+  ouverture 0,15 s à 7,4 s (111 Mo) ; actions en millisecondes sauf
+  `RenameColumn` (0,5–1,4 s) ; mémoire 73 à 490 Mo ; fidélité des formules
+  égale à Grist (seuls écarts : formules « date du jour », les mêmes dans
+  Grist) ; documents écrits par le moteur rouverts dans un vrai Grist sans
+  écart.
+- **Réouverture dans Grist** : grist-core 1.7.19 **construit depuis les
+  sources** (pod : `/tmp/lg/grist-core`, 2,5 min ; poste Windows :
+  `yarn install` + `bash buildtools/build.sh prod`, lancé en `unsandboxed`
+  avec un Python 3.11), import par l'API et comparaison :
+  `serveur/outils/verifier_dans_grist.py`. « Saint Martin_local_test.grist »
+  (enregistré par le lecteur) se rouvre ; les copies `_lecteur_hors_ligne`
+  survivent (3/3 et 1/1).
+- **L'exemple CRESO embarqué n'est pas un document Grist** (pas de
+  `schemaVersion`, ni `_grist_Pages`, ni `_gristsys_*`) : Grist refuse de
+  l'importer, `init` aussi. Pas remplaçable simplement : le moteur ne le
+  migre depuis aucune version supposée ; il faudrait le reconstruire dans
+  Grist à partir de ses données.
+- **Serveur (lot 1, lecture seule)** : `lecteur-grist init|serve|verifier`
+  (`python -m lecteur_grist`). Routes GET compatibles Grist (`tables`,
+  `columns`, `data`, `records`), `/api/app`, `/api/evenements` (SSE),
+  `/_sante`, préfixe lu dans `X-Forwarded-Prefix`, `--auth aucune` refusé
+  hors 127.0.0.1/::1. Comparées à grist-core sur Saint Martin, Charts v4,
+  CRM : mêmes tables, colonnes, valeurs (hors « date du jour » et hors ACL,
+  non appliquées avant L4).
+- **Lecteur en mode serveur** : `SourceServeur` (dans `index.html`)
+  implémente `Donnees` sur l'API : réplique sql.js construite depuis
+  `/data`, valeurs rangées comme DocStorage ; activée quand `api/app`
+  répond, sinon mode fichier inchangé. Vérifié par
+  `outils/verifier_serveur.py` (Chrome sans tête : fichier contre serveur,
+  puis derrière un relais à préfixe).
+- **Transfert poste → pod** : aucun canal binaire (les outils Onyxia
+  n'acceptent que du texte). Les documents réels restent sur le poste ; le
+  code passe fichier par fichier, et chaque commit du pod est comparé à celui
+  du poste par son arbre git.
+- **Écriture (lot 2)** : `serve` charge le moteur (verrou `.verrou`, WAL,
+  `Calculate` de l'ouverture rangé comme action système), une file unique
+  (`actif.py`) : moteur puis une transaction SQLite (actions stockées +
+  `_gristsys_ActionHistory` tenu comme Grist, `historique.py` et
+  `marshal_js.py` : même empreinte octet pour octet) ; moteur mort ou
+  transaction refusée : rien d'écrit, moteur relancé. Routes au format Grist :
+  `POST /apply`, `POST|PATCH|PUT …/records`, `…/records/delete`, `…/data`,
+  `GET …/download` (`nohistory`) ; erreurs comme Grist (`operations.py`).
+  `journal.sqlite`, sauvegardes `VACUUM INTO` (48 + 14 quotidiennes),
+  `lecteur-grist sauvegarder|restaurer|exporter`. SSE `actions` : le
+  lecteur (`SourceServeur`) relit les tables touchées ; ses écritures passent
+  par `/apply`. Stockage 7 et 8 migrés (migrations 8 et 9 de DocStorage
+  portées), avant 7 refusé.
+- **Parité d'écriture** : `serveur/outils/parite_grist.py` joue la même suite
+  contre grist-core (`GRIST_URL`, `GRIST_CLE`) et contre `serve`, compare
+  réponses, toutes les tables, l'historique, puis rouvre notre `/download`
+  dans Grist. 0 écart sur 16 documents (hors règle d'accès de CRM, L4).
+  Chrome : `outils/verifier_ecriture_navigateur.py DOC.grist` (le document
+  est obligatoire hors du poste). À l'arrêt, `serve` coupe les flux SSE au
+  bout de 5 s (`timeout_graceful_shutdown`), sinon uvicorn attend les
+  navigateurs indéfiniment.
+
 ## Lot « widgets par leur adresse » (24/09/2026, nuit)
 
 - **Côté hôte de grain-rpc** (`HoteWidget`, d'après `WidgetFrame.ts`,
@@ -238,10 +308,9 @@ Objectif : faire tourner sans réseau tout un document, widgets compris.
 
 ## Ce qui reste
 
-- Rouvrir dans une vraie instance Grist un `.grist` enregistré par le
-  lecteur : l'export (`db.export()`) n'a pas changé et le fichier passe
-  `PRAGMA integrity_check`, mais la réouverture dans Grist n'a pas été
-  refaite.
+- Mode application : lots L3 (widgets servis), L4 (identité, ACL), L5
+  (artefact serveur de l'Atelier) ; parseStrings complet, pièces jointes.
+  Voir la section « État » de la conception.
 - Vérification par l'Atelier réel (derrière sa connexion) : faite ici avec un
   serveur local qui reproduit ses en-têtes, pas à travers l'Atelier.
 - Remplaçant de grist-plugin-api : pas de `cellFormat: 'typed'`, pas de tri
@@ -250,10 +319,8 @@ Objectif : faire tourner sans réseau tout un document, widgets compris.
   `uicdn.toast.com` sans CORS) ; graphiques Kaplan-Meier ; pièces jointes
   (formulaires, `Donnees.pieceJointe`) ; disposition des sections selon
   `layoutSpec` (elles s'empilent).
-- Implémentations serveur de `Donnees` et `ReseauWidgets` (modèle
-  d'application).
-- Rouvrir dans Grist un `.grist` portant des copies `_lecteur_hors_ligne`
-  (non vérifié : pas d'instance Grist dans le pod).
+- Implémentation serveur de `ReseauWidgets` (lot 3) ; `Donnees` serveur en
+  écriture (lot 2).
 
 ## Règles propres au projet
 
@@ -274,4 +341,9 @@ Objectif : faire tourner sans réseau tout un document, widgets compris.
   hors du périmètre actuel : cela demande un relais côté serveur qui garde la
   clé Grist hors de la page, et c'est un chantier de l'Atelier.
 - Après toute modification de `index.html` : `outils/publier.sh`, puis
-  `python3 outils/verifier_artefact.py`.
+  `python3 outils/verifier_artefact.py` (mode fichier) et
+  `.venv/bin/python outils/verifier_serveur.py DOC.grist` (mode serveur).
+- Serveur : `.venv/bin/python -m pytest serveur/tests` ; le moteur
+  (`moteur_grist/`) ne se modifie pas à la main (voir `RETOUCHES.md`) ;
+  toute écriture du `.grist` se vérifie par réouverture dans grist-core
+  (`serveur/outils/verifier_dans_grist.py`).
