@@ -397,6 +397,17 @@ def test_l_amont_ne_choisit_pas_qui_l_encadre(hote: Hote) -> None:
     assert "default-src 'self'" in r.headers.get_list("content-security-policy")
 
 
+def test_un_amont_sans_aucun_entete_est_restreint_a_l_atelier(hote: Hote) -> None:
+    """Mesure A6 : l'éditeur n8n n'envoie rien ; relayé, il ne s'encadre que dans l'Atelier."""
+    cookie = entrer(hote, "demo")
+    attendre_pret(hote, cookie)
+    with client(cookie) as c:
+        r = c.get(f"{hote.base}/demo/amont/nu")
+    assert r.status_code == 200 and r.text == "nu"
+    assert _directives_de_cadrage(r) == [f"frame-ancestors {ATELIER}"]
+    assert "x-frame-options" not in r.headers
+
+
 def test_les_fichiers_d_une_creation_ne_s_encadrent_que_dans_l_atelier(hote: Hote) -> None:
     cookie = entrer(hote, "demo")
     with client(cookie) as c:
