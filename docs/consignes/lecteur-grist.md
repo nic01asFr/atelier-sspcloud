@@ -120,12 +120,17 @@ dans `serveur/` du projet (paquet `lecteur_grist`), installé par
   Chrome à deux comptes : `outils/verifier_acces_navigateur.py DOC.grist`
   (contextes de navigation séparés, `Target.createBrowserContext`).
 - **Widgets servis (lot 3)** : `widgets.py` ; `lecteur-grist widgets
-  recuperer|lister|autoriser|relais`. Miroir par chemin et copie autonome
-  sous `widgets/<clé>/` (dossier d'application), récupérés hors requête par
-  le `Recuperateur` d'`outils/embarquer_widgets.py` ; jamais une adresse à
-  jeton. Service : miroir > copie autonome > copie du document > relais
-  autorisé > « non disponible » ; derrière l'Atelier (`X-Atelier-Acces`),
-  copie autonome d'abord. `/widgets/*` : CSP `sandbox` sans
+  recuperer|lister|autoriser`, et les mêmes actions dans le lecteur pour le
+  propriétaire (`/api/admin/widgets/recuperer|reseau`). Miroir par chemin
+  et copie autonome sous `widgets/<clé>/` (dossier d'application),
+  récupérés hors requête par le `Recuperateur` d'`outils/embarquer_widgets.py` ;
+  jamais une adresse à jeton. **Règle : le mode servi ne fait jamais moins
+  bien que le mode fichier** : même ordre (à son adresse si elle répond,
+  puis copie du serveur, du document, du navigateur), même statut, même
+  compteur ; `outils/verifier_parite_widgets.py --serveur URL…` le vérifie
+  (0 écart attendu, hors copies du serveur comptées à part). Parmi les
+  copies du serveur, derrière l'Atelier (`X-Atelier-Acces`), l'autonome
+  d'abord. `/widgets/*` : CSP `sandbox` sans
   `allow-same-origin`, réseau = serveur + liste blanche de la section,
   **jamais accordée d'office** (le propriétaire accorde ce qui lui est
   proposé). `--port-widgets` : vraie origine distincte, seule façon d'avoir
@@ -400,8 +405,11 @@ Objectif : faire tourner sans réseau tout un document, widgets compris.
 - Après toute modification de `index.html` : `outils/publier.sh`, puis
   `python3 outils/verifier_artefact.py` (mode fichier) et
   `.venv/bin/python outils/verifier_serveur.py DOC.grist` (mode serveur).
-- Widgets servis : `lecteur-grist widgets recuperer` ne tourne jamais pendant
-  une requête ; le réseau d'un widget ne s'accorde qu'à la main
+- Widgets servis : pas de CSP restrictive sur la page du lecteur servie (les
+  widgets en `srcdoc` en hériteraient) ; après toute modification des
+  widgets, `outils/verifier_parite_widgets.py`. `lecteur-grist widgets
+  recuperer` (ou le bouton du propriétaire) ne tourne jamais pendant
+  une requête de lecture ; le réseau d'un widget ne s'accorde qu'à la main
   (`widgets autoriser`), jamais depuis ce que la récupération propose.
 - Serveur : `.venv/bin/python -m pytest serveur/tests` ; le moteur
   (`moteur_grist/`) ne se modifie pas à la main (voir `RETOUCHES.md`) ;

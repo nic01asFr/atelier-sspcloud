@@ -135,8 +135,9 @@ signale les imports sensibles.
 Récupération par le serveur (réutilise `outils/embarquer_widgets.py` : refus des
 adresses privées, plafonds), rangée en **miroir par chemin** (le widget reste
 « à son adresse », CDN réécrits sous `/widgets/<clé>/_ext/…`) ou en copie
-autonome. Service : miroir > copie du document > relais direct si autorisé >
-« non disponible ». CSP `sandbox` sans `allow-same-origin` (origine opaque) ;
+autonome. Service (corrigé le 25/09, voir « État ») : comme en mode fichier,
+le widget à son adresse s'il répond, puis copie du serveur (miroir ou
+autonome) > copie du document > copie du navigateur > « non disponible ». CSP `sandbox` sans `allow-same-origin` (origine opaque) ;
 `--port-widgets`/sous-domaine pour une vraie origine distincte. Accès réseau
 d'un widget à l'exécution : liste blanche par section, jamais accordée
 automatiquement. `getAccessToken` : jeton HMAC 15 min, lecture seule pour un
@@ -402,10 +403,10 @@ Détail des mesures : `serveur/MESURES.md` ; usage : readme du projet.
     et une **copie autonome** (`outils/embarqueur-widgets.js` dans Node).
     Réseau par le `Recuperateur` d'`outils/embarquer_widgets.py` (refus des
     adresses privées après résolution, plafonds) ; une adresse à jeton n'est
-    jamais récupérée. `widgets lister|autoriser|relais`.
-  - Service (`/api/widgets`, par section lisible) : miroir > copie
-    autonome > copie du document > relais direct si autorisé > « non
-    disponible » (données brutes). `/widgets/*` sans identification (code
+    jamais récupérée. `widgets lister|recuperer|autoriser`.
+  - Service (`/api/widgets`, par section lisible) : ce que le serveur a de
+    chaque widget (miroir, copie autonome) ; l'ordre de résolution est celui
+    du mode fichier (voir le correctif ci-dessous). `/widgets/*` sans identification (code
     public du widget), CSP `sandbox` sans `allow-same-origin`, réseau =
     serveur + **liste blanche de la section** (`widgets.sections.<id>.reseau`),
     jamais accordée d'office : les origines citées par le code et par les
@@ -417,8 +418,8 @@ Détail des mesures : `serveur/MESURES.md` ; usage : readme du projet.
     ouvert pour ces appels, pré-vol `OPTIONS`), soumis à ses règles
     d'accès ; lecture seule pour un widget « read table » ; rôle jamais
     au-dessus de celui du compte ; un jeton de widget n'en émet pas d'autre.
-  - Lecteur : en mode serveur, les widgets externes viennent du serveur ; le
-    mode fichier est inchangé (`verifier_artefact.py` 32/32 dans le pod).
+  - Lecteur : le mode fichier est inchangé (`verifier_artefact.py` 32/32
+    dans le pod).
   - Vérifié (Chrome 153, poste) : Builder, markdown, calendrier gristlabs
     (uicdn.toast.com recopié : il tourne, ce qui échouait en mode fichier
     hors ligne), carte (marqueurs ; tuiles d'OpenStreetMap accordées par la
@@ -451,6 +452,51 @@ Détail des mesures : `serveur/MESURES.md` ; usage : readme du projet.
     (`inactivite_min` 1 le temps de l'essai : arrêt à 80 s) puis navigation
     → 503 « Démarrage… » → `api/app` 200 en 1,1 s.
   - Commits : `6407182`, `0117ba9`, arbres identiques poste et pod.
+- **Correctif de parité fichier / servi** (retour de Nicolas : servi, le
+  widget témoin sans copie était « non disponible » alors que le même
+  document en `file://` le chargeait à son adresse ; compteurs 4/5 et 3/5).
+  - Même ordre de résolution dans les deux modes : le lecteur sonde
+    l'adresse (comme en mode fichier) et charge le widget **à son adresse**
+    quand elle répond (cadre à l'adresse réelle, origine du widget, niveau
+    d'accès respecté, hôte grain-rpc inchangé, données par `Donnees`, donc
+    par les règles d'accès du serveur) ; sinon copie du serveur (miroir ou
+    autonome), puis du document, puis du navigateur ; « non disponible »
+    seulement si rien de cela. Le relais « direct si autorisé » disparaît
+    (`widgets relais` et `widgets.relais` retirés).
+  - Même statut et même couverture (une seule `statutWidget`, un seul
+    compteur « n/N fonctionnent ici sans réseau ») : une copie du serveur
+    compte comme copie hors ligne, comme celle du document ou du navigateur.
+  - Actions du propriétaire sans CLI : « Récupérer une copie sur le
+    serveur » (`POST /api/admin/widgets/recuperer`, owners, même
+    récupérateur : adresses privées refusées, plafonds, une à la fois),
+    « Ranger une copie dans le document » (servi : copie autonome du
+    serveur, écrite par `/apply`), « Utiliser la copie hors ligne »,
+    « Autoriser <origine> » (`POST /api/admin/widgets/reseau`). Les messages
+    ne citent plus la CLI.
+  - CSP de la page servie : aucune n'est posée par le serveur (l'Atelier
+    n'ajoute que `frame-ancestors`), donc ni `frame-src` ni `connect-src`
+    à ouvrir : le cadre à l'adresse du widget et la sonde (lecture sans
+    cookie de la page du widget) marchent comme en `file://`. **Décision** :
+    ne pas poser de CSP restrictive sur la page, parce que les widgets en
+    `srcdoc` (Builder, copies du document) en héritent ; un `connect-src`
+    fermé les ferait moins bien tourner qu'en mode fichier. Derrière
+    l'Atelier, le widget à son adresse n'a besoin d'aucun cookie (le cadre
+    charge un autre site) ; `frame-ancestors` ne concerne que qui encadre
+    la page du lecteur.
+  - Vérifié : `outils/verifier_parite_widgets.py` (Chrome, profil neuf par
+    mode, même document ; pour chaque section rendu, `grist.ready`, statut,
+    couverture) : **0 écart** sur Lieux (essai) — fichier contre servi
+    localhost sans copie et avec copies (poste), et, dans le pod, le
+    document téléchargé de l'artefact contre servi localhost et **l'artefact
+    par l'adresse publique** (témoin compris, chargé à son adresse) — et sur
+    Saint Martin (fichier contre servi localhost, poste). Seul écart, propre
+    au serveur et compté à part : « hors ligne : copie du serveur » là où il
+    en a une. « Récupérer une copie sur le serveur » à travers le relais de
+    l'Atelier : 200. Artefact arrêté puis redémarré sur ce code.
+    `serveur/tests` 41 + 1 (réseau) poste et pod, `verifier_artefact.py`
+    32/32.
+  - Commits (pod) : `3816b0c`, `0a46baa`, `55f738b`, `f62cc37` (poste :
+    `36e6e55` à `02d5087`), arbres identiques poste et pod.
 
 ### Écarts à la conception
 
@@ -490,8 +536,8 @@ Détail des mesures : `serveur/MESURES.md` ; usage : readme du projet.
 - `sort` : tri simple (sans options `:naturalSort`, etc.).
 - `--auth` : `oidc` n'existe pas encore (L7) ; `aucune` et `entete`
   n'écoutent que sur 127.0.0.1/::1.
-- **Widgets (L3)** : la copie autonome s'intercale entre le miroir et la
-  copie du document ; **derrière l'Atelier elle passe avant le miroir** : le
+- **Widgets (L3)** : parmi les copies du serveur, **derrière l'Atelier la
+  copie autonome passe avant le miroir** : le
   cookie de session des applications (`__Host-atelier_apps`, `Lax`) ne part
   pas des requêtes d'une page d'origine opaque, qui ne pourrait pas charger
   ses ressources à travers le relais. Le serveur le détecte par
