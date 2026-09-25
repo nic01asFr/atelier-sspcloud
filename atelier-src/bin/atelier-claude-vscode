@@ -1,0 +1,42 @@
+#!/bin/sh
+# atelier-claude-vscode — enveloppeur du `claude` que lance l'extension VS Code.
+#
+# L'extension Claude Code le prend pour exécutable (réglage
+# `claudeCode.claudeProcessWrapper`, posé par l'Atelier dans les réglages de
+# code-server) et l'appelle ainsi :
+#
+#   atelier-claude-vscode <binaire claude de l'extension> <arguments…>
+#
+# Il charge les valeurs des références `${ATELIER_MCP_…}` depuis le fichier
+# d'environnement unique, `~/work/.secrets/claude-env.sh` (0600, régénéré par
+# l'Atelier), puis cède la place à la commande reçue. Les valeurs ne passent
+# donc plus par `claudeCode.environmentVariables`, qui les gardait en clair
+# dans les réglages de code-server, et un jeton renouvelé est relu à chaque
+# lancement.
+#
+# Rien n'est affiché : ni le contenu du fichier, ni les variables. La sortie
+# standard appartient au protocole entre l'extension et `claude`.
+#
+# Réglage (environnement) :
+#   ATELIER_WORK   volume de travail ; par défaut le dossier parent de celui
+#                  qui contient ce script (~/work/bin -> ~/work).
+
+ici=$(dirname -- "$0")
+WORK="${ATELIER_WORK:-$(CDPATH= cd -- "$ici/.." 2>/dev/null && pwd)}"
+# Même règle que l'Atelier (config.secrets_dir) : `secrets` s'il existe, sinon `.secrets`.
+if [ -d "$WORK/secrets" ]; then
+  ENV_SECRETS="$WORK/secrets/claude-env.sh"
+else
+  ENV_SECRETS="$WORK/.secrets/claude-env.sh"
+fi
+
+if [ -r "$ENV_SECRETS" ]; then
+  # Aucune sortie : ni sur le flux du protocole, ni dans le journal.
+  . "$ENV_SECRETS" >/dev/null 2>&1
+fi
+
+if [ "$#" -eq 0 ]; then
+  echo "atelier-claude-vscode : aucune commande à lancer" >&2
+  exit 64
+fi
+exec "$@"

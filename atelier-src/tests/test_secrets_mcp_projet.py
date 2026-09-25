@@ -24,7 +24,7 @@ from mcp_gateway.atelier.git_repos import GITIGNORE, LIGNES_DE_L_ATELIER, etat
 from mcp_gateway.atelier.harness import ClaudeHarness
 from mcp_gateway.atelier.mcp_secrets import nom_de_variable
 from mcp_gateway.atelier.mcp_sync import write_project_binding
-from mcp_gateway.atelier.vscode_handoff import claude_extension_env
+from mcp_gateway.atelier.vscode_handoff import claude_extension_env, environnement_du_claude_vscode
 from mcp_gateway.db import connect
 
 JETON = "jeton-de-la-passerelle-0123456789"
@@ -87,11 +87,12 @@ def test_les_variables_sont_dans_l_environnement_des_sessions(reglages) -> None:
 
 def test_les_variables_sont_donnees_a_l_extension_vs_code(reglages) -> None:
     _pool(reglages)
-    utilisateur = {e["name"]: e["value"] for e in claude_extension_env(reglages)}
-    assert utilisateur[VARIABLE] == JETON
-    # Les réglages de dossier vivent dans le projet : jamais de secret là.
-    dossier = {e["name"] for e in claude_extension_env(reglages, avec_secrets=False)}
-    assert VARIABLE not in dossier
+    # Le processus les reçoit par l'enveloppeur (claude-env.sh) ; les réglages
+    # de code-server, utilisateur comme dossier, n'en portent aucune.
+    processus = environnement_du_claude_vscode(reglages)
+    assert processus[VARIABLE] == JETON
+    reglages_vscode = {e["name"] for e in claude_extension_env(reglages)}
+    assert VARIABLE not in reglages_vscode
 
 
 def test_un_mcp_json_existant_est_migre_a_la_reecriture(reglages, tmp_path) -> None:

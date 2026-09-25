@@ -11,7 +11,8 @@ Trois lancements du même projet :
   atelier   claude -p --mcp-config <fichier effectif> --strict-mcp-config,
             environnement du harnais ;
   vscode    CLAUDE_CONFIG_DIR portant ~/.claude.json, `.mcp.json` du projet,
-            environnement de claudeCode.environmentVariables ;
+            environnement de claudeCode.environmentVariables complété par
+            l'enveloppeur atelier-claude-vscode (claude-env.sh) ;
   terminal  idem, environnement obtenu en sourçant ~/work/.secrets/claude-env.sh.
 
 Le modèle n'est jamais appelé (adresse morte) : seule compte l'initialisation

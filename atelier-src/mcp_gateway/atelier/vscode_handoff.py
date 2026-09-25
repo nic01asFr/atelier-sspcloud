@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 
@@ -16,6 +17,8 @@ from mcp_gateway.atelier.config import (
 )
 from mcp_gateway.atelier.claude_home import donnees_code_server
 from mcp_gateway.atelier.claude_home import sync_claude_home as sync_claude_home_store
+
+log = logging.getLogger("atelier.vscode_handoff")
 
 CLAUDE_CODE_EXTENSION_ID = "anthropic.claude-code"
 
@@ -57,44 +60,100 @@ def base_url_des_surfaces(settings: AtelierSettings) -> str:
     return settings.anthropic_base_url.strip()
 
 
-def claude_extension_env(
-    settings: AtelierSettings, *, avec_secrets: bool = True
-) -> list[dict[str, str]]:
-    """Ce que l'extension doit donner au `claude` qu'elle lance.
+# L'enveloppeur du processus `claude` de l'extension (`bin/atelier-claude-vscode`) :
+# il source `~/work/.secrets/claude-env.sh` puis `exec "$@"`. Le réglage est de
+# portée machine dans le manifeste de l'extension (relevé en 2.1.280, 2.1.281 et
+# 2.1.282) ; l'extension le lance avec, pour arguments, son binaire `claude`
+# puis ceux du CLI.
+ENVELOPPEUR = "atelier-claude-vscode"
+CLE_ENVELOPPEUR = "claudeCode.claudeProcessWrapper"
+CLE_ENVIRONNEMENT = "claudeCode.environmentVariables"
+_SOURCE_ENVELOPPEUR = Path(__file__).resolve().parents[2] / "bin" / ENVELOPPEUR
 
-    Le seul secret qui reste ici est la clé de la porte MCP de l'Atelier,
-    et elle ne va que dans les réglages utilisateur, hors du projet : un
-    dossier de projet se partage et se versionne.
+
+def enveloppeur_vscode(settings: AtelierSettings) -> Path:
+    """L'enveloppeur, là où `atelier-init.sh` le pose : `~/work/bin/atelier-claude-vscode`."""
+    return settings.work_dir / "bin" / ENVELOPPEUR
+
+
+def assurer_l_enveloppeur(settings: AtelierSettings) -> Path | None:
+    """Pose (ou remet à jour) l'enveloppeur dans `~/work/bin`, et le rend.
+
+    L'init le copie aussi ; l'Atelier le fait de son côté parce qu'un
+    déploiement peut se limiter à mettre le code à jour et à relancer le
+    service. Sans enveloppeur, le réglage désignerait un fichier absent et
+    l'extension ne lancerait plus rien : on rend alors None, et le réglage
+    n'est pas posé.
+    """
+    cible = enveloppeur_vscode(settings)
+    try:
+        if _SOURCE_ENVELOPPEUR.is_file():
+            contenu = _SOURCE_ENVELOPPEUR.read_bytes()
+            if not cible.is_file() or cible.read_bytes() != contenu:
+                cible.parent.mkdir(parents=True, exist_ok=True)
+                temporaire = cible.with_name(cible.name + ".nouveau")
+                temporaire.write_bytes(contenu)
+                temporaire.chmod(0o755)
+                temporaire.replace(cible)
+    except OSError as exc:
+        log.warning("enveloppeur VS Code non posé : %s", exc)
+    return cible if cible.is_file() else None
+
+
+def claude_extension_env(settings: AtelierSettings) -> list[dict[str, str]]:
+    """Ce que les réglages de code-server donnent au `claude` de l'extension.
+
+    Aucun secret : les valeurs des références `${ATELIER_MCP_…}` (clé de
+    l'Atelier, secrets des connecteurs, variables des projets) viennent du
+    fichier d'environnement unique, que l'enveloppeur source au lancement
+    (`claudeCode.claudeProcessWrapper`). Elles étaient recopiées ici, donc en
+    clair dans les réglages de code-server. La clé du modèle, elle, passe par
+    `apiKeyHelper`.
     """
     env: list[dict[str, str]] = [
         {"name": "ANTHROPIC_BASE_URL", "value": base_url_des_surfaces(settings)},
     ]
-    if avec_secrets:
-        # La clé du modèle ne passe plus par ici : le CLI la lit lui-même
-        # via `apiKeyHelper`, si bien qu'aucun fichier de réglages — ni
-        # celui de VS Code, ni celui de Claude — n'a plus à la porter.
-        #
-        # Le reste — clé de l'Atelier, secrets des connecteurs, variables des
-        # projets — est ce que porte le fichier d'environnement unique
-        # (`~/work/.secrets/claude-env.sh`), régénéré puis relu ici : VS Code
-        # reçoit exactement ce que reçoivent le harnais, le shell et
-        # wikichat. L'extension lance son `claude` avec ces variables-ci et
-        # nulle autre — code-server ne lui transmet rien de l'environnement
-        # de l'Atelier. Elles ne vont que dans les réglages utilisateur de
-        # code-server, jamais dans un fichier du projet.
-        from mcp_gateway.atelier.env_secrets import (
-            chemin_du_fichier,
-            ecrire_le_fichier,
-            lire_le_fichier,
-        )
-
-        ecrire_le_fichier(settings)
-        for nom, valeur in sorted(lire_le_fichier(chemin_du_fichier(settings)).items()):
-            env.append({"name": nom, "value": valeur})
     model = (settings.default_model or "").strip()
     if model:
         env.append({"name": "ANTHROPIC_MODEL", "value": model})
     return env
+
+
+def environnement_du_claude_vscode(settings: AtelierSettings) -> dict[str, str]:
+    """L'environnement que reçoit réellement le `claude` de l'extension.
+
+    Celui des réglages, puis ce que l'enveloppeur y ajoute en sourçant le
+    fichier unique (ses valeurs l'emportent : elles sont chargées après). Sert
+    à la comparaison des surfaces (`coherence`).
+    """
+    from mcp_gateway.atelier.env_secrets import (
+        chemin_du_fichier,
+        ecrire_le_fichier,
+        lire_le_fichier,
+    )
+
+    env = {e["name"]: e["value"] for e in claude_extension_env(settings)}
+    ecrire_le_fichier(settings)
+    env.update(lire_le_fichier(chemin_du_fichier(settings)))
+    return env
+
+
+def _sans_valeurs_secretes(
+    entrees: object, settings: AtelierSettings
+) -> list[dict[str, str]] | None:
+    """Une liste `environmentVariables` d'où sont retirées les variables du fichier unique."""
+    if not isinstance(entrees, list):
+        return None
+    from mcp_gateway.atelier.env_secrets import chemin_du_fichier, lire_le_fichier
+
+    noms = set(lire_le_fichier(chemin_du_fichier(settings)))
+    return [
+        e
+        for e in entrees
+        if isinstance(e, dict)
+        and not str(e.get("name", "")).startswith("ATELIER_MCP_")
+        and e.get("name") not in noms
+    ]
 
 
 def _ecarter_les_modeles_casses(data: dict[str, object], env: dict) -> None:
@@ -318,7 +377,7 @@ def write_vscode_workspace_config(
         "claudeCode.disableLoginPrompt": True,
         "claudeCode.preferredLocation": "sidebar",
         "claudeCode.hideOnboarding": True,
-        "claudeCode.environmentVariables": claude_extension_env(settings, avec_secrets=False),
+        CLE_ENVIRONNEMENT: claude_extension_env(settings),
         "security.workspace.trust.enabled": False,
         "task.allowAutomaticTasks": "on",
         # VS Code nomme la fenetre d'apres le dossier, donc d'apres
@@ -376,18 +435,68 @@ def ecrire_mode_machine(settings: AtelierSettings, mode_permission: str = "") ->
 
 
 def write_user_code_server_settings(settings: AtelierSettings) -> None:
+    """Réglages utilisateur de code-server, et l'enveloppeur du processus `claude`.
+
+    Les valeurs secrètes n'y sont plus : l'enveloppeur les charge au lancement
+    depuis `~/work/.secrets/claude-env.sh`, régénéré ici. Le réglage de
+    l'enveloppeur est de portée machine : il est écrit dans les réglages
+    utilisateur et dans ceux de la machine, où l'on a déjà mesuré qu'un réglage
+    de cette portée était lu (`ecrire_mode_machine`).
+    """
+    from mcp_gateway.atelier.env_secrets import ecrire_le_fichier
+
+    ecrire_le_fichier(settings)
+    enveloppeur = assurer_l_enveloppeur(settings)
     user_dir = donnees_code_server() / "User"
     user_dir.mkdir(parents=True, exist_ok=True)
-    cfg = {
+    cfg: dict[str, object] = {
         **WORKBENCH_LAYOUT_SETTINGS,
         "claudeCode.disableLoginPrompt": True,
         "claudeCode.preferredLocation": "sidebar",
         "claudeCode.hideOnboarding": True,
-        "claudeCode.environmentVariables": claude_extension_env(settings),
+        CLE_ENVIRONNEMENT: claude_extension_env(settings),
         "security.workspace.trust.enabled": False,
         "task.allowAutomaticTasks": "on",
     }
+    if enveloppeur is not None:
+        cfg[CLE_ENVELOPPEUR] = str(enveloppeur)
+    else:
+        log.warning(
+            "pas d'enveloppeur %s : l'extension VS Code lancera claude sans les"
+            " valeurs de claude-env.sh (connecteurs à secret indisponibles)",
+            enveloppeur_vscode(settings),
+        )
     (user_dir / "settings.json").write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
+    ecrire_enveloppeur_machine(settings, enveloppeur)
+
+
+def ecrire_enveloppeur_machine(settings: AtelierSettings, enveloppeur: Path | None) -> None:
+    """Pose l'enveloppeur dans les réglages machine, et en retire les secrets.
+
+    Le reste du fichier (le mode de travail, `ecrire_mode_machine`) est gardé.
+    Une liste `environmentVariables` qui y porterait des valeurs du fichier
+    unique en est purgée.
+    """
+    fichier = donnees_code_server() / "Machine" / "settings.json"
+    donnees: dict[str, object] = {}
+    if fichier.is_file():
+        try:
+            lu = json.loads(fichier.read_text(encoding="utf-8"))
+            donnees = lu if isinstance(lu, dict) else {}
+        except (json.JSONDecodeError, OSError):
+            donnees = {}
+    avant = json.dumps(donnees, sort_keys=True)
+    if enveloppeur is not None:
+        donnees[CLE_ENVELOPPEUR] = str(enveloppeur)
+    else:
+        donnees.pop(CLE_ENVELOPPEUR, None)
+    purge = _sans_valeurs_secretes(donnees.get(CLE_ENVIRONNEMENT), settings)
+    if purge is not None:
+        donnees[CLE_ENVIRONNEMENT] = purge
+    if fichier.is_file() and json.dumps(donnees, sort_keys=True) == avant:
+        return
+    fichier.parent.mkdir(parents=True, exist_ok=True)
+    fichier.write_text(json.dumps(donnees, indent=2) + chr(10), encoding="utf-8")
 
 
 PROGRAMMATIQUE = frozenset({"sdk-cli", "sdk-ts", "sdk-py"})

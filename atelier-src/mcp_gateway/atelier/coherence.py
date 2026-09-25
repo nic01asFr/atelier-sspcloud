@@ -7,8 +7,9 @@ Deux surfaces, deux chemins de chargement :
 - VS Code et le terminal : `~/.claude.json` (portée utilisateur, et
   approbations du dossier) plus le `.mcp.json` du projet — celui-ci primant
   sur celle-là pour un même nom (mesuré, 2.1.281) — et l'environnement de
-  l'extension (`claudeCode.environmentVariables`) ou du shell
-  (`~/work/.secrets/claude-env.sh`).
+  l'extension (`claudeCode.environmentVariables`, sans secret, complété par
+  l'enveloppeur `atelier-claude-vscode` qui source
+  `~/work/.secrets/claude-env.sh`) ou du shell (le même fichier).
 
 `comparer` dit en quoi elles diffèrent. L'écart attendu est nul : mêmes
 serveurs, l'Atelier présent partout, les mêmes identifiants une fois les
@@ -24,6 +25,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from mcp_gateway.atelier.claude_home import donnees_code_server
 from mcp_gateway.atelier.config import AtelierSettings
 
 _REFERENCE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
@@ -91,7 +93,7 @@ def surface_atelier(
 def surface_vscode(settings: AtelierSettings, cwd: Path) -> dict[str, Any]:
     """Ce que reçoit l'extension VS Code (ou le terminal) ouverte sur le dossier."""
     from mcp_gateway.atelier.env_secrets import chemin_du_fichier, lire_le_fichier
-    from mcp_gateway.atelier.vscode_handoff import claude_extension_env
+    from mcp_gateway.atelier.vscode_handoff import environnement_du_claude_vscode
 
     maison = Path.home() / ".claude.json"
     donnees = _json(maison)
@@ -106,7 +108,7 @@ def surface_vscode(settings: AtelierSettings, cwd: Path) -> dict[str, Any]:
             serveurs[nom] = cfg  # le projet prime sur la portée utilisateur
     for nom in desactives:
         serveurs.pop(nom, None)
-    env_vscode = {e["name"]: e["value"] for e in claude_extension_env(settings)}
+    env_vscode = environnement_du_claude_vscode(settings)
     env_terminal = lire_le_fichier(chemin_du_fichier(settings))
     return {
         "serveurs": serveurs,
@@ -138,6 +140,10 @@ def fichiers_a_inspecter(settings: AtelierSettings, cwd: Path) -> list[Path]:
         settings.mcp_config_path,
         settings.work_dir / ".claude" / "mcp-config.json",
         cwd / ".mcp.json",
+        # Les réglages de code-server : l'extension n'y trouve plus de valeur
+        # secrète, l'enveloppeur les charge au lancement.
+        donnees_code_server() / "User" / "settings.json",
+        donnees_code_server() / "Machine" / "settings.json",
     ]
     if settings.mcp_effective_dir.is_dir():
         candidats += sorted(settings.mcp_effective_dir.glob("*.json"))

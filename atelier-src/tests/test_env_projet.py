@@ -23,7 +23,7 @@ from mcp_gateway.atelier.env_projet import (
     variables_du_projet,
 )
 from mcp_gateway.atelier.harness import ClaudeHarness
-from mcp_gateway.atelier.vscode_handoff import claude_extension_env
+from mcp_gateway.atelier.vscode_handoff import claude_extension_env, environnement_du_claude_vscode
 
 posix = pytest.mark.skipif(os.name != "posix", reason="droits de fichiers POSIX")
 
@@ -147,7 +147,8 @@ def test_vs_code_recoit_celles_de_tous_les_projets(reglages: AtelierSettings) ->
     reunies = variables_de_tous_les_projets(reglages.secrets_dir, reglages.projects_dir)
     # Conflit de nom : le premier projet par ordre alphabétique le garde.
     assert reunies == {"VOICE_TOKEN": "jeton-voix", "AUTRE": "valeur-autre"}
-    env = {e["name"]: e["value"] for e in claude_extension_env(reglages)}
+    # Par l'enveloppeur, qui source le fichier unique ; jamais par les réglages.
+    env = environnement_du_claude_vscode(reglages)
     assert env["VOICE_TOKEN"] == "jeton-voix"
-    sans = {e["name"] for e in claude_extension_env(reglages, avec_secrets=False)}
-    assert "VOICE_TOKEN" not in sans
+    reglages_vscode = {e["name"] for e in claude_extension_env(reglages)}
+    assert "VOICE_TOKEN" not in reglages_vscode

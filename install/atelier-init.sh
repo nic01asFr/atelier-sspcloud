@@ -173,7 +173,7 @@ if [ -n "$DEPOT_ATELIER" ] || ! python3 -c "import mcp_gateway.atelier" 2>/dev/n
   dire "paquet Python"
   python3 -m pip install -q -e "$SOURCE_ATELIER" 2>&1 | tail -1 || avertir "pip install a échoué"
 fi
-for script in atelier-relancer atelier-figer-le-travail.sh atelier-app atelier-verifier-coherence atelier-chrome; do
+for script in atelier-relancer atelier-figer-le-travail.sh atelier-app atelier-verifier-coherence atelier-chrome atelier-claude-vscode; do
   if [ -f "$SOURCE_ATELIER/bin/$script" ]; then
     cp -f "$SOURCE_ATELIER/bin/$script" "$BIN/$script" && chmod +x "$BIN/$script"
   fi

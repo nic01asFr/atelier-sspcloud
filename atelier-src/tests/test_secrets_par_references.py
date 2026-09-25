@@ -29,7 +29,7 @@ from mcp_gateway.atelier.env_secrets import (
 from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
 from mcp_gateway.atelier.harness import ClaudeHarness
 from mcp_gateway.atelier.mcp_sync import materialize_mcp_config, materialize_session_mcp
-from mcp_gateway.atelier.vscode_handoff import claude_extension_env
+from mcp_gateway.atelier.vscode_handoff import environnement_du_claude_vscode
 from mcp_gateway.db import connect
 
 JETON = "jeton-onyxia-0123456789abcdef"
@@ -137,7 +137,7 @@ def test_la_portee_utilisateur_ne_porte_aucun_secret(reglages: AtelierSettings) 
 def test_harnais_vscode_et_shell_ont_les_memes_valeurs(reglages: AtelierSettings) -> None:
     _preparer(reglages)
     env = ClaudeHarness(reglages)._env()
-    vscode = {e["name"]: e["value"] for e in claude_extension_env(reglages)}
+    vscode = environnement_du_claude_vscode(reglages)
     shell = lire_le_fichier(chemin_du_fichier(reglages))
     for nom, valeur in shell.items():
         assert env[nom] == valeur
