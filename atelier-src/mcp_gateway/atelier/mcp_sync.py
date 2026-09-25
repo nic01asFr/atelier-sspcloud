@@ -147,10 +147,16 @@ def apply_mcp_overlay(
     merged: dict[str, dict[str, Any]],
     mcp_overlay: dict[str, Any] | None,
 ) -> dict[str, dict[str, Any]]:
+    """Les désactivations propres à une conversation — jamais celle de l'Atelier.
+
+    Le serveur de l'Atelier est présent sur toutes les surfaces ; une
+    conversation qui s'en priverait n'aurait plus ses outils `atelier_*` ici
+    et les aurait dans VS Code.
+    """
     out = dict(merged)
     if mcp_overlay:
         for name, active in mcp_overlay.items():
-            if not isinstance(name, str):
+            if not isinstance(name, str) or name == SERVICE_ATELIER:
                 continue
             if active is False and name in out:
                 del out[name]
@@ -168,15 +174,40 @@ def compute_binding_merged(
     if kind == "code":
         binding = _load_json_object(cwd / ".mcp.json")
         merged = assurer_onyxia_natif(merge_session_mcp_servers(pool, binding), pool)
-        return integrer_l_atelier(integrer_le_navigateur(merged, settings))
+        return integrer_l_atelier(assurer_l_atelier(integrer_le_navigateur(merged, settings), settings))
     global_binding = _load_json_object(settings.assistant_root / ".mcp.json")
     session_binding = _load_json_object(cwd / ".mcp.json")
     return integrer_l_atelier(
-        integrer_le_navigateur(
-            merge_assistant_bindings(pool, global_binding, session_binding),
+        assurer_l_atelier(
+            integrer_le_navigateur(
+                merge_assistant_bindings(pool, global_binding, session_binding),
+                settings,
+            ),
             settings,
         )
     )
+
+
+def assurer_l_atelier(servers: dict[str, Any], settings: AtelierSettings) -> dict[str, Any]:
+    """Le serveur de l'Atelier (`atelier_*`) est dans tout projet, sur toute surface.
+
+    Il n'était là que si le `.mcp.json` du projet l'avait coché : mesuré le
+    25 septembre, aucune des quatre surfaces n'avait les outils de l'Atelier
+    pour le Lecteur Grist. Il n'est plus un choix du projet.
+    """
+    if SERVICE_ATELIER in servers:
+        return servers
+    return {SERVICE_ATELIER: declaration_atelier(settings), **servers}
+
+
+def portee_utilisateur(settings: AtelierSettings) -> dict[str, Any]:
+    """Ce que `~/.claude.json` déclare pour tous les dossiers : l'Atelier seul.
+
+    Ce qui vaut pour un projet vit dans son `.mcp.json` (liaison du projet) :
+    la portée utilisateur ne porte que ce qui est commun à tous, sans quoi
+    VS Code et le terminal verraient des connecteurs que le projet n'a pas.
+    """
+    return {SERVICE_ATELIER: declaration_atelier(settings)}
 
 
 def merge_assistant_bindings(
@@ -486,16 +517,21 @@ def project_binding_state(
                 "scope": nature["scope"],
             }
         )
-    # La passerelle de l'Atelier n'est pas dans le pool, mais elle se propose
-    # comme les autres : sans elle, un agent ne peut ni chercher un outil ni
-    # lancer une composition.
+    # La passerelle de l'Atelier n'est pas dans le pool. Elle est dans tout
+    # projet, sans case à cocher ; ce qu'on affiche est ce que l'agent reçoit
+    # — lu au même endroit que le fichier effectif, pas supposé.
+    try:
+        presente = SERVICE_ATELIER in compute_binding_merged(settings, kind="code", cwd=cwd)
+    except OSError:
+        presente = False
     etat.insert(
         0,
         {
             "id": SERVICE_ATELIER,
             "name": "Accès aux outils",
             "id_technique": SERVICE_ATELIER,
-            "active": True if herite else selection.get(SERVICE_ATELIER, False),
+            "active": presente,
+            "fixe": True,
             "group": "Accès aux outils",
             "system": True,
             "scope": [],
@@ -530,6 +566,8 @@ def write_project_binding(
     # d'environnement. La reprendre du pool reviendrait à la casser. Ses
     # secrets en clair, eux, sont migrés quand le pool les connaît.
     retenus: dict[str, Any] = {}
+    # L'Atelier n'est pas un choix : il est dans tout projet.
+    actifs = [SERVICE_ATELIER, *[n for n in actifs if n != SERVICE_ATELIER]]
     for nom in actifs:
         if est_alias_onyxia_deguise(nom):
             # Porte Atelier collée sous un nom Onyxia_* : pas le service.
@@ -698,10 +736,14 @@ def materialize_mcp_config(settings: AtelierSettings) -> Path:
     cfg_path = settings.mcp_config_path
     _atomic_write_json(cfg_path, payload)
 
-    _merge_user_claude_json(settings.work_dir / ".claude.json", servers)
+    # La portée utilisateur ne porte que l'Atelier : le reste appartient au
+    # `.mcp.json` de chaque projet (liaison), pour que VS Code et le terminal
+    # voient les mêmes connecteurs que le tour de l'Atelier.
+    commun = portee_utilisateur(settings)
+    _merge_user_claude_json(settings.work_dir / ".claude.json", commun)
     home_claude = Path.home() / ".claude.json"
     try:
-        _merge_user_claude_json(home_claude, servers)
+        _merge_user_claude_json(home_claude, commun)
     except OSError:
         pass
 

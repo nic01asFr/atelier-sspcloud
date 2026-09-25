@@ -90,7 +90,12 @@ export function createComposerMcpController(ctx) {
       value: c.id,
       label: c.name,
       checked: !!c.active,
-      hint: c.system
+      // L'accès aux outils de l'Atelier est dans tout projet, sur toutes les
+      // surfaces : il s'affiche tel que l'agent le reçoit, sans case à décocher.
+      disabled: !!c.fixe,
+      hint: c.fixe
+        ? "toujours présent, dans l’Atelier, VS Code et le terminal"
+        : c.system
         ? (c.scope || []).length
           ? `ouvre ${c.scope[0]}`
           : APPORTS[c.group] || "socle de l’Atelier"
@@ -112,7 +117,7 @@ export function createComposerMcpController(ctx) {
           name: "servers",
           label: "Services disponibles",
           hint:
-            "Ce que l’Atelier fournit se décoche aussi : la conversation perdrait alors ces outils pour tout le projet.",
+            "Ce que l’Atelier fournit se décoche aussi (sauf l’accès aux outils) : la conversation perdrait alors ces outils pour tout le projet, sur toutes les surfaces.",
           options,
         },
       ],
