@@ -1076,6 +1076,7 @@ class SessionStore:
         on_event: Callable[[AtelierEvent], None] | None = None,
         peut_attendre: bool = False,
         reprises: int = 0,
+        mode: str = "",
     ) -> TurnResult:
         """Joue un tour.
 
@@ -1186,7 +1187,12 @@ class SessionStore:
                 # Le mode choisi pour la conversation, sinon celui du service
                 # — mais un tour sans interlocuteur ne peut pas attendre une
                 # autorisation : faute de choix, il garde l'ancien défaut.
-                permission_mode=rec.permission_mode
+                #
+                # `mode` : celui qu'un appelant demande pour ce seul tour
+                # (atelier_envoyer), déjà vérifié par lui — jamais un bypass que
+                # ni la conversation ni le projet n'accordaient.
+                permission_mode=mode
+                or rec.permission_mode
                 or (self.settings.permission_mode if peut_attendre else MODE_SANS_INTERLOCUTEUR),
                 peut_attendre=peut_attendre,
                 effort=rec.effort or self.settings.effort,
@@ -1234,6 +1240,7 @@ class SessionStore:
                 on_event=on_event,
                 peut_attendre=peut_attendre,
                 reprises=reprises + 1,
+                mode=mode,
             )
 
         # Un tour peut traiter plusieurs messages depuis qu'on écrit pendant

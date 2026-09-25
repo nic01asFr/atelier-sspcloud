@@ -12,6 +12,8 @@ Ce module ferme cet écart. Il ne réimplémente rien : la passerelle intégrée
 
 from __future__ import annotations
 
+import secrets
+
 import logging
 from typing import Any
 from uuid import uuid4
@@ -115,15 +117,27 @@ def register_mcp_endpoint(app: FastAPI, auth: Any) -> None:
         # pas agir sur l'artefact d'une autre conversation. Un en-tête, pas
         # une preuve : c'est une règle de voisinage entre agents du même
         # propriétaire, pas une frontière.
-        from mcp_gateway.atelier.outils_conversation import CONVERSATION_APPELANTE
+        from mcp_gateway.atelier.outils_conversation import (
+            APPEL_INTERACTIF,
+            CONVERSATION_APPELANTE,
+        )
 
         jeton = CONVERSATION_APPELANTE.set(
             (request.headers.get("x-atelier-conversation") or "").strip()[:200]
+        )
+        # La clé du propriétaire est celle des agents du pod et de wikichat :
+        # des automates. Un jeton OAuth vient d'un client distant où une
+        # personne lit (claude.ai). Voir `atelier_envoyer`, `peut_attendre`.
+        presente = bearer_from_header(request.headers.get("Authorization")) or ""
+        cle = auth.owner_key or ""
+        interactif = APPEL_INTERACTIF.set(
+            not (cle and secrets.compare_digest(presente.encode(), cle.encode()))
         )
         try:
             resultat = await passerelle.handle_jsonrpc(body, mcp_session_id)
         finally:
             CONVERSATION_APPELANTE.reset(jeton)
+            APPEL_INTERACTIF.reset(interactif)
         _renommer(resultat)
         entetes = {"Mcp-Session-Id": assigne} if assigne else None
         return JSONResponse(content=resultat or {}, headers=entetes)

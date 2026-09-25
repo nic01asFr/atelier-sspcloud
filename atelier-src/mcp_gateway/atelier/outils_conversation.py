@@ -50,6 +50,27 @@ CONVERSATION_APPELANTE: contextvars.ContextVar[str] = contextvars.ContextVar(
     "conversation_appelante", default=""
 )
 
+# L'appel vient-il d'un client où quelqu'un peut répondre ? Posé par la porte
+# `/mcp` : vrai pour un jeton OAuth (un client distant, claude.ai, derrière
+# lequel une personne lit), faux pour la clé du propriétaire, celle que portent
+# les agents du pod et wikichat — des automates, que personne ne regarde.
+# Défaut vrai : l'ancien comportement pour qui ne passe pas par la porte.
+APPEL_INTERACTIF: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "appel_interactif", default=True
+)
+
+# Les modes qu'un appelant peut demander pour un tour, dans ses mots et dans
+# ceux du harnais. `default` est le nom du CLI pour ce que l'Atelier appelle
+# `manual`.
+MODES_DEMANDABLES = {
+    "plan": "plan",
+    "default": "manual",
+    "manual": "manual",
+    "acceptEdits": "acceptEdits",
+    "bypassPermissions": "bypassPermissions",
+}
+BYPASS = "bypassPermissions"
+
 # Ce qu'un `suivre` accepte d'attendre avant de rendre la main, même si rien
 # ne bouge. Assez pour qu'une conduite normale n'ait pas à repasser dix fois,
 # assez peu pour qu'aucun client ne raccroche : les passerelles coupent
@@ -241,6 +262,25 @@ class OutilsAtelier:
                     "properties": {
                         "conversation": conversation,
                         "message": {"type": "string"},
+                        "mode": {
+                            "type": "string",
+                            "enum": ["plan", "default", "acceptEdits", "bypassPermissions"],
+                            "description": (
+                                "Mode de permission de ce tour. Vide = celui de la conversation. "
+                                "bypassPermissions n'est accepté que si la conversation ou le "
+                                "projet l'ont déjà : l'appelant ne peut pas l'accorder seul."
+                            ),
+                        },
+                        "peut_attendre": {
+                            "type": "boolean",
+                            "description": (
+                                "Vrai : une autorisation demandée attend une réponse "
+                                "(atelier_suivre la montre, atelier_decider y répond). Faux : "
+                                "elle est refusée d'office, et reste visible dans l'interface. "
+                                "Défaut : faux pour un agent ou un automate (clé du "
+                                "propriétaire), vrai pour un client où quelqu'un lit."
+                            ),
+                        },
                     },
                     "required": ["conversation", "message"],
                 },
@@ -511,6 +551,14 @@ class OutilsAtelier:
         rec = self.store.get(identifiant)
         if rec is None:
             raise _Refus(f"conversation inconnue : {identifiant}")
+        mode = self._mode_du_tour(rec, args.get("mode"))
+        # Qui peut répondre à une autorisation ? Un tour lancé par un automate
+        # (wikichat, un agent) attendait indéfiniment une réponse que personne
+        # ne donnerait : par défaut, il refuse désormais d'office.
+        if isinstance(args.get("peut_attendre"), bool):
+            peut_attendre = bool(args["peut_attendre"])
+        else:
+            peut_attendre = APPEL_INTERACTIF.get()
 
         suivi = _Suivi()
         with self._verrou:
@@ -535,7 +583,7 @@ class OutilsAtelier:
                 # La contrepartie tient à celui qui conduit : un tour qui
                 # attend n'avance plus. À lui de répondre, ou d'interrompre.
                 resultat = self.store.send(
-                    identifiant, message, on_event=au_fil, peut_attendre=True
+                    identifiant, message, on_event=au_fil, peut_attendre=peut_attendre, mode=mode
                 )
                 suivi.texte = resultat.text or ""
                 # Ce que le tour rend sans passer par le flux — au premier chef
@@ -562,8 +610,38 @@ class OutilsAtelier:
             "conversation": identifiant,
             "etat": "parti",
             "curseur": 0,
+            "mode": mode,
+            "peut_attendre": peut_attendre,
             "suite": "atelier_suivre pour voir ce qu'il produit",
         }
+
+    def _mode_du_tour(self, rec: Any, demande: Any) -> str:
+        """Le mode du tour : demandé, sinon celui de la conversation, sinon du service.
+
+        Jamais `bypassPermissions` que ni la conversation ni le projet
+        n'accordaient : l'appelant ne l'obtient pas en le demandant. Et plus
+        de repli silencieux sur le bypass quand personne ne peut répondre —
+        c'était le défaut d'un tour sans interlocuteur.
+        """
+        propre = str(getattr(rec, "permission_mode", "") or "")
+        autorise_bypass = propre == BYPASS or _mode_du_projet(getattr(rec, "cwd", "") or "") == BYPASS
+        texte = str(demande or "").strip()
+        if texte:
+            if texte not in MODES_DEMANDABLES:
+                raise _Refus(f"mode inconnu : {texte} ({', '.join(sorted(MODES_DEMANDABLES))})")
+            voulu = MODES_DEMANDABLES[texte]
+            if voulu == BYPASS and not autorise_bypass:
+                raise _Refus(
+                    "bypassPermissions refusé : ni la conversation ni le projet ne l'accordent. "
+                    "Seule la personne peut le régler, dans l'Atelier."
+                )
+            return voulu
+        if propre:
+            return propre
+        defaut = str(getattr(self.store.settings, "permission_mode", "") or "acceptEdits")
+        if defaut == BYPASS and not autorise_bypass:
+            return "acceptEdits"
+        return defaut
 
     def _outil_suivre(self, args: dict[str, Any]) -> Any:
         identifiant = (args.get("conversation") or "").strip()
@@ -838,6 +916,20 @@ class OutilsAtelier:
             }
             for d in demandes
         ]
+
+
+def _mode_du_projet(cwd: Any) -> str:
+    """Le mode par défaut que le projet s'est donné (`.claude/settings.local.json`)."""
+    from pathlib import Path
+
+    if not cwd:
+        return ""
+    try:
+        donnees = json.loads((Path(cwd) / ".claude" / "settings.local.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return ""
+    permissions = donnees.get("permissions") if isinstance(donnees, dict) else None
+    return str(permissions.get("defaultMode") or "") if isinstance(permissions, dict) else ""
 
 
 def _abreger(arguments: Any, taille: int = 300) -> Any:
