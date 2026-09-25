@@ -189,6 +189,10 @@ class AtelierSettings(BaseSettings):
     assistant_slug: str = "wikichat-memory"
     anthropic_base_url: str = "https://llm.lab.sspcloud.fr/api"
     wikichat_url: str = "http://127.0.0.1:3777/sse"
+    # Le dépôt de wikichat sur le pod : on y prend le pont stdio que déclarent
+    # les agents (`wikichat_mcp`). Vide = `~/work/wikichat/src`, là où l'init
+    # le clone (`WIKICHAT_SRC` de l'init, passé ici en ATELIER_WIKICHAT_SRC).
+    wikichat_src: str = ""
     # Navigateur intégré : `chrome-devtools-mcp` en stdio, lancé par
     # `~/work/bin/atelier-chrome` dans le processus de chaque agent (voir
     # `navigateur` et docs/navigateur-atelier.md). `ATELIER_NAVIGATEUR=0`
@@ -243,6 +247,10 @@ class AtelierSettings(BaseSettings):
     @property
     def wikichat_dir(self) -> Path:
         return self.work_dir / "wikichat"
+
+    @property
+    def wikichat_source(self) -> Path:
+        return Path(self.wikichat_src) if self.wikichat_src.strip() else self.wikichat_dir / "src"
 
     # Combien de temps on garde le processus garé pendant qu'une question
     # attend. Ce n'est pas la durée de vie de la décision — elle, ne périme

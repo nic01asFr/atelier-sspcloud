@@ -927,7 +927,9 @@ class SessionStore:
         le coordinateur rattache une session à son canal-projet d'après son
         dossier de travail.
         """
-        slug = (rec.slug or "atelier").strip() or "atelier"
+        # Jamais `atelier` : wikichat tient ce nom pour générique. Sans slug,
+        # celui du projet par défaut, là où la conversation travaille alors.
+        slug = (rec.slug or "").strip() or self.settings.default_slug
         return f"{slug}-{rec.session_id[:6]}"
 
     def identifiant_claude(self, rec: SessionRecord) -> str:

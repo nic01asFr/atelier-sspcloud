@@ -115,8 +115,32 @@ def test_la_declaration_propre_au_projet_est_gardee(reglages: AtelierSettings) -
     """Un helper d'en-têtes, un paramètre d'identité : le projet les a écrits, ils restent."""
     projet = reglages.projects_dir / "p"
     projet.mkdir(parents=True)
+    propre = {
+        "type": "http",
+        "url": "http://qgis/mcp?profil=${QGIS_PROFIL:-}",
+        "headersHelper": "node /srv/qgis-helper.mjs",
+    }
+    (projet / ".mcp.json").write_text(json.dumps({"mcpServers": {"qgis": propre}}), encoding="utf-8")
+    _pool(reglages, qgis={"type": "http", "url": "http://qgis/mcp"})
+    lier_le_projet(reglages, projet)
+    assert _serveurs(projet)["qgis"] == propre
+
+
+def test_l_entree_wikichat_d_un_projet_devient_le_pont(reglages: AtelierSettings) -> None:
+    """Sauf wikichat : `?agent=atelier` ou `${WIKICHAT_AGENT:-}` cèdent au pont stdio.
+
+    Contrat wikichat (`docs/hooks-et-dialogue.md` §8) : la connexion porte la
+    conversation (`CLAUDE_CODE_SESSION_ID`), et `atelier` n'est plus un nom.
+    """
+    from mcp_gateway.atelier.wikichat_mcp import declaration_wikichat
+
+    projet = reglages.projects_dir / "p"
+    projet.mkdir(parents=True)
     propre = {"type": "sse", "url": "http://127.0.0.1:3777/sse?agent=${WIKICHAT_AGENT:-}"}
     (projet / ".mcp.json").write_text(json.dumps({"mcpServers": {"wikichat": propre}}), encoding="utf-8")
     _pool(reglages, wikichat={"type": "sse", "url": "http://127.0.0.1:3777/sse?agent=atelier"})
     lier_le_projet(reglages, projet)
-    assert _serveurs(projet)["wikichat"] == propre
+    assert _serveurs(projet)["wikichat"] == declaration_wikichat(reglages)
+    assert "agent=" not in (projet / ".mcp.json").read_text(encoding="utf-8")
+    write_project_binding(reglages, projet, ["wikichat"])
+    assert _serveurs(projet)["wikichat"] == declaration_wikichat(reglages)

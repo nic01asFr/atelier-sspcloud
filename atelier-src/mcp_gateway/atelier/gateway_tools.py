@@ -50,6 +50,10 @@ def _est_le_pilote(config: dict[str, Any], wikichat_url: str) -> bool:
     déclencheurs. On le reconnaît à l'adresse que l'Atelier utilise déjà
     pour lui parler, plutôt qu'à son nom.
     """
+    from mcp_gateway.atelier.wikichat_mcp import est_le_pont
+
+    if est_le_pont(config):
+        return True
     if not wikichat_url:
         return False
     url = str(config.get("url") or "")

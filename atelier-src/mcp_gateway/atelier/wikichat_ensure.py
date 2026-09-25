@@ -62,8 +62,12 @@ def ensure_wikichat_mcp_connector(settings: AtelierSettings) -> dict[str, Any]:
     # les appels sans réponse : soixante secondes, puis un délai dépassé.
     # C'est par cette voie que passent gateway_call_tool et les compositions,
     # donc rien de ce qui touche wikichat ne fonctionnait au-delà de la liste.
-    if "agent=" not in url:
-        url += ("&" if "?" in url else "?") + "agent=atelier"
+    # Pas `atelier`, que wikichat tient pour générique : le nom propre de la
+    # passerelle (`wikichat_mcp.NOM_PASSERELLE`). Les agents, eux, ne passent
+    # pas par cette entrée mais par le pont stdio.
+    from mcp_gateway.atelier.wikichat_mcp import url_de_la_passerelle
+
+    url = url_de_la_passerelle(url)
     raw: dict[str, Any] = {"type": "sse", "url": url, "enabled": True}
     conn = connect(settings.gateway_db_path)
     try:

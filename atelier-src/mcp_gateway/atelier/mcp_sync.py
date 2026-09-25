@@ -36,6 +36,12 @@ from mcp_gateway.atelier.navigateur import (  # noqa: E402
     est_le_navigateur,
     navigateur_configure,
 )
+# wikichat : le pont stdio, qui porte la conversation (`wikichat_mcp`).
+from mcp_gateway.atelier.wikichat_mcp import (  # noqa: E402
+    declaration_wikichat,
+    est_wikichat,
+    integrer_wikichat,
+)
 
 
 def est_alias_onyxia_deguise(nom: str) -> bool:
@@ -174,13 +180,20 @@ def compute_binding_merged(
     if kind == "code":
         binding = _binding_du_dossier(cwd)
         merged = assurer_onyxia_natif(merge_session_mcp_servers(pool, binding), pool)
-        return integrer_l_atelier(assurer_l_atelier(integrer_le_navigateur(merged, settings), settings))
+        return integrer_l_atelier(
+            assurer_l_atelier(
+                integrer_wikichat(integrer_le_navigateur(merged, settings), settings), settings
+            )
+        )
     global_binding = _load_json_object(settings.assistant_root / ".mcp.json")
     session_binding = _binding_du_dossier(cwd)
     return integrer_l_atelier(
         assurer_l_atelier(
-            integrer_le_navigateur(
-                merge_assistant_bindings(pool, global_binding, session_binding),
+            integrer_wikichat(
+                integrer_le_navigateur(
+                    merge_assistant_bindings(pool, global_binding, session_binding),
+                    settings,
+                ),
                 settings,
             ),
             settings,
@@ -567,6 +580,10 @@ def write_project_binding(
         elif est_le_navigateur(nom) and navigateur_configure(settings):
             # Le lanceur stdio, le même sur toutes les surfaces.
             retenus[nom] = declaration_chrome(settings)
+        elif est_wikichat(nom, deja.get(nom) or pool.get(nom), settings):
+            # Le pont stdio : plus de `?agent=atelier`, la conversation porte
+            # le nom (contrat wikichat, `wikichat_mcp`).
+            retenus[nom] = declaration_wikichat(settings)
         elif nom in deja and isinstance(deja[nom], dict):
             config = dict(deja[nom])
             config.pop("enabled", None)
@@ -616,6 +633,8 @@ def lier_le_projet(
             ecrits[nom] = declaration_atelier(settings)
         elif est_le_navigateur(nom) and navigateur_configure(settings):
             ecrits[nom] = declaration_chrome(settings)
+        elif est_wikichat(nom, cfg, settings):
+            ecrits[nom] = declaration_wikichat(settings)
         elif not herite and isinstance(deja.get(nom), dict):
             config = dict(deja[nom])
             config.pop("enabled", None)
@@ -859,7 +878,10 @@ def materialize_mcp_config(settings: AtelierSettings) -> Path:
     conn = connect(settings.gateway_db_path)
     try:
         store = IntegratedMcpStore(conn)
-        servers = integrer_le_navigateur(sans_amonts_gateway(store.enabled_mcp_servers()), settings)
+        servers = integrer_wikichat(
+            integrer_le_navigateur(sans_amonts_gateway(store.enabled_mcp_servers()), settings),
+            settings,
+        )
     finally:
         conn.close()
 

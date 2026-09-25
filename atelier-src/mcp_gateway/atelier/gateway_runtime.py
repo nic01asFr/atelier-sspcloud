@@ -99,6 +99,15 @@ async def gateway_startup(app: FastAPI, atelier_settings: AtelierSettings) -> No
     # portée « passerelle » — voir `navigateur.stdio_de_la_passerelle`.
     from mcp_gateway.atelier.navigateur import stdio_de_la_passerelle
 
+    # La passerelle parle à wikichat sous son propre nom, avant d'ouvrir ses
+    # connexions : `?agent=atelier` ne désigne plus personne (`wikichat_mcp`).
+    try:
+        from mcp_gateway.atelier.wikichat_mcp import renommer_la_passerelle
+
+        renommer_la_passerelle(atelier_settings)
+    except Exception as exc:  # noqa: BLE001 — une base illisible ne doit pas empêcher le démarrage
+        log.warning("wikichat : nom de la passerelle non migré : %s", exc)
+
     app.state.pool = UpstreamPool(
         app.state.catalog,
         app.state.db,

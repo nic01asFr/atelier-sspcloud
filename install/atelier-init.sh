@@ -294,7 +294,12 @@ if [ ! -s "$WORK/.claude/settings.json" ]; then
 EOF
 fi
 mkdir -p "$HOME/.claude"
-cp -f "$WORK/.claude/settings.json" "$HOME/.claude/settings.json"
+# Seulement s'il manque ou s'il est plus ancien : un ~/.claude/settings.json plus
+# récent porte ce que d'autres y ont posé depuis (les hooks de wikichat), que
+# l'Atelier reporte sur la copie durable (write_claude_settings_env).
+if [ ! -f "$HOME/.claude/settings.json" ] || [ "$WORK/.claude/settings.json" -nt "$HOME/.claude/settings.json" ]; then
+  cp -f "$WORK/.claude/settings.json" "$HOME/.claude/settings.json"
+fi
 
 cat > "$BIN/claude-env.sh" <<EOF
 # Source : . $BIN/claude-env.sh
@@ -306,7 +311,9 @@ fi
 export PATH="\$WORK/bin:\${PATH}"
 if [ -f "\$WORK/.claude/settings.json" ]; then
   mkdir -p "\$HOME/.claude"
-  cp -f "\$WORK/.claude/settings.json" "\$HOME/.claude/settings.json" 2>/dev/null || true
+  if [ ! -f "\$HOME/.claude/settings.json" ] || [ "\$WORK/.claude/settings.json" -nt "\$HOME/.claude/settings.json" ]; then
+    cp -f "\$WORK/.claude/settings.json" "\$HOME/.claude/settings.json" 2>/dev/null || true
+  fi
 fi
 export ANTHROPIC_MODEL="\${ANTHROPIC_MODEL:-$MODELE}"
 EOF
@@ -372,6 +379,9 @@ environnement_atelier() {
   export ATELIER_WORK="$WORK"
   export ATELIER_VSCODE_INTERNAL_URL="http://127.0.0.1:$PORT_CODE_SERVER"
   export ATELIER_VSCODE_UPSTREAM_AUTH="atelier"
+  # Le pont stdio de wikichat que déclarent les agents (wikichat_mcp.py).
+  [ -n "$SRC_WIKICHAT" ] && export ATELIER_WIKICHAT_SRC="$SRC_WIKICHAT"
+  return 0
 }
 
 demarrer_atelier() {
