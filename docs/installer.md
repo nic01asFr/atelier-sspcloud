@@ -89,6 +89,7 @@ pour relancer seulement l'Atelier : `~/work/bin/atelier-relancer`.
 | `ATELIER_DEPOT`, `ATELIER_BRANCHE` | d'où vient l'Atelier ; vide = déjà dans l'image | ce dépôt, `main` |
 | `WIKICHAT_DEPOT`, `ATELIER_SANS_WIKICHAT` | d'où vient wikichat ; `1` pour s'en passer | `github.com/nic01asFr/wikichat`, `0` |
 | `ANTHROPIC_BASE_URL` | la passerelle de modèles | `https://llm.lab.sspcloud.fr/api` |
+| `ATELIER_RELAIS_LLM_PORT` | port du relais LLM (boucle locale), par qui toutes les surfaces parlent au modèle ; `ATELIER_RELAIS_LLM=0` s'en passe (plus de compaction native) | `8790` |
 | `ATELIER_MODELE`, `ATELIER_MODELE_OPUS`, `ATELIER_MODELES_DE_REPLI` | modèle principal, créneau opus, replis (le dernier sert aussi haiku) | `qwen3-6-35b-moe` ; `qwen3-6-35b-moe` ; `qwen3-8-27b` |
 | `CODE_SERVER_VERSION`, `NODE_VERSION` | versions épinglées | `4.135.0`, `22.23.2` |
 

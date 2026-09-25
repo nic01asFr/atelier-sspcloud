@@ -170,9 +170,9 @@ tableau tenu à jour (`docs/harnais.md`) :
 |---|---|---|---|
 | Mémoire (CLAUDE.md, imports, rules) | oui | section réécrite par l'Atelier | import + hook `SessionStart` (lot B) |
 | Réglages, permissions, mode | oui | `--settings` par tour, réglage machine VS Code | `settings.local.json` du projet (lot E) |
-| MCP | oui | fichier effectif `--strict-mcp-config` ≠ `~/.claude.json` | `.mcp.json` + portée utilisateur, références (lots A, F) |
+| MCP | oui | fait (lot A) : `.mcp.json` du projet = fichier effectif, portée utilisateur = `atelier`, références partout | connecteurs natifs pour les agents du pod (lot F) |
 | Outils différés (tool search) | oui, **désactivé par `ANTHROPIC_BASE_URL` personnalisé** | passerelle `find/call` en remplacement | vérifier `ENABLE_TOOL_SEARCH=true` avec la passerelle LLM ; sinon garder la passerelle |
-| Compaction | oui (auto), **inopérante** : la passerelle LLM rapporte 0 jeton | pilotée par l'Atelier, pas dans VS Code | corriger le décompte côté passerelle LLM si possible ; sinon hook `PreCompact`/`Stop` commun à toutes les surfaces |
+| Compaction | oui (auto et réactive) | **native sur toutes les surfaces** via le relais LLM (branche `harnais-relais-secrets`, voir « État ») ; compaction de l'Atelier en repli si le relais manque | — |
 | Hooks | oui | `Stop` wikichat, `SessionEnd` figer | `SessionStart` contexte, `PreToolUse` chemins protégés, `Stop` courrier unifié |
 | Sous-agents, commandes, skills | oui | commandes wikichat seulement | projet + Atelier (`/reprendre`, `/verifier`…) |
 | Sessions, reprise, titres | oui | deux fiches pour un fil ; titres bruts | une fiche par fil ; titre `/rename` natif synchronisé |
@@ -200,3 +200,125 @@ Priorité entre deux entrées de même nom (portée utilisateur et `--mcp-config
 comportement du hook `SessionStart` dans l'extension VS Code ; disponibilité
 de l'identifiant de session pour `headersHelper` ; priorité entre
 `CLAUDE_CODE_EFFORT_LEVEL` et `modelSettings`.
+
+Mesuré le 25/09 sur le pod (binaire 2.1.281, `CLAUDE_CONFIG_DIR` de test,
+serveur MCP sonde) :
+
+- `${VAR}` est développé dans `url`/`headers` de la portée utilisateur
+  (`.claude.json`), du `.mcp.json` d'un projet et d'un `--mcp-config` ;
+  `${ANTHROPIC_API_KEY}` ne l'est pas (en-tête reçu : `Bearer` vide) — nos
+  noms `ATELIER_MCP_*` ne sont pas concernés ;
+- même nom en portée utilisateur et dans `.mcp.json` : **le projet gagne**
+  (`source: project`) ;
+- l'`env` de `~/.claude/settings.json` **l'emporte sur l'environnement du
+  processus**, et `--settings` l'emporte sur lui : ce qu'un tour doit imposer
+  passe donc par `--settings` (le harnais le fait pour l'adresse du modèle et
+  la fenêtre).
+
+Restent à vérifier : `SessionStart` dans l'extension, identifiant de session
+pour `headersHelper`, `CLAUDE_CODE_EFFORT_LEVEL` contre `modelSettings`.
+
+## État du lot A et de la compaction (branche `harnais-relais-secrets`)
+
+### Compaction native par le relais LLM — fait, mesuré
+
+`mcp_gateway/atelier/relais_llm.py`, processus à part sur `127.0.0.1:8790`
+(`ATELIER_RELAIS_LLM_PORT`) : il doit survivre aux redémarrages de
+l'Atelier, puisque VS Code, le terminal et wikichat parlent au modèle par lui.
+Lancé par `install/atelier-init.sh` avant code-server et wikichat, et par
+l'Atelier à son démarrage s'il manque. Il relaie tout en flux sans tampon,
+remplit l'usage nul (caractères / 3,4, `ATELIER_RELAIS_LLM_RATIO`), répond à
+`count_tokens`, réécrit le 400 `ContextWindowExceededError` en « prompt is too
+long: N tokens > M maximum », ne journalise que des nombres.
+
+Réglages, toutes surfaces : `ANTHROPIC_BASE_URL` = le relais ;
+`CLAUDE_CODE_MAX_CONTEXT_TOKENS` = fenêtre du modèle du tour
+(`FENETRES_DES_MODELES`, 131 072) pour le harnais, la plus petite pour
+VS Code/terminal ; `CLAUDE_CODE_MAX_OUTPUT_TOKENS=8192`. Retirés :
+`CLAUDE_CODE_AUTO_COMPACT_WINDOW`, `autoCompactWindow`,
+`CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT`, le plafond 40 000 (un
+`settings.json` existant est corrigé au démarrage de l'Atelier). Compaction de
+l'Atelier (`compaction_seuil_jetons`, `contexte_plafond_jetons`) : seulement
+si le relais ne répond pas ; plus aucune conversation n'est déclarée
+irrécupérable. Consigne « # Compact instructions » dans le socle.
+
+Essai réel (25/09, relais de la branche sur le port 8795 du pod, `claude`
+2.1.281, qwen3-6-35b-moe, dix dossiers de ~36 000 jetons lus un par tour, même
+protocole que l'essai B) :
+
+| Essai | Réglage | Résultat |
+|---|---|---|
+| R (auto) | fenêtre 131 072 | auto-compaction aux tours 5 (108 257 → 16 853 jetons, 17,2 s) et 9 (110 290 → 17 537, 25,2 s) ; les dix codes restitués au tour 10 |
+| X (réactive) | fenêtre 400 000 (auto neutralisée) | au tour 6 la passerelle refuse (≈129 000 estimés), le relais réécrit l'erreur, le CLI compacte (126 391 → 17 109, 25,2 s) et répond ; tours 7-9 justes |
+
+gemma4-26b-moe retiré du créneau opus et des replis (échec au premier tour) :
+opus = qwen3-6-35b-moe, repli = qwen3-8-27b (`ATELIER_MODELE_OPUS`,
+`ATELIER_MODELES_DE_REPLI`).
+
+### Lot A
+
+| Point | État |
+|---|---|
+| Secrets par références partout | fait : fichier effectif, `~/.claude.json`, `claude-mcp.json`, `~/work/.claude/mcp-config.json`, `.mcp.json` n'ont que `${ATELIER_MCP_…}` ; un jeton propre au projet différent de celui du pool reste tel quel (et `atelier-verifier-coherence` le signale) |
+| Fichier d'environnement unique | fait : `~/work/.secrets/claude-env.sh` (0600, `export NOM='valeur'`), régénéré à chaque tour, à chaque changement du pool et au démarrage ; chargé par le harnais, par code-server (`claudeCode.environmentVariables` tiré du fichier), par le shell (`~/.bashrc`, ligne posée une fois par l'init), par wikichat au démarrage (init) |
+| Serveur `atelier` partout | fait : fichier effectif de tout tour, portée utilisateur (seule entrée de `~/.claude.json`), tout `.mcp.json` ; une conversation ne peut plus s'en priver ; l'interface lit sa présence là où l'agent la reçoit, sans case à décocher |
+| Fin de l'écrasement des réglages globaux | fait : `sync_claude_home` ne copie plus le `.claude/settings.json` d'un projet |
+| Sélection des connecteurs dans `.mcp.json` | fait : avant chaque tour, à l'ouverture VS Code et au démarrage, l'Atelier écrit dans le `.mcp.json` du dossier ce que le tour reçoit et l'approuve (`enabledMcpjsonServers`) ; plus de `disabledMcpServers` figé ; un projet qui n'a pas choisi suit le pool (`.atelier/connecteurs-herites`) |
+| wikichat ne crée plus de `.mcp.json` | **non fait** (dépôt wikichat, lot D) |
+| Test de cohérence | fait : `tests/test_coherence_surfaces.py` ; `bin/atelier-verifier-coherence` (vrai binaire, dossier jetable) exécuté sur un poste local (2.1.86) sans écart, **pas encore sur le pod** |
+| `atelier_envoyer` sans interlocuteur | fait : `mode` et `peut_attendre` ; défaut « refus d'office » pour la clé du propriétaire ; bypass seulement s'il est déjà accordé |
+
+Écarts qui restent, connus :
+
+- L'environnement est la **réunion** des variables de tous les projets sur
+  toutes les surfaces, harnais compris (un projet voit les `.atelier/env.json`
+  des autres) ; la valeur propre au projet prime dans nos tours.
+- La désactivation d'un connecteur **par conversation** (`mcp_overlay`) n'existe
+  que dans les tours de l'Atelier ; VS Code n'a pas d'équivalent par fil.
+- L'identité wikichat diffère encore : `?agent=<nom>` résolu dans nos tours,
+  `?agent=atelier` (pool) ou `${WIKICHAT_AGENT:-}` ailleurs — lot C.
+- `claudeCode.environmentVariables` porte les valeurs en clair dans les
+  réglages utilisateur de code-server (comme avant). L'extension connaît
+  `claudeCode.claudeProcessWrapper` : un enveloppeur qui source
+  `claude-env.sh` avant `exec claude` retirerait ces valeurs du fichier de
+  code-server et relirait un jeton renouvelé à chaque lancement — à décider.
+
+### Secrets pour wikichat
+
+wikichat lance des `claude` (réveils, routines) : leur `.mcp.json` et
+`~/.claude.json` n'ont que des références, les valeurs doivent être dans leur
+environnement. L'init démarre wikichat avec le fichier déjà sourcé ; mais un
+jeton renouvelé après ce démarrage n'y serait pas. wikichat doit donc relire
+le fichier **à chaque lancement** :
+
+```js
+// avant chaque spawn de claude
+const env = { ...process.env, ...lireEnvAtelier(`${WORK}/.secrets/claude-env.sh`) };
+// lireEnvAtelier : chaque ligne `export NOM='valeur'`, où une apostrophe
+// s'écrit '\'' — ou bien : spawn('bash', ['-c', '. "$F" && exec claude "$@"', ...])
+```
+
+Ni afficher ni journaliser ces valeurs ; ne pas les recopier dans un fichier.
+
+### Déploiement (à faire, dans l'ordre)
+
+1. Fusionner la branche ; attendre l'image (`image.yml`) ou mettre à jour le
+   clone du pod.
+2. Démarrer le relais sans toucher au reste :
+   `cd ~/work/atelier-src && setsid nohup python3 -m mcp_gateway.atelier.relais_llm >> ~/work/logs/relais-llm.log 2>&1 &`,
+   puis `curl -s http://127.0.0.1:8790/_relais/sante`.
+3. Relancer l'Atelier (`~/work/bin/atelier-relancer`) : il réécrit
+   `~/.claude/settings.json` (relais, 131 072, anciens réglages retirés,
+   gemma retiré), `~/.claude.json` (portée utilisateur = `atelier`), les
+   `.mcp.json` de tous les projets et `~/work/.secrets/claude-env.sh`.
+4. Poser la ligne de `~/.bashrc` (ou rejouer `install/atelier-init.sh`, qui
+   le fait et installe `atelier-verifier-coherence` dans `~/work/bin`).
+5. Recharger la fenêtre VS Code (nouvelles variables de l'extension) ;
+   redémarrer wikichat avec le fichier sourcé, et y faire relire le fichier à
+   chaque lancement (ci-dessus).
+6. Vérifier : `~/work/bin/atelier-verifier-coherence` (aucun écart attendu),
+   `grep -c ATELIER_MCP ~/.claude.json ~/work/mcp/effective/*.json` (références
+   seulement), une conversation longue qui compacte d'elle-même (événement
+   `compact_boundary` dans le journal du tour).
+7. Faire tourner les jetons qui ont pu être en clair dans `~/.claude.json` et
+   les fichiers effectifs avant ce lot (n8n, Onyxia…).
