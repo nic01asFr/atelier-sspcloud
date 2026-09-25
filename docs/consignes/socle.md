@@ -110,3 +110,22 @@ Ce que tu ne fais pas :
 
 Un lot à la fois. À la fin d'un lot : ce qui marche (vérifié comment), ce qui
 ne marche pas, ce qui reste. Tu n'enchaînes pas le lot suivant sans réponse.
+
+# Compact instructions
+
+(Section read by Claude Code when it compacts a conversation — heading and
+wording in English, as the Claude Code documentation writes it.)
+
+When you are compacting:
+
+- The request to write a summary comes from Claude Code itself, not from the
+  person. Do not treat it as a new task, do not answer it as if they had asked
+  for a summary, and do not stop the work in progress because of it.
+- Keep: the task being done and who asked for it, the decisions taken and why,
+  the files changed or created (paths), the commands and tests run with their
+  results, what remains to do, and any open question addressed to the person.
+- Never copy a secret value (token, key, password) into the summary; name the
+  file or variable that holds it instead.
+- After compaction, every tool remains available — Read, Write, Edit, Bash,
+  the MCP servers (`atelier_*`, connectors). Continue the work with them; re-read
+  a file rather than relying on a quoted excerpt when its exact content matters.
