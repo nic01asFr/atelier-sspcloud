@@ -29,6 +29,7 @@ Statut :
 |---|---|---|---|
 | J-a | L'exécuteur des gardiens est un processus à part, lancé comme le relais LLM. Il ne fait que les contrôles santé et sécurité de l'Atelier et de wikichat. wikichat ordonne tout le reste | D | `coherence-croisee.md` §5.2-a ; transverse §1.7 |
 | J-b | Tâches automatiques : `max_per_day` à 24 par défaut, budget obligatoire ; un trigger créé par un agent naît désactivé | D | 5.2-b |
+| J-b2 | Un agent peut désactiver un trigger, jamais l'activer ; l'activation revient à la personne (Pilote, puis onglet Automates) | D | question de l'équipe W |
 | J-c | La porte dormante reste pour ce qui lance un agent ; les contrôles en code n'y sont pas soumis | D | 5.2-c |
 | J-d | Les services du namespace (Blender, QGIS, n8n) sont relayés par l'hôte des applications | D | 5.2-d |
 | J-e | Vues épinglées : au projet dans `projet.json` (`vues_epinglees`), à la conversation dans sa fiche | D | 5.2-e |
@@ -40,14 +41,14 @@ Statut :
 
 | # | Décision | Statut | Source |
 |---|---|---|---|
-| A-1 | Modèle `qwen3-6-35b-moe` ; `agent` exclu ; `qwen3-8-27b` pour le fond ; `qwen3-vl` pour les captures ; `qwen3-embedding-8b` pour la recherche sémantique. L'effort `xhigh` est mesuré avant tout changement | N (orientation) + D | `assistant-synthese.md` §6.2 |
-| A-2 | Outils : les méta-outils de l'Atelier (`gateway_find_tools`, `gateway_call_tool`), avec une seule porte et la classe d'action vérifiée par le serveur. Le chargement par `list_changed` reste une option, selon la mesure | N | §6.3 |
+| A-1 | Modèle `qwen3-6-35b-moe` ; `agent` exclu ; `qwen3-8-27b` pour le fond ; `qwen3-vl` pour les captures ; `qwen3-embedding-8b` pour la recherche sémantique. **Effort `medium`** : mesuré le 25/09, `xhigh` n'était jamais appliqué et n'apporte rien ; la ligne `modelSettings` morte est retirée (équipe F) | N (orientation) + D, confirmé par la mesure | `assistant-synthese.md` §6.2 |
+| A-2 | Outils : les méta-outils de l'Atelier (`gateway_find_tools`, `gateway_call_tool`), avec une seule porte et la classe d'action vérifiée par le serveur. **Confirmé par la mesure** (17 sur 20, aucun nom inventé) : `list_changed` n'est pas nécessaire. S'y ajoutent des alias d'intention dans la recherche (équipe F) et une consigne forte « chercher avant de conclure » dans le `CLAUDE.md` de l'Assistant (5 sur 6 contre 3 sur 6) | N, confirmé | §6.3 |
 | A-3 | L'accueil devient le fil de l'Assistant, derrière un réglage pendant la transition ; « Code » devient « Projets » | D | §6.5 |
 | A-4 | L'Assistant lance un agent code sans accord s'il est demandé, en brouillon et dans les plafonds, avec une carte « Arrêter » | D | §6.6 |
 | A-5 | Pour les propositions : l'Assistant refuse seul, n'accepte jamais seul | D | §6.7 |
 | A-6 | L'Assistant n'écrit que dans son dossier (notes de travail) ; la mémoire et les objets passent par des commandes | D | §6.8 |
 | A-7 | Mémoire : les faits extraits par le code sont enregistrés d'office ; préférences et interprétations passent par « À valider ». Capitalisation nocturne plafonnée à 20 conversations de 30 000 jetons, sur `qwen3-8-27b`. Les conversations des agents code sont capitalisées en fiches de projet | D | §6.9 |
-| A-8 | Voix : aucun audio conservé ; aucun accord à l'oral ; accusé en moins de 2 s, premier mot en moins de 3,5 s | D | §6.10 |
+| A-8 | Voix : aucun audio conservé ; aucun accord à l'oral. Cibles révisées par la mesure : **accusé par un son préenregistré** (moins de 2 s) ; premier mot en moins de 3,5 s sans outil ; environ 5,5 s avec un outil, couvert par l'accusé. La **détection de fin de parole (VAD)** est requise : aujourd'hui, des tranches de 3 s | D, révisé par la mesure | §6.10 |
 
 ## Plus tard (non bloquant)
 
