@@ -5,6 +5,47 @@ Grist (`~/work/projects/projet-sans-nom-5`, 65 commits, plusieurs agents
 successifs, travail sur le poste et sur le pod). Complète
 `docs/atelier-hebergement.md`.
 
+## Ce qui existe (vague 1, 25/09)
+
+Posé par l'équipe des fondations (branche `fondations`), dans
+`atelier-src/mcp_gateway/atelier/commandes/` :
+
+- **Schéma de `.atelier/projet.json`**, validé strictement (`structure.py`, pydantic, champs
+  fermés) : `version` (1), `slug`, `titre`, `description`, `famille`, `gabarit: {nom, version}`,
+  `fichiers: {etat, cahier, decisions}` (chemins relatifs, jamais hors du projet),
+  `commandes: {preparer, tests, verifier}`, `chemins_proteges`, `vues_epinglees:
+  [{artefact|connecteur, vue}]`, `creation: {par, le}`. Les champs que lit wikichat (`titre`,
+  `description`, `slug`, `fichiers.etat`, `fichiers.decisions`) gardent leur nom.
+- **Gabarit** posé à la création, sans jamais remplacer un fichier présent : `CLAUDE.md` (1re ligne
+  `@.atelier/contexte.md`, ni état, ni date, ni adresse ; le socle `~/work/projects/CLAUDE.md` est
+  lu en parent par Claude Code, l'importer en plus le chargerait deux fois), `ETAT.md` (tête : lot
+  courant, dernière vérification, prochaine étape ; puis « À décider », « Demandé à l'Atelier »,
+  « Fait et vérifié », « Non vérifié », « Écarts »), `README.md`, `docs/cahier-des-charges.md`,
+  `docs/decisions/0001-structure-type.md`, `.gitignore`.
+- **`.gitignore`** (`git_repos.py`) : `.atelier/*` sauf `!.atelier/projet.json` et
+  `!.atelier/env.json`. Un `.gitignore` ancien qui ignore `.atelier/` entier n'est pas complété
+  (git ne ré-inclut rien sous un dossier exclu) : ces projets se migrent en vague 2.
+- **`atelier_projet_creer`** (réversible, inverse `atelier_projet_ranger`) : `titre`, `objectif`,
+  `gabarit` (`application`, `donnees`, `service-mcp`, `document`, `vide`), `connecteurs[]`,
+  `slug?`. Slug unique dérivé du titre (même règle que wikichat), dépôt git sur `main` avec un
+  commit d'ouverture qui contient toute la structure, `.mcp.json` en références, trace
+  `creation.par`. Carte : Voir, Annuler (ranger, jamais supprimer), preuve (commit, fichiers,
+  vérification de la structure).
+- **`atelier_projet_modifier`** (réversible, inverse : lui-même avec les valeurs d'avant) : `titre`,
+  `description`, `connecteurs`. Ne touche que `projet.json` (commité seul, le travail en cours
+  n'est pas emporté) et `.mcp.json`.
+- **`projects.py`** : le titre affiché vient de `projet.json` s'il existe ; renommer par
+  l'interface y écrit aussi (commit « Renommer le projet »).
+- **`project_context.py`** : pour un projet dont `CLAUDE.md` importe `@.atelier/contexte.md`, le
+  contexte généré va dans `.atelier/contexte.md` (ignoré) et non plus dans `CLAUDE.md`. Et il ne
+  s'écrit plus que dans `~/work/projects/<slug>` (ou le dossier de l'Assistant) : jamais dans le
+  `cwd` d'une conversation qui serait ailleurs (le `/tmp/CLAUDE.md` du 24/09).
+
+Reste : `/reprendre`, `/verifier`, `/fin-de-lot` et `.claude/settings.json` du gabarit ; le hook
+`SessionStart` et l'enrichissement de `contexte.md` (lot B) ; renommer un slug avec alias ; la
+migration du Lecteur Grist ; `apps/manifeste.py` (`racine`, `donnees`, `preparer`, `entretien`,
+`capacites`).
+
 ## Diagnostic (Lecteur Grist)
 
 Ce qui aide : commits lisibles à l'infinitif ; provenance du code recopié

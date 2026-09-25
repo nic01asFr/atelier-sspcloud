@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Any
 
 log = logging.getLogger("atelier.project_context")
 
@@ -77,20 +78,67 @@ def bloc_contexte(slug: str, chemin: Path) -> str:
     )
 
 
-def ecrire_contexte(cwd: Path, slug: str) -> bool:
-    """Pose ou met à jour la section dans `<projet>/CLAUDE.md`.
+IMPORT_DU_CONTEXTE = "@.atelier/contexte.md"
 
-    Retourne True si le fichier a changé. Rien n'est réécrit quand le contenu
+
+def dossier_du_contexte(settings: Any, cwd: Path, slug: str) -> Path | None:
+    """Le seul dossier où le contexte de `slug` peut s'écrire, ou None.
+
+    Le contexte s'écrivait dans le `cwd` de la conversation, quel qu'il soit.
+    Le 24/09, une fiche dont le `cwd` était `/tmp` a produit `/tmp/CLAUDE.md`
+    (le bloc de `projet-sans-nom-5`), que chargeait ensuite toute session
+    lancée sous `/tmp`. Désormais :
+
+    - un projet : exactement `~/work/projects/<slug>`, et seulement si le `cwd`
+      de la conversation est ce dossier ;
+    - l'Assistant : son dossier, ou un sous-dossier de celui-ci ;
+    - rien d'autre, jamais.
+    """
+    if not slug or slug in (".", "..") or "/" in slug or "\\" in slug:
+        return None
+    try:
+        ici = Path(cwd).resolve()
+        if slug == settings.assistant_slug:
+            racine = Path(settings.assistant_root).resolve()
+            ici.relative_to(racine)
+            return ici
+        attendu = (Path(settings.projects_dir) / slug).resolve()
+        if Path(settings.projects_dir).resolve() not in attendu.parents:
+            return None
+    except (OSError, ValueError):
+        return None
+    return attendu if ici == attendu else None
+
+
+def ecrire_contexte(cwd: Path, slug: str, settings: Any = None) -> bool:
+    """Pose ou met à jour le contexte du projet.
+
+    Là où le projet l'attend : `.atelier/contexte.md` si son `CLAUDE.md`
+    l'importe (structure type), sinon la section délimitée de `CLAUDE.md`.
+    Rien n'est écrit hors du dossier du projet (voir `dossier_du_contexte`).
+
+    Retourne True si un fichier a changé. Rien n'est réécrit quand le contenu
     est déjà le bon : le fichier est souvent sous git, une modification sans
     objet salirait l'état du dépôt à chaque tour.
     """
-    bloc = bloc_contexte(slug, cwd)
-    chemin = cwd / "CLAUDE.md"
+    if settings is None:
+        from mcp_gateway.atelier.config import get_settings
+
+        settings = get_settings()
+    dossier = dossier_du_contexte(settings, cwd, slug)
+    if dossier is None:
+        log.warning("contexte de %s non écrit : %s n'est pas le dossier du projet", slug, cwd)
+        return False
+    bloc = bloc_contexte(slug, dossier)
+    chemin = dossier / "CLAUDE.md"
     try:
         ancien = chemin.read_text(encoding="utf-8") if chemin.is_file() else ""
     except OSError as exc:
-        log.info("CLAUDE.md illisible dans %s : %s", cwd, exc)
+        log.info("CLAUDE.md illisible dans %s : %s", dossier, exc)
         return False
+
+    if ancien.lstrip().startswith(IMPORT_DU_CONTEXTE):
+        return _ecrire_si_change(dossier / ".atelier" / "contexte.md", bloc + "\n")
 
     if DEBUT in ancien and FIN in ancien:
         avant, _, reste = ancien.partition(DEBUT)
@@ -100,13 +148,18 @@ def ecrire_contexte(cwd: Path, slug: str) -> bool:
         nouveau = ancien.rstrip() + "\n\n" + bloc + "\n"
     else:
         nouveau = bloc + "\n"
-
     if nouveau == ancien:
         return False
+    return _ecrire_si_change(chemin, nouveau)
+
+
+def _ecrire_si_change(chemin: Path, contenu: str) -> bool:
     try:
-        cwd.mkdir(parents=True, exist_ok=True)
-        chemin.write_text(nouveau, encoding="utf-8")
+        if chemin.is_file() and chemin.read_text(encoding="utf-8") == contenu:
+            return False
+        chemin.parent.mkdir(parents=True, exist_ok=True)
+        chemin.write_text(contenu, encoding="utf-8")
     except OSError as exc:
-        log.info("CLAUDE.md non écrit dans %s : %s", cwd, exc)
+        log.info("%s non écrit : %s", chemin, exc)
         return False
     return True
