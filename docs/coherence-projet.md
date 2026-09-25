@@ -278,12 +278,14 @@ opus = qwen3-6-35b-moe, repli = qwen3-8-27b (`ATELIER_MODELE_OPUS`,
 - La désactivation d'un connecteur **par conversation** (`mcp_overlay`) n'existe
   que dans les tours de l'Atelier ; VS Code n'a pas d'équivalent par fil.
 - L'identité wikichat diffère encore : `?agent=<nom>` résolu dans nos tours,
-  `?agent=atelier` (pool) ou `${WIKICHAT_AGENT:-}` ailleurs — lot C.
+  `?agent=atelier` (pool) ou `${WIKICHAT_AGENT:-}` ailleurs — lot C. Réglé au
+  « Déploiement du 26/09 » (pont stdio, plus de nom `atelier`).
 - `claudeCode.environmentVariables` porte les valeurs en clair dans les
   réglages utilisateur de code-server (comme avant). L'extension connaît
   `claudeCode.claudeProcessWrapper` : un enveloppeur qui source
   `claude-env.sh` avant `exec claude` retirerait ces valeurs du fichier de
-  code-server et relirait un jeton renouvelé à chaque lancement — à décider.
+  code-server et relirait un jeton renouvelé à chaque lancement. Fait au
+  « Déploiement du 26/09 » (`bin/atelier-claude-vscode`).
 
 ### Secrets dans les arguments (branche `secrets-arguments`)
 
@@ -406,3 +408,212 @@ Conception et mesures : `docs/navigateur-atelier.md`.
    de secrets et `ATELIER_CHROME_MCP_URL` ne servent plus ; le déploiement
    `chrome-devtools-mcp` (0 réplique) et le fork `nouveau-projet` ne sont plus
    utilisés par l'Atelier.
+
+## Déploiement du 26/09 (branche `deploiement-26-09`)
+
+La branche part de `main` (`2b5df53`, lot A et compaction) et réunit :
+`secrets-arguments` (`557433a`), `chrome-stdio` (`3e2bb04`), puis quatre
+changements propres au déploiement :
+
+- **Enveloppeur de l'extension VS Code** : `claudeCode.claudeProcessWrapper`
+  (portée machine, relevé dans le manifeste de l'extension 2.1.280 à 2.1.282)
+  désigne `~/work/bin/atelier-claude-vscode`, qui source
+  `~/work/.secrets/claude-env.sh` sans rien afficher puis fait `exec "$@"`.
+  `claudeCode.environmentVariables` ne porte plus que `ANTHROPIC_BASE_URL` et le
+  modèle. Le réglage est écrit dans les réglages utilisateur **et** machine de
+  code-server, au démarrage de l'Atelier et à chaque ouverture dans VS Code ;
+  une liste machine qui porterait des valeurs en est purgée.
+- **wikichat, côté Atelier** (contrat `hooks-et-dialogue.md` §8 de wikichat) :
+  l'entrée `wikichat` des fichiers que lit Claude Code (fichier effectif,
+  `.mcp.json` des projets, `claude-mcp.json`) est le **pont stdio**
+  `~/work/wikichat/src/scripts/wikichat-mcp-stdio.mjs`, lancé par
+  `~/work/bin/node`. Choisi plutôt que l'en-tête `x-wikichat-claude-session`
+  d'un `headersHelper` : Claude Code pose `CLAUDE_CODE_SESSION_ID` dans
+  l'environnement des serveurs stdio (documenté), alors que rien ne dit qu'un
+  `headersHelper` le reçoit, que le pont note que l'extension VS Code n'envoie
+  pas ces en-têtes, et que le serveur a journalisé 6 970 connexions SSE sans
+  une seule identité restaurée par ce chemin. Le pont transmet la conversation
+  (`?claude_session=`) et, dans nos tours, `WIKICHAT_AGENT` (`?agent=<slug>-<id6>`).
+  Coût : un processus node par client. La passerelle garde l'entrée SSE du
+  pool, renommée au démarrage `?agent=passerelle-atelier` (wikichat tient
+  `atelier` pour générique). `atelier` n'est plus écrit comme nom nulle part ;
+  la formule `<slug>-<session_id[:6]>` est inchangée.
+- **Un seul fichier de réglages** : `~/.claude/settings.json` est un lien vers
+  `~/work/.claude/settings.json`. Trois auteurs y écrivent — l'Atelier (dont le
+  refus de WebSearch), wikichat (ses hooks, à son démarrage) et Claude Code — et
+  la recopie du fichier entier d'un côté à l'autre (`sync_claude_home`, le plus
+  récent gagnant) effaçait les entrées de l'un d'eux : mesuré sur l'ordre réel
+  du pod, les hooks posés par wikichat juste avant le démarrage de l'Atelier
+  disparaissaient au premier tour. `settings.json` sort de la synchronisation ;
+  `claude_home.unifier_les_reglages` pose le lien (init, démarrage, chaque
+  tour). **wikichat écrit par renommage** (`overlay-installer.mjs` :
+  `writeFileSync(tmp)` puis `renameSync`), ce qui remplace le lien par un
+  fichier ; ce fichier, écrit à partir de ce qu'il lisait à travers le lien,
+  est alors fusionné dans celui du volume sans rien perdre (clés et `env` : le
+  plus récent l'emporte ; listes de `permissions` réunies ; hooks réunis,
+  l'ancien `wikichat-mailbox-hook.mjs` retiré dès que `wikichat-hook.mjs` est
+  là), et le lien est reposé. Claude Code n'a pas été observé sur ce point : s'il
+  écrit lui aussi par renommage, la même réparation s'applique. Là où un lien
+  est impossible (poste Windows sans privilège), les deux fichiers reçoivent le
+  même contenu fusionné. Test : `test_contrat_wikichat.py`
+  (`test_refus_websearch_hooks_wikichat_et_vscode_coexistent`).
+- **Chrome durable** : l'init installe une fois `chrome-headless-shell` dans
+  `~/work/.tools` (`npx @puppeteer/browsers@3.2.3`, Node de l'Atelier) et
+  `atelier-chrome` le prend avant le Chrome du système
+  (`docs/navigateur-atelier.md` §9 bis).
+
+### Étapes sur le pod (dans l'ordre)
+
+Préalable : `main` (lot A, relais LLM) est déjà en service sur le pod ; sinon,
+d'abord la section « Déploiement (à faire, dans l'ordre) » ci-dessus. La
+branche doit être poussée et fusionnée dans `main` (pas fait ici).
+
+0. **Sauvegarder** (pour le retour arrière) :
+   `cp -a ~/work/.claude/settings.json ~/work/.claude/settings.json.avant-26-09`,
+   `cp -a ~/.claude/settings.json ~/.claude/settings.json.avant-26-09`,
+   `cp -a ~/.claude.json ~/.claude.json.avant-26-09`,
+   `cp -a ~/.local/share/code-server/User/settings.json{,.avant-26-09}` et de
+   même pour `Machine/settings.json` s'il existe ; noter le commit du code de
+   l'Atelier en service (`git -C ~/work/atelier-src log -1 --oneline`, ou celui
+   du clone `~/work/repos/atelier-sspcloud`) et celui de wikichat
+   (`git -C ~/work/wikichat/src log -1 --oneline`). Ces copies contiennent des
+   secrets : 0600, ne pas les afficher, les supprimer une fois le déploiement
+   validé.
+1. **Code de l'Atelier** : mettre `~/work/atelier-src` sur la branche fusionnée
+   (clone suivi, ou copie posée à la main selon le pod) ; `pip install -e`
+   inutile (aucune dépendance ajoutée).
+2. **`chrome-stdio`, étapes 2 à 4** de « Déploiement du navigateur » :
+   `chrome-devtools-mcp@1.10.1` est déjà dans `~/work/.tools` ; poser les
+   lanceurs :
+   `cp ~/work/atelier-src/bin/atelier-chrome ~/work/atelier-src/bin/atelier-claude-vscode ~/work/bin/ && chmod +x ~/work/bin/atelier-chrome ~/work/bin/atelier-claude-vscode`
+   (ne pas rejouer toute l'init sur le pod en marche : elle suit le dépôt par
+   `git merge --ff-only` et relancerait l'installation de ce qui manque) ;
+   relancer le relais LLM comme au lot A.
+3. **Chrome durable** (sans attendre un redémarrage) :
+   `cd ~/work/.tools && PATH="$HOME/work/bin:$PATH" npx --yes @puppeteer/browsers@3.2.3 install chrome-headless-shell@stable --path ~/work/.tools`
+   — le `PATH` donne le Node 22 de l'Atelier (`@puppeteer/browsers` refuse le
+   Node 18 du système). Puis `ldd ~/work/.tools/chrome-headless-shell/linux-*/chrome-headless-shell-linux64/chrome-headless-shell | grep 'not found'`
+   (vide attendu tant que les bibliothèques tirées par `google-chrome` sont là)
+   et `ATELIER_CHROME_VERIFIER=1 ~/work/bin/atelier-chrome` : `chrome=` doit
+   désigner le binaire du volume. Relever la liste des bibliothèques dont il
+   dépend (`ldd … | awk '{print $1}'`) : c'est elle qu'il faudra retrouver
+   après redémarrage.
+4. **wikichat, §8 bis de son `docs/atelier-coherence.md`** :
+   `cd ~/work/wikichat/src && git pull --ff-only origin atelier-coherence`
+   (aucune dépendance ajoutée) ; redémarrer wikichat **depuis
+   `~/work/wikichat/src`**, avec `claude-env.sh` sourcé comme dans l'init. Au
+   démarrage il fusionne ses hooks dans `~/.claude/settings.json`
+   (`SessionStart`, `UserPromptSubmit`, `Stop` et guetteur `asyncRewake`,
+   `SessionEnd`) et retire `wikichat-mailbox-hook.mjs`. Le faire **avant** de
+   relancer l'Atelier : l'unification du démarrage reprend alors ces hooks
+   dans le fichier du volume. Variables éventuelles du service : §8 bis.5
+   (`WIKICHAT_STOP_ATELIER=jamais` pour interdire les relances dans nos tours).
+5. **Relancer l'Atelier** (`~/work/bin/atelier-relancer`). Au démarrage :
+   entrée wikichat du pool renommée (`passerelle-atelier`), entrée du
+   navigateur migrée en stdio, `~/.claude/settings.json` fusionné puis lié au
+   volume (refus de WebSearch compris), réglages utilisateur et machine de
+   code-server réécrits (enveloppeur, plus de valeur), `.mcp.json` de tous les
+   projets reliés (pont wikichat, navigateur stdio, secrets des `args` en
+   références), `claude-env.sh` régénéré.
+6. **Recharger VS Code** (« Developer: Reload Window ») : l'extension relit
+   `claudeCode.claudeProcessWrapper` et lance désormais `claude` par
+   l'enveloppeur. Une conversation déjà ouverte garde son processus jusqu'à sa
+   reprise.
+7. **Faire tourner le jeton n8n** (`secrets-arguments`) : il est parti en clair
+   dans les `.mcp.json` de projets ; de même pour tout jeton vu en clair dans
+   les sauvegardes de l'étape 0.
+
+### Vérifications après redémarrage du pod
+
+À faire après un **vrai redémarrage** du pod (c'est lui que vise le Chrome
+durable), l'init personnelle rejouée. Aucune commande ci-dessous n'affiche de
+valeur secrète.
+
+1. **`materialize_mcp_config`** :
+   `cd ~/work/atelier-src && python3 -c "from mcp_gateway.atelier.config import AtelierSettings as S; from mcp_gateway.atelier.mcp_sync import materialize_mcp_config as m; print(m(S()))"`,
+   puis `jq -c .mcpServers.wikichat ~/work/mcp/claude-mcp.json` (le pont :
+   `command` = `~/work/bin/node`, `args` = le script du pont) ;
+   `grep -l 'agent=atelier' ~/work/projects/*/.mcp.json ~/work/mcp/effective/*.json ~/.claude.json`
+   vide ; `~/work/bin/atelier-verifier-coherence` sans écart.
+2. **Aucun secret en clair** dans `~/.claude.json` ni dans les réglages de
+   code-server :
+   `cd ~/work/atelier-src && python3 -c "from pathlib import Path as P; from mcp_gateway.atelier.config import AtelierSettings as S; from mcp_gateway.atelier.coherence import secrets_en_clair as s; from mcp_gateway.atelier.env_secrets import variables_secretes as v; h=P.home(); c=h/'.local/share/code-server'; print(s([h/'.claude.json', c/'User/settings.json', c/'Machine/settings.json'], v(S())) or 'aucun')"`
+   (ne rend que des chemins et des noms de variables) ;
+   `jq -r '."claudeCode.claudeProcessWrapper"' ~/.local/share/code-server/{User,Machine}/settings.json`
+   donne `~/work/bin/atelier-claude-vscode` deux fois ;
+   `jq -r '."claudeCode.environmentVariables"[].name' ~/.local/share/code-server/User/settings.json`
+   ne liste que `ANTHROPIC_BASE_URL` (et `ANTHROPIC_MODEL`). Puis, une
+   conversation ouverte dans VS Code :
+   `for p in $(pgrep -f 'native-binary/claude'); do tr '\0' '\n' < /proc/$p/environ | cut -d= -f1 | grep -c '^ATELIER_MCP_'; done`
+   — des noms comptés, jamais les valeurs ; un compte non nul prouve que
+   l'enveloppeur a chargé `claude-env.sh`.
+3. **`/chrome/health`** : `curl -s -H "Authorization: Bearer $(cat ~/work/.secrets/atelier_owner_key)" http://127.0.0.1:8787/chrome/health`
+   (la clé n'est pas affichée) → `pret: true`, et le Chrome désigné est celui
+   du volume. Si l'init a averti « bibliothèques système absentes », le
+   navigateur ne démarrera pas : voir `docs/navigateur-atelier.md` §9 bis.
+   Puis une conversation qui ouvre une page et en prend une capture ;
+   `pgrep -fc chrome-devtools-mcp` revenu à 0 après sa fermeture.
+4. **Hooks wikichat** : `ls -l ~/.claude/settings.json` (lien vers
+   `~/work/.claude/settings.json`) ;
+   `jq -c '.hooks | map_values([.[].hooks[].command])' ~/.claude/settings.json`
+   → une entrée `wikichat-hook.mjs` par événement (et le guetteur sous `Stop`),
+   `atelier-figer-le-travail.sh` sous `SessionEnd`, plus de
+   `wikichat-mailbox-hook.mjs` ; `jq .permissions.deny` contient `WebSearch`.
+   Après un redémarrage de wikichat, le lien est un fichier jusqu'au tour
+   suivant de l'Atelier, puis de nouveau un lien, hooks intacts. Ouvrir une
+   conversation dans VS Code sur un projet :
+   `curl -s 127.0.0.1:3777/api/conversations/<session>` → `<slug>-<id6>`,
+   `surface: vscode` ; la même dans l'Atelier → même nom ; `list_sessions` ne
+   montre plus `atelier` (la passerelle y est `passerelle-atelier`). Le
+   journal de wikichat montre, pour le pont, `conv:oui` ou `claude_session`.
+   Restent à constater (wikichat §8 bis.4) : `systemMessage` d'une relance
+   `Stop` dans un tour, réveil d'une session VS Code inactive.
+5. **Compaction dans une vraie longue conversation** : mener une conversation
+   de l'Atelier au-delà de la fenêtre (131 072) sans la relancer à la main ;
+   elle doit compacter d'elle-même (entrée `compact_boundary` dans son
+   transcrit `~/.claude/projects/<dossier>/<session>.jsonl` et dans le journal
+   du tour) et **continuer à répondre** après, y compris une fois reprise dans
+   VS Code.
+
+### Retour arrière
+
+Dans l'ordre inverse, en gardant la rotation des jetons (étape 7) :
+
+1. **Atelier** : remettre le code noté à l'étape 0 et relancer
+   (`atelier-relancer`). Avant de relancer, remettre l'adresse de l'entrée
+   wikichat du pool à ce qu'elle était (écran Connecteurs, ou la retirer) :
+   l'ancien code recopie l'entrée du pool dans les `.mcp.json`, et
+   `passerelle-atelier` y deviendrait le nom commun de toutes les fenêtres.
+   Le navigateur stdio n'est pas compris par l'ancien code : désactiver le
+   connecteur `chrome-devtools-mcp` dans l'écran Connecteurs.
+2. **Réglages** : l'ancien code attend deux fichiers.
+   `rm ~/.claude/settings.json && cp -a ~/work/.claude/settings.json ~/.claude/settings.json`
+   (le fichier du volume porte déjà les hooks et le refus de WebSearch) ; en
+   cas de doute, les sauvegardes `.avant-26-09`. Retirer l'enveloppeur des
+   réglages machine :
+   `jq 'del(."claudeCode.claudeProcessWrapper")' ~/.local/share/code-server/Machine/settings.json > /tmp/m.json && mv /tmp/m.json ~/.local/share/code-server/Machine/settings.json`
+   (les réglages utilisateur sont réécrits par l'ancien code à la prochaine
+   ouverture dans VS Code, valeurs comprises) ; recharger VS Code. Laisser
+   l'enveloppeur en place serait sans danger : il ne fait que sourcer le
+   fichier et lancer `claude`.
+3. **wikichat** : §8 bis.6 de son document (`git checkout 9138bd0`,
+   redémarrer, remettre à la main l'entrée `Stop` = `wikichat-mailbox-hook.mjs`).
+4. **Chrome du volume** : l'ancien code ne le connaît pas et n'y touche pas ;
+   `rm -rf ~/work/.tools/chrome-headless-shell` pour libérer ~100 Mo.
+5. Supprimer les sauvegardes `.avant-26-09` une fois l'état stable.
+
+### Reste, hors de ce déploiement
+
+- **Interface** : afficher les `systemMessage` du flux stream-json (relance
+  `Stop` par wikichat) et les fils d'une conversation
+  (`GET /api/fils?session=…`) — contrat wikichat §8 point 4.
+- **wikichat** : écrire `~/.claude/settings.json` à travers le lien
+  (`fs.realpathSync` avant le renommage) éviterait la réparation ; à proposer
+  sur sa branche. Vérifier aussi que Claude Code n'écrit pas par renommage.
+- **Pont stdio sur le pod** : réception de `CLAUDE_CODE_SESSION_ID` par un
+  serveur stdio lancé par l'extension, à constater (wikichat §10).
+- **Bibliothèques de Chrome** : si l'image Jupyter ne les a pas, les faire
+  porter par l'image du service ou passer au chart de l'Atelier.
+- **Enveloppeur** : lu par l'extension en portée machine ; qu'il soit pris
+  depuis les réglages utilisateur de code-server n'est pas mesuré (il est
+  écrit dans les deux).
