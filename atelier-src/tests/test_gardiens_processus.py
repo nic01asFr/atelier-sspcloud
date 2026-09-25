@@ -87,8 +87,14 @@ def test_l_executeur_tourne_contre_des_services_factices(tmp_path: Path) -> None
                 break
             time.sleep(0.5)
         par_id = {c["id"]: c["etat"] for c in etat["controles"]}
-        assert par_id == {"sante.atelier": "alerte", "sante.relais": "ok", "sante.wikichat": "ok", "entretien.automates": "ok"}
-        assert [a["empreinte"] for a in etat["alertes_ouvertes"]] == ["sante.atelier:ne-repond-pas"]
+        # Sous Linux, l'inventaire lit le vrai /proc : les services factices de ce
+        # test y écoutent sans être déclarés, ce qu'il signale à raison en
+        # « attention ». Sous Windows, /proc n'existe pas et il rend « ok ».
+        automates = par_id.pop("entretien.automates")
+        assert automates in ("ok", "attention")
+        assert par_id == {"sante.atelier": "alerte", "sante.relais": "ok", "sante.wikichat": "ok"}
+        alertes = [a["empreinte"] for a in etat["alertes_ouvertes"] if a["niveau"] == "alerte"]
+        assert alertes == ["sante.atelier:ne-repond-pas"]
         journal = list((work / ".atelier-etat" / "gardiens" / "journal").glob("*.jsonl"))
         assert journal and len(journal[0].read_text(encoding="utf-8").splitlines()) >= 4
         reglages = json.loads((work / ".claude" / "settings.json").read_text())
