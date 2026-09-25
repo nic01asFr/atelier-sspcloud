@@ -29,7 +29,7 @@ Elle prime sur tout ce qui suit.
    par les ACL du document) : tout accès aux données passe par `Donnees`, tout
    accès réseau pour les widgets par `ReseauWidgets` (voir le readme).
 
-## Mode application, lots 0 à 2 (25/09/2026)
+## Mode application, lots 0, 1, 2 et 4 (25/09/2026)
 
 Conception : `docs/lecteur-grist-application.md` (dépôt de l'Atelier). Code
 dans `serveur/` du projet (paquet `lecteur_grist`), installé par
@@ -98,6 +98,27 @@ dans `serveur/` du projet (paquet `lecteur_grist`), installé par
   est obligatoire hors du poste). À l'arrêt, `serve` coupe les flux SSE au
   bout de 5 s (`timeout_graceful_shutdown`), sinon uvicorn attend les
   navigateurs indéfiniment.
+- **Règles d'accès (lot 4)** : `acl_formule.py` (compilePredicateFormula,
+  sémantique de JavaScript : ne pas « simplifier » en Python), `acl_regles.py`
+  (ACLRuleCollection, PermissionInfo, mémos), `acces.py` (GranularAccess :
+  lecture filtrée, métadonnées censurées, contrôles avant et après le
+  moteur, `ApplyUndoActions` sur refus). `actif.appliquer(actions, origine,
+  user)` : sans `user`, le propriétaire sans contrôle (outils, tests du
+  lot 2, règles ajoutées par les outils). Les règles se modifient dans Grist,
+  pas depuis l'application.
+- **Identité (lot 4)** : `identite.py` ; `serve --auth motdepasse|jetons|
+  entete|aucune` ; comptes par `lecteur-grist utilisateurs …`, jetons par
+  `lecteur-grist jetons …`, secrets dans `secrets/` (0600). `application.json`
+  est relu quand la CLI change un rôle pendant que `serve` tourne.
+- **Test différentiel** : `serveur/outils/acl_differentiel.py` contre un
+  grist-core lancé avec `GRIST_FORWARD_AUTH_HEADER=X-Forwarded-User`,
+  `GRIST_IGNORE_SESSION=true`, `GRIST_IN_SERVICE=true` (sans ce dernier, un
+  nouvel utilisateur reçoit 503 « Grist is not yet configured »). Grist sert
+  les métadonnées filtrées depuis son DocData : l'ordre des lignes y change
+  à chaque suppression (la dernière prend la place) ; `acces.py` tient cet
+  ordre. Les adresses lues dans CRM ne sortent pas du test (alias).
+  Chrome à deux comptes : `outils/verifier_acces_navigateur.py DOC.grist`
+  (contextes de navigation séparés, `Target.createBrowserContext`).
 
 ## Lot « widgets par leur adresse » (24/09/2026, nuit)
 
@@ -308,9 +329,10 @@ Objectif : faire tourner sans réseau tout un document, widgets compris.
 
 ## Ce qui reste
 
-- Mode application : lots L3 (widgets servis), L4 (identité, ACL), L5
-  (artefact serveur de l'Atelier) ; parseStrings complet, pièces jointes.
-  Voir la section « État » de la conception.
+- Mode application : lots L3 (widgets servis), L5 (artefact serveur de
+  l'Atelier), L7 (OIDC, public) ; parseStrings complet, pièces jointes,
+  commentaires sous règles, partages. Voir la section « État » de la
+  conception.
 - Vérification par l'Atelier réel (derrière sa connexion) : faite ici avec un
   serveur local qui reproduit ses en-têtes, pas à travers l'Atelier.
 - Remplaçant de grist-plugin-api : pas de `cellFormat: 'typed'`, pas de tri

@@ -1,8 +1,8 @@
 # Lecteur Grist, mode application — conception
 
-Version 1, 24/09/2026. **À valider par Nicolas.** Lots 0, 1 et 2 réalisés
-le 25/09/2026 (voir « État », en fin de document) ; le reste est une
-proposition, non implémentée.
+Version 1, 24/09/2026. **À valider par Nicolas.** Lots 0, 1, 2 et 4
+réalisés le 25/09/2026 (voir « État », en fin de document) ; le reste est
+une proposition, non implémentée.
 Sources : grist-core 1.7.3 (Apache-2.0 ; attention, le clone local est le fork
 nic01asFr, le moteur à reprendre est celui de gristlabs), grist-static,
 `docs/consignes/lecteur-grist.md`, `docs/atelier-applications.md`.
@@ -332,7 +332,67 @@ Détail des mesures : `serveur/MESURES.md` ; usage : readme du projet.
     médiane (écriture durable) ; `/download` 0,2 à 0,9 s.
   - Commits locaux (pas de push) : 12 commits, de `eee185d` à
     `16315c4`, arbres identiques entre le poste et le pod.
-
+- **L4** : identité et règles d'accès, en localhost.
+  - **Règles** : portage de `compilePredicateFormula` sur `aclFormulaParsed`
+    (sémantique de JavaScript : `===`, `+`, `<`, `in` sur les textes,
+    `undefined` distinct de `null`, `.lower()`/`.upper()`),
+    `ACLRuleCollection` (ressources colonne, table, `*:*`, `*SPECIAL` :
+    `FullCopies`, `AccessRules`, `DocCopies`, `SchemaEdit` ; règles par
+    défaut ; colonnes d'aide ; attributs utilisateur, `COLLATE NOCASE` pour
+    `Email`), `PermissionInfo`/`evaluateRule` (dont `allowSome`/`denySome`,
+    mémos). `acces.py` porte `GranularAccess` pour l'API : lecture filtrée
+    (table refusée 403 et absente de `/tables`, colonnes retirées, lignes
+    filtrées, cellules `['C']`, métadonnées censurées comme `CensorshipInfo`
+    — tableId, colId, libellés, formules et options vidés ; commentaires
+    censurés ; ordre des lignes du DocData de Grist tenu), écriture contrôlée
+    (`checkUserActions` avant le moteur ; `canApplyBundle` après, chaque
+    DocAction directe avec `rec` = état avant, `newRec` = état en fin de
+    lot ; refus = `ApplyUndoActions` dans le moteur, puis 403 « Blocked by …
+    access rules » avec mémos, comme Grist). `/download` et `/sql` réservés
+    à `canCopyEverything` (le propriétaire télécharge toujours) ; SSE et
+    `/api/modifications` : l'avis reste, limité aux tables lisibles ; la
+    relecture passe par l'API filtrée. Règle non évaluable : elle refuse ce
+    qu'elle accorderait, et `serve` multi-utilisateur refuse de démarrer
+    (sauf `--accepter-refus`) ; compte sans rôle : aucun accès.
+  - **Identité** : `--auth motdepasse` (scrypt, cookie de session HMAC
+    `HttpOnly`/`SameSite=Lax`/`Secure` hors localhost, invalidé quand le
+    mot de passe ou le rôle change ; `Origin`/`Sec-Fetch-Site` exigés sur
+    les méthodes modifiantes ; 5 échecs par compte et 10 par adresse sur
+    5 min), `jetons` (Bearer, rangé haché, rôle au plus celui du compte,
+    révocable), `entete` (écoute locale seulement, pour L5). `roles` dans
+    `application.json` ; commandes `lecteur-grist acl verifier`,
+    `utilisateurs lister|ajouter|role|motdepasse|retirer`,
+    `jetons lister|creer|revoquer`. Lecteur : page `/connexion`, compte
+    affiché, déconnexion, pages et sections des tables cachées omises,
+    cellules censurées « masqué », téléchargement proposé s'il est permis.
+  - Vérifié :
+    - **test différentiel contre grist-core** (`serveur/outils/acl_differentiel.py`,
+      Grist en `GRIST_FORWARD_AUTH_HEADER`, `serve --auth entete` sur le même
+      en-tête) : propriétaire, éditeurs, lecteur, comptes à attributs,
+      compte sans rôle ; `/tables`, `/data`, `/columns`, `/records`,
+      12 tables `_grist_*`, `/download`, `/sql`, puis les écritures (code,
+      message, mémos), puis l'état complet. Scénarios tirés de
+      `test/server/lib/GranularAccess.ts` (lignes, colonnes, `newRec`,
+      cellules censurées, verrous, attributs, `FullCopies`, `AccessRules`,
+      `DocCopies`, `-S`, `DuplicateTable`, `ApplyUndoActions`, `EvalCode`,
+      règles qui échouent), fixtures à règles (`SelectionSummary`,
+      `Memos-v34`, `Grist Basics`, `SummaryTableFormula`) et CRM (règles
+      réelles par périmètre, table `Artefacts` cachée) : **0 écart**
+      (5,8 millions de cellules comparées pour CRM ; 40 écritures dont 24
+      refusées, mêmes verdicts). Poste et pod (sans CRM), mêmes résultats ;
+    - règles non évaluables (arbre non compilable ; fixture `BadRules`) :
+      Grist rend 500 partout, `serve` refuse de démarrer, `--accepter-refus`
+      sert en refusant ;
+    - Chrome, deux comptes par mot de passe (`outils/verifier_acces_navigateur.py`,
+      Saint Martin sur le poste, document d'essai dans le pod) : l'éditeur ne
+      voit pas la table cachée (réplique, pages, `/tables`), lit et écrit
+      403 ; son écriture permise arrive chez le propriétaire ; déconnexion ;
+    - `serveur/tests` (34, poste et pod) ; parité d'écriture L2 et test
+      Chrome L2 rejoués sans changement.
+  - Coût : `/data` d'une table de 2,7 Mo filtrée par règle de ligne +25 %
+    (CRM, 419 → 524 ms).
+  - Commits locaux (pas de push) : 7 commits, de `e1f3a57` à `1b7548e`,
+    arbres identiques entre le poste et le pod.
 
 ### Écarts à la conception
 
@@ -345,8 +405,24 @@ Détail des mesures : `serveur/MESURES.md` ; usage : readme du projet.
   dans une colonne Numeric/Int sont lues comme Grist (point décimal, sauf
   langues où il sépare les milliers) ; le moteur convertit le reste comme il
   sait. Dates et nombres localisés : non.
-- **Règles d'accès non appliquées** (L4) ; toute écriture est faite au nom du
-  propriétaire (`--proprietaire` à `init`).
+- **Tables de règles** (`_grist_ACLRules`, `_grist_ACLResources`) :
+  montrées seulement à qui a la permission `AccessRules` ; Grist les envoie
+  aussi à qui peut tout lire (écart voulu, compté à part dans le test
+  différentiel).
+- **Règle non évaluable** : Grist bascule le document entier sur les règles
+  d'urgence et refuse de le servir ; ici la règle seule refuse ce qu'elle
+  accorderait, et `serve` multi-utilisateur ne démarre pas sans
+  `--accepter-refus` (ressource en double, règle après la règle par défaut :
+  règles d'urgence, comme Grist).
+- **Non pris en charge en v1** (refusé plutôt qu'approché) : modifier les
+  règles depuis l'application (même le propriétaire : 403 ; un non-
+  propriétaire reçoit l'erreur de Grist) ; partages et formulaires publiés
+  (`_grist_Shares` ignoré, `ShareRef` toujours nul), liens (`user.LinkKey`
+  toujours vide), « voir comme » ; commentaires (`_grist_Cells`) et
+  identifiants de pièces jointes écrits par un non-propriétaire quand il y a
+  des règles ; `user.UserID`, `UserRef`, `SessionID`, `Name` propres à ce
+  serveur (une règle qui s'en sert ne se comportera pas comme dans Grist) ;
+  masque de permissions des jetons (le rôle du jeton en tient lieu).
 - Restauration **serveur arrêté** seulement ; pas de pièces jointes
   (`_gristsys_Files` non servi) ; `REQUEST()` refusé.
 - Lecteur : la réplique est construite à l'ouverture depuis `/data`, puis
@@ -354,8 +430,8 @@ Détail des mesures : `serveur/MESURES.md` ; usage : readme du projet.
   colonne Bool rangée en blobs marshal par le fichier (CRM `Agents.actif`) se
   lit `true` en mode fichier, `1` en mode serveur (même valeur pour Grist).
 - `sort` : tri simple (sans options `:naturalSort`, etc.).
-- `--auth` : seul `aucune` existe, sur 127.0.0.1/::1 ; les autres modes sont
-  refusés (L4).
+- `--auth` : `oidc` n'existe pas encore (L7) ; `aucune` et `entete`
+  n'écoutent que sur 127.0.0.1/::1.
 - **L'exemple CRESO embarqué n'a pas été remplacé** : c'est un sous-ensemble
   SQLite fait à la main (ni `schemaVersion`, ni `_grist_Pages`), que le
   moteur ne sait migrer depuis aucune version supposée (1 à 40). En
@@ -370,15 +446,21 @@ Détail des mesures : `serveur/MESURES.md` ; usage : readme du projet.
   clients et 40 actions) ; long fonctionnement (rétention sur plusieurs
   jours : testée avec des dates simulées).
 - Pièces jointes, `REQUEST()`, documents `onDemand`, stockage avant 7.
+- Règles avec partages (`_grist_Shares`), `user.LinkKey`, `user.UserID` ;
+  cellules de commentaires censurées sur un document qui en a (aucune
+  fixture ni document réel n'en avait) ; règles changées par un renommage
+  dans le même lot (couvert par le code, pas par le test différentiel).
+- Connexion par mot de passe derrière HTTPS (cookie `Secure`) : seulement en
+  localhost ici.
 
 ### Recommandation pour la suite
 
-L2 tient : parité exacte avec grist-core sur 16 documents, écriture durable
-en une trentaine de millisecondes, reprise propre sur incident. Suite
-proposée : **L4 (identité et ACL)** avant toute exposition : c'est lui qui
-permet plusieurs utilisateurs, et le seul écart de parité restant (CRM) en
-relève ; test différentiel par utilisateur contre Grist, avec le même outil.
-**L3** (widgets servis) peut avancer en parallèle, puis **L5** (artefact
-serveur de l'Atelier). À traiter au passage : parseStrings complet (dates,
-nombres localisés) si des widgets envoient des chaînes, et pièces jointes
-(Builder d'Étude, formulaires).
+L4 tient : 0 écart contre grist-core sur 10 documents et scénarios, lectures
+et écritures, pour tous les rôles. La conception demandait L4 avant toute
+exposition : c'est fait, mais l'exposition elle-même attend L5 (artefact
+serveur de l'Atelier, identité par `entete` derrière la connexion de
+l'Atelier) et L7 (OIDC, public, revue de sécurité). Suite proposée : **L3**
+(widgets servis : miroir, service, CSP, jetons de widget ; les widgets
+reçoivent aujourd'hui ce que le lecteur leur transmet, déjà filtré) puis
+**L5**. À traiter au passage : parseStrings complet, pièces jointes, et
+commentaires sous règles si un document en a besoin.
