@@ -150,14 +150,18 @@ class Panneau:
         brutes = donnees.get("vues_epinglees") if isinstance(donnees, dict) else None
         vues = []
         for v in brutes or []:
-            if not isinstance(v, dict):
-                continue
+            if not isinstance(v, dict) or v.get("connecteur"):
+                continue  # les vues de connecteur viendront avec les bureaux (P4)
+            # Forme du schéma de `projet.json` : {artefact, vue, titre} ; on lit
+            # aussi l'ancienne forme {nom, chemin, titre} écrite avant l'intégration.
+            nom = str(v.get("artefact") or v.get("nom") or "")
+            if "artefact" in v:
+                chemin = "" if str(v.get("vue") or "/") == "/" else str(v.get("vue"))
+            else:
+                chemin = str(v.get("chemin") or "")
             try:
                 vues.append(
-                    descripteur(
-                        projet, str(v.get("nom") or ""), chemin=str(v.get("chemin") or ""),
-                        titre=str(v.get("titre") or ""), epingle="projet",
-                    )
+                    descripteur(projet, nom, chemin=chemin, titre=str(v.get("titre") or ""), epingle="projet")
                 )
             except VueInvalide:
                 continue
@@ -181,12 +185,20 @@ class Panneau:
         chemin = self._projet_json(projet)
         if chemin is None:
             raise VueInvalide(f"projet inconnu : {projet}")
+        from mcp_gateway.atelier.commandes.structure import ErreurProjetJson, valider
+
         donnees = _lire_json(chemin)
         if not isinstance(donnees, dict):
-            donnees = {}
+            # Pas encore de projet.json : le minimum que son schéma exige.
+            donnees = {"version": 1, "slug": projet, "titre": projet}
         donnees["vues_epinglees"] = [
-            {"nom": v["nom"], "chemin": v["chemin"], "titre": v["titre"]} for v in vues[-MAX_VUES:]
+            {"artefact": v["nom"], "vue": v["chemin"] or "/", "titre": v["titre"]} for v in vues[-MAX_VUES:]
         ]
+        try:
+            valider(donnees)
+        except ErreurProjetJson as exc:
+            # On n'écrit jamais un projet.json que le reste de l'Atelier refuserait.
+            raise VueInvalide(str(exc)) from None
         _ecrire_json(chemin, donnees)
 
     def enregistrer(self, session_id: str, vue: dict[str, Any]) -> dict[str, Any]:

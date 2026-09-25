@@ -83,9 +83,14 @@ class Creation(_Strict):
 
 
 class VueEpinglee(_Strict):
+    """Une vue épinglée au projet. `vue` est le chemin dans la création (`/` pour
+    sa racine) ou le nom d'une vue de connecteur ; `titre` est ce qu'affiche
+    l'onglet du panneau."""
+
     artefact: str | None = None
     connecteur: str | None = None
-    vue: str = Field(min_length=1, max_length=80)
+    vue: str = Field(min_length=1, max_length=300)
+    titre: str | None = Field(default=None, max_length=120)
 
     @model_validator(mode="after")
     def _une_seule_origine(self) -> "VueEpinglee":

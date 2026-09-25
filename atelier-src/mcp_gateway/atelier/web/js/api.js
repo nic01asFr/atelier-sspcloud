@@ -302,6 +302,9 @@ export function streamEvents(sessionId, message, { onEvent, attachmentIds = [] }
   // Pas de clé dans l'adresse : le cookie de session part de lui-même en
   // même origine, et une URL se journalise partout où elle passe.
   const params = new URLSearchParams({ message: message || "" });
+  // Identifiant de cet envoi : une reconnexion d'EventSource reprend la même
+  // adresse, et le serveur refuse de rejouer un envoi déjà reçu.
+  params.set("envoi", (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`));
   if (attachmentIds.length) {
     params.set("attachments", attachmentIds.join(","));
   }

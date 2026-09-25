@@ -241,7 +241,7 @@ def test_epingler_au_projet_ecrit_projet_json_sans_toucher_au_reste(atelier: Tes
     autre_conv = conversation(atelier, "demo")
     racine = atelier.app.state.settings.projects_dir / "demo"
     (racine / ".atelier").mkdir(exist_ok=True)
-    (racine / ".atelier" / "projet.json").write_text(json.dumps({"titre": "Démo", "version": 1}), encoding="utf-8")
+    (racine / ".atelier" / "projet.json").write_text(json.dumps({"titre": "Démo", "version": 1, "slug": "demo"}), encoding="utf-8")
 
     r = atelier.put(
         f"/v1/panneau/{conv}/vues",
@@ -251,7 +251,10 @@ def test_epingler_au_projet_ecrit_projet_json_sans_toucher_au_reste(atelier: Tes
     assert r.status_code == 200, r.text
     donnees = json.loads((racine / ".atelier" / "projet.json").read_text(encoding="utf-8"))
     assert donnees["titre"] == "Démo" and donnees["version"] == 1
-    assert donnees["vues_epinglees"] == [{"nom": "carte", "chemin": "", "titre": "Carte"}]
+    assert donnees["vues_epinglees"] == [{"artefact": "carte", "vue": "/", "titre": "Carte"}]
+    # Le fichier reste valide pour le schéma commun (équipe F, wikichat).
+    from mcp_gateway.atelier.commandes.structure import valider
+    valider(donnees)
     # Visible depuis toutes les conversations du projet.
     vues = atelier.get(f"/v1/panneau/{autre_conv}", headers=porteur(atelier)).json()["vues"]
     assert [v["nom"] for v in vues] == ["carte"] and vues[0]["epingle"] == "projet"
@@ -344,3 +347,34 @@ def test_l_application_sait_que_c_est_un_agent_qui_entre() -> None:
     assert acces("")["X-Atelier-Acces"] == "proprietaire"
     agent = acces("agent:c1")
     assert agent["X-Atelier-Acces"] == "agent" and agent["X-Atelier-Utilisateur"] == "agent:c1"
+
+
+def test_epingler_sans_projet_json_en_cree_un_valide(atelier: TestClient) -> None:
+    from mcp_gateway.atelier.commandes.structure import valider
+
+    conv = conversation(atelier, "demo")
+    racine = atelier.app.state.settings.projects_dir / "demo"
+    chemin = racine / ".atelier" / "projet.json"
+    if chemin.exists():
+        chemin.unlink()
+    r = atelier.put(
+        f"/v1/panneau/{conv}/vues", json={"nom": "carte", "epingle": "projet"}, headers=porteur(atelier)
+    )
+    assert r.status_code == 200, r.text
+    donnees = json.loads(chemin.read_text(encoding="utf-8"))
+    projet = valider(donnees)
+    assert projet.slug == "demo" and projet.vues_epinglees[0].artefact == "carte"
+
+
+def test_un_projet_json_invalide_n_est_jamais_reecrit(atelier: TestClient) -> None:
+    conv = conversation(atelier, "demo")
+    racine = atelier.app.state.settings.projects_dir / "demo"
+    (racine / ".atelier").mkdir(exist_ok=True)
+    chemin = racine / ".atelier" / "projet.json"
+    chemin.write_text(json.dumps({"titre": "Démo", "inconnu": 1}), encoding="utf-8")
+    avant = chemin.read_text(encoding="utf-8")
+    r = atelier.put(
+        f"/v1/panneau/{conv}/vues", json={"nom": "carte", "epingle": "projet"}, headers=porteur(atelier)
+    )
+    assert r.status_code >= 400
+    assert chemin.read_text(encoding="utf-8") == avant

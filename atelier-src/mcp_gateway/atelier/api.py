@@ -8,6 +8,7 @@ import queue
 import re
 import secrets
 import threading
+import time
 import unicodedata
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -418,6 +419,31 @@ class MetaPatchBody(BaseModel):
     # Langue de l'Atelier : ce que le service fait rédiger la suit.
     langue: str | None = None
 
+
+
+class _EnvoisRecus:
+    """Les identifiants d'envoi déjà vus, gardés dix minutes (voir `stream_events`)."""
+
+    def __init__(self, duree_s: float = 600.0, maximum: int = 5000) -> None:
+        self.duree_s = duree_s
+        self.maximum = maximum
+        self._vus: dict[tuple[str, str], float] = {}
+        self._verrou = threading.Lock()
+
+    def premier(self, session_id: str, envoi: str) -> bool:
+        maintenant = time.monotonic()
+        cle = (session_id, envoi[:100])
+        with self._verrou:
+            if len(self._vus) > self.maximum:
+                self._vus = {k: t for k, t in self._vus.items() if maintenant - t < self.duree_s}
+            t = self._vus.get(cle)
+            if t is not None and maintenant - t < self.duree_s:
+                return False
+            self._vus[cle] = maintenant
+            return True
+
+
+_envois_recus = _EnvoisRecus()
 
 def _slug_composition(nom: str) -> str:
     """Identifiant technique tiré du nom saisi."""
@@ -1565,8 +1591,15 @@ def build_app(
         authorization: Annotated[str | None, Header()] = None,
         message: str | None = None,
         attachments: str | None = None,
+        envoi: str | None = None,
     ) -> StreamingResponse:
         """SSE : envoie un message (query ?message=) puis streame les événements du tour.
+
+        `envoi` identifie cet envoi. `EventSource` se reconnecte seul quand la
+        ligne tombe, avec la même adresse : sans identifiant, la reconnexion
+        rejouait le message et relançait le tour. Un envoi déjà reçu reçoit un
+        409, sur lequel `EventSource` ne se reconnecte plus ; le tour en cours
+        reste visible par le flux en direct.
 
         `EventSource` ne sait pas poser d'en-tête, d'où la tentation de mettre
         la clé dans l'adresse — ce que faisait l'interface, à chaque message
@@ -1592,6 +1625,8 @@ def build_app(
         ]
         if not message and not attachment_ids:
             raise HTTPException(400, "message or attachments required")
+        if envoi and not _envois_recus.premier(session_id, envoi):
+            raise HTTPException(409, "envoi déjà reçu : le tour ne se rejoue pas")
 
         def gen():
             """Relaie les événements du tour à mesure qu'ils arrivent.

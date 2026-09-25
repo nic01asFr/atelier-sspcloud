@@ -18,6 +18,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from mcp_gateway.atelier.events import sans_substituts
+
 # Ce qu'un lecteur doit voir. Les autres types — événements de flux, opérations
 # de file — appartiennent à la mécanique, pas à la conversation.
 TYPES_MONTRES = ("user", "assistant", "result")
@@ -86,7 +88,10 @@ def _entrees(chemin: Path) -> list[dict[str, Any]]:
             if not ligne.startswith("{"):
                 continue
             try:
-                e = json.loads(ligne)
+                # Un emoji coupé en deux dans le transcrit du CLI donne un
+                # substitut isolé que `json.loads` accepte mais que la réponse
+                # JSON refuse ensuite d'encoder : on le retire ici.
+                e = sans_substituts(json.loads(ligne))
             except json.JSONDecodeError:
                 continue
             if not isinstance(e, dict) or e.get("type") not in TYPES_MONTRES:
