@@ -259,7 +259,7 @@ opus = qwen3-6-35b-moe, repli = qwen3-8-27b (`ATELIER_MODELE_OPUS`,
 
 | Point | État |
 |---|---|
-| Secrets par références partout | fait : fichier effectif, `~/.claude.json`, `claude-mcp.json`, `~/work/.claude/mcp-config.json`, `.mcp.json` n'ont que `${ATELIER_MCP_…}` ; un jeton propre au projet différent de celui du pool reste tel quel (et `atelier-verifier-coherence` le signale) |
+| Secrets par références partout | fait : fichier effectif, `~/.claude.json`, `claude-mcp.json`, `~/work/.claude/mcp-config.json`, `.mcp.json` n'ont que `${ATELIER_MCP_…}` ; un jeton propre au projet différent de celui du pool reste tel quel (et `atelier-verifier-coherence` le signale) ; les `args` des serveurs stdio aussi (branche `secrets-arguments`, ci-dessous) |
 | Fichier d'environnement unique | fait : `~/work/.secrets/claude-env.sh` (0600, `export NOM='valeur'`), régénéré à chaque tour, à chaque changement du pool et au démarrage ; chargé par le harnais, par code-server (`claudeCode.environmentVariables` tiré du fichier), par le shell (`~/.bashrc`, ligne posée une fois par l'init), par wikichat au démarrage (init) |
 | Serveur `atelier` partout | fait : fichier effectif de tout tour, portée utilisateur (seule entrée de `~/.claude.json`), tout `.mcp.json` ; une conversation ne peut plus s'en priver ; l'interface lit sa présence là où l'agent la reçoit, sans case à décocher |
 | Fin de l'écrasement des réglages globaux | fait : `sync_claude_home` ne copie plus le `.claude/settings.json` d'un projet |
@@ -282,6 +282,31 @@ opus = qwen3-6-35b-moe, repli = qwen3-8-27b (`ATELIER_MODELE_OPUS`,
   `claudeCode.claudeProcessWrapper` : un enveloppeur qui source
   `claude-env.sh` avant `exec claude` retirerait ces valeurs du fichier de
   code-server et relirait un jeton renouvelé à chaque lancement — à décider.
+
+### Secrets dans les arguments (branche `secrets-arguments`)
+
+Constaté après déploiement : le connecteur `n8n`, un pont stdio, porte son
+jeton dans `args[4]` (`--header` puis `Authorization: Bearer <jeton>`) ; la
+conversion ne traitait que `headers` et `env`, le jeton restait en clair dans
+tous les `.mcp.json` de projets. Désormais `mcp_secrets` convertit aussi
+`args`, en gardant le préfixe littéral :
+
+| Forme dans `args` | Devient | Variable |
+|---|---|---|
+| `--header`/`-H` puis `Authorization: Bearer …` (ou `Authorization:Bearer …`), `--header=…` | `Authorization: Bearer ${…}` | `ATELIER_MCP_<SERVICE>_<EN-TÊTE>` (ex. `ATELIER_MCP_N8N_AUTHORIZATION`) |
+| `--token=…`, `--api-key=…` (option au nom secret) | `--token=${…}` | `ATELIER_MCP_<SERVICE>_ARG_<OPTION>` |
+| `--api-key` puis `…` | `${…}` | idem |
+| `Bearer …` ailleurs | `Bearer ${…}` | `ATELIER_MCP_<SERVICE>_ARG_<N>` |
+| valeur secrète du même serveur (en-tête, `env`) recopiée | sa référence | celle de l'en-tête ou de `env` |
+
+Un en-tête non secret (`Accept: …`) passe tel quel. La valeur va dans
+`claude-env.sh` comme les autres. Un `.mcp.json` existant est migré à la
+liaison suivante si le pool fournit la même valeur (la forme écrite peut
+différer) ; sinon l'argument reste et est signalé (`<service>.args[N]`), comme
+un en-tête inconnu. Vérifié sur un poste (2.1.86) : `claude --mcp-config`
+développe `${VAR}` dans `args` d'un serveur stdio. Après déploiement :
+relancer l'Atelier (liaison de tous les projets), puis **faire tourner le jeton
+n8n**, parti en clair dans les `.mcp.json`.
 
 ### Secrets pour wikichat
 

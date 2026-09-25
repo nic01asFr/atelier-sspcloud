@@ -776,6 +776,21 @@ def _migrer_les_secrets(
                     cle,
                 )
         sortie[champ] = nouveau
+    # Les arguments (`--header "Authorization: Bearer …"` d'un pont stdio) :
+    # un secret dont le pool fournit la même valeur devient sa référence ;
+    # un autre reste, et se signale comme un en-tête inconnu.
+    args = config.get("args")
+    if isinstance(args, list):
+        _, valeurs = en_references(nom, du_pool) if isinstance(du_pool, dict) else ({}, {})
+        sortie["args"] = en_references_fournies(nom, {"args": args}, valeurs)["args"]
+        for cle in secrets_en_clair({"args": sortie["args"]}):
+            log.warning(
+                "secret en clair laissé dans %s : %s.%s (inconnu du pool,"
+                " écrit hors de l'Atelier)",
+                chemin,
+                nom,
+                cle,
+            )
     return sortie
 
 
