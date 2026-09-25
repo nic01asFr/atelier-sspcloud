@@ -94,6 +94,45 @@ Ce que tu ne fais pas :
   dépendances du projet ; les modèles et gros binaires se téléchargent par un
   script versionné, ils ne se commitent pas.
 
+## Hooks du socle
+
+Deux règles ci-dessus ne dépendent pas de ta mémoire : un hook `PreToolUse`
+les tient pour tous les agents, sur toutes les surfaces (Atelier, VS Code,
+terminal, agents de wikichat). Il refuse la commande Bash avant qu'elle parte,
+et tu reçois la raison :
+
+| Refusé | Pourquoi | À la place |
+|---|---|---|
+| `killall <nom>`, `pkill` sur un motif non ancré (`pkill -f server.mjs`), `kill $(pgrep …)`, `pgrep … \| xargs kill` | le motif attrape les processus des autres : wikichat est mort ainsi le 18/09 | `kill "$(cat run.pid)"` ; au pire `pkill -f '^…$'` ancré des deux côtés, ou `pkill -F run.pid` |
+| `--host 0.0.0.0`, `-b 0.0.0.0:…`, `HOST=0.0.0.0`, `--ip 0.0.0.0`, `bind-addr: 0.0.0.0`, `uvicorn`/`gunicorn`/`flask` sur `0.0.0.0` ou `::` | le port devient joignable par tout le pod, et au-delà | `127.0.0.1` ; un service à montrer se déclare comme artefact serveur |
+| `python -m http.server` sans `-b 127.0.0.1` | il écoute partout par défaut | `python -m http.server 8000 -b 127.0.0.1` |
+
+Un refus n'est pas un obstacle à contourner (autre syntaxe, script
+intermédiaire) : si tu as une vraie raison, dis-la à la personne.
+
+**Qui le pose, et où.** L'exécuteur des gardiens (`python -m
+mcp_gateway.gardiens`, lancé par `install/atelier-init.sh`) le pose à son
+démarrage dans `~/work/.claude/settings.json`, le fichier physique dont
+`~/.claude/settings.json` est un lien (`claude_home.unifier_les_reglages`) :
+
+- entrée `hooks.PreToolUse`, `matcher: "Bash"`, commande
+  `<python> -m mcp_gateway.gardiens.garde_bash`, délai 10 s ;
+- il suit le lien et écrit le fichier cible par renommage : le lien reste un
+  lien ;
+- il ne touche à aucun autre hook (ceux de wikichat restent), n'en pose qu'un
+  seul, met à jour l'interpréteur s'il a changé, et ne crée ni n'écrase un
+  fichier absent ou illisible ;
+- sa commande ne contient pas « wikichat » : la fusion des réglages de
+  l'Atelier (`fusionner_les_reglages`) le garde quand wikichat réécrit le
+  fichier sans lui ;
+- `ATELIER_GARDIENS_HOOKS=0` empêche la pose ; `python -m
+  mcp_gateway.gardiens.garde_bash --poser [fichier]` la fait à la main ;
+  `--verifier <commande>` dit si une commande serait refusée.
+
+Si le module ne s'importe pas, le hook échoue sans bloquer (code 1) : il ne
+coupe jamais un agent par sa propre panne. Tests :
+`tests/test_gardiens_hook.py`.
+
 ## Documents et vérité
 
 - Un document d'architecture décrit ce qui existe, ou dit en tête « proposition,
