@@ -4,13 +4,26 @@ import * as api from "../api.js";
 import * as S from "../state.js";
 import { $ } from "../core/dom.js";
 import { appendMessageBody } from "../ui/message-render.js";
-import { chargerPanneauApplications } from "./applications.js";
 
 /**
  * @param {object} ctx
  * @param {ReturnType<typeof S.createState>} ctx.state
  * @param {() => void} ctx.render
  */
+/** Le fil sans les demandes classées ; une carte vidée disparaît. */
+export function retirerLesClassees(messages, classees) {
+  return (messages || [])
+    .map((m) => ({
+      ...m,
+      blocks: (m.blocks || [])
+        .map((b) =>
+          b.type === "perimees" ? { ...b, demandes: (b.demandes || []).filter((d) => !classees.has(d.request_id)) } : b
+        )
+        .filter((b) => b.type !== "perimees" || b.demandes.length),
+    }))
+    .filter((m) => m.role !== "system" || m.blocks.length || m.text);
+}
+
 export function createCodeChatView(ctx) {
   const { state, render, composerInput, actions } = ctx;
 
@@ -208,6 +221,25 @@ const BAS_DU_FIL = 1e9;
     if (!state.busy) await reprendreLesQuestions();
   }
 
+  /**
+   * Classe les demandes d'un tour disparu : un refus rendu à chacune la clôt
+   * côté service, et elle ne revient plus à l'ouverture.
+   */
+  async function classer(requestIds) {
+    const classees = new Set();
+    for (const id of requestIds) {
+      try {
+        await api.repondreDecision(state.token, id, { decision: "deny", motif: "classée sans réponse" });
+        classees.add(id);
+      } catch (e) {
+        // Déjà close ailleurs : elle est classée quand même.
+        if (/404/.test(e?.message || "") || e?.status === 404) classees.add(id);
+      }
+    }
+    state.messages = retirerLesClassees(state.messages, classees);
+    render();
+  }
+
   /** Referme une carte, où qu'elle soit dans le fil. */
   function marquerDecision(requestId, etat, reponses) {
     for (const m of state.messages || []) {
@@ -263,6 +295,7 @@ const BAS_DU_FIL = 1e9;
     if (!ecouteDecisions) {
       ecouteDecisions = true;
       thread.addEventListener("atelier:decision", (e) => repondre(e.detail));
+      thread.addEventListener("atelier:classer", (e) => classer(e.detail?.requestIds || []));
     }
     // Le fil est reconstruit à chaque rendu, et une réponse en cours en
     // déclenche des centaines. Recoller systématiquement en bas rendait toute
@@ -437,15 +470,16 @@ const BAS_DU_FIL = 1e9;
     if (attach) attach.disabled = !peutJoindre;
     if (attachInput) attachInput.disabled = !peutJoindre;
 
-    // Le mode de travail appartient à la conversation : on ne le propose donc
-    // qu'une fois qu'elle existe. Il ne vaut que pour les tours à venir, ce que
-    // dit l'infobulle — sans quoi on croirait qu'il réécrit le passé.
+    // Le mode de travail appartient à la conversation. Il se choisit aussi
+    // avant le premier message (lot H : il n'apparaissait qu'après) ; il est
+    // alors posé sur la conversation dès qu'elle naît. Il ne vaut que pour les
+    // tours à venir, ce que dit l'infobulle.
     const mode = $("composer-mode");
     if (mode) {
       const courante = state.sessions?.find((x) => x.session_id === state.sessionId);
-      mode.disabled = !peutJoindre || state.busy;
-      mode.hidden = !peutJoindre;
-      const valeur = courante?.permission_mode || "";
+      mode.disabled = !sessionReady || state.busy;
+      mode.hidden = !sessionReady;
+      const valeur = state.sessionId ? courante?.permission_mode || "" : state.modeEnAttente || "";
       if (mode.value !== valeur) mode.value = valeur;
       mode.title = valeur === "plan"
         ? "Plan — l’agent réfléchit et propose, sans rien modifier. S’applique aux tours à venir."
@@ -530,32 +564,8 @@ const BAS_DU_FIL = 1e9;
       }
     }
 
-    // Ce que le projet montre : ses applications et ses artefacts, dans un
-    // panneau qui s'ouvre sous la barre (voir `views/applications.js`). Il
-    // remplace l'ancien lien « Artefacts », qui y a désormais sa ligne.
-    const appsBouton = $("session-apps-button");
-    const appsPanneau = $("apps-panel");
-    if (appsBouton && appsPanneau) {
-      if (enConversation && slug) {
-        appsBouton.hidden = false;
-        appsBouton.title = "Applications et artefacts du projet";
-        appsBouton.onclick = () => {
-          const ouvrir = appsPanneau.hidden;
-          appsPanneau.hidden = !ouvrir;
-          appsBouton.setAttribute("aria-expanded", ouvrir ? "true" : "false");
-          if (ouvrir) chargerPanneauApplications(appsPanneau, slug, api);
-        };
-        if (appsPanneau.dataset.slug !== slug) {
-          appsPanneau.dataset.slug = slug;
-          appsPanneau.hidden = true;
-          appsBouton.setAttribute("aria-expanded", "false");
-        }
-      } else {
-        appsBouton.hidden = true;
-        appsPanneau.hidden = true;
-        appsBouton.onclick = null;
-      }
-    }
+    // Les créations du projet ne s'ouvrent plus dans un autre onglet : le
+    // bouton « Panneau » les montre à côté du fil (voir `views/panneau.js`).
   }
 
   function renderCodeChat() {

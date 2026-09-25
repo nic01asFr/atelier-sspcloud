@@ -206,6 +206,7 @@ export function createCodeTreeView(ctx) {
     newSession.className = "ghost project-new";
     newSession.textContent = "+";
     newSession.title = "Nouvelle conversation";
+    newSession.setAttribute("aria-label", `Nouvelle conversation dans ${project.title || project.slug}`);
     newSession.addEventListener("click", () => actions.newSessionForSlug(project.slug));
 
     head.appendChild(chevron);

@@ -51,6 +51,48 @@ function truncate(text, max = 4000) {
  * @param {HTMLElement} parent
  * @param {{ type: string, text?: string, name?: string, id?: string, input?: unknown, output?: string, status?: string }} block
  */
+/**
+ * La carte d'action qu'une commande rend (`{carte: {titre, resume, voir,
+ * preuve, …}}`), ou rien. Tout est posé en texte ; « Voir » n'accepte qu'une
+ * adresse de l'Atelier (chemin absolu) ou en https.
+ */
+export function carteDAction(sortie) {
+  let donnees;
+  try {
+    donnees = typeof sortie === "string" ? JSON.parse(sortie) : sortie;
+  } catch {
+    return null;
+  }
+  const c = donnees && typeof donnees === "object" ? donnees.carte : null;
+  if (!c || typeof c !== "object" || !c.titre) return null;
+  const boite = document.createElement("div");
+  boite.className = "msg-carte";
+  const titre = document.createElement("strong");
+  titre.textContent = String(c.titre);
+  boite.appendChild(titre);
+  if (c.resume) {
+    const p = document.createElement("p");
+    p.textContent = String(c.resume);
+    boite.appendChild(p);
+  }
+  if (c.preuve) {
+    const p = document.createElement("p");
+    p.className = "msg-carte-preuve";
+    p.textContent = typeof c.preuve === "string" ? c.preuve : JSON.stringify(c.preuve);
+    boite.appendChild(p);
+  }
+  const lien = c.voir && typeof c.voir === "object" ? String(c.voir.lien || "") : "";
+  if (/^(\/(?!\/)|https:\/\/)/.test(lien)) {
+    const a = document.createElement("a");
+    a.href = lien;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = "Voir";
+    boite.appendChild(a);
+  }
+  return boite;
+}
+
 export function appendBlock(parent, block) {
   if (block.type === "thinking" && block.text) {
     const details = document.createElement("details");
@@ -88,6 +130,11 @@ export function appendBlock(parent, block) {
     head.append(icon, label, status);
     card.appendChild(head);
 
+    // Une commande de l'Atelier rend une carte d'action (`carte`, format
+    // commun des commandes, transverse §1.8) : on la montre avant le détail.
+    const action = carteDAction(block.output);
+    if (action) card.appendChild(action);
+
     const inputStr = block.masquerDetails ? "" : formatJson(block.input);
     if (inputStr) {
       const det = document.createElement("details");
@@ -122,6 +169,20 @@ export function appendBlock(parent, block) {
     return;
   }
 
+  if (block.type === "systeme" && block.text) {
+    // Un message d'un hook (wikichat) : dit à la personne, pas par l'agent.
+    const p = document.createElement("p");
+    p.className = "msg-systeme";
+    p.textContent = block.text;
+    parent.appendChild(p);
+    return;
+  }
+
+  if (block.type === "perimees") {
+    parent.appendChild(carteDesPerimees(block));
+    return;
+  }
+
   if (block.type === "decision") {
     const question = block.demande?.genre === "question";
     parent.appendChild(question ? carteDeQuestion(block) : carteDeDecision(block));
@@ -142,6 +203,56 @@ const RAISONS = {
   permissionRule: "Une règle du projet l'interdit",
   mode: "Le mode de la conversation ne l'autorise pas",
 };
+
+/**
+ * Les demandes d'un tour qui n'est plus là, rangées ensemble et repliées.
+ *
+ * Une demande d'autorisation dont le tour a disparu (service redémarré,
+ * processus mort) restait affichée avec ses boutons, une carte par demande :
+ * sept dans une seule conversation (lot H). Plus personne ne l'attend. On la
+ * range donc en historique : une ligne repliée, qui dit combien il y en a ;
+ * dépliée, ce que chacune demandait, et un seul geste, « Classer », qui les
+ * retire pour de bon.
+ */
+function carteDesPerimees(block) {
+  const demandes = block.demandes || [];
+  const carte = document.createElement("details");
+  carte.className = "msg-perimees";
+  const resume = document.createElement("summary");
+  resume.textContent =
+    demandes.length === 1
+      ? "1 demande d’un tour terminé, restée sans réponse"
+      : `${demandes.length} demandes d’un tour terminé, restées sans réponse`;
+  carte.appendChild(resume);
+  const liste = document.createElement("ul");
+  liste.className = "msg-perimees-liste";
+  for (const d of demandes) {
+    const li = document.createElement("li");
+    const quoi = d.genre === "question" ? "Question" : d.affichage || d.outil || "outil";
+    li.textContent = d.description ? `${quoi} — ${d.description}` : quoi;
+    liste.appendChild(li);
+  }
+  carte.appendChild(liste);
+  const note = document.createElement("p");
+  note.className = "msg-decision-raison";
+  note.textContent = "Le tour qui les attendait ne reprendra pas. Les classer les retire de la conversation.";
+  carte.appendChild(note);
+  const classer = document.createElement("button");
+  classer.type = "button";
+  classer.className = "msg-decision-btn";
+  classer.textContent = "Classer";
+  classer.addEventListener("click", () => {
+    classer.disabled = true;
+    carte.dispatchEvent(
+      new CustomEvent("atelier:classer", {
+        bubbles: true,
+        detail: { requestIds: demandes.map((d) => d.request_id).filter(Boolean) },
+      })
+    );
+  });
+  carte.appendChild(classer);
+  return carte;
+}
 
 /**
  * L'agent demande un avis, pas une permission.
@@ -422,14 +533,39 @@ function carteDeDecision(block) {
   }
 
   if (etat === "orpheline") {
-    // Répondre a encore un sens : le tour ne reprendra pas, mais un
-    // « Toujours » retient la décision et la question ne se reposera plus.
+    // Plus personne ne l'attend : la carte se replie en une ligne (lot H).
+    // Dépliée, « Toujours » garde un sens — la décision est retenue et la
+    // question ne se reposera plus — ; « Autoriser une fois » n'en a plus.
+    const pli = document.createElement("details");
+    pli.className = "msg-decision msg-decision-orpheline msg-decision-pliee";
+    const resume = document.createElement("summary");
+    resume.textContent = `Demande restée sans réponse — ${d.affichage || d.outil || "outil"}`;
+    pli.appendChild(resume);
+    for (const enfant of [...carte.children].slice(1)) pli.appendChild(enfant);
     const p = document.createElement("p");
     p.className = "msg-decision-raison";
     p.textContent =
       "Le tour qui l’attendait n’est plus là. Répondre ne le reprendra pas, "
       + "mais « Toujours » retiendra la décision pour la suite.";
-    carte.appendChild(p);
+    pli.appendChild(p);
+    const toujours = ceQueToujoursAccorde(d);
+    if (toujours) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "msg-decision-btn msg-decision-toujours";
+      b.textContent = "Toujours";
+      b.title = `${toujours} — dans cette conversation.`;
+      b.addEventListener("click", () =>
+        pli.dispatchEvent(
+          new CustomEvent("atelier:decision", {
+            bubbles: true,
+            detail: { requestId: d.request_id, decision: "allow", motif: "", portee: "toujours" },
+          })
+        )
+      );
+      pli.appendChild(b);
+    }
+    return pli;
   } else if (etat !== "en_attente") {
     return carte;
   }
@@ -524,6 +660,9 @@ export function empreinteDuBloc(b) {
       (b.output || "").length, JSON.stringify(b.input || "").length,
       b.masquerDetails ? "1" : "0",
     ].join(":");
+  }
+  if (b.type === "perimees") {
+    return ["per", (b.demandes || []).map((d) => d.request_id).join(",")].join(":");
   }
   if (b.type === "decision") {
     return [

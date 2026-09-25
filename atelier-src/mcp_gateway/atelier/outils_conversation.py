@@ -442,9 +442,8 @@ class OutilsAtelier:
                 ),
                 "inputSchema": {"type": "object", "properties": artefact, "required": ["projet"]},
             },
-            # catalogue: objet=vue, classe=reversible, inverse=fermer l'onglet du panneau
-            # (DELETE /v1/panneau/{conversation}/vues/{id}), resultat=descripteur de la vue.
-            # À basculer dans le catalogue de commandes de l'équipe F à l'intégration.
+            # catalogue: reversible — déjà déclaré par l'équipe F (commandes/existants.py) ;
+            # inverse : fermer l'onglet (DELETE /v1/panneau/{conversation}/vues/{id}).
             {
                 "name": "atelier_montrer",
                 "description": (
@@ -468,8 +467,8 @@ class OutilsAtelier:
                     "required": ["nom"],
                 },
             },
-            # catalogue: objet=navigateur, classe=reversible, inverse=aucune (le code expire
-            # seul en deux minutes, la session en une heure), resultat=adresse d'entrée.
+            # catalogue: reversible — déjà déclaré par l'équipe F (commandes/existants.py) ;
+            # sans inverse : le code expire seul en deux minutes, la session en une heure.
             {
                 "name": "atelier_navigateur_ouvrir",
                 "description": (

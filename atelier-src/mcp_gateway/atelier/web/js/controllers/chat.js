@@ -93,6 +93,23 @@ export function texteAssemble(stream) {
 }
 
 /**
+ * Un événement du flux en direct peut-il ouvrir une bulle de réponse ?
+ *
+ * La fin d'un tour arrive deux fois : par le flux de celui qui l'a lancé, et
+ * par le flux en direct, qu'écoute aussi cet onglet. Ce dernier peut arriver
+ * après que l'onglet a rendu la main : son « texte de résultat » ouvrait alors
+ * une seconde bulle, et la réponse s'affichait en double (lot H). Seul un
+ * début de tour ouvre une bulle : une parole, un outil, une question, un
+ * message d'un hook. Une fin, un résultat, une décision rendue, jamais.
+ */
+export function ouvreUnTour(ev) {
+  if (!ev) return false;
+  if (ev.kind === "texte") return !!ev.text && ev.raw_type !== "result_text";
+  if (ev.kind === "systeme") return ev.cause === "message_systeme";
+  return ev.kind === "outil_debut" || ev.kind === "decision_attendue";
+}
+
+/**
  * Rend le tour dans son ordre, et non par catégories.
  *
  * Les blocs étaient assemblés par nature : tout le raisonnement, puis tous
@@ -114,6 +131,10 @@ export function buildStreamBlocks(stream) {
   );
   const blocks = [];
   for (const b of stream.blocs) {
+    if (b.type === "systeme") {
+      if (b.text) blocks.push({ type: "systeme", text: b.text });
+      continue;
+    }
     if (b.type === "thinking" || b.type === "text") {
       if (b.text && b.text.trim()) blocks.push({ type: b.type, text: b.text.trim() });
       continue;
@@ -361,6 +382,14 @@ function appliquerEvenement(ctx, stream, ev) {
         pushStreamToUi(state, stream);
         views.codeChat.renderThread();
       }
+    } else if (ev.kind === "systeme" && ev.cause === "message_systeme" && ev.text) {
+      // Ce qu'un hook dit à la personne : une relance de wikichat, le plus
+      // souvent (« tour prolongé — réponse attendue par… »). Dit à sa place
+      // dans le tour, sans se mêler à la parole de l'agent.
+      stream.blocs.push({ type: "systeme", text: ev.text });
+      pushStreamToUi(state, stream);
+      views.codeChat.renderThread();
+      views.fils?.renderFils({ relire: true });
     } else if (ev.kind === "systeme" && ev.cause === "message_suivant") {
     // Le tour enchaîne sur un message qui attendait. C'est un autre échange :
     // on referme la réponse en cours et on rouvre une bulle, sans quoi les
@@ -405,6 +434,15 @@ export function createChatController(ctx) {
       await refreshProjects(state);
     }
     const rec = await api.createSession(state.token, { slug, kind: "code" });
+    // Le mode choisi avant le premier message vaut dès ce premier tour.
+    if (state.modeEnAttente) {
+      try {
+        await api.patchSession(state.token, rec.session_id, { permission_mode: state.modeEnAttente });
+      } catch (err) {
+        S.setError(state, `Mode non appliqué : ${err.message}`);
+      }
+      state.modeEnAttente = "";
+    }
     S.setSlug(state, slug);
     S.ensureExpanded(state, slug);
     S.setSessionId(state, rec.session_id);
@@ -525,8 +563,12 @@ export function createChatController(ctx) {
       const repris = await rattraperLeFil(state, render);
       if (!repris) S.setError(state, err.message || String(err));
     } finally {
+      // La fin du tour arrive aussi par le flux en direct, parfois après
+      // celui-ci : on la laisse passer sans en faire une nouvelle bulle.
+      finDuTourPropre = Date.now();
       S.setBusy(state, false);
       render();
+      views.fils?.renderFils({ relire: true });
     }
   }
 
@@ -536,6 +578,9 @@ export function createChatController(ctx) {
   let sessionObservee = null;
   // Vrai tant qu'un tour lancé ailleurs remplit le fil observé.
   let tourObserve = false;
+  // Quand le dernier tour lancé d'ici s'est fini (voir `ouvreUnTour`).
+  let finDuTourPropre = 0;
+  const TRAINE_DU_TOUR_MS = 4000;
 
   function tourEnCoursAilleurs() {
     if (tourObserve) return true;
@@ -566,11 +611,15 @@ export function createChatController(ctx) {
     let flux = null;
     fermerLObservation = api.suivreSession(sessionId, {
       onEvent: (ev) => {
+        if (state.sessionId !== sessionId || ev.kind === "heartbeat") return;
+        // « Montrer » : l'agent ouvre une création dans le panneau, pendant
+        // son tour même. C'est ce flux-ci qui le porte, d'où qu'ait été lancé
+        // le tour (décision J-f : le panneau s'ouvre seul).
+        if (views.panneau?.surEvenement(ev)) return;
         // On ne se mêle pas d'un tour qu'on a lancé soi-même : celui-là a
         // déjà son flux, et deux écritures sur le même fil se marcheraient
         // dessus.
-        if (state.busy || state.sessionId !== sessionId) return;
-        if (ev.kind === "heartbeat") return;
+        if (state.busy) return;
         // Le journal a bougé ailleurs — dans VS Code, le plus souvent. On ne
         // rejoue pas un flux qu'on n'a pas : on relit, et la lecture fondue
         // rend l'histoire complete. A traiter avant d'ouvrir un bloc de flux,
@@ -580,6 +629,9 @@ export function createChatController(ctx) {
           return;
         }
         if (!flux) {
+          // La traîne d'un tour lancé d'ici, ou une fin sans début : rien à
+          // ouvrir (sinon la réponse s'affichait deux fois).
+          if (!ouvreUnTour(ev) || Date.now() - finDuTourPropre < TRAINE_DU_TOUR_MS) return;
           flux = { blocs: [], tools: [], decisions: [], phase: "attente" };
           tourObserve = true;
           S.appendMessage(state, {

@@ -13,6 +13,8 @@ import { createCodeChatView } from "./views/code-chat.js";
 import { createConnectorsView } from "./views/connectors.js?v=modal";
 import { createAgentView } from "./views/agent.js?v=shell6";
 import { createComposerMcpView } from "./views/composer-mcp.js";
+import { createPanneauView } from "./views/panneau.js";
+import { createFilsView } from "./views/fils.js";
 import { createProjectActions } from "./controllers/projects.js";
 import { createSessionActions } from "./controllers/sessions.js";
 import { createChatController } from "./controllers/chat.js";
@@ -34,6 +36,10 @@ function createApp() {
   let chat = null;
   const render = () => {
     shell.renderApp();
+    // Hors du fil : le panneau et les échanges ne se redessinent que dans
+    // ce qui change, et ne recréent jamais un cadre ouvert.
+    ctx.views.panneau?.renderPanneau();
+    ctx.views.fils?.renderFils();
     // Une conversation qu'on regarde sans l'avoir lancée doit se remplir
     // quand même : c'est ici qu'on branche l'écoute, à chaque rendu, puisque
     // c'est le rendu qui suit le changement de fil. L'appel est sans effet
@@ -140,7 +146,9 @@ function createApp() {
     }
   };
 
-  ctx.views = { codeTree, codeChat, connectors, composerMcp, agent };
+  const panneau = createPanneauView({ state, api, render });
+  const fils = createFilsView({ state, api });
+  ctx.views = { codeTree, codeChat, connectors, composerMcp, agent, panneau, fils };
 
   const auth = createAuthController({
     state,
@@ -248,6 +256,8 @@ function createApp() {
       }
     });
     composerMcpCtrl.bind();
+    ctx.views.panneau.bind();
+    ctx.views.fils.bind();
     composerInput.bind();
     $("composer").addEventListener("submit", chat.onSend);
     // Le fil est reconstruit à chaque rendu : on écoute sur le document, que
