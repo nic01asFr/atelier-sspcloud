@@ -116,7 +116,7 @@ aux équipes concernées.
 
 | Vague | État |
 |---|---|
-| 1 | lancée le 25/09 ; M rendue (`mesures-vague1.md`) ; G rendue (branche `gardiens`, 825 tests) ; W rendue (branche `lot-w`) ; F rendue (branche `fondations`, 819 tests) ; P en cours |
+| 1 | **déployée le 25/09 au soir** : `main` = `776fb73`, wikichat `atelier-coherence` = `82a06ce`. Atelier, wikichat (lot W, `~/.wikichat` sur le volume) et exécuteur des gardiens en service. Vérifié en réel : cohérence sans écart, 29 commandes, journal, « À valider », hook du socle qui bloque, carte wikichat (35 projets, 46 liens), migration W2 sans conflit |
 | 2 | — |
 | 3 | — |
 | 4 | — |

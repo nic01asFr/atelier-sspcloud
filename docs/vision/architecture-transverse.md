@@ -681,5 +681,20 @@ Le journal consigne, dans l'ordre, ce que chaque retour a changé dans la struct
     - le gabarit n'importe pas le socle, que Claude Code charge déjà par le dossier parent ;
   - le Pilote de wikichat est branché sur « À valider » sans migration (S5) ;
   - T15 est corrigée à la source (le contexte n'est écrit que dans le dossier du projet) ; la cause exacte de `/tmp` sur le pod reste non identifiée.
+- **25/09 au soir, déploiement de la vague 1** (`main` = `776fb73`) :
+  - l'intégration a fondu F, W, G et P ;
+  - raccords faits par le coordinateur :
+    - gardiens branchés sur le journal unique ;
+    - pas de relance de l'Atelier en mode image (T21) ;
+    - épinglage aligné sur le schéma de `projet.json` ;
+    - rejeu d'un envoi refusé ;
+    - substituts isolés du transcrit retirés ;
+    - docstring qui empêchait l'import sous Python 3.13 corrigée ;
+  - T23 est réglée : `~/.wikichat` est un lien vers le volume ;
+  - `cron-routine-4h` est coupé ;
+  - le fichier effectif périmé qui portait le jeton n8n est supprimé ;
+  - le jeton `ghp_` est retiré de l'adresse du remote de `nouveau-projet` ;
+  - les sauvegardes `.avant-26-09` sont supprimées ;
+  - reste ouvert : `ipykernel` sur `0.0.0.0:8000` (noyau du connecteur Onyxia) ; CI et `main` illisibles depuis le pod faute de jeton GitHub en lecture (T22) ; rotation des jetons n8n et GitHub (Nicolas).
 - **Explication de T12** : sur le poste, une tâche planifiée publie la mémoire toutes les 15 min depuis
     `Github Repositories/wikichat`, pendant que le dépôt évolue ailleurs.
