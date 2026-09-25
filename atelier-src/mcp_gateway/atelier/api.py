@@ -493,6 +493,18 @@ def _definition_composition(slug: str, body: Any) -> dict[str, Any]:
     }
 
 
+def _reglages_code_server_au_demarrage(settings: AtelierSettings) -> None:
+    """Les réglages de code-server, dès le démarrage : l'enveloppeur du processus
+    `claude` et plus aucune valeur secrète, sans attendre qu'une conversation
+    soit ouverte dans VS Code par l'Atelier."""
+    from mcp_gateway.atelier.vscode_handoff import write_user_code_server_settings
+
+    try:
+        write_user_code_server_settings(settings)
+    except OSError as exc:
+        log.warning("réglages de code-server non écrits : %s", exc)
+
+
 def build_app(
     *,
     settings: AtelierSettings | None = None,
@@ -550,15 +562,7 @@ def build_app(
                 write_claude_settings_env(settings)
             except OSError:
                 pass
-            # Les réglages de code-server aussi : l'enveloppeur du processus
-            # `claude` et plus aucune valeur secrète, sans attendre qu'une
-            # conversation soit ouverte dans VS Code par l'Atelier.
-            try:
-                from mcp_gateway.atelier.vscode_handoff import write_user_code_server_settings
-
-                write_user_code_server_settings(settings)
-            except OSError as exc:
-                log.warning("réglages de code-server non écrits : %s", exc)
+            _reglages_code_server_au_demarrage(settings)
             # Le fichier d'environnement unique, pour le shell et wikichat
             # qui le sourcent sans passer par nous.
             from mcp_gateway.atelier.env_secrets import ecrire_le_fichier
