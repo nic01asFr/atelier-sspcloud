@@ -1,5 +1,17 @@
 # Chrome devtools atelier
 
+> **25/09/2026 — l'Atelier ne se sert plus de ce fork.** Son navigateur est
+> désormais le serveur **officiel** `chrome-devtools-mcp` (npm, 1.10.1), en
+> **stdio**, lancé par `~/work/bin/atelier-chrome` dans le processus de chaque
+> agent : un Chrome sans écran par conversation, sans service, sans jeton,
+> sans en-tête de conversation, sans bureau (`docs/navigateur-atelier.md` du
+> dépôt de l'Atelier). Le contrat HTTP ci-dessous (`X-Atelier-Conversation`,
+> `CDM_API_KEY`, `/view`, `/vnc`) n'a plus de client côté Atelier. Ce projet
+> garde son intérêt pour une vue en direct pilotée par l'Atelier (screencast
+> DevTools sur un Chrome qu'il possède, auquel le serveur officiel se
+> rattache par `--wsEndpoint`) : c'est ce rattachement que le lanceur prévoit
+> (`ATELIER_CHROME_WS`), pas ce serveur-ci.
+
 Ce projet est un fork de `ChromeDevTools/chrome-devtools-mcp` avec une couche
 `src/cerema/` : un navigateur Chrome piloté par MCP, **une conversation
 Atelier = un Chrome = un profil isolé**, et un bureau visible pour que la
@@ -86,12 +98,10 @@ Le découpage en lots est dans `ROADMAP.md` ; un lot à la fois.
 ## Côté Atelier
 
 Ce qui se corrige dans `atelier-src/mcp_gateway/atelier/` ne se corrige pas
-ici. Le navigateur y vit dans `navigateur.py` (adresse, jeton, déclaration,
-reconnu à son seul identifiant `chrome-devtools-mcp`), `chrome_ensure.py`
-(crée le connecteur une fois, respecte une désactivation ou une suppression,
-ne déclare rien sans `ATELIER_CHROME_MCP_URL` ni jeton `chrome_mcp_token`),
-`chrome_proxy.py` (`/chrome/health`, `/chrome/view`, `/chrome/novnc/…`,
-`/chrome/vnc`) et `relais_ws.py` (garde d'`Origin` et relais WebSocket,
-partagés avec `/vscode`). Si le contrat change, écris-le dans
-`docs/ATELIER-SPEC.md` et signale-le dans ton compte rendu : c'est la
-personne qui le porte de l'autre côté.
+ici. Le navigateur y vit dans `navigateur.py` (déclaration stdio, portée de la
+passerelle, état local, refus de WebSearch), `chrome_ensure.py` (crée le
+connecteur une fois, migre l'ancienne entrée HTTP, respecte une désactivation
+ou une suppression), `navigateur_routes.py` (`/chrome/health`),
+`mcp_gateway/upstream/stdio_client.py` (la passerelle lance le serveur pour
+ses propres clients) et `atelier-src/bin/atelier-chrome` (le lanceur). Les
+routes `/chrome/view`, `/chrome/novnc/…` et `/chrome/vnc` n'existent plus.

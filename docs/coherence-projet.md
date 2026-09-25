@@ -83,7 +83,9 @@ information n'est injectée par une surface et pas par les autres.
   wikichat.
 - La connexion wikichat porte ce nom par `headersHelper` (natif) plutôt que par
   `?agent=` dans l'URL ; plus d'identité commune `atelier`.
-- Chrome et `X-Atelier-Conversation` utilisent la même clé.
+- `X-Atelier-Conversation` porte cette clé vers la passerelle. Le navigateur
+  n'en a plus besoin : il tourne en stdio dans le processus de la
+  conversation (voir « Navigateur stdio » plus bas).
 
 ### 4. Lancements : tout passe par l'Atelier
 - Réveil sur mention, routines, spawns : wikichat demande à l'Atelier d'ouvrir
@@ -322,3 +324,60 @@ Ni afficher ni journaliser ces valeurs ; ne pas les recopier dans un fichier.
    `compact_boundary` dans le journal du tour).
 7. Faire tourner les jetons qui ont pu être en clair dans `~/.claude.json` et
    les fichiers effectifs avant ce lot (n8n, Onyxia…).
+
+## Navigateur stdio (branche `chrome-stdio`)
+
+Conception et mesures : `docs/navigateur-atelier.md`.
+
+- Le navigateur est `chrome-devtools-mcp` officiel (1.10.1, Apache-2.0) en
+  **stdio**, lancé par `~/work/bin/atelier-chrome` : un processus et un Chrome
+  sans écran par conversation, profil jetable, aucun port, tout s'arrête avec
+  le client (mesuré : 0 processus et 0 profil restants après `claude -p`, sur
+  fin normale, SIGTERM et SIGKILL).
+- **Même déclaration sur toutes les surfaces** (fichier effectif, `.mcp.json`
+  des projets, pool) : `{"type": "stdio", "command": ".../atelier-chrome"}`.
+  Plus d'adresse, de jeton ni d'en-tête ; l'ancienne entrée HTTP du pool est
+  migrée au démarrage. `ATELIER_NAVIGATEUR=0` l'éteint.
+- **Passerelle** : le pool lance lui-même ce serveur stdio (`ClientStdio`),
+  en portée `passerelle` (adresses privées refusées), sondé au démarrage,
+  relancé au premier `gateway_call_tool`, refermé après 600 s d'inactivité.
+  Ses 24 outils sont dans `gateway_find_tools`.
+- **Plafond** : `ATELIER_CHROME_MAX` (6) Chrome vivants pour le compte, toutes
+  surfaces confondues.
+- **Web** : WebSearch refusé partout (`permissions.deny`, global et par tour) ;
+  WebFetch réparé par le relais LLM (liste d'outils vide retirée) ; recherche
+  par le navigateur sur DuckDuckGo HTML, consigne dans la section
+  `atelier:contexte` des `CLAUDE.md`.
+- **Bureau** retiré (`/chrome/view`, `/chrome/novnc`, `/chrome/vnc`, lien
+  « Bureau ») ; `/chrome/health` dit l'état local ; la fiche du connecteur
+  l'affiche. Point d'entrée gardé pour une vue en direct future : rattachement
+  à un Chrome de l'Atelier (`ATELIER_CHROME_WS`, ou
+  `/tmp/atelier-chrome-<uid>/attache/<conversation>`).
+
+### Déploiement du navigateur (dans l'ordre)
+
+1. Fusionner `chrome-stdio` ; attendre l'image (Chrome et chrome-devtools-mcp
+   y sont) ou, sur le pod actuel, mettre à jour le clone.
+2. Sur le pod actuel (Chrome déjà dans `/usr/bin/google-chrome`, posé à la
+   main hors du volume : il disparaîtra au prochain redémarrage du pod s'il
+   ne vient pas de l'image) : `chrome-devtools-mcp@1.10.1` est **déjà
+   installé** dans `~/work/.tools/chrome-devtools-mcp` (fait le 25/09). Sinon :
+   `npm install --prefix ~/work/.tools/chrome-devtools-mcp --save-exact chrome-devtools-mcp@1.10.1`.
+3. Poser le lanceur : `cp ~/work/atelier-src/bin/atelier-chrome ~/work/bin/ && chmod +x ~/work/bin/atelier-chrome`
+   (ou rejouer `install/atelier-init.sh`), puis
+   `ATELIER_CHROME_VERIFIER=1 ~/work/bin/atelier-chrome` (node, serveur, chrome).
+4. Relancer le relais LLM (pour WebFetch) : arrêter le processus
+   `mcp_gateway.atelier.relais_llm` et le relancer comme au lot A — les
+   conversations hors Atelier perdent le modèle pendant une seconde.
+5. Relancer l'Atelier (`~/work/bin/atelier-relancer`) : migration de l'entrée
+   du pool, `~/.claude/settings.json` (refus de WebSearch), `.mcp.json` de
+   tous les projets, `claude-env.sh` sans le jeton du navigateur.
+6. Recharger VS Code ; redémarrer wikichat (réglages globaux relus).
+7. Vérifier : `curl` authentifié sur `/chrome/health` (`pret: true`) ; une
+   conversation qui ouvre une page et en lit le titre ; `pgrep -fc
+   chrome-devtools-mcp` revenu à 0 après sa fermeture ;
+   `grep -c CHROME_DEVTOOLS_MCP_AUTHORIZATION ~/work/.secrets/claude-env.sh` à 0.
+8. Nettoyage laissé à la personne : le fichier `chrome_mcp_token` du dossier
+   de secrets et `ATELIER_CHROME_MCP_URL` ne servent plus ; le déploiement
+   `chrome-devtools-mcp` (0 réplique) et le fork `nouveau-projet` ne sont plus
+   utilisés par l'Atelier.
