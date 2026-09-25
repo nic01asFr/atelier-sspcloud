@@ -6,17 +6,24 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
+_SUBSTITUT_MIN = chr(0xD800)
+_SUBSTITUT_MAX = chr(0xDFFF)
+
+
 def texte_sur(texte: str) -> str:
     """Le texte sans demi-caractère : un emoji coupé en deux ne casse plus rien.
 
     Le CLI est écrit en JavaScript, où une chaîne est en UTF-16. Un fragment
     de flux peut s'arrêter entre les deux moitiés d'un emoji : le JSON porte
-    alors `\ud83d` seul, que Python lit comme un substitut isolé. Rien ne
-    l'écrit ensuite en UTF-8 — ni le journal, ni le flux vers le navigateur :
-    « surrogates not allowed », et le tour tombait. Deux moitiés voisines se
-    recollent ; une moitié seule devient U+FFFD.
+    alors l'échappement d'une moitié seule (U+D83D), que Python lit comme un
+    substitut isolé. Rien ne l'écrit ensuite en UTF-8 — ni le journal, ni le
+    flux vers le navigateur : « surrogates not allowed », et le tour tombait.
+    Deux moitiés voisines se recollent ; une moitié seule devient U+FFFD.
+
+    Aucun substitut littéral dans ce fichier : écrit dans une chaîne, il
+    empêchait le module lui-même de s'importer sous Linux.
     """
-    if not texte or not any("\ud800" <= c <= "\udfff" for c in texte):
+    if not texte or not any(_SUBSTITUT_MIN <= c <= _SUBSTITUT_MAX for c in texte):
         return texte
     return texte.encode("utf-16", "surrogatepass").decode("utf-16", "replace")
 
