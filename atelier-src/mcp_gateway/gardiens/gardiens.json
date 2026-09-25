@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "reglages": {
+    "ecoutes_declarees": [
+      {"port": 8787, "qui": "Atelier (entrée du service Onyxia)"},
+      {"port": 8788, "qui": "hôte des applications"},
+      {"port": 8888, "qui": "Jupyter du service Onyxia (plateforme)"}
+    ],
+    "demons_connus": [
+      {"id": "atelier", "titre": "Atelier", "ports": [8787, 8788], "source": "install/atelier-init.sh, bin/atelier-relancer"},
+      {"id": "relais-llm", "titre": "Relais LLM", "ports": [8790], "source": "install/atelier-init.sh (mcp_gateway.atelier.relais_llm)"},
+      {"id": "wikichat", "titre": "wikichat", "ports": [3777], "proprietaire": "wikichat", "source": "~/work/bin/start_wikichat.sh"},
+      {"id": "code-server", "titre": "code-server (VS Code)", "ports": [8080], "source": "install/atelier-init.sh"},
+      {"id": "gardiens", "titre": "Exécuteur des gardiens", "ports": [8791], "source": "install/atelier-init.sh (mcp_gateway.gardiens)"}
+    ],
+    "ports_plateforme": [8888, 3001],
+    "scripts": {}
+  },
+  "controles": [
+    {"id": "entretien.automates", "gardien": "entretien", "portee": "pod", "quand": {"toutes_les_min": 15},
+     "commande": ["interne", "entretien.automates"], "delai_s": 30, "si_constat": "signaler"},
+
+    {"id": "sante.atelier", "gardien": "sante", "portee": "pod", "quand": {"toutes_les_min": 1},
+     "commande": ["interne", "sante.service"], "delai_s": 15, "si_constat": "geste", "geste": "relancer_atelier",
+     "params": {"service": "atelier"}},
+    {"id": "sante.relais", "gardien": "sante", "portee": "pod", "quand": {"toutes_les_min": 1},
+     "commande": ["interne", "sante.service"], "delai_s": 15, "si_constat": "geste", "geste": "relancer_relais",
+     "params": {"service": "relais"}},
+    {"id": "sante.wikichat", "gardien": "sante", "portee": "pod", "quand": {"toutes_les_min": 1},
+     "commande": ["interne", "sante.service"], "delai_s": 15, "si_constat": "geste", "geste": "relancer_wikichat",
+     "params": {"service": "wikichat"}},
+    {"id": "sante.creations", "gardien": "sante", "portee": "atelier", "quand": {"toutes_les_min": 1},
+     "commande": ["interne", "sante.creations"], "delai_s": 15, "si_constat": "signaler"},
+    {"id": "sante.ci-main", "gardien": "sante", "portee": "depots", "quand": {"toutes_les_min": 30},
+     "commande": ["interne", "sante.ci"], "delai_s": 40, "si_constat": "signaler",
+     "proposer": {"apres_h": 24, "modele": "grand", "budget_jetons": 150000},
+     "params": {"depots": ["nic01asFr/atelier-sspcloud"], "branche": "main"}},
+    {"id": "sante.image-main", "gardien": "sante", "portee": "pod", "quand": {"cron": "15 7 * * *", "tz": "Europe/Paris"},
+     "commande": ["interne", "sante.image"], "delai_s": 40, "si_constat": "signaler",
+     "params": {"depot": "nic01asFr/atelier-sspcloud", "branche": "main"}},
+    {"id": "sante.disque", "gardien": "sante", "portee": "pod", "quand": {"toutes_les_min": 60},
+     "commande": ["interne", "sante.disque"], "delai_s": 10, "si_constat": "signaler",
+     "params": {"seuil_attention_pct": 85, "seuil_alerte_pct": 95}},
+
+    {"id": "securite.ecoutes", "gardien": "securite", "portee": "pod", "quand": {"toutes_les_min": 5},
+     "commande": ["interne", "securite.ecoutes"], "delai_s": 20, "si_constat": "signaler"},
+    {"id": "securite.secrets-en-clair", "gardien": "securite", "portee": "pod", "quand": {"toutes_les_min": 15},
+     "commande": ["interne", "securite.secrets"], "delai_s": 120, "si_constat": "signaler",
+     "params": {"depots": ["projects/*", "repos/*"], "fichiers_max_par_depot": 3000}},
+    {"id": "securite.droits", "gardien": "securite", "portee": "pod", "quand": {"toutes_les_min": 60},
+     "commande": ["interne", "securite.droits"], "delai_s": 10, "si_constat": "signaler",
+     "params": {"autres": ["~/.claude.json.avant-*", "~/work/.claude/settings.json.avant-*", "~/.claude/settings.json.avant-*"]}},
+    {"id": "securite.bypass", "gardien": "securite", "portee": "pod", "quand": {"toutes_les_min": 5},
+     "commande": ["interne", "securite.bypass"], "delai_s": 15, "si_constat": "signaler"}
+  ]
+}

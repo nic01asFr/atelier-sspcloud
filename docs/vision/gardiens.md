@@ -7,6 +7,75 @@ Vision du 25/09/2026, équipe « Agents gardiens et fiabilité continue ».
 wikichat (branche `atelier-coherence` : `triggers.mjs`, `routines.mjs`,
 `dormant.mjs`, `lancement.mjs`, `lanceur-atelier.mjs`, `repo-audit.mjs`).
 
+## État (vague 1, 25/09/2026, branche `gardiens`)
+
+**Existe, testé en local, non déployé.** Ce qui suit la section « En une phrase »
+reste la vision ; cette section dit ce qui en est construit.
+
+| Pièce | Où | État |
+|---|---|---|
+| Exécuteur (ordonnanceur `toutes_les_min` et `cron`, un fil par gardien, délai borné par contrôle, une alerte par empreinte, homme mort au redémarrage et en cours de route, journal JSONL en ajout seul filtré des secrets, 0 jeton) | `atelier-src/mcp_gateway/gardiens/` (`python -m mcp_gateway.gardiens`) | testé (fixtures, et vrai processus contre des services factices) |
+| Déclaration | `mcp_gateway/gardiens/gardiens.json` (schéma `id, gardien, portee, quand, commande, delai_s, si_constat, geste`, plus `params`, `actif`, `proposer` lu mais pas servi) ; `ATELIER_GARDIENS_DECLARATION` ou `~/work/projects/atelier-gardiens/gardiens.json` la remplacent | testé |
+| Lancement | `install/atelier-init.sh`, `demarrer_gardiens` (détaché, `nice 10`, `~/work/logs/gardiens.log`) | écrit, non exécuté sur un pod |
+| Interrupteurs | `ATELIER_GARDIENS=0` (ne démarre pas), `ATELIER_GARDIENS_GESTES=0` (aucun geste), `ATELIER_GARDIENS_HOOKS=0` (pas de pose du hook), un contrôle `"actif": false` | testé |
+| G0 inventaire | `controles/automates.py` : triggers, routines et `routine-runs.jsonl` de wikichat, créations du superviseur, démons connus, tout autre processus qui écoute, contrôles des gardiens ; `sans_declaration` = trigger ou routine actif sans `budget`, ou processus qui écoute sans déclaration ; `absent` = démon connu qui n'écoute pas | testé |
+| G1 santé | Atelier, relais, wikichat (sondes) ; créations (`GET /v1/apps`) ; CI de `main` (`gh` ou API, jeton jamais journalisé) ; code en service comparé à `main` (`ATELIER_COMMIT`, `/opt/atelier/VERSION`, git) ; disque | testé |
+| Geste « relancer » | `gestes.py` : `relancer_atelier` (`atelier-relancer`, après 2 échecs **et** 5 min de silence), `relancer_wikichat` (`start_wikichat.sh`), `relancer_relais` (module du relais, détaché) ; 2 échecs de suite, 3 relances par heure au plus, avant et après au journal | testé avec un faux script |
+| G2 sécurité | écoutes sur toutes les interfaces hors liste ; valeurs connues (`claude-env.sh`, `~/work/.secrets/`) cherchées dans `~/.claude.json`, réglages de code-server, `~/.claude/settings.json`, `mcp/*.json`, `mcp/effective/*.json`, `.mcp.json` et `.git/config` des projets, fichiers suivis des dépôts (motifs forts seulement) ; droits 0600 ; `claude` en bypass sans fiche | testé (droits : sous POSIX seulement) |
+| Hook `PreToolUse` du socle | `garde_bash.py`, posé par l'exécuteur (`docs/consignes/socle.md`, « Hooks du socle ») | testé |
+| API de lecture | `127.0.0.1:8791` (`ATELIER_GARDIENS_PORT`), GET seulement | testé |
+
+**Contrat de l'API de lecture** (pour la page Gardiens, vague 2 ; tout en JSON,
+horodatages ISO UTC `…Z`, aucune valeur secrète) :
+
+| Route | Rend |
+|---|---|
+| `GET /sante` | `{ok, demarre_a, declaration, controles, interrupteurs: {gardiens, gestes, a_blanc}}` |
+| `GET /etat` | `{controles: [{id, gardien, portee, quand, commande, delai_s, si_constat, geste, proposer, actif, source, derniere, prochaine, etat, secondes, echecs_consecutifs, en_cours}], alertes_ouvertes: [Alerte], interrupteurs}` |
+| `GET /alertes[?toutes=1]` | `{alertes: [Alerte]}`, où Alerte = `{empreinte, controle, gardien, portee, objet, resume, preuve, niveau (attention\|alerte), depuis, vu_le, compte, ouverte, resolue_le?}` ; les alertes « homme mort » ont `controle: "gardiens.homme-mort"` et `objet` = le contrôle en retard |
+| `GET /echeances` | `{echeances: [{id, gardien, prochaine, derniere, en_retard}]}`, par date |
+| `GET /resultats?controle=<id>&n=<1..500>` | `{lignes: [Ligne]}` ; Ligne = une ligne du journal : `{quand, gardien, controle, portee, etat, constats: [{empreinte, objet, resume, preuve, niveau}], alertes: {nouvelles, resolues}, cout: {jetons: 0, secondes}, donnees?, action?: {type: "geste", nom, avant: {etat, preuve}, apres?: {etat, preuve}, script?: {script, code, sortie, secondes}, refuse?}}` |
+| `GET /resultats/<id>` | `{controle, resultat: {etat, constats, donnees?}}` (le dernier, complet) |
+| `GET /automates` | `{controle, lu_a, automates: [Automate], par_etat}` ; Automate au schéma de `coherence-croisee.md` §1.2, `etat` ∈ `actif\|coupe\|sans_declaration\|absent` (`absent` : démon connu qui n'écoute pas) ; champs en plus selon le genre : `titre`, `action`, `plafond_par_jour`, `lancements`, `etapes`, `dernier_resultat`, `ports`, `pid` |
+
+Toute autre méthode : 405. L'API n'écoute qu'en `127.0.0.1` ; la page de
+l'Atelier la lira côté serveur.
+
+**Exécution à blanc sur le pod (25/09, 20 h UTC, lecture seule).** L'exécuteur
+n'est pas sur le pod ; les mêmes lectures ont été faites par des commandes
+équivalentes, sans rien écrire ni afficher de valeur :
+
+- G0 : 14 triggers wikichat, dont 8 actifs **sans budget** (`sans_declaration` :
+  trois `spawn_session` quotidiens à `max_per_day` 24, `evt-wake-any`,
+  `mention-supervisor`, `channel-insights`, `veille-depots-cron` sans
+  expression cron, et `cron-routine-4h`) et 6 coupés ; la routine
+  `paradox-research` (14 étapes, **27 passes en 7 jours**) sans budget ; pas
+  de crontab ; aucune création supervisée en cours ; processus qui écoutent sans
+  déclaration : `artifacts/cerveau/outils/serveur.py` (8082, lancé à la main,
+  hors superviseur), le service voix (`uvicorn`, 18920), deux `http.server`
+  (9999 et un port éphémère), tous en `127.0.0.1`.
+- G1 : Atelier, relais et wikichat répondent 200 ; disque de `~/work` à 74 % ;
+  CI de `main` **illisible depuis le pod** (dépôt privé, ni `gh` ni jeton
+  GitHub sur le pod) ; commit en service **inconnu** (pod du catalogue Jupyter,
+  `~/work/atelier-src` copié sans `.git` ni `VERSION`).
+- G2 : `0.0.0.0:8000` (`ipykernel_launcher`) hors liste ; **une valeur connue en
+  clair** (`ATELIER_MCP_N8N_AUTHORIZATION`) dans un fichier effectif
+  `~/work/mcp/effective/394226a3-….json` (0644, du 25/09 13 h 55) ; **un jeton
+  `ghp_` dans l'adresse du remote `origin`** de `projects/nouveau-projet`
+  (`.git/config`) ; 20 dépôts, 1 070 fichiers suivis : rien ;
+  `~/.claude/settings.json.avant-compaction` en 0644 ; aucun `claude` en
+  bypass (une session `acceptEdits`, avec fiche).
+
+**Reste** : G3 (cohérence), G4 (coût, origine au relais), G5 (propositions,
+après le lot D), G6 (amélioration) ; la page Gardiens et l'onglet Automates
+(équipe P, vague 2) ; le projet système `atelier-gardiens` (J-g) qui portera la
+déclaration ; la routine « homme mort » côté wikichat (l'exécuteur vérifie
+wikichat, pas encore l'inverse) ; les gestes « régénérer une configuration »
+et « couper un automate » ; le recopiage de `routine-runs.jsonl` dans le
+journal unique (§2 de `coherence-croisee.md`) ; les sondes `initialize` des
+connecteurs, la tendance des fils, Ingress du namespace ; hooks git
+pre-commit et pre-push.
+
 ## En une phrase
 
 Un **gardien** est du code qui regarde, pas un agent qui réfléchit : quatre
