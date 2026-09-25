@@ -516,6 +516,15 @@ au bon endroit.
 | T13 | Le pool compte 293 outils, soit environ 52 000 jetons s'il était présenté en entier. Le plancher d'un agent code est de 21 695 jetons en entrée (mesuré au relais) | pod | confirme §1.5 : noyau et catalogue par profil, jamais le pool entier | équipe harness |
 | T14 | Aucun `ETAT.md` dans les 26 projets du pod ; les hooks wikichat ne sont pas encore déployés | pod | la couche C2 est vide tant que le lot G (structure de projet) et le déploiement du 26/09 ne sont pas faits | lots G et `deploiement-26-09` |
 | T11 | Oral lent : environ 11 s entre la fin de la parole et le premier mot (tranche STT de 3 s, puis 7,9 s jusqu'au premier jeton du modèle ; somme de mesures connues, non mesurée de bout en bout) | voix | accusé immédiat sans modèle ; réponses d'état calculées par le code à partir de la carte ; chemin rapide à instruire (équipe harness) | en cours |
+| T15 | L'Atelier a écrit un bloc `atelier:contexte` (projet `projet-sans-nom-5`) dans `/tmp/CLAUDE.md`. Toute session lancée sous `/tmp` le chargeait, y compris les essais des équipes | `project_context.py` | fichier mis de côté (`/tmp/CLAUDE.md.ecarte-25-09`) ; écriture du contexte limitée au dossier du projet résolu | équipe F |
+| T16 | L'éditeur n8n n'envoie aucun en-tête anti-cadrage : il est encadrable par n'importe quel site | namespace | relais par l'hôte des applications (J-d) et `frame-ancestors` limité à l'Atelier sur tout amont | équipe P (P0) ; réglage n8n à poser |
+| T17 | La porte dormante ne coupe pas la nuit : 11 passages de routine sur 34 entre 0 h et 6 h en 7 jours | wikichat | plafonds et budgets (J-b) plutôt que la porte ; à reprendre avec l'inventaire G0 | équipes W et G |
+| T18 | L'en-tête `X-Atelier-Origine` arrive au relais LLM, mais celui-ci ne le lit ni ne le journalise : pas de coût par acteur | `relais_llm.py` | lecture de l'en-tête et journal des jetons par acteur | vague 2 (G4) |
+| T19 | Les plugins Claude Code marchent dans le CLI, mais `--strict-mcp-config` écarte leur serveur MCP | CLI 2.1.281 | à prendre en compte pour les extensions (F6, F9) | vague 4 |
+| T20 | Constats de l'exécution à blanc des gardiens (25/09) : jeton n8n en clair dans un fichier effectif antérieur au déploiement (`~/work/mcp/effective/394226a3-….json`, mis en 0600) ; jeton `ghp_` toujours dans le remote de `projects/nouveau-projet` ; 8 triggers actifs sans budget ; routine `paradox-research` à 27 passages en 7 jours ; écoutes non déclarées (`cerveau/outils/serveur.py` 8082, voix 18920, `http.server` 9999, `ipykernel` sur `0.0.0.0:8000`) ; fichiers effectifs écrits en 0644 | pod | rotation des jetons (Nicolas) ; fichiers effectifs en 0600 ; écoutes à déclarer ou à passer en créations serveur ; budgets (J-b) | Nicolas ; vague 2 |
+| T21 | En mode image (`ATELIER_AVANT_PLAN=1`), le geste `relancer_atelier` des gardiens tuerait le processus principal, donc le pod | `gardiens/gestes.py` | geste désactivé en mode image ; seule la sonde reste | intégration vague 1 |
+| T22 | Le commit en service est illisible sur le pod (copie sans `.git` ni `VERSION`), et la CI d'un dépôt privé est illisible sans jeton | déploiement | écrire `VERSION` à l'extraction ; jeton GitHub en lecture seule dans `~/work/.secrets/` | déploiement suivant |
+| T23 | Sur le pod, `~/.wikichat` est un dossier de la couche éphémère, pas le lien vers le volume que prévoit l'Atelier (`ensure_wikichat_data_link` ne remplace pas un dossier non vide). Triggers, routines, registre et connaissance seraient perdus au redémarrage du pod | pod | procédure `docs/atelier-coherence.md` §11.3 de wikichat (sauvegarde, lien, puis migration W2), au déploiement de la vague 1 | intégration vague 1 |
 
 ## 5. Catalogue des briques
 
@@ -649,5 +658,28 @@ Le journal consigne, dans l'ordre, ce que chaque retour a changé dans la struct
     sur le pod, qui reste à mesurer ;
   - `qwen3-cursor` n'est plus servi ;
   - un harness sans outils reçoit une erreur 400.
+- **25/09, `mesures-vague1.md`** :
+  - A-1 : `medium`, et la ligne `xhigh` morte est retirée ;
+  - A-2 confirmée : 17 sur 20, sans `list_changed` ; s'y ajoutent des alias d'intention et une consigne forte ;
+  - A-8 révisée : son préenregistré et détection de fin de parole ;
+  - A5, A6, A8, A9, A10, A12 et A13 levées ;
+  - T15 à T19 ouvertes.
+- **25/09, équipe G (gardiens)** :
+  - exécuteur livré sur la branche `gardiens` (G0, G1, G2, gestes en liste fermée, journal, homme mort, hook `garde_bash`) ;
+  - contrat de l'API de lecture sur `127.0.0.1:8791`, routes `/sante`, `/etat`, `/alertes`, `/echeances`, `/resultats`, `/automates`, dans `gardiens.md` (État) : c'est la source de la page Gardiens (équipe P, vague 2) ;
+  - T20 à T22 ouvertes.
+- **25/09, équipe W (lot W)** :
+  - briques de wikichat réparées et branchées (W1 à W5, W7), jobs déterministes sans agent, clôtures absorbées par le code ;
+  - la couche wikichat de la carte est servie par `GET /api/cartographie`, contrat dans `docs/cartographie-contrat.md` de wikichat : nœuds (slug, état, santé, décisions, connecteurs par nom, champ `atelier` réservé) et arêtes typées `relation`, `proximite` et `meme_connecteur`. C'est la source de la carte de la vague 2 ;
+  - W6 : inventaire des triggers en échec, sans rien couper ;
+  - T23 ouverte ; décision J-b2 ajoutée.
+- **25/09, équipe F (fondations)** :
+  - catalogue de commandes, journal unique, file « À valider » et structure de projet livrés sur la branche `fondations` ; contrats détaillés au §1.8 de cette branche, repris ici à l'intégration ;
+  - écarts assumés :
+    - une quatrième classe `lecture`, sans carte, dont les réussites ne sont pas journalisées pour ne pas noyer le journal (les refus et erreurs le sont) ;
+    - la clé du propriétaire en HTTP compte comme un modèle pour les commandes `reservee`, car les agents du pod peuvent la lire. Seule la session de l'interface peut accepter ;
+    - le gabarit n'importe pas le socle, que Claude Code charge déjà par le dossier parent ;
+  - le Pilote de wikichat est branché sur « À valider » sans migration (S5) ;
+  - T15 est corrigée à la source (le contexte n'est écrit que dans le dossier du projet) ; la cause exacte de `/tmp` sur le pod reste non identifiée.
 - **Explication de T12** : sur le poste, une tâche planifiée publie la mémoire toutes les 15 min depuis
     `Github Repositories/wikichat`, pendant que le dépôt évolue ailleurs.

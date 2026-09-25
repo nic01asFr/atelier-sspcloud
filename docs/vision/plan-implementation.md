@@ -96,7 +96,7 @@ de Nicolas avant les redémarrages.
 | G | Atelier, `…/atelier-gardiens`, `gardiens` | `mcp_gateway/gardiens/` (nouveau), `docs/consignes/socle.md` (section hooks), hooks du socle | une ligne dans `install/atelier-init.sh`, coordonnée avec F |
 | M | aucun code ; documents `docs/vision/mesures-*.md` | — | — |
 
-Base commune : `main` + les documents de vision (commit local `vision-et-plan`).
+Base commune : `main` + les documents de vision (commit local `vision-et-plan`). Les worktrees de l'Atelier sont **dans** le dossier du dépôt principal (`Claude Code sspcloud/atelier-*`), exclus du suivi par `.git/info/exclude`.
 
 ## 4. Intégration
 
@@ -116,7 +116,7 @@ aux équipes concernées.
 
 | Vague | État |
 |---|---|
-| 1 | lancée le 25/09 |
+| 1 | lancée le 25/09 ; M rendue (`mesures-vague1.md`) ; G rendue (branche `gardiens`, 825 tests) ; W rendue (branche `lot-w`) ; F rendue (branche `fondations`, 819 tests) ; P en cours |
 | 2 | — |
 | 3 | — |
 | 4 | — |
