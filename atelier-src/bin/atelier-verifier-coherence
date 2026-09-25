@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""Vérifie, avec le vrai binaire `claude`, que toutes les surfaces donnent à l'agent
+les mêmes connecteurs et les mêmes identifiants.
+
+Tout se passe dans un dossier temporaire : un Atelier de test (volume, pool,
+clés factices), un HOME et des CLAUDE_CONFIG_DIR de test, et un serveur MCP
+sonde en boucle locale qui note l'en-tête d'identification reçu. Rien du pod
+en service n'est lu ni écrit : ni ~/.claude*, ni ~/work/.secrets, ni l'Atelier.
+
+Trois lancements du même projet :
+  atelier   claude -p --mcp-config <fichier effectif> --strict-mcp-config,
+            environnement du harnais ;
+  vscode    CLAUDE_CONFIG_DIR portant ~/.claude.json, `.mcp.json` du projet,
+            environnement de claudeCode.environmentVariables ;
+  terminal  idem, environnement obtenu en sourçant ~/work/.secrets/claude-env.sh.
+
+Le modèle n'est jamais appelé (adresse morte) : seule compte l'initialisation
+des serveurs MCP, qui précède tout appel au modèle.
+
+Usage : atelier-verifier-coherence [--claude CHEMIN] [--garder]
+Sortie 0 si aucun écart, 1 sinon.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+JETON_QGIS = "jeton-qgis-verif-0123456789"
+JETON_N8N = "jeton-n8n-verif-0123456789"
+CLE_ATELIER = "cle-atelier-verif-0123456789"
+
+
+class Sonde:
+    """Serveur MCP minimal : répond à initialize et tools/list, note l'identification."""
+
+    def __init__(self) -> None:
+        self.recus: dict[str, set[str]] = {}
+        sonde = self
+
+        class Gestionnaire(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *a) -> None:  # noqa: ANN002
+                pass
+
+            def _repondre(self, statut: int, corps: dict | None = None) -> None:
+                donnees = b"" if corps is None else json.dumps(corps).encode()
+                self.send_response(statut)
+                self.send_header("content-type", "application/json")
+                self.send_header("content-length", str(len(donnees)))
+                self.end_headers()
+                if donnees:
+                    self.wfile.write(donnees)
+
+            def do_GET(self) -> None:
+                self._repondre(405)
+
+            def do_DELETE(self) -> None:
+                self._repondre(200)
+
+            def do_POST(self) -> None:
+                corps = json.loads(self.rfile.read(int(self.headers.get("content-length", 0))) or b"{}")
+                chemin = self.path.split("?")[0]
+                ident = self.headers.get("Authorization") or self.headers.get("X-Api-Key") or ""
+                sonde.recus.setdefault(chemin, set()).add(ident)
+                methode, ident_rpc = corps.get("method"), corps.get("id")
+                if methode == "initialize":
+                    self._repondre(200, {"jsonrpc": "2.0", "id": ident_rpc, "result": {
+                        "protocolVersion": (corps.get("params") or {}).get("protocolVersion", "2025-03-26"),
+                        "capabilities": {"tools": {}}, "serverInfo": {"name": "sonde", "version": "1"}}})
+                elif methode == "tools/list":
+                    self._repondre(200, {"jsonrpc": "2.0", "id": ident_rpc, "result": {"tools": [
+                        {"name": "ping", "description": "ping", "inputSchema": {"type": "object"}}]}})
+                elif ident_rpc is not None:
+                    self._repondre(200, {"jsonrpc": "2.0", "id": ident_rpc, "result": {}})
+                else:
+                    self._repondre(202)
+
+        class Serveur(ThreadingHTTPServer):
+            daemon_threads = True
+
+            def handle_error(self, request, client_address) -> None:  # noqa: ANN001
+                # Un client tué en pleine requête (on arrête claude sitôt
+                # l'initialisation lue) n'est pas une erreur de la sonde.
+                pass
+
+        self.serveur = Serveur(("127.0.0.1", 0), Gestionnaire)
+        self.port = self.serveur.server_address[1]
+        threading.Thread(target=self.serveur.serve_forever, daemon=True).start()
+
+
+def lancer(claude: str, cwd: Path, env: dict[str, str], extra: list[str], via_shell: str = "") -> dict:
+    """Lance `claude -p`, lit l'événement d'initialisation, arrête le processus."""
+    cmd = [claude, "-p", "--input-format", "stream-json", "--output-format", "stream-json",
+           "--verbose", "--max-turns", "1", *extra]
+    if via_shell:
+        cmd = ["bash", "-c", f'. "{via_shell}" && exec "$@"', "bash", *cmd]
+    proc = subprocess.Popen(cmd, cwd=str(cwd), env=env, stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    assert proc.stdin and proc.stdout
+    proc.stdin.write(json.dumps({"type": "user", "message": {"role": "user", "content": "ok"}}) + "\n")
+    proc.stdin.flush()
+    init: dict = {}
+    fin = time.monotonic() + 90
+    while time.monotonic() < fin:
+        ligne = proc.stdout.readline()
+        if not ligne:
+            break
+        try:
+            ev = json.loads(ligne)
+        except json.JSONDecodeError:
+            continue
+        if ev.get("type") == "system" and ev.get("subtype") == "init":
+            init = ev
+            break
+    proc.kill()
+    proc.wait(timeout=10)
+    return {s["name"]: s.get("status") for s in init.get("mcp_servers") or []}
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--claude", default=str(Path.home() / "work" / "bin" / "claude"))
+    parser.add_argument("--garder", action="store_true", help="garder le dossier de test")
+    args = parser.parse_args()
+    claude = str(Path(args.claude).resolve())
+
+    racine = Path(tempfile.mkdtemp(prefix="atelier-coherence-"))
+    maison = racine / "maison"
+    maison.mkdir()
+    # Avant tout import de l'Atelier : Path.home() doit être le HOME de test.
+    os.environ["HOME"] = str(maison)
+    os.environ["USERPROFILE"] = str(maison)
+    os.environ.pop("ATELIER_SESSION", None)
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+    from mcp_gateway.atelier.coherence import comparer, surface_atelier, surface_vscode
+    from mcp_gateway.atelier.config import AtelierSettings
+    from mcp_gateway.atelier.env_secrets import chemin_du_fichier
+    from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
+    from mcp_gateway.atelier.mcp_sync import materialize_mcp_config, write_project_binding
+    from mcp_gateway.db import connect
+
+    sonde = Sonde()
+    base = f"http://127.0.0.1:{sonde.port}"
+    reglages = AtelierSettings(
+        work_dir=racine / "work", port=sonde.port, relais_llm=False,
+        wikichat_url="http://127.0.0.1:1/sse", chrome_mcp_url="",
+        anthropic_base_url="http://127.0.0.1:9",
+    )
+    reglages.ensure_dirs()
+    conn = connect(reglages.gateway_db_path)
+    try:
+        store = IntegratedMcpStore(conn)
+        store.upsert("qgis", {"type": "http", "url": f"{base}/qgis", "headers": {"Authorization": f"Bearer {JETON_QGIS}"}})
+        store.upsert("n8n", {"type": "http", "url": f"{base}/n8n", "headers": {"X-Api-Key": JETON_N8N}})
+    finally:
+        conn.close()
+    for chemin, valeur in ((reglages.owner_key_path, CLE_ATELIER), (reglages.llm_key_path, "cle-llm-factice")):
+        chemin.write_text(valeur, encoding="utf-8")
+        chemin.chmod(0o600)
+    materialize_mcp_config(reglages)
+
+    ecarts: list[str] = []
+    for cas, choix in (("herite", None), ("restreint", ["qgis"])):
+        projet = reglages.projects_dir / f"essai-{cas}"
+        projet.mkdir(parents=True)
+        if choix is not None:
+            write_project_binding(reglages, projet, choix)
+        atelier = surface_atelier(reglages, projet, f"conv-{cas}")
+        vscode = surface_vscode(reglages, projet)
+        ecarts += [f"[{cas}] {e}" for e in comparer(reglages, projet, atelier, vscode)]
+
+        # Le vrai binaire, trois fois.
+        cfg_a, cfg_v = racine / f"cfg-a-{cas}", racine / f"cfg-v-{cas}"
+        cfg_a.mkdir()
+        cfg_v.mkdir()
+        shutil.copy(maison / ".claude.json", cfg_v / ".claude.json")
+        mort = {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9", "ANTHROPIC_API_KEY": "factice"}
+        env_a = {**atelier["env"], **mort, "CLAUDE_CONFIG_DIR": str(cfg_a)}
+        effectif = reglages.mcp_effective_dir / f"conv-{cas}.json"
+        # Le strict nécessaire d'un processus (et, sous Windows, de quoi démarrer).
+        garder = ("PATH", "HOME", "LANG", "SYSTEMROOT", "USERPROFILE", "APPDATA",
+                  "LOCALAPPDATA", "TEMP", "TMP", "COMSPEC")
+        env_base = {k: os.environ[k] for k in garder if k in os.environ}
+        env_v = {**env_base, **vscode["env"], **mort, "CLAUDE_CONFIG_DIR": str(cfg_v)}
+        env_t = {**env_base, **mort, "CLAUDE_CONFIG_DIR": str(cfg_v)}
+        vus = {}
+        for surface, env, extra, shell in (
+            ("atelier", env_a, ["--mcp-config", str(effectif), "--strict-mcp-config"], ""),
+            ("vscode", env_v, [], ""),
+            ("terminal", env_t, [], str(chemin_du_fichier(reglages))),
+        ):
+            sonde.recus.clear()
+            serveurs = lancer(claude, projet, env, extra, shell)
+            vus[surface] = (serveurs, {k: sorted(v) for k, v in sonde.recus.items()})
+            print(f"[{cas}] {surface:8} serveurs={serveurs} identifiants={ {k: [i[:12] + '…' for i in v] for k, v in vus[surface][1].items()} }")
+        attendu = {"atelier"} | ({"qgis", "n8n"} if choix is None else set(choix))
+        for surface, (serveurs, recus) in vus.items():
+            if set(serveurs) != attendu:
+                ecarts.append(f"[{cas}] {surface} : serveurs {sorted(serveurs)} au lieu de {sorted(attendu)}")
+            pas_connectes = sorted(n for n, s in serveurs.items() if s != "connected")
+            if pas_connectes:
+                ecarts.append(f"[{cas}] {surface} : non connectés {pas_connectes}")
+            for chemin, attendu_id in (("/mcp", f"Bearer {CLE_ATELIER}"), ("/qgis", f"Bearer {JETON_QGIS}"), ("/n8n", JETON_N8N)):
+                nom = chemin.strip("/") if chemin != "/mcp" else "atelier"
+                if nom in attendu and recus.get(chemin) != [attendu_id]:
+                    ecarts.append(f"[{cas}] {surface} : {nom} n'a pas reçu l'identifiant attendu")
+        if len({json.dumps(v[1], sort_keys=True) for v in vus.values()}) != 1:
+            ecarts.append(f"[{cas}] les surfaces n'envoient pas les mêmes identifiants")
+
+    print()
+    if ecarts:
+        print("ÉCARTS :")
+        for e in ecarts:
+            print(" -", e)
+    else:
+        print("Aucun écart : mêmes serveurs, `atelier` partout, mêmes identifiants, aucun secret en clair.")
+    if args.garder:
+        print(f"dossier de test gardé : {racine}")
+    else:
+        shutil.rmtree(racine, ignore_errors=True)
+    return 1 if ecarts else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
