@@ -558,6 +558,14 @@ def build_app(
                 await asyncio.to_thread(ecrire_le_fichier, settings)
             except OSError as exc:
                 log.warning("fichier d'environnement non écrit : %s", exc)
+            # Chaque projet porte dans son `.mcp.json` ce que l'agent y
+            # recevra : VS Code ouvert directement sur un dossier aussi.
+            from mcp_gateway.atelier.mcp_sync import lier_tous_les_projets
+
+            try:
+                await asyncio.to_thread(lier_tous_les_projets, settings)
+            except OSError as exc:
+                log.warning("liaison des projets : %s", exc)
             # Le relais LLM, par qui toutes les surfaces parlent au modèle.
             # Lancé ici s'il manque (un pod où l'init ne l'a pas démarré) ;
             # détaché, il survit aux redémarrages de l'Atelier.
@@ -1048,9 +1056,11 @@ def build_app(
         from mcp_gateway.atelier.mcp_sync import project_binding_state
 
         chemin = _project_path(slug)
+        from mcp_gateway.atelier.mcp_sync import herite_du_pool
+
         return {
             "slug": slug,
-            "inherits_pool": not (chemin / ".mcp.json").is_file(),
+            "inherits_pool": herite_du_pool(chemin),
             "connectors": project_binding_state(settings, chemin),
         }
 
@@ -1085,22 +1095,6 @@ def build_app(
             raise HTTPException(409, str(exc)) from exc
         return {"deleted": slug}
 
-    def _connecteurs_de(rec: Any) -> set[str] | None:
-        """Les connecteurs que cette conversation a réellement, ou rien.
-
-        Sans fiche, on ne sait pas de quelle conversation il s'agit : mieux
-        vaut ne rien masquer que masquer au hasard.
-        """
-        if rec is None:
-            return None
-        try:
-            from mcp_gateway.atelier.session_mcp import session_mcp_layers
-
-            _, effective = session_mcp_layers(settings, rec)
-        except (OSError, ValueError):
-            return None
-        return set(effective)
-
     @router.get("/vscode/open")
     async def vscode_open(
         session: str | None = None,
@@ -1133,7 +1127,7 @@ def build_app(
                     Path(dossier),
                     mode_permission=(rec.permission_mode if rec is not None else "")
                     or settings.permission_mode,
-                    connecteurs=_connecteurs_de(rec),
+                    kind=rec.kind if rec is not None else "code",
                 )
             except OSError:
                 pass

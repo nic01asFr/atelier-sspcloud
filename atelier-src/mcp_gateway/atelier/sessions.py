@@ -1155,8 +1155,12 @@ class SessionStore:
         self.save(rec)
         mcp_config_path: Path | None = None
         try:
-            from mcp_gateway.atelier.mcp_sync import materialize_session_mcp
+            from mcp_gateway.atelier.mcp_sync import lier_le_projet, materialize_session_mcp
 
+            # Le `.mcp.json` du dossier dit la même chose que le fichier
+            # effectif : la conversation reprise dans VS Code ou au terminal
+            # aura les mêmes connecteurs.
+            lier_le_projet(self.settings, Path(rec.cwd), kind=rec.kind)
             mcp_config_path = materialize_session_mcp(
                 self.settings,
                 session_id,

@@ -127,6 +127,24 @@ def _load_json_object(path: Path) -> dict[str, Any] | None:
     return loaded if isinstance(loaded, dict) else None
 
 
+# Un projet qui n'a jamais choisi ses connecteurs hérite du pool entier. Son
+# `.mcp.json` est désormais écrit quand même (VS Code et le terminal ne lisent
+# que lui) ; cette marque dit qu'il reflète le pool et doit le suivre.
+MARQUE_HERITAGE = Path(".atelier") / "connecteurs-herites"
+
+
+def herite_du_pool(cwd: Path) -> bool:
+    """Vrai si le projet n'a pas choisi ses connecteurs lui-même."""
+    return (cwd / MARQUE_HERITAGE).is_file() or not (cwd / ".mcp.json").is_file()
+
+
+def _binding_du_dossier(cwd: Path) -> dict[str, Any] | None:
+    """Le choix du projet, ou None s'il hérite du pool."""
+    if (cwd / MARQUE_HERITAGE).is_file():
+        return None
+    return _load_json_object(cwd / ".mcp.json")
+
+
 def _binding_selection(binding: dict[str, Any]) -> dict[str, bool]:
     """Nom serveur → activé dans le binding (défaut true si absent)."""
     servers = binding.get("mcpServers")
@@ -172,11 +190,11 @@ def compute_binding_merged(
     """Niveau 2 seul — pool ∩ bindings fichier, sans overlay conversation."""
     pool = _pool_enabled(settings)
     if kind == "code":
-        binding = _load_json_object(cwd / ".mcp.json")
+        binding = _binding_du_dossier(cwd)
         merged = assurer_onyxia_natif(merge_session_mcp_servers(pool, binding), pool)
         return integrer_l_atelier(assurer_l_atelier(integrer_le_navigateur(merged, settings), settings))
     global_binding = _load_json_object(settings.assistant_root / ".mcp.json")
-    session_binding = _load_json_object(cwd / ".mcp.json")
+    session_binding = _binding_du_dossier(cwd)
     return integrer_l_atelier(
         assurer_l_atelier(
             integrer_le_navigateur(
@@ -498,7 +516,7 @@ def project_binding_state(
     d'écrire un fichier que personne n'a demandé.
     """
     pool = _pool_enabled(settings)
-    binding = _load_json_object(cwd / ".mcp.json")
+    binding = _binding_du_dossier(cwd)
     selection = _binding_selection(binding) if binding is not None else {}
     herite = binding is None
     from mcp_gateway.atelier.gateway_tools import nature_service
@@ -587,7 +605,134 @@ def write_project_binding(
     existant["mcpServers"] = retenus
     _atomic_write_json(chemin, existant)
     _proteger_du_depot(cwd)
+    # Un choix explicite : le projet cesse de suivre le pool.
+    (cwd / MARQUE_HERITAGE).unlink(missing_ok=True)
+    approuver_les_serveurs_du_projet(cwd, sorted(retenus))
     return project_binding_state(settings, cwd)
+
+
+def lier_le_projet(
+    settings: AtelierSettings,
+    cwd: Path,
+    *,
+    kind: WorkspaceKind = "code",
+) -> list[str]:
+    """Écrit dans le `.mcp.json` du dossier ce que l'agent y recevra, partout.
+
+    Le fichier effectif d'un tour de l'Atelier se calcule (pool, choix du
+    projet, Onyxia natif, navigateur, Atelier) ; VS Code et le terminal, eux,
+    ne lisent que `~/.claude.json` et ce `.mcp.json`. On y écrit donc le même
+    ensemble — en références, jamais en clair — et on l'approuve dans
+    `~/.claude.json` (`enabledMcpjsonServers`). Plus de `disabledMcpServers`
+    figé par la dernière ouverture dans VS Code : la sélection vit ici.
+
+    Un projet qui hérite du pool garde sa marque et suit le pool à chaque
+    liaison. Rend les noms des serveurs du projet.
+    """
+    cwd.mkdir(parents=True, exist_ok=True)
+    herite = herite_du_pool(cwd)
+    merged = compute_binding_merged(settings, kind=kind, cwd=cwd)
+    pool = _pool_enabled(settings)
+    chemin = cwd / ".mcp.json"
+    existant = _load_json_object(chemin) or {}
+    deja = existant.get("mcpServers")
+    deja = deja if isinstance(deja, dict) else {}
+    ecrits: dict[str, Any] = {}
+    for nom, cfg in merged.items():
+        if not isinstance(cfg, dict):
+            continue
+        if nom == SERVICE_ATELIER:
+            ecrits[nom] = declaration_atelier(settings)
+        elif est_le_navigateur(nom) and chrome_mcp_url_configuree(settings):
+            ecrits[nom] = declaration_chrome(settings, cloisonner=False)
+        elif not herite and isinstance(deja.get(nom), dict):
+            config = dict(deja[nom])
+            config.pop("enabled", None)
+            ecrits[nom] = _migrer_les_secrets(nom, config, pool.get(nom), chemin)
+        else:
+            ecrits[nom], _ = en_references(nom, cfg)
+    if ecrits != deja or "mcpServers" not in existant:
+        existant["mcpServers"] = ecrits
+        _atomic_write_json(chemin, existant)
+        _proteger_du_depot(cwd)
+    if herite:
+        marque = cwd / MARQUE_HERITAGE
+        marque.parent.mkdir(parents=True, exist_ok=True)
+        if not marque.is_file():
+            marque.write_text(
+                "Ce projet hérite des connecteurs du pool : l'Atelier réécrit .mcp.json"
+                " quand le pool change. Choisir ses connecteurs dans l'Atelier retire"
+                " cette marque.\n",
+                encoding="utf-8",
+            )
+    approuver_les_serveurs_du_projet(cwd, sorted(ecrits))
+    return sorted(ecrits)
+
+
+def lier_tous_les_projets(settings: AtelierSettings) -> int:
+    """Relie chaque dossier de projet (démarrage, pool modifié). Rend le nombre relié."""
+    racine = settings.projects_dir
+    if not racine.is_dir():
+        return 0
+    n = 0
+    for dossier in sorted(racine.iterdir()):
+        if not dossier.is_dir() or dossier.is_symlink() or dossier.name.startswith("."):
+            continue
+        try:
+            lier_le_projet(settings, dossier)
+            n += 1
+        except OSError as exc:
+            log.warning("liaison de %s impossible : %s", dossier.name, exc)
+    return n
+
+
+def approuver_les_serveurs_du_projet(dossier: Path, noms: list[str]) -> bool:
+    """Approuve dans `~/.claude.json` les serveurs du `.mcp.json` du dossier.
+
+    Sans approbation, Claude Code demande à l'ouverture (ou ignore en `-p`)
+    les serveurs d'un `.mcp.json`. On retire aussi de `disabledMcpServers` —
+    que l'Atelier y figeait à chaque ouverture dans VS Code — les serveurs que
+    le projet a choisis : ils doivent être actifs partout.
+
+    Un fichier illisible n'est pas écrasé : il porte l'identité de la machine
+    et l'historique des projets. Rend vrai si le fichier a changé.
+    """
+    chemin = Path.home() / ".claude.json"
+    data: dict[str, Any] = {}
+    if chemin.is_file():
+        try:
+            charge = json.loads(chemin.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return False
+        if not isinstance(charge, dict):
+            return False
+        data = charge
+    projets = data.setdefault("projects", {})
+    if not isinstance(projets, dict):
+        return False
+    entree = projets.setdefault(str(dossier), {})
+    if not isinstance(entree, dict):
+        return False
+    avant = json.dumps(entree, sort_keys=True)
+    entree["enabledMcpjsonServers"] = sorted(set(noms))
+    for cle in ("disabledMcpServers", "disabledMcpjsonServers"):
+        liste = entree.get(cle)
+        if isinstance(liste, list):
+            reste = [n for n in liste if n not in noms]
+            if reste:
+                entree[cle] = reste
+            else:
+                entree.pop(cle, None)
+    if json.dumps(entree, sort_keys=True) == avant:
+        return False
+    tmp = chemin.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    tmp.replace(chemin)
+    try:
+        chemin.chmod(0o600)
+    except OSError:
+        pass
+    return True
 
 
 def _migrer_les_secrets(
@@ -747,10 +892,12 @@ def materialize_mcp_config(settings: AtelierSettings) -> Path:
     except OSError:
         pass
 
-    # Le pool a pu changer : les valeurs des références aussi.
+    # Le pool a pu changer : les valeurs des références aussi, et les
+    # projets qui en héritent.
     from mcp_gateway.atelier.env_secrets import ecrire_le_fichier
 
     ecrire_le_fichier(settings)
+    lier_tous_les_projets(settings)
 
     durable_dir = settings.work_dir / ".claude"
     durable_dir.mkdir(parents=True, exist_ok=True)
