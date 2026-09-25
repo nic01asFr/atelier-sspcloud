@@ -384,6 +384,17 @@ demarrer_relais_llm() {
   dire "relais LLM lancé ($RELAIS_LLM)"
 }
 
+demarrer_gardiens() {
+  # L'exécuteur des gardiens (mcp_gateway.gardiens) : contrôles de santé et de
+  # sécurité, sans modèle. Processus à part : un gardien ne vit pas dans ce
+  # qu'il garde. ATELIER_GARDIENS=0 le coupe (docs/vision/gardiens.md).
+  [ "${ATELIER_GARDIENS:-1}" = "0" ] && { dire "gardiens coupés (ATELIER_GARDIENS=0)"; return 0; }
+  curl -fsS -o /dev/null "http://127.0.0.1:${ATELIER_GARDIENS_PORT:-8791}/sante" 2>/dev/null && { dire "gardiens déjà en route"; return 0; }
+  (cd "$SRC_ATELIER" && ATELIER_WORK="$WORK" setsid nohup nice -n 10 python3 -m mcp_gateway.gardiens \
+      >> "$JOURNAUX/gardiens.log" 2>&1 < /dev/null &)
+  dire "gardiens lancés"
+}
+
 demarrer_code_server() {
   local config="$WORK/.config-code-server"
   mkdir -p "$config" "$JOURNAUX/code-server"
@@ -455,6 +466,7 @@ bilan() {
 demarrer_relais_llm
 demarrer_code_server
 demarrer_wikichat
+demarrer_gardiens
 
 if [ "${ATELIER_AVANT_PLAN:-0}" = "1" ]; then
   # Dans un conteneur, l'Atelier est le processus principal : s'il tombe,
