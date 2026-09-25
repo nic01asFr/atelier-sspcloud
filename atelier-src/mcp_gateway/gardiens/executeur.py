@@ -26,7 +26,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Callable, Any
 
 from mcp_gateway.gardiens import gestes as gestes_mod
 from mcp_gateway.gardiens.controles import REGISTRE
@@ -120,6 +120,7 @@ class Executeur:
         a_blanc: bool = False,
         horloge=time.time,
         attente_apres_geste_s: float | None = None,
+        publier: Callable[[dict[str, Any]], None] | None = None,
     ) -> None:
         self.declaration = declaration
         self.controles = {c.id: c for c in declaration.controles}
@@ -130,6 +131,11 @@ class Executeur:
         self.a_blanc = a_blanc
         self.horloge = horloge
         self.attente_apres_geste_s = attente_apres_geste_s
+        # Le journal unique de l'Atelier (architecture-transverse §1.7) : ce qu'une
+        # personne doit lire. Le journal des gardiens reste le journal technique
+        # de chaque exécution ; seuls les ouvertures et fermetures d'alertes et
+        # les gestes passent ici.
+        self.publier = None if a_blanc else publier
         self.demarre_a = horloge()
         self.etats: dict[str, EtatControle] = {c.id: EtatControle() for c in declaration.controles}
         self.alertes: dict[str, dict[str, Any]] = {}
@@ -271,8 +277,50 @@ class Executeur:
         if action is not None:
             ligne["action"] = action
         self.journal.ecrire(ligne)
+        self._publier_les_evenements(c, nouvelles, resolues, action)
         self._sauver()
         return ligne
+
+    def _publier_les_evenements(
+        self, c: Controle, nouvelles: list[str], resolues: list[str], action: dict[str, Any] | None
+    ) -> None:
+        if self.publier is None:
+            return
+        evenements: list[dict[str, Any]] = []
+        for emp in nouvelles:
+            a = self.alertes.get(emp) or {}
+            evenements.append({
+                "source": "controle",
+                "objet": {"type": c.portee or "atelier", "id": a.get("objet", "")},
+                "action": {"commande": c.id, "classe": "lecture", "origine": c.gardien, "avant": None,
+                           "apres": {"alerte": "ouverte", "niveau": a.get("niveau"), "resume": a.get("resume")}},
+                "resultat": "alerte",
+                "empreinte": emp,
+            })
+        for emp in resolues:
+            a = self.alertes.get(emp) or {}
+            evenements.append({
+                "source": "controle",
+                "objet": {"type": c.portee or "atelier", "id": a.get("objet", "")},
+                "action": {"commande": c.id, "classe": "lecture", "origine": c.gardien,
+                           "avant": {"alerte": "ouverte"}, "apres": {"alerte": "resolue"}},
+                "resultat": "resolue",
+                "empreinte": emp,
+            })
+        if action is not None:
+            evenements.append({
+                "source": "geste",
+                "objet": {"type": c.portee or "atelier", "id": action.get("nom", "")},
+                "action": {"commande": action.get("nom", ""), "classe": "reversible", "origine": c.gardien,
+                           "avant": action.get("avant"), "apres": action.get("apres")},
+                "resultat": "refuse" if action.get("refuse") else "fait",
+                "empreinte": "",
+            })
+        for e in evenements:
+            try:
+                self.publier(e)
+            except Exception:  # noqa: BLE001 — le journal unique ne doit jamais arrêter un contrôle
+                pass
 
     def _alertes(self, c: Controle, res: dict[str, Any], maintenant: float) -> tuple[list[str], list[str]]:
         vues = set()
@@ -379,6 +427,10 @@ class Executeur:
             return {**action, "refuse": "exécution à blanc"}
         if not self.permettre_gestes:
             return {**action, "refuse": "ATELIER_GARDIENS_GESTES=0"}
+        if c.geste == "relancer_atelier" and (self.ctx.env or {}).get("ATELIER_AVANT_PLAN") == "1":
+            # En mode image, l'Atelier est le processus principal du conteneur :
+            # le relancer arrêterait le pod. La sonde reste, le geste non.
+            return {**action, "refuse": "ATELIER_AVANT_PLAN=1 : relancer l'Atelier arrêterait le conteneur"}
         recents = [t for t in st.gestes if maintenant - t < 3600]
         if len(recents) >= RELANCES_PAR_HEURE:
             return {**action, "refuse": f"{RELANCES_PAR_HEURE} relances dans l'heure : on attend la personne"}

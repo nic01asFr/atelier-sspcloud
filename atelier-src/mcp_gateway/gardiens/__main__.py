@@ -42,6 +42,29 @@ def filtre_des_secrets(ctx: Contexte) -> Filtre:
         return Filtre()
 
 
+def journal_unique(ctx: Contexte):
+    """Écrit au journal unique de l'Atelier (`~/work/.atelier-etat/journal/`)."""
+    try:
+        from mcp_gateway.atelier.commandes.journal import (
+            Evenement,
+            Journal as JournalUnique,
+            dossier_du_journal,
+            secrets_du_fichier_d_environnement,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("journal unique indisponible : %s", exc)
+        return None
+    unique = JournalUnique(
+        dossier_du_journal(ctx.work),
+        secrets=secrets_du_fichier_d_environnement(ctx.work / ".secrets" / "claude-env.sh"),
+    )
+
+    def publier(e: dict) -> None:
+        unique.ecrire(Evenement(acteur="gardiens", **e))
+
+    return publier
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Exécuteur des gardiens de l'Atelier")
     parser.add_argument("--declaration", type=Path, default=None)
@@ -76,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
             log.info("hook du socle : %s", poser(reglages_par_defaut()))
         except OSError as exc:
             log.warning("hook du socle non posé : %s", exc)
-    executeur = Executeur(declaration, ctx, journal, dossier)
+    executeur = Executeur(declaration, ctx, journal, dossier, publier=journal_unique(ctx))
     try:
         srv = serveur(executeur, args.port)
     except OSError as exc:

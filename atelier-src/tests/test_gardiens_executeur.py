@@ -343,3 +343,60 @@ def test_declaration_vide_a_blanc_n_ecrit_rien(tmp_path: Path, ctx: Contexte) ->
     assert lignes[0]["action"]["refuse"] == "exécution à blanc"
     assert not (tmp_path / "etat").exists()
     assert isinstance(decl, Declaration)
+
+
+# --- intégration vague 1 : journal unique et mode image -------------------------
+
+
+def test_alertes_et_gestes_vont_au_journal_unique(tmp_path: Path, ctx: Contexte) -> None:
+    from mcp_gateway.atelier.commandes.journal import Evenement, Journal as JournalUnique
+
+    unique = JournalUnique(tmp_path / "unique")
+    publies: list[dict] = []
+
+    def publier(e: dict) -> None:
+        publies.append(e)
+        unique.ecrire(Evenement(acteur="gardiens", **e))
+
+    etat = {"up": False}
+    ctx.http = lambda url, entetes=None, delai=5.0: ReponseHttp(200 if etat["up"] else 0, "", "refus")
+    ex = executeur(tmp_path, ctx, [sonde("sante.wikichat")], publier=publier)
+    c = ex.controles["sante.wikichat"]
+    for _ in range(3):
+        ex.passer(c)
+    etat["up"] = True
+    ex.passer(c)
+    # Une ouverture, une fermeture : pas une ligne par exécution.
+    assert [e["resultat"] for e in publies] == ["alerte", "resolue"]
+    lignes = unique.lire()
+    assert [l["source"] for l in lignes] == ["controle", "controle"]
+    assert all(l["acteur"] == "gardiens" for l in lignes)
+
+
+def test_rien_au_journal_unique_a_blanc(tmp_path: Path, ctx: Contexte) -> None:
+    publies: list[dict] = []
+    ctx.http = lambda url, entetes=None, delai=5.0: ReponseHttp(0, "", "refus")
+    decl = lire(ecrire_declaration(tmp_path, [sonde("sante.wikichat")]))
+    ex = Executeur(decl, ctx, Journal(None), None, a_blanc=True, publier=publies.append)
+    ex.tout_une_fois()
+    assert publies == []
+
+
+def test_l_atelier_n_est_jamais_relance_en_mode_image(tmp_path: Path, ctx: Contexte) -> None:
+    drapeau = tmp_path / "atelier-en-route"
+    ctx.http = service_factice(drapeau)
+    ctx.env = {"ATELIER_AVANT_PLAN": "1"}
+    horloge = Horloge()
+    ex = executeur(
+        tmp_path, ctx, [sonde("sante.atelier", "atelier", si_constat="geste", geste="relancer_atelier")], horloge,
+        reglages={"scripts": {"atelier": {"argv": faux_script(tmp_path, drapeau)}}},
+        permettre_gestes=True, attente_apres_geste_s=5,
+    )
+    c = ex.controles["sante.atelier"]
+    action = None
+    for _ in range(8):
+        ligne = ex.passer(c)
+        action = ligne.get("action") or action
+        horloge.t += 60
+    assert action is not None and "ATELIER_AVANT_PLAN" in action["refuse"]
+    assert not drapeau.exists()
