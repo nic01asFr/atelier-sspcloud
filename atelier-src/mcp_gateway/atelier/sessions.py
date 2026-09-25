@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -146,9 +147,35 @@ LIGNES_CHERCHEES_POUR_LE_TITRE = 500
 
 
 def titre_utilisable(texte: str) -> bool:
-    """Un titre doit dire de quoi l'on parle, pas d'où l'on vient."""
+    """Un titre doit dire de quoi l'on parle, pas d'où l'on vient.
+
+    Ni un préambule du CLI, ni du balisage : un premier message qui colle une
+    page HTML donnait pour titre « <!DOCTYPE html> <html lang=… » (lot H).
+    """
     debut = (texte or "").strip()
-    return bool(debut) and not debut.startswith(PREAMBULES_SYNTHETIQUES)
+    if not debut or debut.startswith(PREAMBULES_SYNTHETIQUES):
+        return False
+    return not _BALISE.match(debut)
+
+
+_BALISE = re.compile(r"^\s*(<[!?/a-zA-Z]|```|\{\s*\"|\[\s*\{)")
+_BALISES = re.compile(r"<[^>]{0,400}>")
+_BLOC_DE_CODE = re.compile(r"```.*?(```|$)", re.S)
+
+
+def titre_lisible(texte: str, taille: int = 60) -> str:
+    """Ce qu'un premier message dit en mots : sans balises, ni code, ni JSON.
+
+    Rend une chaîne vide quand il ne reste rien de lisible : mieux vaut alors
+    le titre par défaut qu'un morceau de code.
+    """
+    brut = _BLOC_DE_CODE.sub(" ", texte or "")
+    brut = re.sub(r"<(script|style)\b.*?(</\1>|$)", " ", brut, flags=re.S | re.I)
+    brut = _BALISES.sub(" ", brut)
+    mots = " ".join(brut.split())
+    if not mots or mots.startswith(("{", "[")) or not re.search(r"[A-Za-zÀ-ÿ]{3}", mots):
+        return ""
+    return mots[:taille].strip()
 
 
 def _default_title(slug: str, session_id: str) -> str:
@@ -214,6 +241,13 @@ def _claude_name_rank(data: dict[str, Any]) -> int:
 # règle demande d'incrémenter ce nombre, faute de quoi les conversations déjà
 # marquées garderaient le trou de l'ancienne.
 CRITERE_ABSORPTION = 1
+
+# L'adoption des conversations nées dans VS Code se fait à la lecture de la
+# liste. Deux lectures simultanées — l'interface en lance plusieurs d'affilée,
+# et chaque onglet relit toutes les quinze secondes — voyaient le même
+# transcript sans fiche et en créaient chacune une : deux fiches pour un même
+# fil CLI (lot H). Une seule adoption à la fois, pour tout le processus.
+_VERROU_ADOPTION = threading.RLock()
 
 
 @dataclass
@@ -590,13 +624,19 @@ class SessionStore:
                     else:
                         continue
                     texte = " ".join(texte.split())
-                    if texte and titre_utilisable(texte):
-                        return texte[:60]
+                    if texte and not texte.startswith(PREAMBULES_SYNTHETIQUES):
+                        lisible = titre_lisible(texte)
+                        if lisible:
+                            return lisible
         except OSError:
             return ""
         return ""
 
     def adopter_conversations_claude(self) -> list[str]:
+        with _VERROU_ADOPTION:
+            return self._adopter_conversations_claude()
+
+    def _adopter_conversations_claude(self) -> list[str]:
         """Fait entrer dans l'Atelier les conversations nees dans VS Code.
 
         L'alignement etait a sens unique : ce que l'Atelier connaissait,
@@ -778,6 +818,10 @@ class SessionStore:
 
     def sync_claude_titles(self) -> dict[str, Any]:
         """Aligne title depuis ~/.claude/sessions (extension / CLI Claude Code)."""
+        with _VERROU_ADOPTION:
+            return self._sync_claude_titles()
+
+    def _sync_claude_titles(self) -> dict[str, Any]:
         # D'abord faire entrer ce qui manque : une conversation ouverte dans
         # VS Code n'a pas de fiche, et sans fiche rien ne l'aligne.
         self.adopter_conversations_claude()
@@ -1396,9 +1440,13 @@ class SessionStore:
             return 0
         if entrees:
             journal.parent.mkdir(parents=True, exist_ok=True)
+            from mcp_gateway.atelier.events import sans_substituts
+
             with journal.open("a", encoding="utf-8") as f:
                 for e in entrees:
-                    f.write(json.dumps(e, ensure_ascii=False) + "\n")
+                    # Un demi-emoji lu dans le transcript du CLI ne s'écrit pas
+                    # en UTF-8 : il faisait échouer l'absorption entière.
+                    f.write(json.dumps(sans_substituts(e), ensure_ascii=False) + "\n")
         rec.octets_absorbes = position
         # Le compteur affiché doit dire ce que le fil montre. Il ne comptait
         # que les tours menés d'ici : une conversation travaillée dans VS Code

@@ -442,6 +442,55 @@ class OutilsAtelier:
                 ),
                 "inputSchema": {"type": "object", "properties": artefact, "required": ["projet"]},
             },
+            # catalogue: reversible — déjà déclaré par l'équipe F (commandes/existants.py) ;
+            # inverse : fermer l'onglet (DELETE /v1/panneau/{conversation}/vues/{id}).
+            {
+                "name": "atelier_montrer",
+                "description": (
+                    "Montre une création de ton projet dans le panneau de ta conversation, à côté "
+                    "du fil : le panneau s'ouvre seul chez la personne. À appeler dès qu'une page "
+                    "ou une application est prête, ou après l'avoir modifiée, au lieu de demander "
+                    "d'ouvrir un onglet. `nom` : le dossier artifacts/<nom>/ ; `chemin` : une page "
+                    "sous elle (facultatif)."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "nom": artefact["nom"],
+                        "chemin": {"type": "string", "description": "Page sous la création, ex. rapport.html."},
+                        "titre": {"type": "string", "description": "Titre de l'onglet (défaut : le nom)."},
+                        "projet": {
+                            "type": "string",
+                            "description": "Slug du projet ; défaut et seule valeur admise : celui de ta conversation.",
+                        },
+                    },
+                    "required": ["nom"],
+                },
+            },
+            # catalogue: reversible — déjà déclaré par l'équipe F (commandes/existants.py) ;
+            # sans inverse : le code expire seul en deux minutes, la session en une heure.
+            {
+                "name": "atelier_navigateur_ouvrir",
+                "description": (
+                    "Donne à ton navigateur (outils chrome) l'accès aux créations de ton projet, "
+                    "pour les vérifier. Rend une adresse d'entrée à usage unique, valable deux "
+                    "minutes : ouvre-la aussitôt avec ton outil de navigation. Elle ne vaut que "
+                    "pour le projet de ta conversation, jamais pour l'Atelier lui-même."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "projet": {
+                            "type": "string",
+                            "description": "Slug du projet ; défaut et seule valeur admise : celui de ta conversation.",
+                        },
+                        "chemin": {
+                            "type": "string",
+                            "description": "Où arriver, sous le projet : ex. carte/ ou carte/index.html (défaut : l'index).",
+                        },
+                    },
+                },
+            },
         ]
 
     @property
@@ -896,6 +945,92 @@ class OutilsAtelier:
                     fiche["sonde"] = {"chemin": chemin, "erreur": str(exc)}
             sortie["artefact"] = fiche
         return sortie
+
+    # ── Panneau et navigateur de l'agent ─────────────────────────────────
+    # Les deux outils agissent pour la conversation qui appelle, et elle seule :
+    # sans l'en-tête `X-Atelier-Conversation`, ils refusent. Un en-tête n'est
+    # pas une preuve (voir `mcp_endpoint`), mais la portée reste bornée au
+    # projet de la conversation nommée.
+
+    def _conversation_appelante(self) -> Any:
+        conversation = CONVERSATION_APPELANTE.get()
+        if not conversation:
+            raise _Refus(
+                "conversation inconnue : ta session MCP ne porte pas l'en-tête X-Atelier-Conversation"
+            )
+        rec = self.store.get(conversation)
+        if rec is None:
+            raise _Refus(f"conversation inconnue : {conversation}")
+        return rec
+
+    @staticmethod
+    def _projet_de(rec: Any, args: dict[str, Any]) -> str:
+        projet = (args.get("projet") or "").strip() or rec.slug
+        if projet != rec.slug:
+            raise _Refus(
+                f"projet refusé : {projet}. Ta conversation appartient au projet {rec.slug}, "
+                "et n'agit que sur lui."
+            )
+        return projet
+
+    def _outil_montrer(self, args: dict[str, Any]) -> Any:
+        from mcp_gateway.atelier.panneau import VueInvalide
+
+        service = self._service_apps()
+        panneau = getattr(service, "panneau", None)
+        if panneau is None:
+            raise _Refus("le panneau n'est pas disponible ici")
+        rec = self._conversation_appelante()
+        projet = self._projet_de(rec, args)
+        nom = (args.get("nom") or "").strip()
+        try:
+            # Une création qui n'existe pas ne s'ouvre pas : on le dit à l'agent
+            # plutôt que d'ouvrir chez la personne un onglet sur une page 404.
+            service.manifeste(projet, nom)
+        except LookupError as exc:
+            raise _Refus(str(exc)) from None
+        except ValueError:
+            pass  # un manifeste invalide se montre quand même : la page le dira
+        try:
+            vue = panneau.montrer(
+                rec.session_id,
+                projet=projet,
+                nom=nom,
+                chemin=str(args.get("chemin") or ""),
+                titre=str(args.get("titre") or ""),
+            )
+        except VueInvalide as exc:
+            raise _Refus(str(exc)) from None
+        log.info("montrer : agent:%s montre %s/%s", rec.session_id, projet, nom)
+        return {"vue": vue, "suite": "Le panneau de la conversation s'ouvre sur cette création."}
+
+    def _outil_navigateur_ouvrir(self, args: dict[str, Any]) -> Any:
+        from urllib.parse import quote
+
+        from mcp_gateway.atelier.apps.passage import DUREE_CODE_AGENT_S, PREFIXE_AGENT
+        from mcp_gateway.atelier.panneau import VueInvalide, chemin_valide
+
+        service = self._service_apps()
+        if not service.expose:
+            raise _Refus("pas d'hôte des applications sur cette installation")
+        rec = self._conversation_appelante()
+        projet = self._projet_de(rec, args)
+        try:
+            chemin = chemin_valide(str(args.get("chemin") or ""))
+        except VueInvalide as exc:
+            raise _Refus(str(exc)) from None
+        acteur = PREFIXE_AGENT + rec.session_id
+        try:
+            code = service.passage.emettre_code_agent(acteur, projet, f"/{projet}/{chemin}")
+        except ValueError as exc:
+            raise _Refus(str(exc)) from None
+        log.info("navigateur : %s reçoit un code de passage pour %s/%s", acteur, projet, chemin)
+        return {
+            "adresse": f"{service.origine}/_atelier/entree?code={quote(code, safe='')}",
+            "valable_s": DUREE_CODE_AGENT_S,
+            "portee": projet,
+            "suite": "Ouvre cette adresse maintenant avec ton outil de navigation ; elle ne sert qu'une fois.",
+        }
 
     # ── Outillage ───────────────────────────────────────────────────────
 

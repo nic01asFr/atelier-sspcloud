@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Atelier</title>
-  <link rel="stylesheet" href="/css/app.css?v=20250829-modal4" />
+  <link rel="stylesheet" href="/css/app.css?v=20260925-panneau1" />
 </head>
 <body>
   <div id="login" class="screen login hidden" aria-live="polite">
@@ -48,11 +48,12 @@
             <select id="session-project-select" class="session-project-select" hidden></select>
           </div>
           <div class="session-bar-actions">
-            <button type="button" id="session-apps-button" class="session-face-link" hidden aria-expanded="false" aria-controls="apps-panel">Applications</button>
+            <button type="button" id="session-fils-button" class="session-face-link" hidden aria-expanded="false" aria-controls="fils-panel" title="Échanges de cette conversation avec d'autres agents">Échanges</button>
+            <button type="button" id="session-panneau-button" class="session-face-link" hidden aria-expanded="false" aria-controls="panneau" title="Les créations du projet, à côté du fil">Panneau</button>
             <a id="session-vscode-link" class="session-face-link" hidden target="_blank" rel="noopener">VS Code</a>
           </div>
         </div>
-        <div id="apps-panel" class="apps-panel" hidden></div>
+        <div id="fils-panel" class="apps-panel fils-panel" hidden aria-live="polite"></div>
         <div id="banner" class="banner" hidden></div>
         <div id="thread" class="thread" aria-live="polite"></div>
         <form id="composer" class="composer">
@@ -93,6 +94,19 @@
           </div>
         </form>
       </main>
+      <!-- Le panneau : hors du fil, pour que ses cadres ne se rechargent pas
+           quand le fil se redessine. -->
+      <aside id="panneau" class="panneau" hidden aria-label="Panneau">
+        <div class="panneau-tete">
+          <button type="button" id="panneau-replier" class="ghost panneau-btn panneau-retour" title="Replier le panneau et revenir au fil" aria-label="Replier le panneau">Replier</button>
+          <div id="panneau-onglets" class="panneau-onglets" role="tablist" aria-label="Onglets du panneau"></div>
+          <button type="button" id="panneau-ajouter" class="ghost panneau-btn panneau-ajouter" title="Montrer une création du projet" aria-label="Montrer une création du projet">+</button>
+        </div>
+        <div id="panneau-outils" class="panneau-outils" hidden></div>
+        <p id="panneau-note" class="panneau-note" hidden></p>
+        <div id="panneau-catalogue" class="panneau-catalogue" hidden></div>
+        <div id="panneau-corps" class="panneau-corps"></div>
+      </aside>
     </div>
 
     <div id="view-assistant" class="view view-panel hidden" hidden>
@@ -168,6 +182,6 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=20250829-shell6"></script>
+  <script type="module" src="/js/app.js?v=20260925-panneau1"></script>
 </body>
 </html>

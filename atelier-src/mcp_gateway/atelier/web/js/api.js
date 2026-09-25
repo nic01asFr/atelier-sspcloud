@@ -400,6 +400,34 @@ function findToolBlock(blocks, toolId) {
  * Parse un transcript stream-json Claude Code en messages UI ordonnés.
  * @returns {Array<{ role: string, text?: string, blocks?: ContentBlock[] }>}
  */
+/** Le `systemMessage` d'un hook, sous les formes que le CLI lui donne (voir `events.py`). */
+export function messageSysteme(obj) {
+  if (!obj || typeof obj !== "object") return "";
+  if (typeof obj.systemMessage === "string" && obj.systemMessage.trim()) return obj.systemMessage.trim();
+  const sousType = obj.subtype || "";
+  if (!["informational", "hook_response", "hook_system_message", "stop_hook_summary"].includes(sousType)) return "";
+  for (const cle of ["output", "stdout"]) {
+    const brut = obj[cle];
+    if (typeof brut === "string" && brut.trim().startsWith("{")) {
+      try {
+        const sortie = JSON.parse(brut);
+        if (typeof sortie?.systemMessage === "string") return sortie.systemMessage.trim();
+      } catch {
+        /* pas du JSON : rien à dire */
+      }
+    }
+  }
+  const messages = obj.hookSystemMessages || obj.systemMessages;
+  if (Array.isArray(messages)) {
+    const dits = messages.filter((m) => typeof m === "string" && m.trim()).map((m) => m.trim());
+    if (dits.length) return dits.join(String.fromCharCode(10));
+  }
+  if (sousType === "informational" && typeof (obj.content || obj.message) === "string") {
+    return String(obj.content || obj.message).trim();
+  }
+  return "";
+}
+
 export function messagesFromTranscript(transcriptText) {
   const messages = [];
   if (!transcriptText) return messages;
@@ -516,6 +544,15 @@ export function messagesFromTranscript(transcriptText) {
         pushAssistant();
         messages.push({ role: "user", text: dit, rang: rangUser });
         rangUser += 1;
+      }
+    } else if (type === "system") {
+      // Ce qu'un hook a dit à la personne (relance de wikichat) : relu au
+      // rechargement comme il s'est affiché en direct.
+      const dit = messageSysteme(obj);
+      if (dit) {
+        flushText();
+        flushThink();
+        blocks.push({ type: "systeme", text: dit });
       }
     } else if (type === "result") {
       const denials = Array.isArray(obj.permission_denials) ? obj.permission_denials : [];
@@ -1077,6 +1114,45 @@ export async function deleteAgent(token, agentId) {
     method: "DELETE",
     headers: jsonHeaders(token),
   });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+// ── Le panneau à droite du fil, et les échanges wikichat ─────────────────
+
+/** Les onglets du panneau d'une conversation : épinglés au projet, puis à elle. */
+export async function panneauVues(sessionId) {
+  const res = await fetch(`/v1/panneau/${encodeURIComponent(sessionId)}`, { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Garde une vue avec la conversation (`epingle: "conversation"`) ou le projet. */
+export async function panneauEnregistrer(sessionId, vue) {
+  const res = await fetch(`/v1/panneau/${encodeURIComponent(sessionId)}/vues`, {
+    method: "PUT",
+    headers: jsonHeaders(),
+    body: JSON.stringify(vue),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+export async function panneauRetirer(sessionId, vueId) {
+  const res = await fetch(
+    `/v1/panneau/${encodeURIComponent(sessionId)}/vues/${encodeURIComponent(vueId)}`,
+    { method: "DELETE", headers: jsonHeaders() }
+  );
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Les échanges wikichat de la conversation (fils ouverts, par défaut). */
+export async function filsDeLaConversation(sessionId, statut = "ouvert") {
+  const res = await fetch(
+    `/v1/sessions/${encodeURIComponent(sessionId)}/fils?statut=${encodeURIComponent(statut)}`,
+    { headers: jsonHeaders() }
+  );
   if (!res.ok) await parseError(res);
   return res.json();
 }

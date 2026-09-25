@@ -6,6 +6,68 @@ import json
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
+def texte_sur(texte: str) -> str:
+    """Le texte sans demi-caractère : un emoji coupé en deux ne casse plus rien.
+
+    Le CLI est écrit en JavaScript, où une chaîne est en UTF-16. Un fragment
+    de flux peut s'arrêter entre les deux moitiés d'un emoji : le JSON porte
+    alors `\ud83d` seul, que Python lit comme un substitut isolé. Rien ne
+    l'écrit ensuite en UTF-8 — ni le journal, ni le flux vers le navigateur :
+    « surrogates not allowed », et le tour tombait. Deux moitiés voisines se
+    recollent ; une moitié seule devient U+FFFD.
+    """
+    if not texte or not any("\ud800" <= c <= "\udfff" for c in texte):
+        return texte
+    return texte.encode("utf-16", "surrogatepass").decode("utf-16", "replace")
+
+
+def sans_substituts(valeur: Any) -> Any:
+    """`texte_sur` appliqué à toute chaîne d'une structure JSON lue."""
+    if isinstance(valeur, str):
+        return texte_sur(valeur)
+    if isinstance(valeur, list):
+        return [sans_substituts(v) for v in valeur]
+    if isinstance(valeur, dict):
+        return {texte_sur(k) if isinstance(k, str) else k: sans_substituts(v) for k, v in valeur.items()}
+    return valeur
+
+
+# Les sous-types de ligne `system` qui peuvent porter un message pour la
+# personne. Le `systemMessage` d'un hook (relance `Stop` de wikichat,
+# docs/hooks-et-dialogue.md §4.3) arrive selon les versions du CLI sous l'un de
+# ces noms, ou dans le champ `systemMessage` lui-même. Non mesuré sur le pod.
+SOUS_TYPES_MESSAGE = ("informational", "hook_response", "hook_system_message", "stop_hook_summary")
+
+
+def message_systeme(obj: dict[str, Any]) -> str:
+    """Le message qu'un hook adresse à la personne, s'il y en a un."""
+    direct = obj.get("systemMessage")
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+    sous_type = obj.get("subtype")
+    if sous_type not in SOUS_TYPES_MESSAGE:
+        return ""
+    for cle in ("output", "stdout"):
+        brut = obj.get(cle)
+        if isinstance(brut, str) and brut.strip().startswith("{"):
+            try:
+                sortie = json.loads(brut)
+            except ValueError:
+                continue
+            if isinstance(sortie, dict) and isinstance(sortie.get("systemMessage"), str):
+                return sortie["systemMessage"].strip()
+    messages = obj.get("hookSystemMessages") or obj.get("systemMessages")
+    if isinstance(messages, list):
+        dits = [m.strip() for m in messages if isinstance(m, str) and m.strip()]
+        if dits:
+            return "\n".join(dits)
+    if sous_type == "informational":
+        contenu = obj.get("content") or obj.get("message")
+        if isinstance(contenu, str):
+            return contenu.strip()
+    return ""
+
+
 EventKind = Literal[
     "texte",
     "outil_debut",
@@ -31,7 +93,7 @@ class AtelierEvent:
     tool_id: str = ""
 
     def as_sse(self) -> str:
-        payload = asdict(self)
+        payload = sans_substituts(asdict(self))
         return f"event: {self.kind}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
@@ -60,9 +122,11 @@ def parse_stream_json_line(session_id: str, line: str) -> list[AtelierEvent]:
     if not line:
         return []
     try:
-        obj: dict[str, Any] = json.loads(line)
+        obj: dict[str, Any] = sans_substituts(json.loads(line))
     except json.JSONDecodeError:
-        return [AtelierEvent(kind="systeme", session_id=session_id, text=line, raw_type="unparsed")]
+        return [AtelierEvent(kind="systeme", session_id=session_id, text=texte_sur(line), raw_type="unparsed")]
+    if not isinstance(obj, dict):
+        return []
 
     t = obj.get("type") or ""
     events: list[AtelierEvent] = []
@@ -241,14 +305,23 @@ def parse_stream_json_line(session_id: str, line: str) -> list[AtelierEvent]:
         elif et == "content_block_stop":
             events.append(AtelierEvent(kind="outil_fin", session_id=session_id, raw_type=et))
     elif t == "system":
-        events.append(
-            AtelierEvent(
-                kind="systeme",
-                session_id=session_id,
-                text=str(obj.get("subtype") or obj.get("message") or ""),
-                raw_type=t,
+        dit = message_systeme(obj)
+        if dit:
+            # Un message pour la personne : l'interface l'affiche dans le fil.
+            events.append(
+                AtelierEvent(
+                    kind="systeme", session_id=session_id, text=dit, cause="message_systeme", raw_type=t
+                )
             )
-        )
+        else:
+            events.append(
+                AtelierEvent(
+                    kind="systeme",
+                    session_id=session_id,
+                    text=str(obj.get("subtype") or obj.get("message") or ""),
+                    raw_type=t,
+                )
+            )
     else:
         events.append(AtelierEvent(kind="systeme", session_id=session_id, text=t, raw_type=t))
 

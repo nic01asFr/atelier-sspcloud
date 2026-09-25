@@ -74,9 +74,16 @@ export async function buildMessagesFromServer(state, sessionId) {
       if (b.type === "decision" && b.demande?.request_id) connues.add(b.demande.request_id);
     }
   }
-  const restees = (await questionsRestees(state, sessionId)).filter(
-    (carte) => !connues.has(carte.blocks[0]?.demande?.request_id)
-  );
+  const restees = [];
+  for (const carte of await questionsRestees(state, sessionId)) {
+    const bloc = carte.blocks[0];
+    if (bloc?.type === "perimees") {
+      const neuves = bloc.demandes.filter((d) => !connues.has(d.request_id));
+      if (neuves.length) restees.push({ ...carte, blocks: [{ ...bloc, demandes: neuves }] });
+    } else if (!connues.has(bloc?.demande?.request_id)) {
+      restees.push(carte);
+    }
+  }
   return [...messages, ...restees];
 }
 
@@ -125,11 +132,11 @@ async function questionsRestees(state, sessionId) {
   for (const d of liste?.vives || []) {
     cartes.push({ role: "system", blocks: [{ type: "decision", demande: d, etat: "en_attente" }] });
   }
-  for (const d of liste?.orphelines || []) {
-    cartes.push({
-      role: "system",
-      blocks: [{ type: "decision", demande: d, etat: "orpheline" }],
-    });
+  // Les demandes dont le tour a disparu : une seule ligne repliée, pas une
+  // carte chacune avec des boutons qui ne servent plus (lot H).
+  const orphelines = liste?.orphelines || [];
+  if (orphelines.length) {
+    cartes.push({ role: "system", blocks: [{ type: "perimees", demandes: orphelines }] });
   }
   return cartes;
 }

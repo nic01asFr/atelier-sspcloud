@@ -3699,3 +3699,251 @@ button.session-face-link {
   font-size: 0.75rem;
   white-space: pre-wrap;
 }
+
+/* ── Le panneau : à droite du fil, hors du fil ─────────────────────────
+   Troisième colonne de la vue Code quand il est ouvert. Ses cadres ne sont
+   jamais recréés par le rendu du fil ; changer d'onglet ne fait que masquer. */
+.view-code.panneau-ouvert {
+  grid-template-columns: 240px minmax(22rem, 1fr) minmax(320px, 46%);
+}
+
+/* Sur un écran moyen, la liste des conversations laisse sa place : le fil et
+   le panneau passent avant. « Replier » la rend. */
+@media (max-width: 1280px) and (min-width: 721px) {
+  .view-code.panneau-ouvert {
+    grid-template-columns: minmax(20rem, 1fr) minmax(320px, 52%);
+  }
+
+  .view-code.panneau-ouvert .sidebar {
+    display: none;
+  }
+}
+
+.panneau {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--bg-elev);
+}
+
+.panneau-tete {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.panneau-onglets {
+  display: flex;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.panneau-onglet {
+  flex: 0 0 auto;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.82rem;
+  padding: 0.3rem 0.6rem;
+  cursor: pointer;
+}
+
+.panneau-onglet[aria-selected="true"] {
+  color: var(--text);
+  background: var(--bg);
+  border-color: var(--line);
+}
+
+.panneau-onglet-projet::before {
+  content: "• ";
+  color: var(--accent);
+}
+
+.panneau-btn {
+  min-height: 2rem;
+  font-size: 0.8rem;
+}
+
+.panneau-btn-actif {
+  color: var(--accent);
+}
+
+.panneau-ajouter {
+  min-width: 2rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.panneau-outils {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.panneau-note {
+  margin: 0;
+  padding: 0.4rem 0.75rem;
+  color: #f0a8a0;
+  font-size: 0.8rem;
+}
+
+.panneau-catalogue {
+  padding: 0.6rem 0.9rem;
+  overflow: auto;
+  font-size: 0.82rem;
+}
+
+.panneau-corps {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: #fff;
+}
+
+.panneau-corps:empty {
+  background: transparent;
+}
+
+.panneau-cadre {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+/* Au téléphone : une feuille plein écran, par-dessus le fil. « Replier »
+   y ramène ; la conversation reste en dessous, intacte. */
+@media (max-width: 720px) {
+  .view-code.panneau-ouvert {
+    grid-template-columns: 1fr;
+  }
+
+  .panneau {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    border-left: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .panneau-btn {
+    min-height: 2.5rem;
+  }
+}
+
+/* ── Échanges avec d'autres agents (fils wikichat) ─────────────────── */
+.fil-sujet {
+  flex-basis: 100%;
+  color: var(--text);
+}
+
+.fil-message {
+  flex-basis: 100%;
+  color: var(--muted);
+  font-size: 0.78rem;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--line);
+}
+
+.fil-en-retard {
+  color: #f0a8a0;
+}
+
+/* ── Ce qu'un hook dit à la personne, dans le fil ───────────────────── */
+.msg-systeme {
+  margin: 0.35rem 0;
+  padding: 0.3rem 0.6rem;
+  border-left: 2px solid var(--accent-dim);
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+}
+
+/* ── Demandes d'un tour disparu : repliées en historique ────────────── */
+.msg-perimees,
+.msg-decision-pliee {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.msg-perimees > summary,
+.msg-decision-pliee > summary {
+  cursor: pointer;
+  padding: 0.2rem 0;
+}
+
+.msg-perimees-liste {
+  margin: 0.3rem 0 0.4rem 1.1rem;
+  padding: 0;
+}
+
+/* ── Écrans tactiles : rien ne se découvre au survol ───────────────────
+   Les gestes d'un message et le « + » d'un projet restaient invisibles ou
+   trop petits au doigt (lot H). */
+@media (hover: none) {
+  .msg-actions {
+    opacity: 1;
+  }
+}
+
+.project-head {
+  grid-template-columns: 1.4rem 1fr 2.25rem;
+}
+
+.project-new {
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  font-size: 1.15rem;
+}
+
+/* Le fil rétréci par le panneau : le composeur tient dans sa colonne. */
+.composer-input-footer {
+  flex-wrap: wrap;
+}
+
+.view-code.panneau-ouvert .composer {
+  grid-template-columns: minmax(0, 1fr);
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+.view-code.panneau-ouvert .composer-mode {
+  min-width: 0;
+  max-width: 11rem;
+}
+
+/* La carte d'action d'une commande de l'Atelier (format commun, §1.8). */
+.msg-carte {
+  margin: 0.35rem 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--accent-dim);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+}
+
+.msg-carte p {
+  margin: 0.2rem 0;
+}
+
+.msg-carte-preuve {
+  color: var(--muted);
+  font-size: 0.78rem;
+}

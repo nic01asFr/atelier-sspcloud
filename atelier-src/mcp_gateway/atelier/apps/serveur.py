@@ -17,12 +17,17 @@ Ingress, autre origine. On n'y trouve rien de l'Atelier — ni `/v1`, ni
 Toute requête dont l'hôte n'est pas celui des applications reçoit 421 : un
 Ingress mal réglé ne doit pas faire servir ce contenu sous une autre adresse,
 encore moins sous celle de l'Atelier.
+
+Toute réponse sort avec une seule politique de cadrage : l'Atelier, et lui
+seul, peut l'encadrer (voir `cadrage`). C'est ce qui permet au panneau de
+montrer une création à côté du fil.
 """
 
 from __future__ import annotations
 
 import html
 import logging
+import time
 from typing import Any, Callable
 from urllib.parse import quote
 
@@ -42,6 +47,7 @@ from starlette.websockets import WebSocket
 
 from mcp_gateway.atelier import artifacts as art
 from mcp_gateway.atelier.apps import proxy as px
+from mcp_gateway.atelier.apps.cadrage import CadrageDesReponses
 from mcp_gateway.atelier.apps.manifeste import Manifeste, ManifesteInvalide, nom_valide
 from mcp_gateway.atelier.apps.passage import COOKIE_APPS, DUREE_SESSION_S, destination_valide
 from mcp_gateway.atelier.apps.service import ApplicationInconnue, ServiceApps
@@ -139,6 +145,10 @@ def construire_app_apps(service: ServiceApps, *, origine_atelier: Callable[[], s
         s = service.passage.session(request.cookies.get(COOKIE_APPS))
         return s is not None and s.couvre(portee)
 
+    def acteur_de(request: Request | WebSocket) -> str:
+        s = service.passage.session(request.cookies.get(COOKIE_APPS))
+        return s.acteur if s is not None else ""
+
     def vers_l_entree(request: Request) -> Response:
         """Sans session : retour à l'Atelier, qui émettra un code."""
         atelier = (origine_atelier() or "").rstrip("/")
@@ -172,10 +182,13 @@ def construire_app_apps(service: ServiceApps, *, origine_atelier: Callable[[], s
             )
         session = service.passage.ouvrir(code, request.cookies.get(COOKIE_APPS))
         reponse = RedirectResponse(code.destination, 302, headers=ENTETES_PASSAGE)
+        if session.est_agent:
+            log.info("passage d'agent : %s ouvre %s", session.acteur, code.destination)
         reponse.set_cookie(
             COOKIE_APPS,
             session.id,
-            max_age=DUREE_SESSION_S,
+            # Le cookie ne survit pas à sa session : une heure pour un agent.
+            max_age=max(1, min(DUREE_SESSION_S, int(session.expire - time.time()))),
             path="/",
             secure=True,
             httponly=True,
@@ -297,6 +310,7 @@ def construire_app_apps(service: ServiceApps, *, origine_atelier: Callable[[], s
             prefixe=prefixe,
             hote_public=service.hote,
             client_ip=(request.client.host if request.client else ""),
+            acteur=acteur_de(request),
         )
         plafond = manifeste.corps_max_mo * 2**20
         annonce = request.headers.get("content-length")
@@ -391,6 +405,7 @@ def construire_app_apps(service: ServiceApps, *, origine_atelier: Callable[[], s
             hote_public=service.hote,
             client_ip=(websocket.client.host if websocket.client else ""),
             websocket=True,
+            acteur=acteur_de(websocket),
         )
         await relayer(
             websocket,
@@ -420,7 +435,7 @@ def construire_app_apps(service: ServiceApps, *, origine_atelier: Callable[[], s
     app = Starlette(routes=routes)
     app.state.service = service
     app.state.fermer_clients = fermer_clients
-    garde = GardeDeLHote(app, lambda: service.hote)
+    garde = GardeDeLHote(CadrageDesReponses(app, origine_atelier), lambda: service.hote)
     garde.interne = app  # type: ignore[attr-defined]
     return garde
 

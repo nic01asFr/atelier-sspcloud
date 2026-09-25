@@ -1,5 +1,9 @@
 /**
- * Le panneau « Applications » d'un projet : ses artefacts.
+ * La liste des créations d'un projet (le catalogue du panneau).
+ *
+ * Dans le panneau (`actions.montrer` fourni), « Montrer » ouvre la création
+ * dans un onglet du panneau, à côté du fil : plus de nouvel onglet du
+ * navigateur. Sans lui, l'ancien lien « Ouvrir » demeure.
  *
  * Il remplace le lien « Artefacts ». Un artefact est un dossier
  * `artifacts/<nom>/` et une adresse : autonome (des fichiers, en bac à sable)
@@ -58,7 +62,7 @@ function bouton(libelle, action, { desactive = false, titre = "" } = {}) {
  */
 export function rendrePanneauApplications(conteneur, etat, actions) {
   const liste = el("div", "apps-liste");
-  const titre = el("div", "apps-titre", "Artefacts du projet");
+  const titre = el("div", "apps-titre", "Créations du projet");
   liste.appendChild(titre);
 
   if (!etat.expose) {
@@ -66,13 +70,15 @@ export function rendrePanneauApplications(conteneur, etat, actions) {
       el(
         "p",
         "apps-note",
-        "Pas d'hôte des applications sur cette installation : les artefacts serveur se démarrent, mais ne s'ouvrent pas.",
+        "Pas d'hôte des applications sur cette installation : les applications se démarrent, mais ne s'ouvrent pas.",
       ),
     );
   }
 
-  // L'index du dossier `artifacts/` : toujours là, même vide.
+  // L'index du dossier `artifacts/` : toujours là, même vide. Dans le
+  // panneau, on montre les créations une à une : l'index n'y a pas d'onglet.
   const artefacts = el("div", "apps-ligne");
+  artefacts.hidden = !!actions.montrer;
   artefacts.appendChild(el("span", "apps-nom", "Index"));
   artefacts.appendChild(el("span", "apps-etat", "dossier artifacts/"));
   const lienArtefacts = el("a", "session-face-link apps-ouvrir", "Ouvrir");
@@ -84,7 +90,7 @@ export function rendrePanneauApplications(conteneur, etat, actions) {
 
   const fiches = etat.artefacts || [];
   if (!fiches.length) {
-    liste.appendChild(el("p", "apps-note", "Aucun artefact (dossier artifacts/<nom>/)."));
+    liste.appendChild(el("p", "apps-note", "Aucune création pour l'instant (dossier artifacts/<nom>/)."));
   }
 
   const zoneJournal = el("pre", "apps-journal");
@@ -105,7 +111,11 @@ export function rendrePanneauApplications(conteneur, etat, actions) {
       ligne.appendChild(auteur);
     }
 
-    if (f.ouvrir && f.etat !== "invalide") {
+    if (actions.montrer && f.etat !== "invalide" && (etat.expose || f.mode !== "serveur")) {
+      ligne.appendChild(
+        bouton("Montrer", () => actions.montrer(f), { titre: "Afficher dans le panneau, à côté du fil" }),
+      );
+    } else if (f.ouvrir && f.etat !== "invalide") {
       const lien = el("a", "session-face-link apps-ouvrir", "Ouvrir");
       lien.setAttribute("href", f.ouvrir);
       lien.setAttribute("target", "_blank");

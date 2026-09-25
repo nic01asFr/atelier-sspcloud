@@ -164,7 +164,10 @@ def enregistrer_routes_apps(
         )
 
     @router.get("/apps/{slug}/{nom}/ouvrir", response_model=None)
-    async def apps_ouvrir(slug: str, nom: str, request: Request, _owner: str = Depends(require_owner_nav)):
+    async def apps_ouvrir(
+        slug: str, nom: str, request: Request, chemin: str = "", _owner: str = Depends(require_owner_nav)
+    ):
+        """Ouvre une création (et, avec `chemin`, une page sous elle) : le panneau s'en sert."""
         try:
             manifeste = service.manifeste(slug, nom)
         except ERREURS as exc:
@@ -183,4 +186,7 @@ def enregistrer_routes_apps(
                 await service.demarrer(slug, nom, attendre=False)
             except ERREURS as exc:
                 log.info("ouverture de %s/%s : %s", slug, nom, exc)
-        return renvoi_par_code(service, sid, slug, f"/{slug}/{nom}/")
+        destination = f"/{slug}/{nom}/" + chemin.lstrip("/")
+        if not destination_valide(destination, slug):
+            raise HTTPException(400, "chemin invalide")
+        return renvoi_par_code(service, sid, slug, destination)

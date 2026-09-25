@@ -12,6 +12,10 @@ mandataire doit transformer :
 - `/cookie` : pose des cookies (Domain, Path, `__Host-`) ;
 - `/redirige` : un `Location` vers la racine, un autre vers l'amont lui-même ;
 - `/csp` : une CSP à elle, sans `frame-ancestors`, et `Service-Worker-Allowed` ;
+- `/nu` : une réponse sans aucun en-tête, comme l'éditeur n8n du namespace
+  (mesure A6 : ni `X-Frame-Options` ni CSP) ;
+- `/cadre` : ce que rend n8n selon sa version, `X-Frame-Options: SAMEORIGIN`, et une CSP qui
+  ouvre l'encadrement à tous (`frame-ancestors *`) ;
 - `/ws` : écho texte et binaire, sous-protocole `echo.v1`, fermeture 4001
   sur le message « ferme ».
 """
@@ -81,6 +85,21 @@ async def csp(request: Request) -> Response:
     )
 
 
+async def nu(request: Request) -> Response:
+    """Une réponse sans aucun en-tête, pas même `content-type`."""
+    r = Response(b"nu")
+    r.raw_headers = []
+    return r
+
+
+async def cadre(request: Request) -> Response:
+    r = PlainTextResponse("ok")
+    r.raw_headers.append((b"x-frame-options", b"SAMEORIGIN"))
+    r.raw_headers.append((b"content-security-policy", b"default-src 'self'; frame-ancestors *"))
+    r.raw_headers.append((b"content-security-policy", b"frame-ancestors https://ailleurs.test"))
+    return r
+
+
 async def ws(websocket: WebSocket) -> None:
     demandes = websocket.scope.get("subprotocols") or []
     await websocket.accept(subprotocol="echo.v1" if "echo.v1" in demandes else None)
@@ -109,6 +128,8 @@ app = Starlette(
         Route("/cookie", cookie),
         Route("/redirige", redirige),
         Route("/csp", csp),
+        Route("/cadre", cadre),
+        Route("/nu", nu),
         WebSocketRoute("/ws", ws),
     ]
 )

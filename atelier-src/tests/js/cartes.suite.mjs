@@ -133,7 +133,7 @@ function demandeQuestion(questions, extra = {}) {
     }),
   });
 
-  porte(texte(carte), "sans réponse possible", "une autorisation relâchée le dit aussi");
+  porte(texte(carte), "restée sans réponse", "une autorisation relâchée le dit aussi, repliée en une ligne (lot H)");
   porte(texte(carte), "Toujours", "mais elle explique que la décision peut encore être retenue");
   verifier(
     carte.querySelector(".msg-decision-toujours") !== null,

@@ -4,6 +4,105 @@
 25/09/2026. Suit le format de `docs/vision/cadre.md`. **Proposition, à
 valider.** Aucun code n'a été modifié pour l'écrire.
 
+## État (vague 1, équipe P, 25/09/2026, branche `panneau`)
+
+Ce document reste la proposition d'origine ; cette section dit ce qui en est
+construit. Le mot « vue » ci-dessous est un mot interne : à l'écran, on dit
+« panneau », « onglet », « création », « Montrer » (`decisions.md` S2).
+
+### Fait
+
+| Étape | Ce qui existe | Où |
+|---|---|---|
+| **P0 — encadrable** | Une seule politique de cadrage pour toute réponse de l'hôte des applications : `frame-ancestors <origine de l'Atelier>`, ni `'self'` ni ce que l'amont déclare ; `X-Frame-Options` retiré ; `'none'` sans origine connue. Posée par un intergiciel à la sortie de l'hôte (fichiers des créations, mandataire, pages d'erreur), et par le mandataire lui-même. Un amont qui n'envoie aucun en-tête (l'éditeur n8n, mesure A6) sort restreint. | `apps/cadrage.py`, `apps/serveur.py`, `apps/proxy.py` |
+| **A7 vérifié** | Voir ci-dessous. | — |
+| **P1 — le panneau** | Colonne à droite du fil, **hors du fil** : un cadre par onglet, gardé d'un rendu à l'autre (mesuré dans Chrome : un tour complet affiché, zéro rechargement du cadre). Boutons : Épingler au projet / Épinglée au projet, Recharger, Détacher (onglet du navigateur), Fermer ; « + » ouvre le catalogue des créations du projet, dont « Montrer » remplace l'ancien lien « Ouvrir » vers un nouvel onglet. Au téléphone (≤ 720 px) : feuille plein écran, « Replier » ramène au fil. Entre 721 et 1280 px, la liste des conversations cède sa place quand le panneau est ouvert. | `web/js/views/panneau.js`, `web/index.html`, `web/css/app.css` |
+| **Épingler (J-e)** | À la conversation : `<work>/panneau/<conversation>.json`, **à côté** de la fiche et non dedans (un tour en cours réécrit sa fiche en finissant : une vue montrée pendant le tour y serait perdue). Au projet : `.atelier/projet.json`, clé `vues_epinglees` (`[{nom, chemin, titre}]`), le reste du fichier intact. | `panneau.py` |
+| **P2 — `atelier_montrer`** | Outil de la porte `atelier` : la conversation vient de `X-Atelier-Conversation` (refus sans lui), le projet est celui de la conversation (refus d'un autre), la création doit exister. Épingle à la conversation et publie `systeme/panneau_montrer` sur le flux en direct : le panneau s'ouvre seul sur l'onglet (J-f), même pendant le tour. Classe `reversible`, déclarée par l'équipe F (`commandes/existants.py`). | `outils_conversation.py`, `panneau.py`, `controllers/chat.js` |
+| **Passage d'agent (J-h)** | `atelier_navigateur_ouvrir(projet, chemin)` émet un code d'agent : acteur `agent:<conversation>`, projet de la conversation seul, deux minutes, usage unique. Consommé à `/_atelier/entree`, il ouvre une session d'applications d'une heure, sans session owner, qui ne s'élargit jamais (ni par un code owner ni par un autre code d'agent). L'Atelier ne reconnaît pas ce cookie. L'application relayée reçoit `X-Atelier-Acces: agent`. Aucune destination de passage (owner ou agent) ne porte de segment `.` ou `..`. | `apps/passage.py`, `outils_conversation.py` |
+| **Routes** | `GET /v1/panneau/{id}`, `PUT /v1/panneau/{id}/vues`, `DELETE /v1/panneau/{id}/vues/{vue}`, `GET /v1/apps/{projet}/{nom}/ouvrir?chemin=`, `GET /v1/sessions/{id}/fils`. Une ligne d'enregistrement dans `api.py`. | `panneau.py`, `apps/routes.py` |
+| **wikichat dans l'interface** | Le `systemMessage` d'un hook (relance `Stop`) devient l'événement `systeme/message_systeme`, affiché dans le fil à sa place, en direct et au rechargement. Les fils d'une conversation (`127.0.0.1:3777/api/fils?session=`, identifiant Claude puis Atelier) s'affichent sous la barre : bouton « Échanges » (seulement s'il y en a), qui attend qui, retard, trois derniers messages. wikichat injoignable : liste vide, dite telle. | `events.py`, `panneau.py`, `web/js/views/fils.js` |
+| **Lot H** | Réponse en double (la traîne d'un tour lancé d'ici, arrivée en retard par le flux en direct, ouvrait une seconde bulle) ; titres tirés d'un premier message HTML ou en code (et réparation des fiches déjà mal titrées) ; double fiche pour un même fil (adoption concurrente, reproduite en test sans verrou) ; « + » d'un projet agrandi et nommé, gestes des messages visibles au doigt ; mode choisi avant le premier message ; demandes d'un tour disparu repliées en une ligne, « Classer » les retire ; demi-emoji (substitut isolé) dans le flux SSE et l'absorption du transcript du CLI. | `web/js/…`, `sessions.py`, `events.py` |
+| **Cartes d'action** | Le champ `carte` que rendent les commandes (format de F, transverse §1.8) se lit dans le détail d'un outil (titre, résumé, preuve, « Voir » limité à une adresse de l'Atelier ou en https). | `ui/message-render.js` |
+
+### Vérification A7 (passage par code et cookie `__Host-atelier_apps` dans une iframe)
+
+Essai dans Chrome le 25/09, Atelier lancé en local en mode factice sur deux
+origines du même site, `http://atelier.app.localhost:8787` et
+`http://apps.app.localhost:8788` (même site `app.localhost`, comme
+`*.user.lab.sspcloud.fr` sur le pod), iframe avec l'attribut `sandbox` du
+panneau (dont `allow-same-origin`) :
+
+- **iframe vers `/v1/apps/demo/site/ouvrir`** : 302 → `/_atelier/entree?code=…`
+  → 302 → `/demo/site/` (le cookie d'applications posé dans l'iframe est
+  renvoyé : pas de retour vers l'Atelier) → 302 → page sous jeton, 200, feuille
+  de style chargée, script exécuté, `top` inaccessible. **Fonctionne.**
+- **iframe directement sur l'hôte des applications, sans cookie** : 302 →
+  `/v1/apps/entree?suite=…` sur l'Atelier (le cookie Lax de l'Atelier part dans
+  l'iframe) → code → 302 → page. **Fonctionne.**
+- **encadrement par une autre origine du même site** (`voisin.app.localhost`) :
+  bloqué par `frame-ancestors` (« violates … frame-ancestors
+  http://atelier.app.localhost:8787 »).
+
+Limites : en `http` sur `*.localhost` (où Chrome accepte `Secure`) et non en
+`https` sur le pod ; un artefact **serveur** n'a pas été essayé en cadre (le
+superviseur ne lance pas de processus sous Windows), seulement des fichiers.
+Le comportement attendu sur le pod est le même (même site, cookies Lax), à
+confirmer au déploiement.
+
+### Vérifié dans Chrome (local, mode factice)
+
+Catalogue et « Montrer » depuis le panneau ; onglet gardé pendant un tour
+(zéro rechargement) ; épingler au projet (écrit `.atelier/projet.json`, visible
+dans une nouvelle conversation du projet) ; feuille plein écran à 390 px sans
+défilement horizontal ; mode « Plan » choisi avant le premier message et posé
+sur la conversation dès sa création ; composeur tenant dans la colonne
+rétrécie. Une fois, un premier envoi est parti deux fois (deux
+`/events?message=…` à 1,3 s d'écart), non reproduit ensuite : voir « Reste ».
+
+### Non vérifié
+
+- `atelier_montrer` appelé par un vrai agent (la porte `/mcp` n'existe pas en
+  mode factice) : la chaîne outil → flux en direct → panneau est couverte par
+  les tests (Python et suite JS), pas vue de bout en bout.
+- Le format réel du `systemMessage` dans le flux stream-json du CLI du pod
+  (2.1.281) : le CLI local (2.1.86) ne l'émet pas en `-p`. L'analyse accepte
+  `systemMessage`, `informational`, `hook_response` et voisins ; à mesurer
+  (équipe M).
+- Les échanges wikichat contre un vrai wikichat (testé contre le contrat, en
+  double).
+- Le tactile réel (émulé seulement).
+
+### Reste
+
+- **Vague 2** : P3 (hôte MCP Apps : pont `postMessage`, contexte de vue,
+  « Montrer » depuis une vue, interfaces `ui://`) ; P4 (bureaux noVNC relayés
+  par l'hôte des applications, jeton du service posé côté serveur, jamais dans
+  une URL servie au navigateur ; Blender `/canvas` = `/desktop`, `/stream`
+  MJPEG authentifié) ; page Gardiens et onglet Automates (sur l'API de G) ;
+  « Annuler » des cartes d'action.
+- **Envoi rejoué** : l'adresse du flux porte le message ; une reconnexion
+  d'`EventSource` relancerait le tour. Proposition au coordinateur (fichier
+  partagé `api.py`) : un identifiant d'envoi dans l'adresse, refusé la seconde
+  fois.
+- **Journal** (équipe F) : `journal.fondre` relit le transcript du CLI ; un
+  demi-emoji y ferait encore échouer la réponse de
+  `/v1/sessions/{id}/transcript`. Appliquer `events.sans_substituts` à la
+  lecture.
+- Fiches déjà doublées sur le pod : à ranger à la main (le verrou empêche les
+  nouvelles).
+- Assistant qui ouvre le navigateur sur les projets qu'il a le droit de voir
+  (J-h, second cas) ; profil de navigateur des gardiens ; l'acteur au journal
+  unique de F (aujourd'hui : journal du service).
+- `/chrome/view` et `/chrome/novnc` toujours servis dans l'origine de
+  l'Atelier (P4/P5).
+- Iframes imbriquées dans une création : `frame-ancestors` exclut l'hôte des
+  applications lui-même, une création ne peut donc pas en encadrer une autre.
+  Voulu ; à revoir si un besoin apparaît.
+- Poignée de largeur du panneau, deux flux vivants au plus, vignettes (P4/P5).
+
+---
+
 ## En une phrase
 
 À droite de chaque conversation, un **panneau** à onglets montre des **vues** :

@@ -361,13 +361,74 @@ def test_les_defauts_de_securite_sont_poses(hote: Hote) -> None:
     attendre_pret(hote, cookie)
     with client(cookie) as c:
         r = c.get(f"{hote.base}/demo/amont/csp")
-        assert r.headers["content-security-policy"] == f"default-src 'self'; frame-ancestors 'self' {ATELIER}"
+        assert r.headers.get_list("content-security-policy") == ["default-src 'self'", f"frame-ancestors {ATELIER}"]
         assert "service-worker-allowed" not in r.headers
         assert r.headers["x-content-type-options"] == "nosniff"
         assert r.headers["referrer-policy"] == "same-origin"
         assert r.headers["x-accel-buffering"] == "no"
         r = c.get(f"{hote.base}/demo/amont/health")
-        assert r.headers["content-security-policy"] == f"frame-ancestors 'self' {ATELIER}"
+        assert r.headers.get_list("content-security-policy") == [f"frame-ancestors {ATELIER}"]
+
+
+# ── Le cadrage : l'Atelier, et lui seul, encadre ce que sert l'hôte ────
+
+
+def _directives_de_cadrage(r: httpx.Response) -> list[str]:
+    """Toutes les directives `frame-ancestors` que le navigateur appliquera."""
+    vues = []
+    for csp in r.headers.get_list("content-security-policy"):
+        for d in csp.split(";"):
+            d = d.strip()
+            if d.lower().startswith("frame-ancestors"):
+                vues.append(d)
+    return vues
+
+
+def test_l_amont_ne_choisit_pas_qui_l_encadre(hote: Hote) -> None:
+    """n8n rend `X-Frame-Options: SAMEORIGIN` : le panneau ne pourrait pas l'afficher."""
+    cookie = entrer(hote, "demo")
+    attendre_pret(hote, cookie)
+    with client(cookie) as c:
+        r = c.get(f"{hote.base}/demo/amont/cadre")
+    assert r.status_code == 200
+    assert "x-frame-options" not in r.headers
+    assert _directives_de_cadrage(r) == [f"frame-ancestors {ATELIER}"]
+    # Le reste de la CSP de l'application tient toujours.
+    assert "default-src 'self'" in r.headers.get_list("content-security-policy")
+
+
+def test_un_amont_sans_aucun_entete_est_restreint_a_l_atelier(hote: Hote) -> None:
+    """Mesure A6 : l'éditeur n8n n'envoie rien ; relayé, il ne s'encadre que dans l'Atelier."""
+    cookie = entrer(hote, "demo")
+    attendre_pret(hote, cookie)
+    with client(cookie) as c:
+        r = c.get(f"{hote.base}/demo/amont/nu")
+    assert r.status_code == 200 and r.text == "nu"
+    assert _directives_de_cadrage(r) == [f"frame-ancestors {ATELIER}"]
+    assert "x-frame-options" not in r.headers
+
+
+def test_les_fichiers_d_une_creation_ne_s_encadrent_que_dans_l_atelier(hote: Hote) -> None:
+    cookie = entrer(hote, "demo")
+    with client(cookie) as c:
+        r = c.get(f"{hote.base}/demo/site/", follow_redirects=True)
+    assert r.status_code == 200 and "site" in r.text
+    assert _directives_de_cadrage(r) == [f"frame-ancestors {ATELIER}"]
+    # Le bac à sable des fichiers reste entier : seul le cadrage a changé.
+    assert any(csp.startswith("sandbox allow-scripts") for csp in r.headers.get_list("content-security-policy"))
+    assert "allow-same-origin" not in " ".join(r.headers.get_list("content-security-policy"))
+
+
+def test_les_pages_de_l_hote_ont_la_meme_politique(hote: Hote) -> None:
+    """Lien expiré, 404, renvoi vers l'Atelier : rien ne s'encadre ailleurs."""
+    with client() as c:
+        for r in (
+            c.get(f"{hote.base}/_atelier/entree", params={"code": "faux"}),
+            c.get(f"{hote.base}/demo/site/", headers={"Accept": "text/html"}),
+            c.get(f"{hote.base}/_sante"),
+        ):
+            assert _directives_de_cadrage(r) == [f"frame-ancestors {ATELIER}"], r.url
+            assert "x-frame-options" not in r.headers
 
 
 def test_une_ecriture_venue_d_un_voisin_est_refusee(hote: Hote) -> None:

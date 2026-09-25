@@ -134,7 +134,12 @@ export function createComposerInputController(ctx) {
   /** Le mode de travail se pose sur la conversation, pas sur le message. */
   async function onModeChange(ev) {
     const mode = ev.target.value;
-    if (!state.sessionId) return;
+    if (!state.sessionId) {
+      // Conversation pas encore née : le choix attend le premier message.
+      state.modeEnAttente = mode;
+      render();
+      return;
+    }
     try {
       const rec = await api.patchSession(state.token, state.sessionId, {
         permission_mode: mode,
