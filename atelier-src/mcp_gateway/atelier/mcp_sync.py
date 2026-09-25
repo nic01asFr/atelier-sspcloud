@@ -14,6 +14,7 @@ from mcp_gateway.atelier.config import AtelierSettings
 from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
 from mcp_gateway.atelier.mcp_secrets import (
     en_references,
+    en_references_fournies,
     est_une_reference,
     secrets_en_clair,
 )
@@ -77,6 +78,11 @@ def pour_le_home(servers: dict[str, Any]) -> dict[str, Any]:
     for nom, cfg in propre.items():
         if est_le_navigateur(nom) and isinstance(cfg, dict) and _est_notre_declaration(cfg):
             sortie[nom] = _declaration_hors_conversation(cfg)
+        elif isinstance(cfg, dict):
+            # Jamais un secret en clair dans ce fichier : les déclarations du
+            # pool deviennent leurs références `${ATELIER_MCP_…}`, dont
+            # `~/work/.secrets/claude-env.sh` porte les valeurs (env_secrets).
+            sortie[nom], _ = en_references(nom, cfg)
         else:
             sortie[nom] = cfg
     return sortie
@@ -654,6 +660,17 @@ def materialize_session_mcp(
         nom: resoudre_les_variables(cfg, session=session_id, agent=agent_name)
         for nom, cfg in merged.items()
     }
+    # Le fichier effectif ne porte plus de secret en clair : chaque valeur
+    # que l'environnement du tour fournit devient sa référence, que le CLI
+    # développe (mesuré sur le pod pour `--mcp-config`). Les valeurs viennent
+    # du fichier d'environnement unique, régénéré ici au besoin.
+    from mcp_gateway.atelier.env_secrets import ecrire_le_fichier
+
+    valeurs = ecrire_le_fichier(settings)
+    merged = {
+        nom: en_references_fournies(nom, cfg, valeurs) if isinstance(cfg, dict) else cfg
+        for nom, cfg in merged.items()
+    }
     cfg_path = settings.mcp_effective_dir / f"{session_id}.json"
     _atomic_write_json(cfg_path, {"mcpServers": merged})
     log.info(
@@ -688,6 +705,11 @@ def materialize_mcp_config(settings: AtelierSettings) -> Path:
     except OSError:
         pass
 
+    # Le pool a pu changer : les valeurs des références aussi.
+    from mcp_gateway.atelier.env_secrets import ecrire_le_fichier
+
+    ecrire_le_fichier(settings)
+
     durable_dir = settings.work_dir / ".claude"
     durable_dir.mkdir(parents=True, exist_ok=True)
     (durable_dir / "mcp-config.json").write_text(
@@ -717,11 +739,10 @@ def _merge_user_claude_json(path: Path, servers: dict[str, dict[str, Any]]) -> N
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     tmp.replace(path)
-    # Ce fichier porte les adresses des connecteurs, et parfois leurs jetons en
-    # clair — celui de n8n y était, en 644, affiché par `claude mcp list`. Le
-    # mettre en 600 ne protège pas des agents, qui tournent sous le même
-    # utilisateur ; il protège du reste. Le vrai remède est que les secrets
-    # n'y entrent pas — c'est le chantier OAuth.
+    # Ce fichier portait les jetons des connecteurs en clair — celui de n8n y
+    # était, en 644, affiché par `claude mcp list`. Il n'y a plus que des
+    # références (`pour_le_home`) ; le 600 reste, pour les adresses et pour
+    # ce que d'autres mains y écriraient.
     try:
         path.chmod(0o600)
     except OSError:

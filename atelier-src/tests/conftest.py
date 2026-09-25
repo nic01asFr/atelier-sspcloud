@@ -23,6 +23,19 @@ from mcp_gateway.atelier.api import build_app
 from mcp_gateway.atelier.config import AtelierSettings
 
 
+@pytest.fixture(autouse=True)
+def _maison_jetable(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Un HOME à soi pour chaque test.
+
+    L'Atelier écrit dans `~/.claude.json` à chaque liaison de projet (et donc
+    à chaque tour) : sans cela, la suite réécrirait celui de qui la lance.
+    """
+    maison = tmp_path_factory.mktemp("maison")
+    monkeypatch.setenv("HOME", str(maison))
+    monkeypatch.setenv("USERPROFILE", str(maison))
+    return maison
+
+
 def _port_sans_personne() -> int:
     """Un port où rien n'écoute : le relais LLM y est « absent »."""
     import socket

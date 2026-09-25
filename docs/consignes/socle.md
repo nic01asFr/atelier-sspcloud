@@ -18,7 +18,14 @@ un port que tu ouvres, tous les agents peuvent l'appeler ; un fichier que tu
   (`Bearer ${ATELIER_MCP_…}`), jamais des secrets ; il reste hors de git
   (l'Atelier l'ajoute au `.gitignore`). N'y écris jamais une valeur en clair :
   si un serveur du projet a besoin d'un jeton, voir `.atelier/env.json`
-  ci-dessous.
+  ci-dessous. Il porte ce que l'agent reçoit sur toutes les surfaces
+  (Atelier, VS Code, terminal) : l'Atelier le réécrit ; choisis les
+  connecteurs dans l'Atelier plutôt que de l'éditer.
+- Les valeurs des références sont dans un seul fichier,
+  `~/work/.secrets/claude-env.sh` (0600, généré par l'Atelier). Ton
+  environnement l'a déjà chargé : ne le lis pas, ne l'affiche pas, ne le
+  recopie pas. `env`, `printenv` ou `set` affichent ces valeurs : ne les lance
+  pas sans filtre.
 - Une variable dont une session a besoin (un jeton qu'un `.mcp.json` du
   projet référence en `${VOICE_TOKEN}`, par exemple) se demande dans
   `.atelier/env.json` : `{"VOICE_TOKEN": "voice_token"}`, où la valeur est un

@@ -74,36 +74,24 @@ def claude_extension_env(
         # La clé du modèle ne passe plus par ici : le CLI la lit lui-même
         # via `apiKeyHelper`, si bien qu'aucun fichier de réglages — ni
         # celui de VS Code, ni celui de Claude — n'a plus à la porter.
-        # Sans la clé de l'Atelier, en revanche, une conversation reprise
-        # dans VS Code ne peut plus atteindre sa porte MCP : le serveur
-        # répond, mais refuse faute d'authentification.
-        try:
-            cle = settings.owner_key_path.read_text(encoding="utf-8").strip()
-        except OSError:
-            cle = ""
-        if cle:
-            env.append({"name": "ATELIER_MCP_KEY", "value": cle})
-        # Les secrets des connecteurs : le `.mcp.json` d'un projet n'en porte
-        # que des références `${ATELIER_MCP_<SERVICE>_…}`. L'extension lance
-        # son `claude` avec ces variables-ci et nulle autre — code-server ne
-        # lui transmet rien de l'environnement de l'Atelier. Ils ne vont, comme
-        # la clé ci-dessus, que dans les réglages utilisateur, hors du projet.
-        from mcp_gateway.atelier.mcp_secrets import variables_du_pool
+        #
+        # Le reste — clé de l'Atelier, secrets des connecteurs, variables des
+        # projets — est ce que porte le fichier d'environnement unique
+        # (`~/work/.secrets/claude-env.sh`), régénéré puis relu ici : VS Code
+        # reçoit exactement ce que reçoivent le harnais, le shell et
+        # wikichat. L'extension lance son `claude` avec ces variables-ci et
+        # nulle autre — code-server ne lui transmet rien de l'environnement
+        # de l'Atelier. Elles ne vont que dans les réglages utilisateur de
+        # code-server, jamais dans un fichier du projet.
+        from mcp_gateway.atelier.env_secrets import (
+            chemin_du_fichier,
+            ecrire_le_fichier,
+            lire_le_fichier,
+        )
 
-        for nom, valeur in sorted(variables_du_pool(settings).items()):
+        ecrire_le_fichier(settings)
+        for nom, valeur in sorted(lire_le_fichier(chemin_du_fichier(settings)).items()):
             env.append({"name": nom, "value": valeur})
-        # Les variables que les projets demandent par `.atelier/env.json`.
-        # Les réglages de l'extension valent pour tous les dossiers : on y met
-        # celles de tous les projets (voir `env_projet`), jamais dans un
-        # fichier du projet.
-        from mcp_gateway.atelier.env_projet import variables_de_tous_les_projets
-
-        deja = {e["name"] for e in env}
-        for nom, valeur in sorted(
-            variables_de_tous_les_projets(settings.secrets_dir, settings.projects_dir).items()
-        ):
-            if nom not in deja:
-                env.append({"name": nom, "value": valeur})
     model = (settings.default_model or "").strip()
     if model:
         env.append({"name": "ANTHROPIC_MODEL", "value": model})

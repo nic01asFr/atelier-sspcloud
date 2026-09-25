@@ -550,6 +550,14 @@ def build_app(
                 write_claude_settings_env(settings)
             except OSError:
                 pass
+            # Le fichier d'environnement unique, pour le shell et wikichat
+            # qui le sourcent sans passer par nous.
+            from mcp_gateway.atelier.env_secrets import ecrire_le_fichier
+
+            try:
+                await asyncio.to_thread(ecrire_le_fichier, settings)
+            except OSError as exc:
+                log.warning("fichier d'environnement non écrit : %s", exc)
             # Le relais LLM, par qui toutes les surfaces parlent au modèle.
             # Lancé ici s'il manque (un pod où l'init ne l'a pas démarré) ;
             # détaché, il survit aux redémarrages de l'Atelier.

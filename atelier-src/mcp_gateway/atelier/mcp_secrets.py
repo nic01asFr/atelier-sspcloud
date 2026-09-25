@@ -103,6 +103,36 @@ def en_references(
     return sortie, variables
 
 
+def en_references_fournies(
+    service: str, config: dict[str, Any], valeurs: dict[str, str]
+) -> dict[str, Any]:
+    """La déclaration où chaque secret en clair que l'on fournit devient sa référence.
+
+    Seulement si la variable porte exactement la même valeur : un projet qui
+    déclare son propre jeton pour un service du pool garde le sien (et le
+    test de cohérence le signale), plutôt que de recevoir en silence celui du
+    pool.
+    """
+    references, variables = en_references(service, config)
+    if not variables:
+        return config
+    sortie = dict(config)
+    for champ in ("headers", "env"):
+        bloc = config.get(champ)
+        if not isinstance(bloc, dict):
+            continue
+        nouveau = dict(bloc)
+        for cle, valeur in bloc.items():
+            ref = (references.get(champ) or {}).get(cle)
+            if ref == valeur or not isinstance(ref, str):
+                continue
+            variable = nom_de_variable(service, str(cle), dans_env=champ == "env")
+            if variables.get(variable) is not None and valeurs.get(variable) == variables[variable]:
+                nouveau[cle] = ref
+        sortie[champ] = nouveau
+    return sortie
+
+
 def secrets_en_clair(config: dict[str, Any]) -> list[str]:
     """Les en-têtes et variables d'une déclaration qui portent un secret en clair."""
     trouves: list[str] = []

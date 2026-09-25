@@ -605,25 +605,16 @@ class ClaudeHarness(Harness):
         # tous les modèles servis acceptent ; une conversation qui en demande
         # un autre le dit par `--effort`, qui prime.
         env["CLAUDE_CODE_EFFORT_LEVEL"] = effort_accepte_partout(self.settings.effort)
-        # Clé de la porte MCP de l'Atelier. Elle passe par l'environnement du
-        # processus plutôt que par le `.mcp.json` : le fichier vit dans le
-        # dossier du projet, qu'on partage et qu'on versionne.
-        try:
-            cle = self.settings.owner_key_path.read_text(encoding="utf-8").strip()
-        except OSError:
-            cle = ""
-        if cle:
-            env["ATELIER_MCP_KEY"] = cle
-        # Les secrets des connecteurs, même raison : le `.mcp.json` d'un
-        # projet n'en porte que les références `${ATELIER_MCP_<SERVICE>_…}`,
-        # que le CLI développe avec ce qu'il trouve ici. Lus dans le pool à
+        # Les valeurs des références `${ATELIER_MCP_…}` (clé de l'Atelier,
+        # secrets des connecteurs, variables des projets) : celles du fichier
+        # d'environnement unique, `~/work/.secrets/claude-env.sh`, que VS Code,
+        # le shell et wikichat chargent aussi. Relu à la source et régénéré à
         # chaque lancement, pour qu'un jeton renouvelé serve au tour suivant.
-        from mcp_gateway.atelier.mcp_secrets import variables_du_pool
+        from mcp_gateway.atelier.env_secrets import ecrire_le_fichier
 
-        env.update(variables_du_pool(self.settings))
-        # Les variables que le projet demande, tirées de secrets par
-        # référence : un `.mcp.json` qui écrit `${VOICE_TOKEN}` les trouve ici.
-        # Résolues à chaque lancement, comme celles du pool.
+        env.update(ecrire_le_fichier(self.settings))
+        # Puis celles de ce projet-ci, qui priment sur la réunion de tous :
+        # deux projets peuvent donner au même nom deux secrets différents.
         env.update(self._variables_du_projet(cwd))
         # Identité de la session auprès du coordinateur. Le `.mcp.json` la
         # relaie dans l'adresse SSE (`?agent=`). Sans elle, la session se

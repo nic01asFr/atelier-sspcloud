@@ -105,10 +105,25 @@ def test_les_tours_du_projet_la_recoivent(reglages: AtelierSettings) -> None:
     racine = projet(reglages, "voix", {"VOICE_TOKEN": "voice_token"})
     harnais = ClaudeHarness(reglages)
     assert harnais._env("agent", racine)["VOICE_TOKEN"] == "jeton-voix"
-    # Un autre projet ne la reçoit pas.
+    # Un autre projet la reçoit aussi : le harnais charge le fichier
+    # d'environnement unique, comme VS Code et le shell, qui ne savent pas
+    # d'avance quel projet les attend (docs/coherence-projet.md, lot A). Même
+    # environnement sur toutes les surfaces plutôt qu'un cloisonnement que
+    # seul l'Atelier tenait.
     autre = reglages.projects_dir / "autre"
     autre.mkdir()
-    assert "VOICE_TOKEN" not in harnais._env("agent", autre)
+    assert harnais._env("agent", autre)["VOICE_TOKEN"] == "jeton-voix"
+
+
+def test_la_valeur_du_projet_prime_sur_la_reunion(reglages: AtelierSettings) -> None:
+    """Deux projets, un même nom, deux secrets : chaque tour a celui de son projet."""
+    secret(reglages, "voix_a", "jeton-a")
+    secret(reglages, "voix_b", "jeton-b")
+    a = projet(reglages, "a", {"VOICE_TOKEN": "voix_a"})
+    b = projet(reglages, "b", {"VOICE_TOKEN": "voix_b"})
+    harnais = ClaudeHarness(reglages)
+    assert harnais._env("agent", a)["VOICE_TOKEN"] == "jeton-a"
+    assert harnais._env("agent", b)["VOICE_TOKEN"] == "jeton-b"
 
 
 def test_un_secret_change_relance_le_processus(reglages: AtelierSettings) -> None:

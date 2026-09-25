@@ -216,6 +216,19 @@ for secret in atelier_owner_key atelier_internal_secret; do
 done
 chmod 600 "$SECRETS"/* 2>/dev/null || true
 
+# Le fichier d'environnement unique : les valeurs des références ${ATELIER_MCP_…}
+# que portent les fichiers MCP. L'Atelier le régénère (env_secrets.py) ; le
+# shell le charge, pour qu'un `claude` lancé au terminal ait les mêmes
+# connecteurs que dans l'Atelier et VS Code. Une ligne, posée une fois.
+ENV_SECRETS="$SECRETS/claude-env.sh"
+if [ -f "$HOME/.bashrc" ] || [ -w "$HOME" ]; then
+  if ! grep -qF "$ENV_SECRETS" "$HOME/.bashrc" 2>/dev/null; then
+    printf '\n# Atelier : valeurs des références ${ATELIER_MCP_...} (voir docs/coherence-projet.md)\n[ -r "%s" ] && . "%s"\n' \
+      "$ENV_SECRETS" "$ENV_SECRETS" >> "$HOME/.bashrc"
+    dire "~/.bashrc charge $ENV_SECRETS"
+  fi
+fi
+
 # L'identité git de la machine, si on nous la donne et qu'elle n'y est pas :
 # c'est elle qui signe les commits des projets, pas l'Atelier.
 if [ -n "${GIT_USER_EMAIL:-}" ] && [ -z "$(git config --global user.email 2>/dev/null)" ]; then
@@ -328,7 +341,11 @@ demarrer_wikichat() {
     avertir "wikichat non lancé : il lui faut la clé LLM"
     return
   fi
-  (cd "$SRC_WIKICHAT" && nohup env PORT="$PORT_WIKICHAT" \
+  # wikichat hérite du fichier d'environnement unique : les `claude` qu'il
+  # lance y trouvent les valeurs des références. Il doit aussi le relire à
+  # chaque lancement (docs/coherence-projet.md) : un jeton renouvelé après son
+  # démarrage ne serait pas dans son environnement.
+  (cd "$SRC_WIKICHAT" && { [ -r "$ENV_SECRETS" ] && . "$ENV_SECRETS"; true; } && nohup env PORT="$PORT_WIKICHAT" \
       ANTHROPIC_API_KEY="$(cat "$SECRETS/llm_api_key")" \
       ANTHROPIC_BASE_URL="$RELAIS_LLM" \
       WIKICHAT_ALLOWED_HOSTS=127.0.0.1,localhost \
