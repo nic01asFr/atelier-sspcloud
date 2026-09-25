@@ -88,8 +88,14 @@ def entetes_vers_amont(
     hote_public: str,
     client_ip: str,
     websocket: bool = False,
+    acteur: str = "",
 ) -> list[tuple[str, str]]:
-    """Les en-têtes que l'application reçoit : ceux du client, nettoyés, et les nôtres."""
+    """Les en-têtes que l'application reçoit : ceux du client, nettoyés, et les nôtres.
+
+    `acteur` vide : la personne (propriétaire). Sinon `agent:<conversation>` :
+    le navigateur d'un agent, entré par un code de passage d'agent ; une
+    application qui distingue les deux le lit dans `X-Atelier-Acces`.
+    """
     listes = _connexion_listes(v for k, v in bruts if k.lower() == "connection")
     sortie: list[tuple[str, str]] = []
     for cle, valeur in bruts:
@@ -112,8 +118,8 @@ def entetes_vers_amont(
         ("X-Forwarded-Host", hote_public),
         ("X-Forwarded-Proto", "https"),
         ("X-Forwarded-For", client_ip),
-        ("X-Atelier-Utilisateur", "proprietaire"),
-        ("X-Atelier-Acces", "proprietaire"),
+        ("X-Atelier-Utilisateur", acteur or "proprietaire"),
+        ("X-Atelier-Acces", "agent" if acteur else "proprietaire"),
     ]
     return sortie
 

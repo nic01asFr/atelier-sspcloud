@@ -1162,6 +1162,7 @@ def build_app(
 
     from mcp_gateway.atelier import artifacts as art
     from mcp_gateway.atelier.apps.routes import enregistrer_routes_apps, renvoi_par_code
+    from mcp_gateway.atelier.panneau import enregistrer_panneau
     from mcp_gateway.atelier.artefacts_servis import ServeurArtefacts
 
     def _secret_artefacts() -> bytes:
@@ -1286,6 +1287,9 @@ def build_app(
         require_owner_nav=require_owner_nav,
         session_de=_session_owner,
     )
+    # Le panneau à droite du fil, et les fils wikichat d'une conversation.
+    enregistrer_panneau(app, router, settings=settings, store=store, projects=projects,
+                        service_apps=service_apps, diffusion=diffusion, require_owner=require_owner)
 
     @router.post("/sessions")
     def create_session(

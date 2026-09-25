@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import html
 import logging
+import time
 from typing import Any, Callable
 from urllib.parse import quote
 
@@ -144,6 +145,10 @@ def construire_app_apps(service: ServiceApps, *, origine_atelier: Callable[[], s
         s = service.passage.session(request.cookies.get(COOKIE_APPS))
         return s is not None and s.couvre(portee)
 
+    def acteur_de(request: Request | WebSocket) -> str:
+        s = service.passage.session(request.cookies.get(COOKIE_APPS))
+        return s.acteur if s is not None else ""
+
     def vers_l_entree(request: Request) -> Response:
         """Sans session : retour à l'Atelier, qui émettra un code."""
         atelier = (origine_atelier() or "").rstrip("/")
@@ -177,10 +182,13 @@ def construire_app_apps(service: ServiceApps, *, origine_atelier: Callable[[], s
             )
         session = service.passage.ouvrir(code, request.cookies.get(COOKIE_APPS))
         reponse = RedirectResponse(code.destination, 302, headers=ENTETES_PASSAGE)
+        if session.est_agent:
+            log.info("passage d'agent : %s ouvre %s", session.acteur, code.destination)
         reponse.set_cookie(
             COOKIE_APPS,
             session.id,
-            max_age=DUREE_SESSION_S,
+            # Le cookie ne survit pas à sa session : une heure pour un agent.
+            max_age=max(1, min(DUREE_SESSION_S, int(session.expire - time.time()))),
             path="/",
             secure=True,
             httponly=True,
@@ -302,6 +310,7 @@ def construire_app_apps(service: ServiceApps, *, origine_atelier: Callable[[], s
             prefixe=prefixe,
             hote_public=service.hote,
             client_ip=(request.client.host if request.client else ""),
+            acteur=acteur_de(request),
         )
         plafond = manifeste.corps_max_mo * 2**20
         annonce = request.headers.get("content-length")
@@ -396,6 +405,7 @@ def construire_app_apps(service: ServiceApps, *, origine_atelier: Callable[[], s
             hote_public=service.hote,
             client_ip=(websocket.client.host if websocket.client else ""),
             websocket=True,
+            acteur=acteur_de(websocket),
         )
         await relayer(
             websocket,
