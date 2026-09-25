@@ -39,7 +39,7 @@ MOTIFS_DE_JETONS = (
 )
 # En-têtes qui ne sont pas des identifiants et diffèrent à dessein : la
 # conversation (`${ATELIER_SESSION}` résolu d'un côté, repli « poste » de
-# l'autre, voir `navigateur`).
+# l'autre, voir `mcp_sync.declaration_atelier`).
 _ENTETES_PROPRES_A_LA_SURFACE = frozenset({"x-atelier-conversation"})
 
 

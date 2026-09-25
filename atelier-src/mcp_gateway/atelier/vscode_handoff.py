@@ -193,6 +193,11 @@ def _merge_claude_settings_file(path: Path, settings: AtelierSettings) -> None:
     niveau = effort_accepte_partout(data.get("effortLevel") or settings.effort)
     data["effortLevel"] = niveau
     env["CLAUDE_CODE_EFFORT_LEVEL"] = niveau
+    # WebSearch simule une recherche sur cette passerelle : refusé pour toutes
+    # les surfaces qui lisent ce fichier (voir `navigateur`).
+    from mcp_gateway.atelier.navigateur import refuser_les_outils_simules
+
+    data = refuser_les_outils_simules(data, settings)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 

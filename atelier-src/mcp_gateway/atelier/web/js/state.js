@@ -138,7 +138,6 @@ export function createState() {
     sessionMcp: null,
     meta: {
       vscode_url: null,
-      chrome_view: "/chrome/view",
       projects_root: "",
       assistant_slug: "wikichat-memory",
     },
@@ -154,7 +153,6 @@ export function createState() {
 export function setMeta(state, meta) {
   state.meta = meta || {
     vscode_url: null,
-    chrome_view: "/chrome/view",
     projects_root: "",
     assistant_slug: "wikichat-memory",
   };

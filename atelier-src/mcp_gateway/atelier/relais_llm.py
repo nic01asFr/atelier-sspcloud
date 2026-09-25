@@ -14,7 +14,10 @@ Mesuré le 25 septembre 2026 sur https://llm.lab.sspcloud.fr/api :
 Le relais se place entre les deux, en boucle locale. Il transmet tout tel quel
 et en flux, sans tampon, et ne corrige que ces trois points : il remplit
 l'usage nul par une estimation (caractères / `relais_llm_ratio`), répond
-lui-même au décompte, et réécrit l'erreur de fenêtre. Mesuré avec son
+lui-même au décompte, et réécrit l'erreur de fenêtre. Plus un quatrième,
+mesuré le 25 septembre : WebFetch appelle le petit modèle avec `"tools": []`,
+que litellm refuse (400 « `tools` must not be an empty array ») — le modèle
+répondait alors de mémoire. Le relais retire ce tableau vide. Mesuré avec son
 prototype (essai B) : l'auto-compaction native part à ~106 000 jetons et la
 conversation garde tout ce qu'elle savait.
 
@@ -79,6 +82,19 @@ _DEPASSEMENT = "ContextWindowExceeded"
 _MAXIMUM = re.compile(r"maximum context length is (\d+)")
 _TOTAL = re.compile(r"total of at least (\d+)")
 _ENTREE = re.compile(r"at least (\d+) input tokens")
+
+
+def sans_outils_vides(corps: dict[str, Any]) -> dict[str, Any] | None:
+    """La requête sans `"tools": []`, ou None si elle n'en porte pas.
+
+    L'API d'Anthropic accepte une liste d'outils vide ; litellm, derrière la
+    passerelle, la refuse. Claude Code en envoie une pour l'extraction de
+    WebFetch (modèle du créneau haiku). Sans outils, `tool_choice` n'a plus
+    d'objet : il part avec.
+    """
+    if "tools" not in corps or corps["tools"] != []:
+        return None
+    return {k: v for k, v in corps.items() if k not in ("tools", "tool_choice")}
 
 
 # -- estimation ---------------------------------------------------------
@@ -357,6 +373,12 @@ class RelaisLLM:
             await _repondre_json(send, 200, {"input_tokens": entree})
             self._noter(methode, chemin, modele, None, 200, entree, None, debut)
             return
+
+        if messages:
+            nettoye = sans_outils_vides(corps)
+            if nettoye is not None:
+                corps = nettoye
+                brut = json.dumps(corps, ensure_ascii=False).encode("utf-8")
 
         url = self.amont + chemin + (f"?{requete}" if requete else "")
         try:

@@ -2,12 +2,13 @@
 
 Au démarrage de l'Atelier :
 
-- pas d'URL ou pas de jeton configurés → rien n'est créé ni modifié ;
+- navigateur éteint (`ATELIER_NAVIGATEUR=0`) → rien n'est créé ni modifié ;
 - connecteur absent et jamais proposé → créé, activé ;
 - connecteur absent alors qu'il a déjà été proposé → la personne l'a
   supprimé : on ne le recrée pas ;
-- connecteur présent → son adresse et son jeton suivent la configuration,
-  son état activé / désactivé reste celui que la personne a choisi.
+- connecteur présent → sa déclaration devient celle du lanceur stdio (ce qui
+  migre l'ancienne entrée HTTP, adresse et jeton compris), son état activé /
+  désactivé reste celui que la personne a choisi.
 
 La trace « déjà proposé » est un fichier du dossier MCP de l'Atelier. La
 supprimer fait reproposer le navigateur au démarrage suivant.
@@ -21,9 +22,8 @@ from typing import Any
 from mcp_gateway.atelier.config import AtelierSettings
 from mcp_gateway.atelier.navigateur import (
     SERVICE_CHROME,
-    chrome_mcp_url_configuree,
     declaration_du_pool,
-    jeton_chrome,
+    navigateur_configure,
 )
 
 log = logging.getLogger("atelier.chrome_ensure")
@@ -38,15 +38,8 @@ def ensure_chrome_mcp_connector(settings: AtelierSettings) -> dict[str, Any] | N
     from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
     from mcp_gateway.atelier.mcp_sync import materialize_mcp_config
 
-    if not chrome_mcp_url_configuree(settings):
-        log.info("navigateur : aucune URL configurée (ATELIER_CHROME_MCP_URL), rien à déclarer")
-        return None
-    if not jeton_chrome(settings):
-        log.warning(
-            "navigateur : URL configurée mais pas de jeton (%s) — le service l'exige,"
-            " connecteur non déclaré",
-            settings.chrome_mcp_token_path,
-        )
+    if not navigateur_configure(settings):
+        log.info("navigateur éteint (ATELIER_NAVIGATEUR=0) : rien à déclarer")
         return None
 
     trace = settings.mcp_dir / TRACE_PROPOSE

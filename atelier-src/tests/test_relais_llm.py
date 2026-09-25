@@ -341,3 +341,23 @@ def test_la_sante_repond_sans_aller_a_l_amont(relais: str, amont: Amont) -> None
     r = httpx.get(relais + relais_llm.CHEMIN_SANTE, timeout=5)
     assert r.json()["ok"] is True
     assert not amont.recus
+
+
+def test_une_liste_d_outils_vide_ne_part_pas(relais: str, amont: Amont) -> None:
+    """WebFetch appelle le petit modèle avec `"tools": []`, que litellm refuse
+    (400 « `tools` must not be an empty array », mesuré le 25 septembre) : le
+    relais retire la liste vide, et `tool_choice` avec elle."""
+    corps = {**_requete(stream=False), "tools": [], "tool_choice": {"type": "auto"}}
+    r = httpx.post(relais + "/v1/messages", json=corps, timeout=10)
+    assert r.status_code == 200
+    recu = [x for x in amont.recus if x["chemin"].startswith("/api/v1/messages")][-1]
+    assert "tools" not in recu["corps"] and "tool_choice" not in recu["corps"]
+    assert recu["corps"]["messages"] == corps["messages"]
+
+
+def test_une_liste_d_outils_pleine_part_intacte(relais: str, amont: Amont) -> None:
+    outil = {"name": "lire", "description": "", "input_schema": {"type": "object"}}
+    corps = {**_requete(stream=False), "tools": [outil]}
+    httpx.post(relais + "/v1/messages", json=corps, timeout=10)
+    recu = [x for x in amont.recus if x["chemin"].startswith("/api/v1/messages")][-1]
+    assert recu["corps"]["tools"] == [outil]

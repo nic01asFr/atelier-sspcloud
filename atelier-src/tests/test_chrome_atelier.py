@@ -1,122 +1,54 @@
-"""Le navigateur de l'Atelier : contrat, connecteur, bureau.
+"""Le navigateur de l'Atelier : une déclaration stdio, la même partout.
 
-Contrat (docs/ATELIER-SPEC.md du fork `chrome-devtools-mcp`) : la
-conversation passe par l'en-tête `X-Atelier-Conversation`, le jeton du
-service par `Authorization`, toujours par référence dans les fichiers. Le
-navigateur se reconnaît à son identifiant seul. Le bureau est servi par le
-service et relayé ici, derrière la session de l'Atelier et son `Origin`.
+Le navigateur est `chrome-devtools-mcp` lancé par `~/work/bin/atelier-chrome`
+dans le processus de chaque client (docs/navigateur-atelier.md). Il ne porte
+ni adresse, ni jeton, ni en-tête : le processus est la conversation. Il se
+reconnaît à son identifiant seul, s'installe une fois dans le pool, migre
+l'ancienne déclaration HTTP, et n'a plus de bureau à relayer.
 
-Les tests de relais parlent à un vrai serveur HTTP/WebSocket (faux_service_ws).
+Le lanceur lui-même est éprouvé dans test_lanceur_chrome.py, le client stdio
+de la passerelle dans test_client_stdio.py.
 """
 
 from __future__ import annotations
 
 import json
-import time
+import os
+import stat
 from pathlib import Path
-from typing import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from starlette.websockets import WebSocketDisconnect
 
 from mcp_gateway.atelier.api import build_app
 from mcp_gateway.atelier.chrome_ensure import TRACE_PROPOSE, ensure_chrome_mcp_connector
 from mcp_gateway.atelier.config import AtelierSettings
 from mcp_gateway.atelier.gateway_tools import GROUPE_NAVIGATEUR, nature_service
-from mcp_gateway.atelier.mcp_secrets import variables_des_services
 from mcp_gateway.atelier.mcp_sync import (
     SERVICE_CHROME,
     declaration_chrome,
     integrer_le_navigateur,
+    lier_le_projet,
+    materialize_session_mcp,
     pour_le_home,
-    resoudre_les_variables,
 )
-from mcp_gateway.atelier.navigateur import declaration_du_pool, variable_du_jeton
+from mcp_gateway.atelier.navigateur import (
+    ENV_PASSERELLE,
+    declaration_du_pool,
+    lanceur_chrome,
+    refuser_les_outils_simules,
+    stdio_de_la_passerelle,
+)
 from mcp_gateway.atelier.vscode_bridge import COOKIE_NAME
 
-from faux_service_ws import FauxService  # noqa: E402 — dossier des tests, sur sys.path
-
-JETON = "jeton-du-service-navigateur-0123456789abcdef"
 ORIGINE = "https://testserver"
+ANCIEN_JETON = "jeton-du-service-navigateur-0123456789abcdef"
 
 
-def _reglages(tmp_path: Path, url: str = "http://127.0.0.1:3100/mcp") -> AtelierSettings:
-    # L'adresse publique, comme en production : c'est elle que l'Origin
-    # d'une page de l'Atelier doit porter.
-    s = AtelierSettings(work_dir=tmp_path / "work", chrome_mcp_url=url, public_url=ORIGINE)
+def _reglages(tmp_path: Path, **options: object) -> AtelierSettings:
+    s = AtelierSettings(work_dir=tmp_path / "work", public_url=ORIGINE, **options)
     s.ensure_dirs()
-    s.chrome_mcp_token_path.write_text(JETON, encoding="utf-8")
     return s
-
-
-# --- le contrat, dans les fichiers --------------------------------------------
-
-
-def test_la_declaration_porte_conversation_et_jeton_par_reference(tmp_path: Path) -> None:
-    d = declaration_chrome(_reglages(tmp_path))
-    assert d["url"] == "http://127.0.0.1:3100/mcp"
-    assert "?" not in d["url"]
-    assert d["headers"]["X-Atelier-Conversation"] == "${ATELIER_SESSION}"
-    assert d["headers"]["Authorization"] == f"Bearer ${{{variable_du_jeton()}}}"
-    assert JETON not in json.dumps(d)
-
-
-def test_le_fichier_effectif_resout_la_conversation_pas_le_jeton(tmp_path: Path) -> None:
-    d = resoudre_les_variables(declaration_chrome(_reglages(tmp_path)), session="0f1e-conv", agent="a")
-    assert d["headers"]["X-Atelier-Conversation"] == "0f1e-conv"
-    assert d["headers"]["Authorization"].startswith("Bearer ${ATELIER_MCP_")
-
-
-def test_hors_conversation_la_variable_a_un_repli(tmp_path: Path) -> None:
-    """VS Code lit le HOME sans ATELIER_SESSION : il partage la conversation « poste »."""
-    home = pour_le_home({SERVICE_CHROME: declaration_chrome(_reglages(tmp_path))})
-    assert home[SERVICE_CHROME]["headers"]["X-Atelier-Conversation"] == "${ATELIER_SESSION:-poste}"
-    assert JETON not in json.dumps(home)
-
-
-def test_le_jeton_arrive_par_l_environnement_depuis_le_pool(tmp_path: Path) -> None:
-    variables = variables_des_services({SERVICE_CHROME: declaration_du_pool(_reglages(tmp_path))})
-    assert variables == {variable_du_jeton(): JETON}
-
-
-def test_un_connecteur_tiers_qui_parle_de_chrome_n_est_pas_reecrit(tmp_path: Path) -> None:
-    tiers = {
-        "mon-chrome": {"type": "http", "url": "http://127.0.0.1:9222/chrome-devtools/mcp"},
-        "chrome-perso": {
-            "type": "http",
-            "url": "https://x.user.lab.sspcloud.fr/mcp",
-            "headers": {"Authorization": "Bearer ${MA_VARIABLE}"},
-        },
-        SERVICE_CHROME: {"type": "http", "url": "https://ancien-ingress/mcp?session=x"},
-    }
-    sortie = integrer_le_navigateur(tiers, _reglages(tmp_path))
-    assert sortie["mon-chrome"] == tiers["mon-chrome"]
-    assert sortie["chrome-perso"] == tiers["chrome-perso"]
-    assert sortie[SERVICE_CHROME]["url"] == "http://127.0.0.1:3100/mcp"
-    for nom in ("mon-chrome", "chrome-perso"):
-        nature = nature_service(tiers[nom], "http://127.0.0.1:3777/sse", nom=nom)
-        assert nature["group"] != GROUPE_NAVIGATEUR
-
-
-def test_c_est_du_socle_pas_un_connecteur_detachable(tmp_path: Path) -> None:
-    nature = nature_service(
-        declaration_chrome(_reglages(tmp_path)), "http://127.0.0.1:3777/sse", nom=SERVICE_CHROME
-    )
-    assert nature["system"] is True
-    assert nature["group"] == GROUPE_NAVIGATEUR
-
-
-def test_sans_url_configuree_rien_n_est_declare(tmp_path: Path) -> None:
-    s = AtelierSettings(work_dir=tmp_path / "work")
-    s.ensure_dirs()
-    s.chrome_mcp_token_path.write_text(JETON, encoding="utf-8")
-    assert ensure_chrome_mcp_connector(s) is None
-    entree = {SERVICE_CHROME: {"type": "http", "url": "http://ailleurs/mcp"}}
-    assert integrer_le_navigateur(entree, s) == entree
-
-
-# --- le connecteur, dans le pool ----------------------------------------------
 
 
 def _pool(s: AtelierSettings) -> dict:
@@ -130,7 +62,7 @@ def _pool(s: AtelierSettings) -> dict:
         conn.close()
 
 
-def _pool_faire(s: AtelierSettings, action: str) -> None:
+def _pool_faire(s: AtelierSettings, action: str, config: dict | None = None) -> None:
     from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
     from mcp_gateway.db import connect
 
@@ -141,8 +73,84 @@ def _pool_faire(s: AtelierSettings, action: str) -> None:
             store.set_enabled(SERVICE_CHROME, False)
         elif action == "supprimer":
             store.delete(SERVICE_CHROME)
+        elif action == "poser":
+            store.upsert(SERVICE_CHROME, config or {})
     finally:
         conn.close()
+
+
+# --- la déclaration -----------------------------------------------------------
+
+
+def test_la_declaration_est_le_lanceur_stdio_sans_secret(tmp_path: Path) -> None:
+    s = _reglages(tmp_path)
+    d = declaration_chrome(s)
+    assert d == {"type": "stdio", "command": str(s.work_dir / "bin" / "atelier-chrome"), "args": []}
+    # Le pool porte la même : l'écran des connecteurs montre ce que l'agent reçoit.
+    assert declaration_du_pool(s) == d
+
+
+def test_la_meme_declaration_sur_toutes_les_surfaces(tmp_path: Path) -> None:
+    """Fichier effectif d'un tour, `.mcp.json` du projet (VS Code, terminal,
+    wikichat) et configuration du HOME : un seul et même lanceur."""
+    s = _reglages(tmp_path)
+    ensure_chrome_mcp_connector(s)
+    projet = s.projects_dir / "p"
+    lier_le_projet(s, projet)
+    dans_le_projet = json.loads((projet / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]
+    effectif = json.loads(
+        materialize_session_mcp(s, "conv-1", kind="code", cwd=projet).read_text(encoding="utf-8")
+    )["mcpServers"]
+    home = json.loads(s.mcp_config_path.read_text(encoding="utf-8"))["mcpServers"]
+    attendu = declaration_chrome(s)
+    assert dans_le_projet[SERVICE_CHROME] == attendu
+    assert effectif[SERVICE_CHROME] == attendu
+    assert home[SERVICE_CHROME] == attendu
+
+
+def test_un_connecteur_tiers_qui_parle_de_chrome_n_est_pas_reecrit(tmp_path: Path) -> None:
+    tiers = {
+        "mon-chrome": {"type": "http", "url": "http://127.0.0.1:9222/chrome-devtools/mcp"},
+        "chrome-perso": {"type": "stdio", "command": "npx", "args": ["chrome-devtools-mcp@latest"]},
+        SERVICE_CHROME: {"type": "http", "url": "https://ancien-ingress/mcp?session=x"},
+    }
+    s = _reglages(tmp_path)
+    sortie = integrer_le_navigateur(tiers, s)
+    assert sortie["mon-chrome"] == tiers["mon-chrome"]
+    assert sortie["chrome-perso"] == tiers["chrome-perso"]
+    assert sortie[SERVICE_CHROME] == declaration_chrome(s)
+    for nom in ("mon-chrome", "chrome-perso"):
+        nature = nature_service(tiers[nom], "http://127.0.0.1:3777/sse", nom=nom)
+        assert nature["group"] != GROUPE_NAVIGATEUR
+
+
+def test_c_est_du_socle_pas_un_connecteur_detachable(tmp_path: Path) -> None:
+    nature = nature_service(
+        declaration_chrome(_reglages(tmp_path)), "http://127.0.0.1:3777/sse", nom=SERVICE_CHROME
+    )
+    assert nature["system"] is True
+    assert nature["group"] == GROUPE_NAVIGATEUR
+
+
+def test_eteint_rien_n_est_declare_ni_lance(tmp_path: Path) -> None:
+    s = _reglages(tmp_path, navigateur=False)
+    assert ensure_chrome_mcp_connector(s) is None
+    entree = {SERVICE_CHROME: {"type": "http", "url": "http://ailleurs/mcp"}}
+    assert integrer_le_navigateur(entree, s) == entree
+    assert stdio_de_la_passerelle(s) == {}
+
+
+def test_la_passerelle_lance_sa_propre_instance(tmp_path: Path) -> None:
+    assert stdio_de_la_passerelle(_reglages(tmp_path)) == {SERVICE_CHROME: ENV_PASSERELLE}
+    assert ENV_PASSERELLE == {"ATELIER_CHROME_PORTEE": "passerelle"}
+
+
+def test_le_home_porte_la_declaration_telle_quelle(tmp_path: Path) -> None:
+    d = declaration_chrome(_reglages(tmp_path))
+    assert pour_le_home({SERVICE_CHROME: d})[SERVICE_CHROME] == d
+
+
+# --- le connecteur, dans le pool ----------------------------------------------
 
 
 def test_ensure_cree_puis_respecte_une_desactivation(tmp_path: Path) -> None:
@@ -160,58 +168,81 @@ def test_ensure_ne_recree_pas_un_connecteur_supprime(tmp_path: Path) -> None:
     _pool_faire(s, "supprimer")
     assert ensure_chrome_mcp_connector(s) is None
     assert SERVICE_CHROME not in _pool(s)
-    # La trace effacée, il est reproposé.
     (s.mcp_dir / TRACE_PROPOSE).unlink()
     assert ensure_chrome_mcp_connector(s) is not None
 
 
-def test_ensure_sans_jeton_ne_declare_rien(tmp_path: Path) -> None:
+def test_l_ancienne_declaration_http_est_migree_sans_son_jeton(tmp_path: Path) -> None:
+    """Le pool du pod portait le service distant, son jeton et son en-tête."""
     s = _reglages(tmp_path)
-    s.chrome_mcp_token_path.unlink()
-    assert ensure_chrome_mcp_connector(s) is None
-    assert SERVICE_CHROME not in _pool(s)
-
-
-def test_la_config_materialisee_ne_porte_pas_le_jeton(tmp_path: Path) -> None:
-    s = _reglages(tmp_path)
+    _pool_faire(
+        s,
+        "poser",
+        {
+            "type": "http",
+            "url": "http://chrome-devtools-mcp:3100/mcp",
+            "headers": {
+                "X-Atelier-Conversation": "atelier-passerelle",
+                "Authorization": f"Bearer {ANCIEN_JETON}",
+            },
+            "enabled": False,
+        },
+    )
     ensure_chrome_mcp_connector(s)
-    ecrit = s.mcp_config_path.read_text(encoding="utf-8")
-    assert JETON not in ecrit
-    assert "X-Atelier-Conversation" in ecrit
+    assert _pool(s)[SERVICE_CHROME]["enabled"] is False, "le choix de la personne reste"
+    from mcp_gateway.atelier.env_secrets import chemin_du_fichier
+
+    home = json.loads(s.mcp_config_path.read_text(encoding="utf-8"))["mcpServers"]
+    assert SERVICE_CHROME not in home, "désactivé, il n'est déclaré nulle part"
+    for chemin in (s.mcp_config_path, chemin_du_fichier(s)):
+        if chemin.exists():
+            texte = chemin.read_text(encoding="utf-8")
+            assert ANCIEN_JETON not in texte
+            assert "CHROME_DEVTOOLS_MCP_AUTHORIZATION" not in texte
+    # Réactivé, c'est le lanceur qui est déclaré.
+    from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
+    from mcp_gateway.atelier.mcp_sync import materialize_mcp_config
+    from mcp_gateway.db import connect
+
+    conn = connect(s.gateway_db_path)
+    try:
+        IntegratedMcpStore(conn).set_enabled(SERVICE_CHROME, True)
+    finally:
+        conn.close()
+    materialize_mcp_config(s)
+    home = json.loads(s.mcp_config_path.read_text(encoding="utf-8"))["mcpServers"]
+    assert home[SERVICE_CHROME] == declaration_chrome(s)
 
 
-# --- le bureau, relayé --------------------------------------------------------
+# --- WebSearch ----------------------------------------------------------------
 
 
-def _routes(bureau: bool, vus: list[str]) -> dict:
-    def sante(entetes: dict[str, str]) -> tuple[int, str, bytes]:
-        vus.append(entetes.get("authorization", ""))
-        if entetes.get("authorization") != f"Bearer {JETON}":
-            return 200, "application/json", b'{"status":"ok"}'
-        corps = {"status": "ok", "bureau": bureau, "conversations": 1, "maxConversations": 3}
-        return 200, "application/json", json.dumps(corps).encode()
-
-    def vue(entetes: dict[str, str]) -> tuple[int, str, bytes]:
-        if entetes.get("authorization") != f"Bearer {JETON}":
-            return 401, "application/json", b"{}"
-        return 200, "text/html; charset=utf-8", b"<html>page du service</html>"
-
-    def rfb(entetes: dict[str, str]) -> tuple[int, str, bytes]:
-        return 200, "text/javascript", b"export default class RFB {}"
-
-    return {"/health": sante, "/view": vue, "/novnc/core/rfb.js": rfb}
+def test_websearch_est_refuse_sans_toucher_au_reste(tmp_path: Path) -> None:
+    s = _reglages(tmp_path)
+    assert refuser_les_outils_simules({}, s) == {"permissions": {"deny": ["WebSearch"]}}
+    perso = {"permissions": {"deny": ["Bash(rm:*)"], "allow": ["Read"]}, "model": "m"}
+    sortie = refuser_les_outils_simules(perso, s)
+    assert sortie["permissions"] == {"deny": ["Bash(rm:*)", "WebSearch"], "allow": ["Read"]}
+    assert sortie["model"] == "m"
+    assert refuser_les_outils_simules(sortie, s) == sortie, "idempotent"
 
 
-@pytest.fixture()
-def service_avec_bureau() -> Iterator[tuple[FauxService, list[str]]]:
-    vus: list[str] = []
-    with FauxService(_routes(True, vus)) as s:
-        yield s, vus
+def test_websearch_natif_retire_seulement_notre_refus(tmp_path: Path) -> None:
+    s = _reglages(tmp_path, websearch_natif=True)
+    reglages = {"permissions": {"deny": ["WebSearch", "Bash(rm:*)"]}}
+    assert refuser_les_outils_simules(reglages, s) == {"permissions": {"deny": ["Bash(rm:*)"]}}
+    assert refuser_les_outils_simules({"permissions": {"deny": ["WebSearch"]}}, s) == {}
 
 
-def _atelier(tmp_path: Path, url: str) -> TestClient:
-    s = _reglages(tmp_path, url)
-    return TestClient(build_app(settings=s, use_fake=True), base_url=ORIGINE)
+def test_chaque_tour_refuse_websearch(tmp_path: Path) -> None:
+    from mcp_gateway.atelier.harness import ClaudeHarness
+
+    arguments = ClaudeHarness(_reglages(tmp_path))._arguments_de_reglages("conv-1", None)  # noqa: SLF001
+    reglages = json.loads(arguments[arguments.index("--settings") + 1])
+    assert "WebSearch" in reglages["permissions"]["deny"]
+
+
+# --- l'état, dans l'interface -------------------------------------------------
 
 
 def _cookie(client: TestClient) -> dict[str, str]:
@@ -219,118 +250,39 @@ def _cookie(client: TestClient) -> dict[str, str]:
     return {"Cookie": f"{COOKIE_NAME}={sid}"}
 
 
-def test_health_sans_configuration_ne_casse_pas(tmp_path: Path) -> None:
-    s = AtelierSettings(work_dir=tmp_path / "work")
+def test_health_sans_lanceur_le_dit_et_le_bureau_a_disparu(tmp_path: Path) -> None:
+    s = _reglages(tmp_path)
     with TestClient(build_app(settings=s, use_fake=True), base_url=ORIGINE) as client:
         r = client.get("/chrome/health", headers=_cookie(client))
         assert r.status_code == 200
-        assert r.json()["bureau"] is False
-        assert r.json()["configure"] is False
-        vue = client.get("/chrome/view", headers=_cookie(client))
-        assert vue.status_code == 503
-        assert "/chrome/vnc" not in vue.text
+        etat = r.json()
+        assert etat["configure"] is True and etat["mode"] == "stdio"
+        assert etat["pret"] is False and "lanceur absent" in etat["raison"]
+        assert etat["bureau"] is False
+        for route in ("/chrome/view", "/chrome/novnc/core/rfb.js"):
+            assert client.get(route, headers=_cookie(client)).status_code == 404
 
 
-def test_health_service_injoignable_ou_bavard(tmp_path: Path) -> None:
-    with _atelier(tmp_path, "http://127.0.0.1:1/mcp") as client:
-        r = client.get("/chrome/health", headers=_cookie(client))
-        assert r.status_code == 200
-        assert r.json()["joignable"] is False
-    with FauxService({"/health": lambda e: (500, "text/html", b"<h1>boum</h1>")}) as s:
-        with _atelier(tmp_path / "b", f"http://127.0.0.1:{s.port}/mcp") as client:
-            r = client.get("/chrome/health", headers=_cookie(client))
-            assert r.status_code == 200
-            assert r.json()["bureau"] is False
+def test_health_eteint(tmp_path: Path) -> None:
+    s = _reglages(tmp_path, navigateur=False)
+    with TestClient(build_app(settings=s, use_fake=True), base_url=ORIGINE) as client:
+        etat = client.get("/chrome/health", headers=_cookie(client)).json()
+        assert etat["configure"] is False and etat["pret"] is False
 
 
-def test_health_dit_le_bureau_et_pose_le_jeton(tmp_path: Path, service_avec_bureau) -> None:
-    s, vus = service_avec_bureau
-    with _atelier(tmp_path, f"http://127.0.0.1:{s.port}/mcp") as client:
-        assert client.get("/chrome/health").status_code == 401
-        r = client.get("/chrome/health", headers=_cookie(client))
-        assert r.json()["bureau"] is True
-        assert vus[-1] == f"Bearer {JETON}"
-        # Le jeton ne revient jamais vers le navigateur.
-        assert JETON not in r.text
+@pytest.mark.skipif(os.name == "nt", reason="lanceur shell : pod Linux")
+def test_health_demande_au_lanceur_ce_qu_il_trouve(tmp_path: Path) -> None:
+    s = _reglages(tmp_path)
+    lanceur = lanceur_chrome(s)
+    lanceur.parent.mkdir(parents=True, exist_ok=True)
+    lanceur.write_text(
+        '#!/bin/sh\n[ "$ATELIER_CHROME_VERIFIER" = 1 ] || exit 3\n'
+        'printf "node=/n\\nserveur=/s.js\\nchrome=/c\\n"\n',
+        encoding="utf-8",
+    )
+    lanceur.chmod(lanceur.stat().st_mode | stat.S_IEXEC)
+    from mcp_gateway.atelier import navigateur
 
-
-def test_sans_bureau_la_vue_n_est_pas_une_page_morte(tmp_path: Path) -> None:
-    with FauxService(_routes(False, [])) as s:
-        with _atelier(tmp_path, f"http://127.0.0.1:{s.port}/mcp") as client:
-            r = client.get("/chrome/view", headers=_cookie(client))
-            assert r.status_code == 503
-            assert "pas disponible" in r.text
-
-
-def test_la_vue_et_novnc_viennent_du_service(tmp_path: Path, service_avec_bureau) -> None:
-    s, _ = service_avec_bureau
-    with _atelier(tmp_path, f"http://127.0.0.1:{s.port}/mcp") as client:
-        assert client.get("/chrome/view").status_code == 401
-        r = client.get("/chrome/view", headers=_cookie(client))
-        assert r.status_code == 200
-        assert "page du service" in r.text
-        js = client.get("/chrome/novnc/core/rfb.js", headers=_cookie(client))
-        assert js.status_code == 200 and "RFB" in js.text
-        assert client.get("/chrome/novnc/%2e%2e/health", headers=_cookie(client)).status_code == 404
-
-
-def _entetes_ws(client: TestClient, origine: str | None = ORIGINE) -> dict[str, str]:
-    h = _cookie(client)
-    if origine is not None:
-        h["Origin"] = origine
-    return h
-
-
-@pytest.mark.parametrize(
-    "origine", ["https://evil.user.lab.sspcloud.fr", "http://testserver", "null", None]
-)
-def test_vnc_refuse_une_origine_etrangere(tmp_path: Path, service_avec_bureau, origine) -> None:
-    s, _ = service_avec_bureau
-    with _atelier(tmp_path, f"http://127.0.0.1:{s.port}/mcp") as client:
-        with pytest.raises(WebSocketDisconnect) as exc:
-            with client.websocket_connect("/chrome/vnc", headers=_entetes_ws(client, origine)):
-                pass
-        assert exc.value.code == 4403
-    assert s.vu.connexions == []
-
-
-def test_vnc_relaie_avec_le_jeton_sans_la_requete(tmp_path: Path, service_avec_bureau) -> None:
-    s, _ = service_avec_bureau
-    with _atelier(tmp_path, f"http://127.0.0.1:{s.port}/mcp") as client:
-        with client.websocket_connect(
-            "/chrome/vnc?password=x&token=y", headers=_entetes_ws(client), subprotocols=["binary"]
-        ) as ws:
-            assert ws.accepted_subprotocol == "binary"
-            ws.send_bytes(b"\x01\x02")
-            assert ws.receive_bytes() == b"\x01\x02"
-        chemin, entetes = [r for r in s.vu.requetes if r[0].startswith("/vnc")][-1]
-        assert chemin == "/vnc"
-        assert entetes["authorization"] == f"Bearer {JETON}"
-        assert COOKIE_NAME not in entetes.get("cookie", "")
-
-
-def test_vnc_fermeture_amont_propagee(tmp_path: Path, service_avec_bureau) -> None:
-    s, _ = service_avec_bureau
-    with _atelier(tmp_path, f"http://127.0.0.1:{s.port}/mcp") as client:
-        with client.websocket_connect("/chrome/vnc", headers=_entetes_ws(client), subprotocols=["binary"]) as ws:
-            ws.send_bytes(b"x")
-            ws.receive_bytes()
-            debut = time.monotonic()
-            s.fermer_cote_amont(4001, "fin amont")
-            with pytest.raises(WebSocketDisconnect) as exc:
-                ws.receive_bytes()
-            assert exc.value.code == 4001
-            assert time.monotonic() - debut < 1.0
-
-
-def test_vnc_fermeture_client_propagee(tmp_path: Path, service_avec_bureau) -> None:
-    s, _ = service_avec_bureau
-    with _atelier(tmp_path, f"http://127.0.0.1:{s.port}/mcp") as client:
-        with client.websocket_connect("/chrome/vnc", headers=_entetes_ws(client), subprotocols=["binary"]) as ws:
-            ws.send_bytes(b"x")
-            ws.receive_bytes()
-            debut = time.monotonic()
-            ws.close(code=4002)
-        assert s.vu.ferme.wait(1.0)
-        assert time.monotonic() - debut < 1.0
-        assert s.vu.fermetures[-1] == 4002
+    navigateur._VERIFICATION.update(etat=None, quand=0.0, lanceur="")  # noqa: SLF001
+    etat = navigateur.etat_local(s)
+    assert etat["pret"] is True and etat["chrome"] == "/c" and etat["serveur"] == "/s.js"

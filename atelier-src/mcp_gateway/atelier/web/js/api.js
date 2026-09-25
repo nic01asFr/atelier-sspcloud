@@ -704,14 +704,10 @@ export function vscodeOpenUrl(slug, sessionId) {
   return `/v1/vscode/open${qs ? `?${qs}` : ""}`;
 }
 
-export function chromeViewUrl() {
-  return "/chrome/view";
-}
-
-// L'état du navigateur, tel que le service le dit lui-même. Le lien « Bureau »
-// n'apparaît que si `bureau` est vrai : sans service, ou sans bureau, il
-// menait à une page morte. Mis en cache quelques secondes, parce que
-// l'en-tête de conversation se redessine souvent.
+// L'état du navigateur, tel que le pod le voit : lanceur prêt ou non, Chrome
+// ouverts et plafond (voir `navigateur_routes.py`). Il n'y a plus de bureau :
+// Chrome tourne sans écran dans le processus de chaque agent. Mis en cache
+// quelques secondes, parce que la fiche du connecteur se redessine souvent.
 let chromeEtatCache = null;
 let chromeEtatDate = 0;
 let chromeEtatEnCours = null;
@@ -722,10 +718,9 @@ export async function chromeHealth({ maxAgeMs = 30000 } = {}) {
   chromeEtatEnCours = (async () => {
     try {
       const res = await fetch("/chrome/health", { headers: { ...ENTETE_INTERFACE, Accept: "application/json" } });
-      const etat = res.ok ? await res.json() : { bureau: false };
-      chromeEtatCache = { ...(etat || {}), bureau: Boolean(etat && etat.bureau === true) };
+      chromeEtatCache = res.ok ? (await res.json()) || {} : { pret: false };
     } catch {
-      chromeEtatCache = { bureau: false };
+      chromeEtatCache = { pret: false };
     }
     chromeEtatDate = Date.now();
     chromeEtatEnCours = null;

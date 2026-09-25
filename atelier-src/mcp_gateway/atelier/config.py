@@ -189,14 +189,17 @@ class AtelierSettings(BaseSettings):
     assistant_slug: str = "wikichat-memory"
     anthropic_base_url: str = "https://llm.lab.sspcloud.fr/api"
     wikichat_url: str = "http://127.0.0.1:3777/sse"
-    # Navigateur intégré (Chrome DevTools MCP), adresse interne de son `/mcp`
-    # (ex. `http://chrome-devtools-mcp:3100/mcp`). Vide = pas de navigateur :
-    # l'Atelier ne le déclare pas. Jamais l'ingress public.
-    chrome_mcp_url: str = ""
-    # Jeton du service (sa `CDM_API_KEY`). Le fichier `chrome_mcp_token` du
-    # dossier de secrets prime ; cette variable sert à l'amorçage. Il ne
-    # s'écrit jamais dans un `.mcp.json` : seulement sa référence.
-    chrome_mcp_token: str = ""
+    # Navigateur intégré : `chrome-devtools-mcp` en stdio, lancé par
+    # `~/work/bin/atelier-chrome` dans le processus de chaque agent (voir
+    # `navigateur` et docs/navigateur-atelier.md). `ATELIER_NAVIGATEUR=0`
+    # l'éteint partout : il n'est plus déclaré ni lancé par la passerelle.
+    navigateur: bool = True
+    # WebSearch est un outil serveur d'Anthropic : la passerelle LLM de
+    # SSPCloud ne l'exécute pas, et le modèle répond alors en simulant une
+    # recherche, sans erreur. Il est donc refusé sur toutes les surfaces
+    # (`permissions.deny`), sauf si l'on branche un jour un fournisseur qui
+    # le sert vraiment.
+    websearch_natif: bool = False
     # Adresse à laquelle ce service répond depuis l'extérieur, celle que sert
     # l'ingress. Vide = on retombe sur celle que voit uvicorn, qui derrière un
     # ingress est interne : un client MCP distant y enverrait son flux OAuth et
@@ -319,11 +322,6 @@ class AtelierSettings(BaseSettings):
     def github_token_path(self) -> Path:
         """Jeton GitHub, en 0600. Absent = pas de publication possible."""
         return self.secrets_dir / "github_token"
-
-    @property
-    def chrome_mcp_token_path(self) -> Path:
-        """Jeton du service navigateur, en 0600. Absent = pas de navigateur."""
-        return self.secrets_dir / "chrome_mcp_token"
 
     @property
     def internal_secret_path(self) -> Path:

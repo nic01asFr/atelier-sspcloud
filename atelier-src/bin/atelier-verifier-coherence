@@ -155,7 +155,7 @@ def main() -> int:
     base = f"http://127.0.0.1:{sonde.port}"
     reglages = AtelierSettings(
         work_dir=racine / "work", port=sonde.port, relais_llm=False,
-        wikichat_url="http://127.0.0.1:1/sse", chrome_mcp_url="",
+        wikichat_url="http://127.0.0.1:1/sse", navigateur=False,
         anthropic_base_url="http://127.0.0.1:9",
     )
     reglages.ensure_dirs()

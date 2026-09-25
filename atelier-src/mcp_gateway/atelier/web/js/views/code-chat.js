@@ -530,24 +530,6 @@ const BAS_DU_FIL = 1e9;
       }
     }
 
-    // Le lien « Bureau » n'existe que si le service navigateur dit que son
-    // bureau est disponible : sinon il menait à une page morte.
-    const bureau = $("session-chrome-link");
-    if (bureau) {
-      const montrer = (etat) => {
-        if (enConversation && etat && etat.bureau === true) {
-          bureau.hidden = false;
-          bureau.href = api.chromeViewUrl();
-          bureau.title = "Bureau du navigateur intégré";
-        } else {
-          bureau.hidden = true;
-          bureau.removeAttribute("href");
-        }
-      };
-      montrer(api.chromeHealthConnu());
-      if (enConversation) api.chromeHealth().then(montrer);
-    }
-
     // Ce que le projet montre : ses applications et ses artefacts, dans un
     // panneau qui s'ouvre sous la barre (voir `views/applications.js`). Il
     // remplace l'ancien lien « Artefacts », qui y a désormais sa ligne.

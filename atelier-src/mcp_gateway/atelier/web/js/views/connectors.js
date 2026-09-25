@@ -758,7 +758,7 @@ function renderDetail(entry, kind, state, actions) {
     ? famille === "Accès aux fichiers"
       ? "Ce que l’Atelier peut lire et écrire hors du dossier d’un projet."
       : famille === "Navigateur web"
-        ? "Le navigateur de l’Atelier : pages, captures, et un bureau gardé par la clé."
+        ? "Le navigateur de l’Atelier : un Chrome sans écran que chaque agent lance pour lui seul — lire une page, remplir un formulaire, suivre le réseau, prendre une capture."
         : "Ce qui relie les agents entre eux : messages, mémoire, suivi de projet."
     : decrit?.resume ||
       entry.description ||
@@ -800,23 +800,6 @@ function renderDetail(entry, kind, state, actions) {
     toolbar.appendChild(del);
     head.appendChild(toolbar);
   }
-  if (famille === "Navigateur web") {
-    const toolbar = document.createElement("div");
-    toolbar.className = "agent-head-actions";
-    const ouvrir = document.createElement("a");
-    ouvrir.className = "ghost btn-sm";
-    ouvrir.href = "/chrome/view";
-    ouvrir.target = "_blank";
-    ouvrir.rel = "noopener";
-    ouvrir.textContent = "Ouvrir le bureau";
-    // Caché tant que le service n'a pas dit que son bureau est disponible.
-    ouvrir.hidden = true;
-    chromeHealth().then((etat) => {
-      ouvrir.hidden = !(etat && etat.bureau === true);
-    });
-    toolbar.appendChild(ouvrir);
-    head.appendChild(toolbar);
-  }
   body.appendChild(head);
 
   const kvSec = document.createElement("section");
@@ -845,6 +828,22 @@ function renderDetail(entry, kind, state, actions) {
       .filter((x) => String(x.key).split("#")[0] === key)
       .reduce((n, x) => n + (x.count || 0), 0);
   addKv("Outils", String(compte || 0));
+  if (famille === "Navigateur web") {
+    // Tel que l'agent le reçoit : la même déclaration dans l'Atelier, VS Code,
+    // le terminal et wikichat, un processus (et un Chrome) par conversation.
+    addKv("Lancement", `${entry.config?.command || "atelier-chrome"} — un Chrome par conversation`);
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="agent-kv-k">Sur ce pod</span><span class="agent-kv-v">…</span>`;
+    ul.appendChild(li);
+    chromeHealth().then((etat) => {
+      const v = li.querySelector(".agent-kv-v");
+      if (!etat || etat.pret !== true) {
+        v.textContent = `indisponible${etat?.raison ? ` : ${etat.raison}` : ""}`;
+      } else {
+        v.textContent = `prêt — ${etat.navigateurs ?? 0} Chrome ouvert(s) sur ${etat.maxNavigateurs ?? "?"} permis`;
+      }
+    });
+  }
   kvSec.appendChild(ul);
   body.appendChild(kvSec);
 
@@ -963,7 +962,7 @@ export function createConnectorsView(ctx) {
       return chemins.length ? `ouvre ${chemins[0]}` : "accès aux dossiers";
     }
     if (groupe === "Navigateur web") {
-      return "pages, captures, bureau";
+      return "pages, formulaires, réseau, captures";
     }
     return "coordination, mémoire, agents";
   }

@@ -1,6 +1,6 @@
 """Relais WebSocket de l'Atelier vers un service amont, et sa garde.
 
-Partagé par `/vscode` et `/chrome/vnc`, et par tout futur mandataire
+Partagé par `/vscode` et l'hôte des applications, et par tout futur mandataire
 d'application. Deux choses s'y décident, une fois pour toutes.
 
 La garde. `sspcloud.fr` n'est pas dans la Public Suffix List : tout pod

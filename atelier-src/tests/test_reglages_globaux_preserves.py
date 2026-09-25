@@ -46,7 +46,9 @@ def test_l_ouverture_dans_vscode_non_plus(reglages: AtelierSettings) -> None:
     prepare_vscode_handoff(reglages, "p", "conv-1", reglages.projects_dir / "p")
     lu = json.loads(globale.read_text(encoding="utf-8"))
     assert lu["model"] == "qwen3-6-35b-moe"
-    assert "permissions" not in lu and lu["env"]["A"] == "global"
+    # Rien du projet : seul le refus de WebSearch, que l'Atelier pose lui-même
+    # pour toutes les surfaces (la passerelle LLM le simule).
+    assert lu.get("permissions") == {"deny": ["WebSearch"]} and lu["env"]["A"] == "global"
     # Le réglage du projet, lui, reste où il est et tel qu'il est.
     assert json.loads(projet.read_text(encoding="utf-8")) == PROJET
 

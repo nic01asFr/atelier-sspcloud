@@ -21,10 +21,20 @@ def _registry_stdio_local(entry) -> bool:
 
 
 class UpstreamPool:
-    def __init__(self, catalog: Catalog, db: sqlite3.Connection | None = None):
+    def __init__(
+        self,
+        catalog: Catalog,
+        db: sqlite3.Connection | None = None,
+        *,
+        stdio_lances: dict[str, dict[str, str]] | None = None,
+    ):
         self.catalog = catalog
         self.db = db
-        self._clients: dict[str, UpstreamClient] = {}
+        self._clients: dict[str, Any] = {}
+        # Les serveurs stdio du registre que la passerelle lance elle-même,
+        # avec l'environnement propre à cette instance (identifiant → env).
+        # Les autres restent `stdio-local` : lancés par le client final seul.
+        self.stdio_lances: dict[str, dict[str, str]] = dict(stdio_lances or {})
 
     async def startup(self) -> dict[str, str]:
         """Connecte tous les serveurs catalogue + sidecars SQLite."""
@@ -48,7 +58,10 @@ class UpstreamPool:
                     continue
                 key = registry_pool_key(entry.server_id)
                 if _registry_stdio_local(entry):
-                    status[key] = "stdio-local"
+                    if entry.server_id in self.stdio_lances:
+                        status[key] = await self._connect_stdio(key, entry)
+                    else:
+                        status[key] = "stdio-local"
                     continue
                 if not entry.supported or not entry.url:
                     client = UpstreamClient(key, entry.url or "stdio://local", entry.transport)
@@ -85,6 +98,8 @@ class UpstreamPool:
             raise KeyError(f"Unknown registry server: {server_id}")
         key = registry_pool_key(entry.server_id)
         if _registry_stdio_local(entry):
+            if entry.server_id in self.stdio_lances:
+                return await self._connect_stdio(key, entry)
             return "stdio-local"
         if not entry.supported or not entry.url:
             client = UpstreamClient(key, entry.url or "stdio://local", entry.transport)
@@ -125,6 +140,31 @@ class UpstreamPool:
             if entry.supported and entry.url:
                 out.append((registry_pool_key(entry.server_id), entry.prefix))
         return out
+
+    async def _connect_stdio(self, key: str, entry: Any) -> str:
+        """Sonde un serveur stdio que la passerelle lance (voir `ClientStdio`)."""
+        from mcp_gateway.upstream.stdio_client import ClientStdio
+
+        await self.disconnect_server(key)
+        cfg = entry.config if isinstance(entry.config, dict) else {}
+        args = cfg.get("args")
+        env = cfg.get("env")
+        client = ClientStdio(
+            key,
+            str(cfg.get("command") or ""),
+            [str(a) for a in args] if isinstance(args, list) else [],
+            {
+                **({str(k): str(v) for k, v in env.items()} if isinstance(env, dict) else {}),
+                **self.stdio_lances.get(entry.server_id, {}),
+            },
+        )
+        ok = await client.connect()
+        self._clients[key] = client
+        if ok and client.tools and self.db:
+            from mcp_gateway.tool_cache import save_upstream_tools
+
+            save_upstream_tools(self.db, key, entry.prefix, client.tools)
+        return "connected" if ok else f"error: {client.error}"
 
     async def _connect_spec(
         self,
