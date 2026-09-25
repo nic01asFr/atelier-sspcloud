@@ -29,7 +29,7 @@ Elle prime sur tout ce qui suit.
    par les ACL du document) : tout accès aux données passe par `Donnees`, tout
    accès réseau pour les widgets par `ReseauWidgets` (voir le readme).
 
-## Mode application, lots 0, 1, 2 et 4 (25/09/2026)
+## Mode application, lots 0 à 5 (25/09/2026)
 
 Conception : `docs/lecteur-grist-application.md` (dépôt de l'Atelier). Code
 dans `serveur/` du projet (paquet `lecteur_grist`), installé par
@@ -119,6 +119,36 @@ dans `serveur/` du projet (paquet `lecteur_grist`), installé par
   ordre. Les adresses lues dans CRM ne sortent pas du test (alias).
   Chrome à deux comptes : `outils/verifier_acces_navigateur.py DOC.grist`
   (contextes de navigation séparés, `Target.createBrowserContext`).
+- **Widgets servis (lot 3)** : `widgets.py` ; `lecteur-grist widgets
+  recuperer|lister|autoriser|relais`. Miroir par chemin et copie autonome
+  sous `widgets/<clé>/` (dossier d'application), récupérés hors requête par
+  le `Recuperateur` d'`outils/embarquer_widgets.py` ; jamais une adresse à
+  jeton. Service : miroir > copie autonome > copie du document > relais
+  autorisé > « non disponible » ; derrière l'Atelier (`X-Atelier-Acces`),
+  copie autonome d'abord. `/widgets/*` : CSP `sandbox` sans
+  `allow-same-origin`, réseau = serveur + liste blanche de la section,
+  **jamais accordée d'office** (le propriétaire accorde ce qui lui est
+  proposé). `--port-widgets` : vraie origine distincte, seule façon d'avoir
+  un `Referer` (tuiles OpenStreetMap). `POST /api/jeton` + `?auth=`
+  (getAccessToken : 15 min, lecture seule en « read table », règles de
+  l'utilisateur). Document d'essai : `outils/fabriquer_essai_widgets.py
+  --moteur` (écrit par le moteur, accepté par `init`). Tests :
+  `serveur/tests/test_widgets.py`.
+- **Artefact serveur (lot 5)** : `artifacts/application/` (`artefact.json`
+  au format du manifeste déployé, lu dans `apps/manifeste.py` ; dossier
+  d'application `artifacts/application/dossier/`, ignoré par git). Créer
+  par `~/work/bin/atelier-app creer projet-sans-nom-5 <nom> serveur` (il
+  pose un gabarit et `.auteur`), démarrer par `atelier-app demarrer` avec
+  le même `ATELIER_AUTEUR`. `--auth entete --entete-utilisateur
+  X-Atelier-Utilisateur` : l'Atelier envoie `proprietaire`, traduit par la
+  table `identites` d'`application.json`. Adresse :
+  `https://user-nic01asfr-atelier-apps.user.lab.sspcloud.fr/projet-sans-nom-5/application/`.
+  Vérification de bout en bout sans navigateur ouvert : passage par code
+  (`POST /v1/auth/cookie` avec la clé lue sur le disque, jamais affichée,
+  puis `…/ouvrir`) ; le cookie `__Host-atelier_apps` ne se montre pas.
+  Limites relevées : un widget qui appelle lui-même l'API avec son jeton
+  reçoit 401 du relais (pas de cookie depuis une origine opaque) ; pas de
+  tuiles à `Referer` derrière l'Atelier.
 
 ## Lot « widgets par leur adresse » (24/09/2026, nuit)
 
@@ -318,6 +348,11 @@ Objectif : faire tourner sans réseau tout un document, widgets compris.
 
 ## Décisions qui reviennent à l'Atelier
 
+- **Un hôte des widgets** à côté de l'hôte des applications (ou accepter,
+  sur `/api/docs/*` d'un artefact serveur, une requête sans cookie qui porte
+  un jeton de widget) : sans lui, derrière l'Atelier, les widgets tournent
+  en origine opaque, sans `Referer` et sans appel direct à l'API.
+
 - **`allow-downloads`** dans le `sandbox` de `CSP_SANDBOX` : sans lui, rien de
   ce qu'on édite dans l'artefact ne peut en sortir. La page n'a rien à
   changer le jour où il est ajouté.
@@ -329,20 +364,20 @@ Objectif : faire tourner sans réseau tout un document, widgets compris.
 
 ## Ce qui reste
 
-- Mode application : lots L3 (widgets servis), L5 (artefact serveur de
-  l'Atelier), L7 (OIDC, public) ; parseStrings complet, pièces jointes,
-  commentaires sous règles, partages. Voir la section « État » de la
-  conception.
-- Vérification par l'Atelier réel (derrière sa connexion) : faite ici avec un
-  serveur local qui reproduit ses en-têtes, pas à travers l'Atelier.
+- Mode application : L7 (OIDC, public), qui attend les décisions de
+  Nicolas ; L6 (configuration, `/api/admin`) ; parseStrings complet, pièces
+  jointes, commentaires sous règles, partages. Voir la section « État » de
+  la conception.
+- Le lecteur servi par l'Atelier, ouvert par la personne depuis
+  l'interface de l'Atelier (vérifié par requêtes et par Chrome sans tête
+  dans le pod, pas par le bouton « Ouvrir »).
 - Remplaçant de grist-plugin-api : pas de `cellFormat: 'typed'`, pas de tri
   de section, pas de modification des colonnes associées.
 - Calendrier gristlabs hors ligne depuis la copie du navigateur (CSS de
-  `uicdn.toast.com` sans CORS) ; graphiques Kaplan-Meier ; pièces jointes
+  `uicdn.toast.com` sans CORS ; il tourne en mode serveur, récupéré par le
+  serveur) ; graphiques Kaplan-Meier ; pièces jointes
   (formulaires, `Donnees.pieceJointe`) ; disposition des sections selon
   `layoutSpec` (elles s'empilent).
-- Implémentation serveur de `ReseauWidgets` (lot 3) ; `Donnees` serveur en
-  écriture (lot 2).
 
 ## Règles propres au projet
 
@@ -365,6 +400,9 @@ Objectif : faire tourner sans réseau tout un document, widgets compris.
 - Après toute modification de `index.html` : `outils/publier.sh`, puis
   `python3 outils/verifier_artefact.py` (mode fichier) et
   `.venv/bin/python outils/verifier_serveur.py DOC.grist` (mode serveur).
+- Widgets servis : `lecteur-grist widgets recuperer` ne tourne jamais pendant
+  une requête ; le réseau d'un widget ne s'accorde qu'à la main
+  (`widgets autoriser`), jamais depuis ce que la récupération propose.
 - Serveur : `.venv/bin/python -m pytest serveur/tests` ; le moteur
   (`moteur_grist/`) ne se modifie pas à la main (voir `RETOUCHES.md`) ;
   toute écriture du `.grist` se vérifie par réouverture dans grist-core

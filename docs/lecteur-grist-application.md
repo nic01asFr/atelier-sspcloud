@@ -1,8 +1,8 @@
 # Lecteur Grist, mode application — conception
 
-Version 1, 24/09/2026. **À valider par Nicolas.** Lots 0, 1, 2 et 4
-réalisés le 25/09/2026 (voir « État », en fin de document) ; le reste est
-une proposition, non implémentée.
+Version 1, 24/09/2026. **À valider par Nicolas.** Lots 0 à 5 réalisés le
+25/09/2026 (voir « État », en fin de document) ; L6 à L8 sont une
+proposition, non implémentée.
 Sources : grist-core 1.7.3 (Apache-2.0 ; attention, le clone local est le fork
 nic01asFr, le moteur à reprendre est celui de gristlabs), grist-static,
 `docs/consignes/lecteur-grist.md`, `docs/atelier-applications.md`.
@@ -393,6 +393,64 @@ Détail des mesures : `serveur/MESURES.md` ; usage : readme du projet.
     (CRM, 419 → 524 ms).
   - Commits locaux (pas de push) : 7 commits, de `e1f3a57` à `1b7548e`,
     arbres identiques entre le poste et le pod.
+- **L3** : widgets servis par le serveur.
+  - `lecteur-grist widgets recuperer` (hors requête) range sous
+    `widgets/<clé>/` un **miroir par chemin** (page, scripts, modules ES et
+    carte d'import, CSS et `@import`/`url()`, images, polices ; CDN sous
+    `_ext/<hôte>/…` ; références réécrites en relatif ;
+    `grist-plugin-api.js` remplacé par `/widgets/_api/grist-plugin-api.js`)
+    et une **copie autonome** (`outils/embarqueur-widgets.js` dans Node).
+    Réseau par le `Recuperateur` d'`outils/embarquer_widgets.py` (refus des
+    adresses privées après résolution, plafonds) ; une adresse à jeton n'est
+    jamais récupérée. `widgets lister|autoriser|relais`.
+  - Service (`/api/widgets`, par section lisible) : miroir > copie
+    autonome > copie du document > relais direct si autorisé > « non
+    disponible » (données brutes). `/widgets/*` sans identification (code
+    public du widget), CSP `sandbox` sans `allow-same-origin`, réseau =
+    serveur + **liste blanche de la section** (`widgets.sections.<id>.reseau`),
+    jamais accordée d'office : les origines citées par le code et par les
+    paramètres d'adresse sont **proposées** au propriétaire (bandeau,
+    `widgets lister`). `--port-widgets` : vraie origine distincte
+    (`allow-same-origin` sur cette origine, qui n'est pas celle du lecteur).
+  - `getAccessToken` : `POST /api/jeton` → jeton HMAC de 15 min au nom de
+    l'utilisateur, accepté en `?auth=` sur `/api/docs/*` seulement (CORS
+    ouvert pour ces appels, pré-vol `OPTIONS`), soumis à ses règles
+    d'accès ; lecture seule pour un widget « read table » ; rôle jamais
+    au-dessus de celui du compte ; un jeton de widget n'en émet pas d'autre.
+  - Lecteur : en mode serveur, les widgets externes viennent du serveur ; le
+    mode fichier est inchangé (`verifier_artefact.py` 32/32 dans le pod).
+  - Vérifié (Chrome 153, poste) : Builder, markdown, calendrier gristlabs
+    (uicdn.toast.com recopié : il tourne, ce qui échouait en mode fichier
+    hors ligne), carte (marqueurs ; tuiles d'OpenStreetMap accordées par la
+    liste blanche : affichées avec `--port-widgets`), Atlas de Saint Martin
+    avec sa scène (`--port-widgets`, scène, data.geopf.fr et
+    tiles.openfreemap.org accordés). Sonde dans un widget « read table » :
+    cookies, `localStorage` et `parent.document` inaccessibles, API sans
+    jeton illisible, jeton en lecture seule (écriture 403 « No write
+    access »), jeton altéré 401. `serveur/tests` 41 (poste et pod).
+  - Commits : `ef2df53` à `6a2c98a` (6), arbres identiques poste et pod.
+- **L5** : artefact serveur de l'Atelier, `artifacts/application/` du projet.
+  - `artefact.json` au format du manifeste déployé (`type: service`,
+    `commande` avec `{port}`, `repertoire: ../../serveur`, python du venv du
+    projet, `chemin: retire`, `sante: /_sante`, `protocoles: [http, sse]`,
+    `inactivite_min: 30`) ; créé par `atelier-app creer … serveur`, démarré
+    par `atelier-app demarrer`. Dossier d'application
+    `artifacts/application/dossier/` (ignoré par git), document d'essai
+    écrit par le moteur dans le pod (`fabriquer_essai_widgets.py --moteur`).
+  - Identité : `--auth entete --entete-utilisateur X-Atelier-Utilisateur` ;
+    `apps/proxy.py` pose la valeur littérale `proprietaire` (et
+    `X-Atelier-Acces: proprietaire`) ; `init` écrit `identites:
+    {"proprietaire": <compte propriétaire>}`.
+  - Vérifié par l'adresse publique (passage par code depuis le pod, ni clé
+    ni cookie ni code affichés) : page, `api/app` en `owners` avec le
+    préfixe ; widgets servis en copie autonome, les quatre appellent
+    `grist.ready` dans Chrome sans tête (cookie posé par DevTools) ;
+    écriture 200, autre `Origin` 403 (relais) ; SSE à travers l'Ingress
+    (bonjour, actions, battements toutes les 20 s, flux tenu 88 s ; ligne
+    écrite ailleurs visible dans la page en 0,3 s) ; arrêt pour inactivité
+    (`inactivite_min` 1 le temps de l'essai : arrêt à 80 s) puis navigation
+    → 503 « Démarrage… » → `api/app` 200 en 1,1 s.
+  - Commits : `6407182`, `0117ba9`, arbres identiques poste et pod.
 
 ### Écarts à la conception
 
@@ -432,6 +490,34 @@ Détail des mesures : `serveur/MESURES.md` ; usage : readme du projet.
 - `sort` : tri simple (sans options `:naturalSort`, etc.).
 - `--auth` : `oidc` n'existe pas encore (L7) ; `aucune` et `entete`
   n'écoutent que sur 127.0.0.1/::1.
+- **Widgets (L3)** : la copie autonome s'intercale entre le miroir et la
+  copie du document ; **derrière l'Atelier elle passe avant le miroir** : le
+  cookie de session des applications (`__Host-atelier_apps`, `Lax`) ne part
+  pas des requêtes d'une page d'origine opaque, qui ne pourrait pas charger
+  ses ressources à travers le relais. Le serveur le détecte par
+  `X-Atelier-Acces`. Réglage `widgets.forme` (`auto`, `autonome`, `miroir`).
+- **getAccessToken** : Grist le refuse à un widget « read table » ; ici il
+  l'obtient **en lecture seule** (demande du lot). Derrière l'Atelier, un
+  widget qui appelle lui-même l'API avec son jeton reçoit 401 du relais
+  (pas de cookie depuis une origine opaque) : ce qui passe par grain-rpc
+  fonctionne, l'appel direct non.
+- **Tuiles qui exigent un `Referer`** (OpenStreetMap) : jamais depuis une
+  origine opaque ; elles demandent `--port-widgets`, qui n'a pas d'équivalent
+  derrière l'Atelier (un seul hôte des applications). Les serveurs de tuiles
+  sans cette exigence (OpenFreeMap, IGN) passent par la liste blanche.
+- Propositions de réseau : heuristiques (adresses citées par le code, moins
+  une liste d'hôtes de documentation) ; bruyantes pour les grosses
+  bibliothèques (Atlas : 40 origines proposées). Rien n'est accordé d'office.
+- Pas de `init --recuperer-widgets`, ni `widgets recuperer --tout` (la
+  commande prend tout par défaut, `--section` restreint) ; pas de
+  `/api/admin/*` (L6).
+- **L5** : la conception mettait le dossier d'application à la racine de
+  `artifacts/<nom>/` et la commande `python -m lecteur_grist serve
+  artifacts/<nom>` ; déployé : dossier `artifacts/<nom>/dossier/` (le
+  dossier de l'artefact porte `artefact.json` et `.auteur`, écrits par
+  l'Atelier), `repertoire: ../../serveur` et `../.venv/bin/python` (le
+  paquet n'est pas installé dans le venv) ; `--entete-utilisateur` est un
+  synonyme de `--entete`. Démarrage à froid mesuré : 1,1 s (estimé 1–5 s).
 - **L'exemple CRESO embarqué n'a pas été remplacé** : c'est un sous-ensemble
   SQLite fait à la main (ni `schemaVersion`, ni `_grist_Pages`), que le
   moteur ne sait migrer depuis aucune version supposée (1 à 40). En
@@ -440,8 +526,13 @@ Détail des mesures : `serveur/MESURES.md` ; usage : readme du projet.
 
 ### Non vérifié
 
-- À travers l'Atelier réel (artefact serveur, L5) : préfixe vérifié derrière
-  un relais local qui reproduit `X-Forwarded-Prefix`.
+- Le lecteur servi par l'Atelier dans un navigateur ouvert par la personne
+  (le parcours a été fait par Chrome sans tête dans le pod, cookie
+  d'applications posé par DevTools, et par requêtes ; pas par l'interface
+  de l'Atelier et son bouton « Ouvrir »).
+- Atlas de Saint Martin dans l'artefact (le document n'est pas dans le
+  pod) ; widgets servis par un sous-domaine réel (`--port-widgets` : en
+  localhost seulement).
 - Écriture sur 🟢CRM (111 Mo) dans Chrome ; charge soutenue (au-delà de deux
   clients et 40 actions) ; long fonctionnement (rétention sur plusieurs
   jours : testée avec des dates simulées).
@@ -455,12 +546,12 @@ Détail des mesures : `serveur/MESURES.md` ; usage : readme du projet.
 
 ### Recommandation pour la suite
 
-L4 tient : 0 écart contre grist-core sur 10 documents et scénarios, lectures
-et écritures, pour tous les rôles. La conception demandait L4 avant toute
-exposition : c'est fait, mais l'exposition elle-même attend L5 (artefact
-serveur de l'Atelier, identité par `entete` derrière la connexion de
-l'Atelier) et L7 (OIDC, public, revue de sécurité). Suite proposée : **L3**
-(widgets servis : miroir, service, CSP, jetons de widget ; les widgets
-reçoivent aujourd'hui ce que le lecteur leur transmet, déjà filtré) puis
-**L5**. À traiter au passage : parseStrings complet, pièces jointes, et
-commentaires sous règles si un document en a besoin.
+L3 et L5 tiennent : l'application tourne derrière l'Atelier, propriétaire
+seul, widgets compris. **L7** (public, OIDC, revue de sécurité) attend les
+décisions de Nicolas : client OIDC SSPCloud, image et chart, et pour les
+widgets un **sous-domaine distinct** (seule façon d'offrir une vraie origine
+aux widgets, donc les tuiles à `Referer` et `getAccessToken` en appel
+direct). Décisions qui reviennent à l'Atelier, relevées ici : un hôte des
+widgets à côté de l'hôte des applications, ou l'acceptation d'une requête
+porteuse d'un jeton de widget sans cookie sur `/api/docs/*`. À traiter au
+passage : parseStrings complet, pièces jointes, commentaires sous règles.
