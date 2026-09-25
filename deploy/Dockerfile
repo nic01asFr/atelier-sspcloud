@@ -39,6 +39,21 @@ RUN "$ATELIER_CODE_SERVER_DIR/bin/code-server" --extensions-dir "$ATELIER_EXTENS
     && ls -d "$ATELIER_EXTENSIONS"/anthropic.claude-code-* \
     && test -x "$(ls -d "$ATELIER_EXTENSIONS"/anthropic.claude-code-* | sort -V | tail -1)/resources/native-binary/claude"
 
+# Le navigateur des agents : Google Chrome (paquet officiel, qui tire ses
+# bibliothèques) et le serveur MCP chrome-devtools-mcp, épinglé. Chaque agent
+# les lance par ~/work/bin/atelier-chrome, en stdio, sans écran
+# (docs/navigateur-atelier.md).
+ARG CHROME_MCP_VERSION=1.10.1
+RUN curl -fsSL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
+      -o /tmp/chrome.deb \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends /tmp/chrome.deb \
+    && rm -rf /tmp/chrome.deb /var/lib/apt/lists/* \
+    && google-chrome --version
+RUN mkdir -p "$ATELIER_OUTILS/chrome-devtools-mcp" \
+    && npm install --prefix "$ATELIER_OUTILS/chrome-devtools-mcp" --no-audit --no-fund \
+      --save-exact "chrome-devtools-mcp@${CHROME_MCP_VERSION}"
+
 # wikichat et ses dépendances.
 RUN git clone -q --depth 1 --branch "$WIKICHAT_REF" "$WIKICHAT_DEPOT" /opt/atelier/wikichat \
     && cd /opt/atelier/wikichat \

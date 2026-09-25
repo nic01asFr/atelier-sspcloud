@@ -40,6 +40,7 @@ DEPOT_WIKICHAT="${WIKICHAT_DEPOT-https://github.com/nic01asFr/wikichat.git}"
 SANS_WIKICHAT="${ATELIER_SANS_WIKICHAT:-0}"
 VERSION_CODE_SERVER="${CODE_SERVER_VERSION:-4.135.0}"
 VERSION_NODE="${NODE_VERSION:-22.23.2}"
+VERSION_CHROME_MCP="${CHROME_MCP_VERSION:-1.10.1}"
 PASSERELLE_LLM="${ANTHROPIC_BASE_URL:-https://llm.lab.sspcloud.fr/api}"
 MODELE="${ATELIER_MODELE:-qwen3-6-35b-moe}"
 # gemma4-26b-moe n'est plus ni au créneau opus ni parmi les replis : mesuré le
@@ -93,6 +94,20 @@ fi
 ln -sfn "$DOSSIER_NODE/bin/node" "$BIN/node"
 ln -sfn "$DOSSIER_NODE/bin/npm" "$BIN/npm"
 ln -sfn "$DOSSIER_NODE/bin/npx" "$BIN/npx"
+
+# --- navigateur -----------------------------------------------------------
+# Le serveur MCP du navigateur (chrome-devtools-mcp, Apache-2.0), épinglé, dans
+# le volume — l'image l'embarque déjà sous /opt/atelier/outils. Chaque agent le
+# lance par ~/work/bin/atelier-chrome (voir docs/navigateur-atelier.md). Chrome
+# vient de l'image ou du système ; sans lui, le navigateur reste déclaré mais
+# indisponible, et l'écran des connecteurs le dit.
+
+paquet_navigateur=node_modules/chrome-devtools-mcp/package.json
+if [ ! -f "${ATELIER_OUTILS:-/opt/atelier/outils}/chrome-devtools-mcp/$paquet_navigateur" ]   && [ ! -f "$OUTILS/chrome-devtools-mcp/$paquet_navigateur" ]; then
+  dire "chrome-devtools-mcp $VERSION_CHROME_MCP"
+  mkdir -p "$OUTILS/chrome-devtools-mcp"
+  npm install --prefix "$OUTILS/chrome-devtools-mcp" --no-audit --no-fund --save-exact     "chrome-devtools-mcp@$VERSION_CHROME_MCP" >/dev/null 2>&1     || avertir "chrome-devtools-mcp ne s'est pas installé : pas de navigateur pour les agents"
+fi
 
 # --- code-server et l'extension Claude Code -------------------------------
 # Le binaire `claude` est celui que l'extension embarque : on n'installe pas
@@ -158,7 +173,7 @@ if [ -n "$DEPOT_ATELIER" ] || ! python3 -c "import mcp_gateway.atelier" 2>/dev/n
   dire "paquet Python"
   python3 -m pip install -q -e "$SOURCE_ATELIER" 2>&1 | tail -1 || avertir "pip install a échoué"
 fi
-for script in atelier-relancer atelier-figer-le-travail.sh atelier-app atelier-verifier-coherence; do
+for script in atelier-relancer atelier-figer-le-travail.sh atelier-app atelier-verifier-coherence atelier-chrome; do
   if [ -f "$SOURCE_ATELIER/bin/$script" ]; then
     cp -f "$SOURCE_ATELIER/bin/$script" "$BIN/$script" && chmod +x "$BIN/$script"
   fi
