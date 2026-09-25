@@ -557,6 +557,10 @@ def main() -> None:
     parser.add_argument("--ratio", type=float, default=settings.relais_llm_ratio)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    # httpx journalise chaque requête avec son adresse complète : notre ligne
+    # suffit, et une adresse ne doit jamais devenir un canal pour un secret.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
     import uvicorn
 
     # Boucle locale seulement, sans option pour en sortir : le relais porte
