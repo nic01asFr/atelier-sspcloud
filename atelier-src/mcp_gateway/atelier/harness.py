@@ -749,8 +749,13 @@ class ClaudeHarness(Harness):
         return ["--settings", json.dumps(reglages, ensure_ascii=False)]
 
     def _arguments_de_reglages(self, session_id: str, model: str | None) -> list[str]:
-        """Un seul `--settings` : les règles du fil et l'environnement imposé."""
-        reglages = dict(reglages_cli(self.decisions.regles(session_id)) or {})
+        """Un seul `--settings` : les règles du fil, l'environnement imposé, et
+        le refus des outils que la passerelle LLM simule (WebSearch)."""
+        from mcp_gateway.atelier.navigateur import refuser_les_outils_simules
+
+        reglages = refuser_les_outils_simules(
+            dict(reglages_cli(self.decisions.regles(session_id)) or {}), self.settings
+        )
         env = dict(reglages.get("env") or {})
         env.update(self._env_impose(model))
         reglages["env"] = env

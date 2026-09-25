@@ -61,6 +61,16 @@ def bloc_contexte(slug: str, chemin: Path) -> str:
             " autre conversation (`forcer` seulement si on te le demande) ; sans MCP,"
             " `~/work/bin/atelier-app`.",
             "",
+            "### Le web",
+            "",
+            "- WebSearch n'existe pas ici (la passerelle LLM le simulerait) : pour"
+            " chercher, ouvre `https://html.duckduckgo.com/html/?q=<mots>` avec le"
+            " navigateur (`chrome-devtools-mcp`). WebFetch lit une page dont tu as l'adresse.",
+            "- Le navigateur est un Chrome sans écran, à toi seul, fermé avec la"
+            " conversation. Pour lire une longue page, préfère `evaluate_script`"
+            " (`() => document.body.innerText.slice(0, 20000)`) à `take_snapshot`,"
+            " qui rend tout l'arbre de la page.",
+            "",
             "_Section tenue par l'Atelier ; le reste du fichier est à vous._",
             FIN,
         ]
