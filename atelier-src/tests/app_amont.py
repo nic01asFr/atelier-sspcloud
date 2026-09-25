@@ -12,6 +12,8 @@ mandataire doit transformer :
 - `/cookie` : pose des cookies (Domain, Path, `__Host-`) ;
 - `/redirige` : un `Location` vers la racine, un autre vers l'amont lui-même ;
 - `/csp` : une CSP à elle, sans `frame-ancestors`, et `Service-Worker-Allowed` ;
+- `/cadre` : ce que rend n8n, `X-Frame-Options: SAMEORIGIN`, et une CSP qui
+  ouvre l'encadrement à tous (`frame-ancestors *`) ;
 - `/ws` : écho texte et binaire, sous-protocole `echo.v1`, fermeture 4001
   sur le message « ferme ».
 """
@@ -81,6 +83,14 @@ async def csp(request: Request) -> Response:
     )
 
 
+async def cadre(request: Request) -> Response:
+    r = PlainTextResponse("ok")
+    r.raw_headers.append((b"x-frame-options", b"SAMEORIGIN"))
+    r.raw_headers.append((b"content-security-policy", b"default-src 'self'; frame-ancestors *"))
+    r.raw_headers.append((b"content-security-policy", b"frame-ancestors https://ailleurs.test"))
+    return r
+
+
 async def ws(websocket: WebSocket) -> None:
     demandes = websocket.scope.get("subprotocols") or []
     await websocket.accept(subprotocol="echo.v1" if "echo.v1" in demandes else None)
@@ -109,6 +119,7 @@ app = Starlette(
         Route("/cookie", cookie),
         Route("/redirige", redirige),
         Route("/csp", csp),
+        Route("/cadre", cadre),
         WebSocketRoute("/ws", ws),
     ]
 )

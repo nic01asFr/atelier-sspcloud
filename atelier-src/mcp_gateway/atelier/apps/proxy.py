@@ -13,7 +13,9 @@ Le mandataire ne lui fait pas confiance plus qu'il ne faut :
   vise l'amont est réécrit ; `Service-Worker-Allowed` disparaît, qui
   laisserait un service worker régner hors de son préfixe ;
 - il ajoute des défauts qu'elle peut préciser mais pas omettre : `nosniff`,
-  `Referrer-Policy`, et `frame-ancestors` limité à l'Atelier.
+  `Referrer-Policy` ; et une règle qu'elle ne choisit pas : seul l'Atelier
+  l'encadre (`cadrage` : son `frame-ancestors` et son `X-Frame-Options`
+  sont remplacés par la politique de l'hôte).
 
 Les corps vont en flux dans les deux sens, sans rien garder en mémoire : un
 envoi de fichier de deux cents mégaoctets ne coûte que ses morceaux en vol,
@@ -27,6 +29,7 @@ from collections.abc import AsyncIterator, Iterable, Sequence
 from typing import Any
 from urllib.parse import urlsplit
 
+from mcp_gateway.atelier.apps.cadrage import imposer as imposer_cadrage
 from mcp_gateway.atelier.apps.passage import COOKIE_APPS
 from mcp_gateway.atelier.relais_ws import (  # noqa: F401 — réexportés pour `serveur`
     FERME_AMONT_INJOIGNABLE,
@@ -191,17 +194,16 @@ def entetes_vers_client(
             valeur = reecrire_location(
                 valeur, prefixe=prefixe, chemin_retire=chemin_retire, amont=amont, origine_apps=origine_apps
             )
-        elif nom == "content-security-policy" and "frame-ancestors" not in valeur:
-            valeur = f"{valeur.rstrip('; ')}; frame-ancestors 'self' {origine_atelier}".strip()
         vus.add(nom)
         sortie.append((cle, valeur))
     if "x-content-type-options" not in vus:
         sortie.append(("X-Content-Type-Options", "nosniff"))
     if "referrer-policy" not in vus:
         sortie.append(("Referrer-Policy", "same-origin"))
-    if "content-security-policy" not in vus:
-        sortie.append(("Content-Security-Policy", f"frame-ancestors 'self' {origine_atelier}".strip()))
     sortie.append(("X-Accel-Buffering", "no"))
+    # Une seule politique de cadrage, la nôtre : l'amont ne choisit pas qui
+    # l'encadre (n8n rend `X-Frame-Options: SAMEORIGIN`).
+    sortie = imposer_cadrage(sortie, origine_atelier)
     return [(k.lower().encode("latin-1"), v.encode("latin-1", "replace")) for k, v in sortie]
 
 

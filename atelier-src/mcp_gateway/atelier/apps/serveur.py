@@ -17,6 +17,10 @@ Ingress, autre origine. On n'y trouve rien de l'Atelier — ni `/v1`, ni
 Toute requête dont l'hôte n'est pas celui des applications reçoit 421 : un
 Ingress mal réglé ne doit pas faire servir ce contenu sous une autre adresse,
 encore moins sous celle de l'Atelier.
+
+Toute réponse sort avec une seule politique de cadrage : l'Atelier, et lui
+seul, peut l'encadrer (voir `cadrage`). C'est ce qui permet au panneau de
+montrer une création à côté du fil.
 """
 
 from __future__ import annotations
@@ -42,6 +46,7 @@ from starlette.websockets import WebSocket
 
 from mcp_gateway.atelier import artifacts as art
 from mcp_gateway.atelier.apps import proxy as px
+from mcp_gateway.atelier.apps.cadrage import CadrageDesReponses
 from mcp_gateway.atelier.apps.manifeste import Manifeste, ManifesteInvalide, nom_valide
 from mcp_gateway.atelier.apps.passage import COOKIE_APPS, DUREE_SESSION_S, destination_valide
 from mcp_gateway.atelier.apps.service import ApplicationInconnue, ServiceApps
@@ -420,7 +425,7 @@ def construire_app_apps(service: ServiceApps, *, origine_atelier: Callable[[], s
     app = Starlette(routes=routes)
     app.state.service = service
     app.state.fermer_clients = fermer_clients
-    garde = GardeDeLHote(app, lambda: service.hote)
+    garde = GardeDeLHote(CadrageDesReponses(app, origine_atelier), lambda: service.hote)
     garde.interne = app  # type: ignore[attr-defined]
     return garde
 

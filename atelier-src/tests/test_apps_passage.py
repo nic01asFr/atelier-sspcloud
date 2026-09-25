@@ -287,7 +287,7 @@ def test_entetes_vers_client() -> None:
     assert d["set-cookie"] == ["a=1; Path=/demo/voix/"]
     assert d["referrer-policy"] == ["no-referrer"]
     assert d["x-content-type-options"] == ["nosniff"]
-    assert d["content-security-policy"] == ["frame-ancestors 'self' https://atelier.test"]
+    assert d["content-security-policy"] == ["frame-ancestors https://atelier.test"]
     assert d["x-accel-buffering"] == ["no"]
 
 
