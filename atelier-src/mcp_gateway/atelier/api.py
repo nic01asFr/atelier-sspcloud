@@ -76,7 +76,7 @@ from mcp_gateway.atelier.vscode_proxy import (
     resolve_vscode_password,
     VscodeUpstream,
 )
-from mcp_gateway.atelier.chrome_proxy import register_chrome_proxy
+from mcp_gateway.atelier.navigateur_routes import register_navigateur_routes
 from mcp_gateway.atelier.wikichat_pilote_proxy import proxy_wikichat_pilote
 
 log = logging.getLogger("atelier.api")
@@ -683,7 +683,6 @@ def build_app(
             "vscode_url": vs,
             "vscode_ready": st["ready"],
             "vscode_password_configured": st["password_configured"],
-            "chrome_view": "/chrome/view",
             "default_slug": settings.default_slug,
             "assistant_slug": settings.assistant_slug,
             "projects_root": str(settings.projects_dir),
@@ -2528,7 +2527,7 @@ def build_app(
         register_mcp_endpoint(app, auth)
 
     register_vscode_proxy(app, settings, require_owner_nav)
-    register_chrome_proxy(app, settings, require_owner_nav)
+    register_navigateur_routes(app, settings, require_owner_nav)
 
     @app.get("/pilote")
     @app.api_route("/pilote/{rest:path}", methods=["GET", "POST", "DELETE"])

@@ -25,17 +25,16 @@ WorkspaceKind = Literal["assistant", "code"]
 
 # La passerelle de l'Atelier, telle qu'un projet la désigne.
 SERVICE_ATELIER = "atelier"
-# Le navigateur de l'Atelier : son adresse, son jeton (par référence), et
-# l'en-tête de conversation vivent dans `navigateur` ; réexportés ici pour les
-# appelants existants.
+# Le navigateur de l'Atelier (stdio, un processus par client) et l'en-tête de
+# conversation de la passerelle vivent dans `navigateur` ; réexportés ici pour
+# les appelants existants.
 from mcp_gateway.atelier.navigateur import (  # noqa: E402
     CONVERSATION_HORS_ATELIER,
     ENTETE_CONVERSATION,
     SERVICE_CHROME,
-    chrome_http_origin,
-    chrome_mcp_url_configuree,
     declaration_chrome,
     est_le_navigateur,
+    navigateur_configure,
 )
 
 
@@ -68,36 +67,19 @@ def pour_le_home(servers: dict[str, Any]) -> dict[str, Any]:
     On n'écarte que l'alias déguisé (`Onyxia_nic01asfr`), qui n'est pas
     le service Onyxia — c'est la porte `/mcp` de l'Atelier.
 
-    Le navigateur y porte `${ATELIER_SESSION:-poste}` : VS Code lit ce
-    fichier sans connaître de conversation, et partage donc la conversation
-    « poste ». Le cloisonnement se fait dans le fichier effectif de chaque
-    conversation, où l'Atelier résout la variable.
+    Le navigateur n'y demande rien de plus : c'est un serveur stdio, dont
+    chaque client lance son propre processus — le cloisonnement est là.
     """
     propre = sans_amonts_gateway(servers)
     sortie: dict[str, Any] = {}
     for nom, cfg in propre.items():
-        if est_le_navigateur(nom) and isinstance(cfg, dict) and _est_notre_declaration(cfg):
-            sortie[nom] = _declaration_hors_conversation(cfg)
-        elif isinstance(cfg, dict):
+        if isinstance(cfg, dict):
             # Jamais un secret en clair dans ce fichier : les déclarations du
             # pool deviennent leurs références `${ATELIER_MCP_…}`, dont
             # `~/work/.secrets/claude-env.sh` porte les valeurs (env_secrets).
             sortie[nom], _ = en_references(nom, cfg)
         else:
             sortie[nom] = cfg
-    return sortie
-
-
-def _est_notre_declaration(cfg: dict[str, Any]) -> bool:
-    entetes = cfg.get("headers")
-    return isinstance(entetes, dict) and "X-Atelier-Conversation" in entetes
-
-
-def _declaration_hors_conversation(cfg: dict[str, Any]) -> dict[str, Any]:
-    sortie = dict(cfg)
-    entetes = dict(cfg.get("headers") or {})
-    entetes["X-Atelier-Conversation"] = "${ATELIER_SESSION:-poste}"
-    sortie["headers"] = entetes
     return sortie
 
 
@@ -318,10 +300,9 @@ def declaration_atelier(settings: AtelierSettings) -> dict[str, Any]:
 
     La conversation aussi, par référence : `X-Atelier-Conversation` dit aux
     outils `atelier_artefact_*` qui les appelle, sans que l'agent ait à le
-    répéter en argument. Même mécanisme que le navigateur : le fichier
-    effectif d'un tour la résout (`resoudre_les_variables`), et un client
-    hors conversation — VS Code, qui lit le `.mcp.json` du projet — tombe
-    sur le repli « poste », qu'il partage avec le navigateur.
+    répéter en argument. Le fichier effectif d'un tour la résout
+    (`resoudre_les_variables`), et un client hors conversation — VS Code, qui
+    lit le `.mcp.json` du projet — tombe sur le repli « poste ».
     """
     return {
         "type": "http",
@@ -358,27 +339,18 @@ def integrer_l_atelier(servers: dict[str, Any]) -> dict[str, Any]:
     return sortie
 
 
-def chrome_mcp_url_effective(settings: AtelierSettings) -> str:
-    """Compat : l'adresse configurée du navigateur, ou "" s'il n'y en a pas.
-
-    Il n'y a plus d'adresse devinée (Service cluster, loopback) : sans
-    `ATELIER_CHROME_MCP_URL`, l'Atelier ne déclare pas de navigateur.
-    """
-    return chrome_mcp_url_configuree(settings)
-
-
 def integrer_le_navigateur(
     servers: dict[str, Any],
     settings: AtelierSettings,
 ) -> dict[str, Any]:
-    """Remplace la déclaration du navigateur de l'Atelier par celle du contrat.
+    """Remplace la déclaration du navigateur de l'Atelier par celle du lanceur.
 
-    Seule l'entrée `SERVICE_CHROME` est touchée, et seulement si l'Atelier
-    connaît l'adresse du service : un connecteur tiers qui parle de Chrome
-    reste tel que la personne l'a écrit. La déclaration écrite ne porte que
-    des références — `${ATELIER_SESSION}` et la variable du jeton.
+    Seule l'entrée `SERVICE_CHROME` est touchée, et seulement si le
+    navigateur n'est pas éteint : un connecteur tiers qui parle de Chrome
+    reste tel que la personne l'a écrit. Une ancienne déclaration HTTP (le
+    service distant, son jeton, son en-tête) devient celle du lanceur stdio.
     """
-    if not chrome_mcp_url_configuree(settings):
+    if not navigateur_configure(settings):
         return dict(servers)
     sortie: dict[str, Any] = {}
     for nom, cfg in servers.items():
@@ -398,9 +370,8 @@ def integrer_le_navigateur(
 # tiers qui n'en ont que faire — mcp.data.gouv.fr n'a pas à savoir qui lui parle.
 # Un service ne la reçoit que s'il l'a écrite dans son adresse.
 #
-# Le service du navigateur en a besoin : c'est par là qu'il saura quel contexte
-# rendre à quelle conversation, et donc quelles pages et quels cookies. Sans
-# elle, il ne peut ni retrouver un fil d'un tour à l'autre, ni les cloisonner.
+# La passerelle de l'Atelier en a besoin : c'est par là que ses outils
+# `atelier_*` savent quelle conversation les appelle.
 VARIABLES_CONNUES = ("ATELIER_SESSION", "ATELIER_AGENT")
 
 _VARIABLE = re.compile(r"\$\{([A-Z_]+)(?::-([^}]*))?\}")
@@ -443,7 +414,7 @@ def resoudre_les_variables(config: dict[str, Any], *, session: str, agent: str) 
         if resolue != url:
             sortie["url"] = resolue
             change = True
-    # Les en-têtes aussi : c'est par là que le navigateur reçoit la
+    # Les en-têtes aussi : c'est par là que la passerelle de l'Atelier reçoit la
     # conversation. Pas d'encodage d'URL dans un en-tête.
     entetes = config.get("headers")
     if isinstance(entetes, dict) and any("${" in str(v) for v in entetes.values()):
@@ -593,9 +564,9 @@ def write_project_binding(
         if nom == SERVICE_ATELIER:
             # Toujours reconstruite : son adresse suit le port du service.
             retenus[nom] = declaration_atelier(settings)
-        elif est_le_navigateur(nom) and chrome_mcp_url_configuree(settings):
-            # Loopback sans placeholder : VS Code lit ce fichier.
-            retenus[nom] = declaration_chrome(settings, cloisonner=False)
+        elif est_le_navigateur(nom) and navigateur_configure(settings):
+            # Le lanceur stdio, le même sur toutes les surfaces.
+            retenus[nom] = declaration_chrome(settings)
         elif nom in deja and isinstance(deja[nom], dict):
             config = dict(deja[nom])
             config.pop("enabled", None)
@@ -643,8 +614,8 @@ def lier_le_projet(
             continue
         if nom == SERVICE_ATELIER:
             ecrits[nom] = declaration_atelier(settings)
-        elif est_le_navigateur(nom) and chrome_mcp_url_configuree(settings):
-            ecrits[nom] = declaration_chrome(settings, cloisonner=False)
+        elif est_le_navigateur(nom) and navigateur_configure(settings):
+            ecrits[nom] = declaration_chrome(settings)
         elif not herite and isinstance(deja.get(nom), dict):
             config = dict(deja[nom])
             config.pop("enabled", None)

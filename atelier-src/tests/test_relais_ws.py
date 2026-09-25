@@ -1,8 +1,8 @@
 """`relais_ws.relayer` : les options de l'hôte des applications, sur le relais commun.
 
-`/vscode`, `/chrome/vnc` et l'hôte des applications passent par le même
-relais. Ce que les deux premiers en attendent (ordre, sous-protocoles,
-fermetures) est couvert par test_garde_ws_vscode et test_chrome_atelier ;
+`/vscode` et l'hôte des applications passent par le même
+relais. Ce que `/vscode` en attend (ordre, sous-protocoles,
+fermetures) est couvert par test_garde_ws_vscode ;
 ici, chaque option ajoutée pour les applications, et le défaut qui laisse
 les deux autres comme avant.
 

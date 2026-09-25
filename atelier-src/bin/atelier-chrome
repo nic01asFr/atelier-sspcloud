@@ -30,7 +30,13 @@
 #   ATELIER_CHROME_MCP_JS    point d'entrée de chrome-devtools-mcp (sinon cherché)
 #   ATELIER_CHROME_JOURNAL   fichier de journal du serveur (aucun par défaut)
 #   ATELIER_CHROME_RACINE    dossier des profils et du comptage
+#   ATELIER_CHROME_WS / ATELIER_CHROME_URL  se rattacher à un Chrome existant
+#                            (ws://… ou http://…) au lieu d'en lancer un
 #   ATELIER_CHROME_VERIFIER=1  vérifie l'installation, n'ouvre rien, sort.
+#
+# Le plafond atteint, Chrome refuse de démarrer : l'agent reçoit alors de
+# chrome-devtools-mcp une erreur de protocole (« Target closed »), pas notre
+# phrase, que seul le journal du serveur garde (ATELIER_CHROME_JOURNAL).
 set -u
 
 WORK="${ATELIER_WORK:-$HOME/work}"
@@ -71,10 +77,16 @@ trouver_serveur() {
   return 1
 }
 
+# Le node de l'Atelier d'abord : celui du système peut être trop ancien
+# (Node 18 sur le pod, que chrome-devtools-mcp refuse — il exige 20.19+).
 trouver_node() {
-  if [ -n "${ATELIER_NODE:-}" ] && [ -x "$ATELIER_NODE" ]; then echo "$ATELIER_NODE"; return 0; fi
-  command -v node >/dev/null 2>&1 && { command -v node; return 0; }
-  [ -x "$WORK/bin/node" ] && { echo "$WORK/bin/node"; return 0; }
+  local c
+  for c in "${ATELIER_NODE:-}" "${ATELIER_NODE_DIR:+$ATELIER_NODE_DIR/bin/node}" \
+    "$WORK/bin/node" "$(command -v node 2>/dev/null)"; do
+    [ -n "$c" ] && [ -x "$c" ] || continue
+    majeure="$("$c" -p 'process.versions.node.split(".")[0]' 2>/dev/null)"
+    [ "${majeure:-0}" -ge 20 ] 2>/dev/null && { echo "$c"; return 0; }
+  done
   return 1
 }
 
@@ -108,7 +120,7 @@ if [ "${ATELIER_CHROME_ROLE:-serveur}" = "navigateur" ]; then
 fi
 
 # --- rôle serveur ---------------------------------------------------------
-NODE="$(trouver_node)" || { dire "node introuvable"; exit 127; }
+NODE="$(trouver_node)" || { dire "aucun node 20 ou plus récent (ATELIER_NODE)"; exit 127; }
 SERVEUR="$(trouver_serveur)" || {
   dire "chrome-devtools-mcp n'est pas installé (npm install --prefix $WORK/.tools/chrome-devtools-mcp chrome-devtools-mcp)"
   exit 127
@@ -121,12 +133,14 @@ if [ "${ATELIER_CHROME_VERIFIER:-}" = "1" ]; then
 fi
 
 mkdir -p "$RACINE" && chmod 700 "$RACINE"
-# Les profils d'un serveur tué sans pouvoir ranger (SIGKILL, OOM) : leur
-# propriétaire n'existe plus, on les efface.
+# Les profils d'un lanceur tué sans pouvoir ranger (SIGKILL, OOM). Le lanceur
+# mort ne suffit pas : son serveur et son Chrome lui survivent jusqu'à ce que
+# leur client ferme le tube. On n'efface donc qu'un profil qu'aucun processus
+# ne nomme plus sur sa ligne de commande.
 for d in "$RACINE"/profil.*; do
   [ -d "$d" ] || continue
-  p="${d##*.}"
-  kill -0 "$p" 2>/dev/null || rm -rf "$d"
+  kill -0 "${d##*.}" 2>/dev/null && continue
+  grep -qsF -- "$d" /proc/[0-9]*/cmdline || rm -rf "$d"
 done
 PROFIL="$RACINE/profil.$$"
 mkdir -m 700 "$PROFIL"
@@ -135,11 +149,21 @@ portee="${ATELIER_CHROME_PORTEE:-conversation}"
 reseau="${ATELIER_CHROME_RESEAU:-}"
 [ -n "$reseau" ] || { [ "$portee" = "passerelle" ] && reseau=public || reseau=tout; }
 
-args=(
-  --headless
-  --userDataDir "$PROFIL"
-  --executablePath "$SOI"
-  --viewport 1280x720
+# Rattachement à un Chrome que l'Atelier possède déjà (vue en direct du
+# panneau par screencast DevTools, docs/navigateur-atelier.md §8) : une adresse
+# donnée par l'environnement, ou écrite par le superviseur pour cette
+# conversation dans $RACINE/attache/<ATELIER_SESSION>. Sinon, le serveur lance
+# son propre Chrome, comme aujourd'hui.
+attache="${ATELIER_CHROME_WS:-${ATELIER_CHROME_URL:-}}"
+if [ -z "$attache" ] && [ -n "${ATELIER_SESSION:-}" ] && [ -r "$RACINE/attache/$ATELIER_SESSION" ]; then
+  attache="$(head -n1 "$RACINE/attache/$ATELIER_SESSION")"
+fi
+case "$attache" in
+  ws://*|wss://*) args=(--wsEndpoint "$attache") ;;
+  http://*|https://*) args=(--browserUrl "$attache") ;;
+  *) args=(--headless --userDataDir "$PROFIL" --executablePath "$SOI" --viewport 1280x720) ;;
+esac
+args+=(
   --no-usage-statistics
   --no-performance-crux
   --redact-network-headers

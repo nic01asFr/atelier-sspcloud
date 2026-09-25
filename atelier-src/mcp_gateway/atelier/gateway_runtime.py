@@ -94,7 +94,16 @@ async def gateway_startup(app: FastAPI, atelier_settings: AtelierSettings) -> No
     app.state.catalog_errors = validate_catalog(app.state.catalog)
     app.state.catalog_sync = catalog_sync_status(app)
     app.state.bundles = BundleSession(app.state.catalog)
-    app.state.pool = UpstreamPool(app.state.catalog, app.state.db)
+    # Le navigateur est un serveur stdio : la passerelle en lance une instance
+    # à elle pour ses propres clients (gateway_call_tool, compositions), en
+    # portée « passerelle » — voir `navigateur.stdio_de_la_passerelle`.
+    from mcp_gateway.atelier.navigateur import stdio_de_la_passerelle
+
+    app.state.pool = UpstreamPool(
+        app.state.catalog,
+        app.state.db,
+        stdio_lances=stdio_de_la_passerelle(atelier_settings),
+    )
     try:
         from mcp_gateway.atelier.chrome_ensure import ensure_chrome_mcp_connector
 
