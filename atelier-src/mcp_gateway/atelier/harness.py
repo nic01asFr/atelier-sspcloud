@@ -23,8 +23,10 @@ from typing import Any, Callable
 from mcp_gateway.atelier.claude_home import binaire_claude_le_plus_recent, sync_claude_home
 from mcp_gateway.atelier.config import (
     EFFORT_SUR_LA_PASSERELLE,
+    OBSOLETES,
     AtelierSettings,
     effort_accepte_partout,
+    fenetre_du_modele,
 )
 from mcp_gateway.atelier.decisions import (
     Demande,
@@ -551,11 +553,42 @@ class ClaudeHarness(Harness):
 
         return variables_du_projet(self.settings.secrets_dir, Path(cwd) if cwd else None)
 
+    def _env_impose(self, model: str | None = None) -> dict[str, str]:
+        """Ce que le tour impose au CLI, au-dessus de tout fichier de réglages.
+
+        Passé deux fois : dans l'environnement du processus, et par
+        `--settings` — mesuré sur le pod (2.1.281), l'`env` de
+        `~/.claude/settings.json` l'emporte sur l'environnement du processus,
+        mais pas sur `--settings`. Sans cela, un repli vers la passerelle
+        quand le relais manque serait annulé par le fichier global.
+
+        La fenêtre est celle du modèle du tour : le CLI compacte de lui-même
+        quand le décompte que lui rend le relais en approche.
+        """
+        from mcp_gateway.atelier.relais_llm import base_url_des_tours
+
+        impose = {
+            "ANTHROPIC_BASE_URL": base_url_des_tours(self.settings),
+            "CLAUDE_CODE_MAX_CONTEXT_TOKENS": str(fenetre_du_modele(model)),
+        }
+        if self.settings.max_output_tokens > 0:
+            impose["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(self.settings.max_output_tokens)
+        return impose
+
     def _env(
-        self, agent_name: str = "", cwd: Path | None = None, session_id: str = ""
+        self,
+        agent_name: str = "",
+        cwd: Path | None = None,
+        session_id: str = "",
+        model: str | None = None,
     ) -> dict[str, str]:
         env = os.environ.copy()
-        env["ANTHROPIC_BASE_URL"] = self.settings.anthropic_base_url
+        # Les réglages d'avant le relais, hérités d'un shell ou d'un pod
+        # ancien : une fenêtre de compaction à 30 000 ferait compacter à tort,
+        # et la levée du contrôle de fenêtre n'a plus d'objet.
+        for ancien in OBSOLETES:
+            env.pop(ancien, None)
+        env.update(self._env_impose(model))
         key_path = self.settings.llm_key_path
         if key_path.is_file() and not env.get("ANTHROPIC_API_KEY"):
             env["ANTHROPIC_API_KEY"] = key_path.read_text(encoding="utf-8").strip()
@@ -564,13 +597,6 @@ class ClaudeHarness(Harness):
         except OSError:
             pass
         env["PATH"] = str(self.settings.work_dir / "bin") + os.pathsep + env.get("PATH", "")
-        # La compaction de nos tours, dite au processus lui-même plutôt que
-        # laissée au fichier de réglages global — partagé avec VS Code et
-        # avec d'autres mains, où deux valeurs se sont déjà contredites.
-        if self.settings.cli_fenetre_compaction > 0:
-            env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(self.settings.cli_fenetre_compaction)
-        if self.settings.cli_contexte_max > 0:
-            env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(self.settings.cli_contexte_max)
         # L'effort par défaut du CLI est `high`, et le modèle de repli de la
         # passerelle — celui du créneau haiku, qui sert aussi les sous-agents —
         # le refuse : « Unexpected reasoning effort high. Supported types are
@@ -729,6 +755,14 @@ class ClaudeHarness(Harness):
         reglages = reglages_cli(self.decisions.regles(session_id))
         if not reglages:
             return []
+        return ["--settings", json.dumps(reglages, ensure_ascii=False)]
+
+    def _arguments_de_reglages(self, session_id: str, model: str | None) -> list[str]:
+        """Un seul `--settings` : les règles du fil et l'environnement imposé."""
+        reglages = dict(reglages_cli(self.decisions.regles(session_id)) or {})
+        env = dict(reglages.get("env") or {})
+        env.update(self._env_impose(model))
+        reglages["env"] = env
         return ["--settings", json.dumps(reglages, ensure_ascii=False)]
 
     def _attendre_la_decision(
@@ -893,7 +927,7 @@ class ClaudeHarness(Harness):
         niveau = effort_valide(effort)
         if niveau:
             cmd.extend(["--effort", effort_accepte_partout(niveau)])
-        cmd.extend(self._arguments_des_regles(session_id))
+        cmd.extend(self._arguments_de_reglages(session_id, model))
         if resume:
             cmd.extend(["--resume", cli_id])
         else:
@@ -956,7 +990,7 @@ class ClaudeHarness(Harness):
             proc = subprocess.Popen(
                 cmd,
                 cwd=str(cwd),
-                env=self._env(agent_name, cwd, session_id),
+                env=self._env(agent_name, cwd, session_id, model),
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -1004,7 +1038,12 @@ class ClaudeHarness(Harness):
         # par trois. Il ne s'agit pas de facturer, mais de savoir quand
         # s'arrêter.
         poids = poids_initial
-        plafond = self.settings.contexte_plafond_jetons
+        # Le plafond de l'Atelier n'est qu'un repli : avec le relais, le CLI
+        # voit son vrai décompte et compacte de lui-même, en plein tour s'il
+        # le faut. L'arrêter ici couperait un travail que le CLI sait sauver.
+        from mcp_gateway.atelier.relais_llm import relais_en_service
+
+        plafond = 0 if relais_en_service(self.settings) else self.settings.contexte_plafond_jetons
         deadline = time.monotonic() + timeout_s
         assert proc.stdout is not None
         assert proc.stderr is not None

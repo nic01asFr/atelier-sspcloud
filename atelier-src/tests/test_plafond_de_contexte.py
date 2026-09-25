@@ -189,3 +189,12 @@ def test_sans_resume_on_ne_reprend_pas(reglages: AtelierSettings) -> None:
     assert harnais.tours == 1, "un seul tour : le résumé n'ayant pas abouti, on s'arrête"
     fiche = store.get(rec.session_id)
     assert fiche.state == "timeout" and fiche.cause == "contexte_plafond"
+
+
+def test_avec_le_relais_le_tour_n_est_pas_coupe(harnais: ClaudeHarness, monkeypatch) -> None:
+    """Le relais rend au CLI son décompte : il compacte en plein tour, pas nous."""
+    from mcp_gateway.atelier import relais_llm
+
+    monkeypatch.setattr(relais_llm, "relais_en_service", lambda s, **k: True)
+    resultat = _tour(harnais, "lourd-relaye", "bavard 200")
+    assert "contexte_plafond" not in [e.cause for e in resultat.events if e.kind == "erreur"]

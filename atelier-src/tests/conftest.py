@@ -23,10 +23,23 @@ from mcp_gateway.atelier.api import build_app
 from mcp_gateway.atelier.config import AtelierSettings
 
 
+def _port_sans_personne() -> int:
+    """Un port où rien n'écoute : le relais LLM y est « absent »."""
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
 @pytest.fixture()
 def reglages(tmp_path: Path) -> AtelierSettings:
     settings = AtelierSettings(work_dir=tmp_path / "work")
     assert tmp_path in settings.work_dir.parents or settings.work_dir.parent == tmp_path
+    # Le relais LLM du pod écoute sur 8790 : lancée là, la suite le verrait et
+    # changerait de comportement. Chaque test a le sien, absent sauf s'il en
+    # démarre un.
+    settings.relais_llm_port = _port_sans_personne()
     return settings
 
 

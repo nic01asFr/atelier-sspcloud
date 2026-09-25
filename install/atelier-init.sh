@@ -45,6 +45,10 @@ MODELES_DE_REPLI="${ATELIER_MODELES_DE_REPLI:-gemma4-26b-moe,qwen3-8-27b}"
 PORT_ATELIER="${ATELIER_PORT:-8787}"
 PORT_CODE_SERVER=8080
 PORT_WIKICHAT=3777
+PORT_RELAIS_LLM="${ATELIER_RELAIS_LLM_PORT:-8790}"
+# Le relais LLM (mcp_gateway.atelier.relais_llm) : toutes les surfaces parlent
+# au modèle par lui, pour que la compaction native de Claude Code fonctionne.
+RELAIS_LLM="http://127.0.0.1:$PORT_RELAIS_LLM"
 
 OUTILS="$WORK/.tools"
 BIN="$WORK/bin"
@@ -226,29 +230,31 @@ if [ ! -s "$WORK/.claude/settings.json" ]; then
   if [ "$AVEC_WIKICHAT" = "1" ]; then
     crochets="{\"Stop\":[{\"matcher\":\"\",\"hooks\":[{\"type\":\"command\",\"command\":\"$BIN/node \\\"$SRC_WIKICHAT/scripts/wikichat-mailbox-hook.mjs\\\"\"}]}],\"SessionEnd\":[{\"matcher\":\"\",\"hooks\":[{\"type\":\"command\",\"command\":\"$BIN/atelier-figer-le-travail.sh\"}]}]}"
   fi
+  # La fenêtre est la vraie (131 072 pour les modèles servis) : le relais
+  # LLM rend au CLI le décompte que la passerelle met à zéro, et la
+  # compaction native part d'elle-même. Un fichier déjà là garde ses
+  # anciennes valeurs jusqu'au démarrage de l'Atelier, qui les corrige
+  # (write_claude_settings_env).
   cat > "$WORK/.claude/settings.json" <<EOF
 {
   "model": "$MODELE",
   "autoCompactEnabled": true,
-  "autoCompactWindow": 30000,
   "fallbackModel": [$replis],
   "hooks": $crochets,
   "apiKeyHelper": "cat $SECRETS/llm_api_key",
   "effortLevel": "medium",
   "env": {
-    "ANTHROPIC_BASE_URL": "$PASSERELLE_LLM",
+    "ANTHROPIC_BASE_URL": "$RELAIS_LLM",
     "ANTHROPIC_MODEL": "$MODELE",
     "ANTHROPIC_DEFAULT_MODEL": "$MODELE",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "$MODELE",
     "ANTHROPIC_DEFAULT_OPUS_MODEL": "${MODELES_DE_REPLI%%,*}",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "${MODELES_DE_REPLI##*,}",
-    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "40000",
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "30000",
+    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "131072",
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8192",
     "CLAUDE_CODE_EFFORT_LEVEL": "medium",
     "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-    "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT": "1"
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
   }
 }
 EOF
@@ -259,7 +265,7 @@ cp -f "$WORK/.claude/settings.json" "$HOME/.claude/settings.json"
 cat > "$BIN/claude-env.sh" <<EOF
 # Source : . $BIN/claude-env.sh
 WORK="\${CLAUDE_WORK:-$WORK}"
-export ANTHROPIC_BASE_URL="\${ANTHROPIC_BASE_URL:-$PASSERELLE_LLM}"
+export ANTHROPIC_BASE_URL="\${ANTHROPIC_BASE_URL:-$RELAIS_LLM}"
 if [ -z "\${ANTHROPIC_API_KEY:-}" ] && [ -f "\$WORK/.secrets/llm_api_key" ]; then
   export ANTHROPIC_API_KEY="\$(cat "\$WORK/.secrets/llm_api_key")"
 fi
@@ -272,6 +278,20 @@ export ANTHROPIC_MODEL="\${ANTHROPIC_MODEL:-$MODELE}"
 EOF
 
 # --- démarrage ------------------------------------------------------------
+
+demarrer_relais_llm() {
+  # Avant code-server et wikichat : leurs `claude` parlent au modèle par lui.
+  # Processus à part, pour survivre aux redémarrages de l'Atelier.
+  if curl -fsS -o /dev/null "$RELAIS_LLM/_relais/sante" 2>/dev/null; then
+    dire "relais LLM déjà en route"
+    return
+  fi
+  (cd "$SRC_ATELIER" && ATELIER_WORK="$WORK" ATELIER_ANTHROPIC_BASE_URL="$PASSERELLE_LLM" \
+      ATELIER_RELAIS_LLM_PORT="$PORT_RELAIS_LLM" \
+      setsid nohup python3 -m mcp_gateway.atelier.relais_llm \
+      >> "$JOURNAUX/relais-llm.log" 2>&1 < /dev/null &)
+  dire "relais LLM lancé ($RELAIS_LLM)"
+}
 
 demarrer_code_server() {
   local config="$WORK/.config-code-server"
@@ -304,7 +324,7 @@ demarrer_wikichat() {
   fi
   (cd "$SRC_WIKICHAT" && nohup env PORT="$PORT_WIKICHAT" \
       ANTHROPIC_API_KEY="$(cat "$SECRETS/llm_api_key")" \
-      ANTHROPIC_BASE_URL="$PASSERELLE_LLM" \
+      ANTHROPIC_BASE_URL="$RELAIS_LLM" \
       WIKICHAT_ALLOWED_HOSTS=127.0.0.1,localhost \
       "$BIN/node" server.mjs >> "$JOURNAUX/wikichat.log" 2>&1 < /dev/null &)
   dire "wikichat lancé"
@@ -334,6 +354,7 @@ bilan() {
   dire "adresse : ${ATELIER_PUBLIC_URL:-le port $PORT_ATELIER de ce service, tel qu'Onyxia l'expose}"
 }
 
+demarrer_relais_llm
 demarrer_code_server
 demarrer_wikichat
 
@@ -350,5 +371,5 @@ fi
 
 demarrer_atelier
 sleep 5
-dire "code-server : $(etat "http://127.0.0.1:$PORT_CODE_SERVER/")   wikichat : $(etat "http://127.0.0.1:$PORT_WIKICHAT/api/health")   Atelier : $(etat "http://127.0.0.1:$PORT_ATELIER/v1/health")"
+dire "relais LLM : $(etat "$RELAIS_LLM/_relais/sante")   code-server : $(etat "http://127.0.0.1:$PORT_CODE_SERVER/")   wikichat : $(etat "http://127.0.0.1:$PORT_WIKICHAT/api/health")   Atelier : $(etat "http://127.0.0.1:$PORT_ATELIER/v1/health")"
 bilan

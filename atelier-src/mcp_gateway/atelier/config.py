@@ -58,6 +58,17 @@ def fenetre_minimale() -> int:
     return min([FENETRE_PAR_DEFAUT, *FENETRES_DES_MODELES.values()])
 
 
+# Les réglages d'avant le relais, à retirer partout où ils traînent (fichier
+# de réglages du CLI, environnement hérité). `CLAUDE_CODE_AUTO_COMPACT_WINDOW`
+# faisait compacter à 30 000 jetons une conversation que le CLI croyait vide ;
+# la levée du contrôle de fenêtre inconnue n'a plus d'objet quand la fenêtre
+# est dite.
+OBSOLETES = (
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+    "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT",
+)
+
+
 def _default_work() -> Path:
     return Path(os.environ.get("ATELIER_WORK", os.environ.get("HOME", "/home/onyxia") + "/work"))
 
@@ -132,8 +143,11 @@ class AtelierSettings(BaseSettings):
     # rend plus la main — c'est le signe qu'il n'y a plus rien à gagner.
     contexte_reprises_max: int = 3
 
-    cli_fenetre_compaction: int = 30000
-    cli_contexte_max: int = 40000
+    # La fenêtre donnée au CLI n'est plus un réglage : c'est la vraie, celle
+    # du modèle (`FENETRES_DES_MODELES`). L'ancien plafond de 40 000 et la
+    # fenêtre de compaction de 30 000 compensaient un décompte à zéro ; le
+    # relais le rend, ils n'ont plus lieu d'être.
+    #
     # Plafond de sortie donné au CLI. Il compte dans la fenêtre du modèle :
     # à 16 384, une conversation de 114 689 jetons faisait 131 073 sur une
     # fenêtre de 131 072 — un jeton de trop, et la compaction elle-même

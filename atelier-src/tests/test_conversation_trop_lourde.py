@@ -1,10 +1,10 @@
-"""Une conversation qui a franchi la fenêtre ne repart pas, et le dit.
+"""Une conversation lourde n'est plus jamais déclarée perdue.
 
-Quatorze conversations du pod pesaient plus que ce que le modèle peut relire.
-Chaque message qu'on leur adressait rejouait la même erreur 400 : le résumé
-passe par le même modèle, qui ne peut pas les lire non plus. On brûlait donc
-un tour pour rien, et l'écran montrait une erreur de passerelle au lieu de
-dire ce qui se passe.
+Quatorze conversations du pod pesaient plus que ce que le modèle peut relire,
+et l'Atelier finissait par refuser de les relancer. Avec le relais LLM, une
+conversation trop lourde reçoit « prompt is too long » et le CLI la compacte
+de lui-même ; sans lui, l'Atelier la fait résumer avant de l'envoyer. Dans les
+deux cas, le message part.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from mcp_gateway.atelier import relais_llm
 from mcp_gateway.atelier.config import AtelierSettings
 from mcp_gateway.atelier.harness import FakeHarness, TurnResult
 from mcp_gateway.atelier.sessions import SessionStore
@@ -46,21 +47,35 @@ def _conversation_lourde(store: SessionStore, unites: int) -> Any:
     return rec
 
 
-def test_une_conversation_qui_deborde_ne_lance_aucun_tour(reglages: AtelierSettings) -> None:
+def test_avec_le_relais_une_conversation_lourde_part_telle_quelle(
+    reglages: AtelierSettings, monkeypatch
+) -> None:
+    """Le CLI compacte de lui-même : l'Atelier ne s'en mêle pas."""
+    monkeypatch.setattr(relais_llm, "relais_en_service", lambda s, **k: True)
     reglages.contexte_plafond_jetons = 5000
-    reglages.compaction_seuil_jetons = 0
+    reglages.compaction_seuil_jetons = 1000
     harnais = HarnaisCompteur()
     store = SessionStore(reglages, harnais)
     rec = _conversation_lourde(store, 9000)
 
     resultat = store.send(rec.session_id, "continue")
 
-    assert harnais.messages_recus == [], "rien ne doit partir au modèle"
-    causes = [e.cause for e in resultat.events if e.kind == "erreur"]
-    assert causes == ["contexte_plafond"]
-    assert "neuve" in resultat.events[0].text, "l'écran doit dire quoi faire"
-    fiche = store.get(rec.session_id)
-    assert fiche.state == "idle" and fiche.cause == "contexte_plafond"
+    assert harnais.messages_recus == ["continue"], "ni /compact de l'Atelier, ni refus"
+    assert not [e for e in resultat.events if e.kind == "erreur"]
+    assert store.get(rec.session_id).state == "idle"
+
+
+def test_sans_relais_elle_est_resumee_puis_part(reglages: AtelierSettings) -> None:
+    reglages.contexte_plafond_jetons = 5000
+    reglages.compaction_seuil_jetons = 1000
+    harnais = HarnaisCompteur()
+    store = SessionStore(reglages, harnais)
+    rec = _conversation_lourde(store, 9000)
+
+    store.send(rec.session_id, "continue")
+
+    assert harnais.messages_recus == ["/compact", "continue"]
+    assert store.get(rec.session_id).cause != "contexte_plafond"
 
 
 def test_une_conversation_qui_tient_encore_part_normalement(reglages: AtelierSettings) -> None:

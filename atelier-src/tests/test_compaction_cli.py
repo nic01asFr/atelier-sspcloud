@@ -1,13 +1,10 @@
-"""Ce que le CLI doit savoir pour ne pas se laisser étouffer.
+"""Ce que le CLI doit savoir pour compacter de lui-même, sur toutes les surfaces.
 
-Une conversation menée depuis VS Code grossit jusqu'au refus : notre propre
-filet ne couvre que les tours de l'Atelier. Le CLI sait compacter tout seul,
-mais son compte de jetons sous-estime celui du modèle servi — une conversation
-qu'il situait à 50 000 a été refusée à 122 881, soit environ 2,7 fois.
-
-Ces réglages vivaient à la main sur le pod, donc nulle part : un redéploiement
-les emportait sans bruit, et la panne revenait des semaines plus tard sans
-qu'on fasse le lien.
+Le décompte de jetons venait à zéro de la passerelle : la compaction native ne
+partait jamais, et l'Atelier avait posé des fenêtres étroites (30 000, 40 000)
+qu'une seule main tenait. Le relais LLM rend le décompte ; le CLI reçoit donc
+la vraie fenêtre du modèle, passe par le relais, et les anciens réglages sont
+retirés là où ils traînent — ils feraient compacter à contretemps.
 """
 
 from __future__ import annotations
@@ -15,15 +12,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from mcp_gateway.atelier.config import OBSOLETES, fenetre_minimale
 from mcp_gateway.atelier.vscode_handoff import _merge_claude_settings_file
 
 
-def _reglages_ecrits(reglages, tmp_path: Path) -> dict:
+def _reglages_ecrits(reglages, tmp_path: Path, avant: dict | None = None) -> dict:
     # Le fichier n'est écrit que si le coffre existe : c'est de lui que le CLI
     # tire sa clé, et sans clé le reste ne sert à rien.
     reglages.llm_key_path.parent.mkdir(parents=True, exist_ok=True)
     reglages.llm_key_path.write_text("factice", encoding="utf-8")
     chemin = tmp_path / "settings.json"
+    if avant is not None:
+        chemin.write_text(json.dumps(avant), encoding="utf-8")
     _merge_claude_settings_file(chemin, reglages)
     return json.loads(chemin.read_text(encoding="utf-8"))
 
@@ -31,23 +31,45 @@ def _reglages_ecrits(reglages, tmp_path: Path) -> dict:
 def test_la_compaction_automatique_est_demandee(reglages, tmp_path: Path) -> None:
     ecrit = _reglages_ecrits(reglages, tmp_path)
     assert ecrit["autoCompactEnabled"] is True
-    assert ecrit["autoCompactWindow"] == reglages.cli_fenetre_compaction
+    assert "autoCompactWindow" not in ecrit
 
 
-def test_le_plafond_de_contexte_est_dit_au_cli(reglages, tmp_path: Path) -> None:
-    """Sans lui, le CLI se croit au large jusqu'au refus du serveur."""
+def test_la_vraie_fenetre_est_dite_au_cli(reglages, tmp_path: Path) -> None:
+    """131 072, pas 40 000 : c'est le relais qui fait tomber la compaction à temps."""
     ecrit = _reglages_ecrits(reglages, tmp_path)
-    assert ecrit["env"]["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == str(reglages.cli_contexte_max)
+    assert ecrit["env"]["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == str(fenetre_minimale()) == "131072"
+    assert ecrit["env"]["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] == "8192"
 
 
-def test_les_deux_plafonds_laissent_de_quoi_compacter(reglages) -> None:
-    """La fenêtre de compaction doit se déclencher avant le plafond.
+def test_les_surfaces_parlent_au_modele_par_le_relais(reglages, tmp_path: Path) -> None:
+    ecrit = _reglages_ecrits(reglages, tmp_path)
+    assert ecrit["env"]["ANTHROPIC_BASE_URL"] == f"http://127.0.0.1:{reglages.relais_llm_port}"
 
-    Réglés à l'envers, le CLI atteindrait la limite sans jamais avoir compacté
-    — et une conversation qui ne peut plus être compactée ne peut plus rien
-    recevoir. C'est exactement la panne qu'on répare.
-    """
-    assert 0 < reglages.cli_fenetre_compaction < reglages.cli_contexte_max
+
+def test_sans_relais_voulu_les_surfaces_vont_a_la_passerelle(reglages, tmp_path: Path) -> None:
+    reglages.relais_llm = False
+    ecrit = _reglages_ecrits(reglages, tmp_path)
+    assert ecrit["env"]["ANTHROPIC_BASE_URL"] == reglages.anthropic_base_url
+
+
+def test_les_anciens_reglages_sont_retires(reglages, tmp_path: Path) -> None:
+    """Un pod installé avant le relais les porte encore dans son fichier."""
+    ecrit = _reglages_ecrits(
+        reglages,
+        tmp_path,
+        avant={
+            "autoCompactWindow": 30000,
+            "env": {
+                "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "50000",
+                "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "40000",
+                "CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT": "1",
+            },
+        },
+    )
+    assert "autoCompactWindow" not in ecrit
+    for ancien in OBSOLETES:
+        assert ancien not in ecrit["env"]
+    assert ecrit["env"]["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] == "131072"
 
 
 def test_la_cle_du_modele_n_est_jamais_ecrite_en_clair(reglages, tmp_path: Path) -> None:
@@ -59,46 +81,9 @@ def test_la_cle_du_modele_n_est_jamais_ecrite_en_clair(reglages, tmp_path: Path)
 
 
 def test_les_reglages_deja_la_ne_sont_pas_chasses(reglages, tmp_path: Path) -> None:
-    chemin = tmp_path / "settings.json"
-    chemin.write_text(
-        json.dumps({"hooks": {"x": 1}, "env": {"MON_VAR": "a moi"}}), encoding="utf-8"
+    ecrit = _reglages_ecrits(
+        reglages, tmp_path, avant={"hooks": {"x": 1}, "env": {"MON_VAR": "a moi"}}
     )
-    reglages.llm_key_path.parent.mkdir(parents=True, exist_ok=True)
-    reglages.llm_key_path.write_text("factice", encoding="utf-8")
-
-    _merge_claude_settings_file(chemin, reglages)
-    ecrit = json.loads(chemin.read_text(encoding="utf-8"))
     assert ecrit["hooks"] == {"x": 1}
     assert ecrit["env"]["MON_VAR"] == "a moi"
     assert ecrit["autoCompactEnabled"] is True
-
-
-def test_la_variable_qui_fait_respecter_la_fenetre_est_ecrite(reglages, tmp_path: Path) -> None:
-    """Le réglage à la racine ne suffit pas.
-
-    Le binaire du CLI le dit lui-même : « this session can grow past it. To
-    enforce it, set CLAUDE_CODE_AUTO_COMPACT_WINDOW ». Sans cette variable, la
-    fenêtre est un vœu.
-    """
-    ecrit = _reglages_ecrits(reglages, tmp_path)
-    assert ecrit["env"]["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] == str(reglages.cli_fenetre_compaction)
-
-
-def test_une_fenetre_posee_par_une_autre_main_est_ramenee_sous_le_plafond(
-    reglages, tmp_path: Path
-) -> None:
-    """Mesuré sur le pod : 50 000 en environnement, plafond à 40 000.
-
-    La compaction se déclenchait après la limite, donc jamais. Trois
-    conversations en sont mortes en une semaine.
-    """
-    chemin = tmp_path / "settings.json"
-    chemin.write_text(
-        json.dumps({"env": {"CLAUDE_CODE_AUTO_COMPACT_WINDOW": "50000"}}), encoding="utf-8"
-    )
-    reglages.llm_key_path.parent.mkdir(parents=True, exist_ok=True)
-    reglages.llm_key_path.write_text("factice", encoding="utf-8")
-
-    _merge_claude_settings_file(chemin, reglages)
-    env = json.loads(chemin.read_text(encoding="utf-8"))["env"]
-    assert int(env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"]) < int(env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])

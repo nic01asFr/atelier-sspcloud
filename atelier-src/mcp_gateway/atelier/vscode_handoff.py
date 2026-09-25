@@ -7,7 +7,12 @@ import re
 import shutil
 from pathlib import Path
 
-from mcp_gateway.atelier.config import AtelierSettings, effort_accepte_partout
+from mcp_gateway.atelier.config import (
+    OBSOLETES,
+    AtelierSettings,
+    effort_accepte_partout,
+    fenetre_minimale,
+)
 from mcp_gateway.atelier.claude_home import donnees_code_server
 from mcp_gateway.atelier.claude_home import sync_claude_home as sync_claude_home_store
 
@@ -35,6 +40,22 @@ def _read_llm_key(settings: AtelierSettings) -> str:
     return ""
 
 
+def base_url_des_surfaces(settings: AtelierSettings) -> str:
+    """L'adresse du modèle pour VS Code, le terminal et wikichat : le relais.
+
+    Ces surfaces lisent un fichier écrit d'avance ; elles ne peuvent pas se
+    rabattre sur la passerelle au moment où le relais manquerait. L'Atelier
+    le relance au démarrage, l'init du pod aussi. Relais désactivé
+    (`ATELIER_RELAIS_LLM=0`) : la passerelle directement, sans compaction
+    native.
+    """
+    if settings.relais_llm:
+        from mcp_gateway.atelier.relais_llm import adresse_du_relais
+
+        return adresse_du_relais(settings)
+    return settings.anthropic_base_url.strip()
+
+
 def claude_extension_env(
     settings: AtelierSettings, *, avec_secrets: bool = True
 ) -> list[dict[str, str]]:
@@ -45,7 +66,7 @@ def claude_extension_env(
     dossier de projet se partage et se versionne.
     """
     env: list[dict[str, str]] = [
-        {"name": "ANTHROPIC_BASE_URL", "value": settings.anthropic_base_url.strip()},
+        {"name": "ANTHROPIC_BASE_URL", "value": base_url_des_surfaces(settings)},
     ]
     if avec_secrets:
         # La clé du modèle ne passe plus par ici : le CLI la lit lui-même
@@ -115,7 +136,7 @@ def _merge_claude_settings_file(path: Path, settings: AtelierSettings) -> None:
     if not isinstance(env, dict):
         env = {}
         data["env"] = env
-    env["ANTHROPIC_BASE_URL"] = settings.anthropic_base_url.strip()
+    env["ANTHROPIC_BASE_URL"] = base_url_des_surfaces(settings)
     # Les clés déjà écrites en clair sont retirées, pas seulement remplacées :
     # un fichier existant garderait sinon l'ancienne indéfiniment.
     env.pop("ANTHROPIC_API_KEY", None)
@@ -130,25 +151,20 @@ def _merge_claude_settings_file(path: Path, settings: AtelierSettings) -> None:
     if model:
         env["ANTHROPIC_MODEL"] = model
         env.setdefault("ANTHROPIC_DEFAULT_MODEL", model)
-    # La compaction automatique du CLI, calibrée sur ce que le modèle servi
-    # facture réellement — son propre compte sous-estime d'environ 2,7 fois :
-    # une conversation qu'il situait à 50 000 jetons a été refusée à 122 881.
-    # Sans ces deux lignes, une conversation menée depuis VS Code grossit
-    # jusqu'au refus : notre filet à nous ne couvre que les tours de l'Atelier.
-    # Elles vivaient à la main sur le pod, donc nulle part.
+    # La compaction native du CLI, sur la vraie fenêtre du modèle. Le relais
+    # LLM lui rend le décompte que la passerelle mettait à zéro : elle se
+    # déclenche d'elle-même, dans VS Code et au terminal comme dans nos tours.
+    # Ces surfaces ne savent pas d'avance quel modèle servira : elles
+    # reçoivent la plus petite fenêtre de la table.
+    #
+    # Les anciens réglages — fenêtre de compaction à 30 000, plafond à
+    # 40 000, levée du contrôle de fenêtre — compensaient un décompte nul.
+    # Laissés, ils feraient compacter à contretemps : on les retire.
     data["autoCompactEnabled"] = True
-    if settings.cli_fenetre_compaction > 0:
-        data["autoCompactWindow"] = settings.cli_fenetre_compaction
-        # Le réglage à la racine ne suffit pas : le binaire dit lui-même
-        # « this session can grow past it. To enforce it, set
-        # CLAUDE_CODE_AUTO_COMPACT_WINDOW ». C'est donc cette variable qui
-        # commande — et une autre main l'avait posée à 50 000, au-dessus du
-        # plafond de 40 000 : la compaction ne se déclenchait jamais avant la
-        # limite. Trois conversations en sont mortes en une semaine. On
-        # l'écrit nous-mêmes, à la même valeur que la racine, sous le plafond.
-        env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(settings.cli_fenetre_compaction)
-    if settings.cli_contexte_max > 0:
-        env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(settings.cli_contexte_max)
+    data.pop("autoCompactWindow", None)
+    for ancien in OBSOLETES:
+        env.pop(ancien, None)
+    env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(fenetre_minimale())
     # L'effort, pour tout ce qui lance `claude` sans passer par nos tours :
     # l'extension VS Code, le terminal, les agents de wikichat. Notre harnais
     # le fixait pour lui seul ; le 16 septembre, les erreurs « Unexpected
