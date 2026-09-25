@@ -46,16 +46,37 @@ SOI="$(readlink -f "$0" 2>/dev/null || echo "$0")"
 
 dire() { printf 'atelier-chrome : %s\n' "$*" >&2; }
 
+# Le Chrome du volume d'abord : le pod ne tourne pas sur l'image de l'Atelier,
+# et un Chrome posé dans le système (/usr/bin/google-chrome) disparaît à son
+# redémarrage. `atelier-init.sh` en installe un dans ~/work/.tools par
+# `npx @puppeteer/browsers install` (chrome-headless-shell par défaut, ou
+# Chrome for Testing) ; la version la plus récente l'emporte.
+chrome_du_volume() {
+  local c v
+  for c in "$WORK"/.tools/chrome-headless-shell/linux*/chrome-headless-shell-linux64/chrome-headless-shell \
+    "$WORK"/.tools/chrome/linux*/chrome-linux64/chrome; do
+    [ -x "$c" ] || continue
+    v="${c%/*/*}"   # …/linux-153.0.8010.47
+    v="${v##*/}"
+    printf '%s %s\n' "${v#*-}" "$c"
+  done | sort -k1,1Vr | cut -d' ' -f2-
+}
+
 trouver_chrome() {
   local c
   if [ -n "${ATELIER_CHROME_BIN:-}" ]; then
     [ -x "$ATELIER_CHROME_BIN" ] && { echo "$ATELIER_CHROME_BIN"; return 0; }
     return 1
   fi
+  while IFS= read -r c; do
+    [ -n "$c" ] && [ -x "$c" ] && { echo "$c"; return 0; }
+  done <<EOF
+$(chrome_du_volume)
+EOF
   for c in google-chrome google-chrome-stable chromium chromium-browser; do
     command -v "$c" >/dev/null 2>&1 && { command -v "$c"; return 0; }
   done
-  for c in /opt/google/chrome/chrome "$WORK"/.tools/chrome/*/chrome-linux64/chrome; do
+  for c in /opt/google/chrome/chrome; do
     [ -x "$c" ] && { echo "$c"; return 0; }
   done
   return 1
@@ -116,6 +137,18 @@ if [ "${ATELIER_CHROME_ROLE:-serveur}" = "navigateur" ]; then
   : > "$RACINE/navigateurs/$$"
   exec 9>&-
   unset ATELIER_CHROME_ROLE
+  # chrome-headless-shell est toujours sans écran et ne connaît pas le mode
+  # « new » que demande puppeteer (--headless=new) : on lui passe --headless.
+  if [ "${CHROME##*/}" = "chrome-headless-shell" ]; then
+    arguments=()
+    for a in "$@"; do
+      case "$a" in
+        --headless=*) arguments+=(--headless) ;;
+        *) arguments+=("$a") ;;
+      esac
+    done
+    set -- "${arguments[@]}"
+  fi
   exec "$CHROME" "$@"
 fi
 

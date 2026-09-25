@@ -99,14 +99,61 @@ ln -sfn "$DOSSIER_NODE/bin/npx" "$BIN/npx"
 # Le serveur MCP du navigateur (chrome-devtools-mcp, Apache-2.0), épinglé, dans
 # le volume — l'image l'embarque déjà sous /opt/atelier/outils. Chaque agent le
 # lance par ~/work/bin/atelier-chrome (voir docs/navigateur-atelier.md). Chrome
-# vient de l'image ou du système ; sans lui, le navigateur reste déclaré mais
-# indisponible, et l'écran des connecteurs le dit.
+# vient du volume (installé ci-dessous), de l'image, ou du système ; sans lui,
+# le navigateur reste déclaré mais indisponible, et l'écran des connecteurs le dit.
 
 paquet_navigateur=node_modules/chrome-devtools-mcp/package.json
 if [ ! -f "${ATELIER_OUTILS:-/opt/atelier/outils}/chrome-devtools-mcp/$paquet_navigateur" ]   && [ ! -f "$OUTILS/chrome-devtools-mcp/$paquet_navigateur" ]; then
   dire "chrome-devtools-mcp $VERSION_CHROME_MCP"
   mkdir -p "$OUTILS/chrome-devtools-mcp"
   npm install --prefix "$OUTILS/chrome-devtools-mcp" --no-audit --no-fund --save-exact     "chrome-devtools-mcp@$VERSION_CHROME_MCP" >/dev/null 2>&1     || avertir "chrome-devtools-mcp ne s'est pas installé : pas de navigateur pour les agents"
+fi
+
+# Chrome lui-même, sur le volume. Un pod du catalogue Jupyter ne tourne pas sur
+# l'image de l'Atelier : un Chrome posé dans le système (/usr/bin/google-chrome)
+# disparaît à son redémarrage. On installe donc, une fois, un Chrome sans écran
+# dans ~/work/.tools, par `@puppeteer/browsers` (épinglé) et le Node ci-dessus
+# (il exige Node 22.12+). atelier-chrome le prend avant celui du système.
+#   ATELIER_CHROME_NAVIGATEUR  chrome-headless-shell (défaut, ~100 Mo, sans
+#                              interface) | chrome (Chrome for Testing complet)
+#   ATELIER_CHROME_CANAL       stable (défaut) | beta | un numéro de version
+#   ATELIER_CHROME_VOLUME=0    ne rien installer (Chrome fourni autrement)
+# Sur l'image de l'Atelier, Chrome est dans l'image : rien à faire.
+VERSION_PUPPETEER_BROWSERS="${PUPPETEER_BROWSERS_VERSION:-3.2.3}"
+NAVIGATEUR_CHROME="${ATELIER_CHROME_NAVIGATEUR:-chrome-headless-shell}"
+CANAL_CHROME="${ATELIER_CHROME_CANAL:-stable}"
+chrome_du_volume() {
+  local c
+  case "$NAVIGATEUR_CHROME" in
+    chrome) set -- "$OUTILS"/chrome/linux*/chrome-linux64/chrome ;;
+    *) set -- "$OUTILS"/chrome-headless-shell/linux*/chrome-headless-shell-linux64/chrome-headless-shell ;;
+  esac
+  for c in "$@"; do
+    [ -x "$c" ] && { echo "$c"; return 0; }
+  done
+  return 1
+}
+if [ "${ATELIER_CHROME_VOLUME:-1}" = "0" ] || [ -n "${ATELIER_CHROME_BIN:-}" ]; then
+  :
+elif [ -f "${ATELIER_OUTILS:-/opt/atelier/outils}/chrome-devtools-mcp/$paquet_navigateur" ] \
+  && command -v google-chrome >/dev/null 2>&1; then
+  :
+elif ! chrome_du_volume >/dev/null; then
+  dire "Chrome sans écran ($NAVIGATEUR_CHROME@$CANAL_CHROME) dans $OUTILS"
+  (cd "$OUTILS" && "$DOSSIER_NODE/bin/npx" --yes "@puppeteer/browsers@$VERSION_PUPPETEER_BROWSERS" \
+      install "$NAVIGATEUR_CHROME@$CANAL_CHROME" --path "$OUTILS" >> "$JOURNAUX/chrome-install.log" 2>&1) \
+    || avertir "Chrome ne s'est pas installé dans $OUTILS (voir $JOURNAUX/chrome-install.log) : les agents n'auront un navigateur que si le système en a un"
+fi
+if chrome_volume="$(chrome_du_volume)"; then
+  # Le binaire ne suffit pas : il lui faut des bibliothèques du système
+  # (nss, gbm…), que l'image Jupyter n'a pas forcément. On le dit ici plutôt
+  # qu'au premier outil de navigation d'un agent.
+  manquantes="$(ldd "$chrome_volume" 2>/dev/null | awk '/not found/ {print $1}' | sort -u | tr '\n' ' ' || true)"
+  if [ -n "$manquantes" ]; then
+    avertir "Chrome du volume ($chrome_volume) : bibliothèques système absentes : $manquantes(docs/navigateur-atelier.md, « Chrome durable »)"
+  else
+    dire "Chrome du volume : $chrome_volume"
+  fi
 fi
 
 # --- code-server et l'extension Claude Code -------------------------------

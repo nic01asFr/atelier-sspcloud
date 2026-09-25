@@ -149,8 +149,9 @@ Le lanceur `~/work/bin/atelier-chrome` (source `atelier-src/bin/`, posé par
 `install/atelier-init.sh`) :
 
 - trouve un Node ≥ 20 (celui de l'Atelier avant celui du système), le serveur
-  (`/opt/atelier/outils`, puis `~/work/.tools/chrome-devtools-mcp`) et Chrome ;
-  `ATELIER_CHROME_VERIFIER=1` dit ce qu'il trouve sans rien ouvrir ;
+  (`/opt/atelier/outils`, puis `~/work/.tools/chrome-devtools-mcp`) et Chrome —
+  celui du volume d'abord (§9 bis) ; `ATELIER_CHROME_VERIFIER=1` dit ce qu'il
+  trouve sans rien ouvrir ;
 - crée un profil jetable `/tmp/atelier-chrome-<uid>/profil.<pid>` (0700) —
   jamais le profil de la personne, jamais `~/.cache` —, le range en sortant,
   relaie SIGTERM/SIGINT/SIGHUP, balaie les profils qu'aucun processus ne
@@ -280,4 +281,58 @@ plafond), et la fiche du connecteur l'affiche.
 
 ## 9. Déploiement
 
-Voir `docs/coherence-projet.md`, section « Navigateur stdio ».
+Voir `docs/coherence-projet.md`, sections « Navigateur stdio » et
+« Déploiement du 26/09 ».
+
+## 9 bis. Chrome durable
+
+Le Chrome des mesures (§ en-tête) était `/usr/bin/google-chrome`, installé à la
+main dans le système du pod. Or le pod ne tourne pas sur l'image de l'Atelier
+(`deploy/Dockerfile`, qui, elle, embarque Chrome) : il tourne sur l'image
+Jupyter du catalogue, dont on n'extrait que le code. Tout ce qui est hors du
+volume persistant `~/work` — `/usr/bin/google-chrome`, et les bibliothèques
+qu'`apt` a tirées avec lui — disparaît au redémarrage du pod.
+
+**Installation.** `install/atelier-init.sh` installe, une fois, un Chrome sans
+écran sur le volume :
+
+```sh
+cd ~/work/.tools && ~/work/.tools/node-v22.23.2-linux-x64/bin/npx --yes \
+  @puppeteer/browsers@3.2.3 install chrome-headless-shell@stable --path ~/work/.tools
+```
+
+- `@puppeteer/browsers` (Apache-2.0, l'outil de téléchargement de Puppeteer)
+  prend Chrome for Testing sur `storage.googleapis.com/chrome-for-testing-public` ;
+  il exige Node 22.12+, d'où le Node de l'Atelier et non celui du système
+  (Node 18). Version épinglée (`PUPPETEER_BROWSERS_VERSION`).
+- Arborescence : `~/work/.tools/chrome-headless-shell/linux-<version>/chrome-headless-shell-linux64/chrome-headless-shell`
+  (ou `~/work/.tools/chrome/linux-<version>/chrome-linux64/chrome`).
+- **chrome-headless-shell** par défaut : environ 100 Mo au lieu de 350, sans
+  interface graphique, donc moins de bibliothèques système ; c'est le mode
+  sans écran que nous utilisons de toute façon. `ATELIER_CHROME_NAVIGATEUR=chrome`
+  prend Chrome for Testing complet (même moteur que `google-chrome`),
+  `ATELIER_CHROME_CANAL` un autre canal ou une version (`stable` par défaut).
+- Idempotent : rien n'est téléchargé si le binaire choisi est déjà là. Pour
+  changer de version, supprimer le dossier `linux-<version>` et relancer l'init.
+- Rien n'est fait si `ATELIER_CHROME_VOLUME=0`, si `ATELIER_CHROME_BIN` désigne
+  déjà un Chrome, ou sur l'image de l'Atelier (Chrome y est). Un échec de
+  téléchargement n'arrête pas l'init (journal : `~/work/logs/chrome-install.log`).
+
+**Recherche par le lanceur.** `atelier-chrome` prend, dans l'ordre :
+`ATELIER_CHROME_BIN` ; le Chrome du volume (chrome-headless-shell puis Chrome
+for Testing, la version la plus récente d'abord) ; `google-chrome`,
+`google-chrome-stable`, `chromium`, `chromium-browser` du `PATH` ;
+`/opt/google/chrome/chrome`. Avec chrome-headless-shell, le rôle
+« navigateur » remplace le `--headless=new` que demande puppeteer par
+`--headless` (ce binaire est toujours sans écran).
+
+**Bibliothèques système.** Le binaire est sur le volume, pas ses dépendances
+(nss, nspr, gbm, dbus…). L'init lance `ldd` sur le Chrome du volume et **avertit**
+s'il en manque (`bibliothèques système absentes : …`). Sur le pod actuel, elles
+sont présentes tant que le `google-chrome` posé par `apt` l'est ; après un
+redémarrage, seul l'avertissement de l'init dira si l'image Jupyter les a. Si
+elles manquent : les demander dans l'image du service (ou l'init personnel
+Onyxia qui tourne en root, `apt-get install -y libnss3 libgbm1 …`), ou passer au
+chart de l'Atelier, dont l'image les porte. À vérifier au premier redémarrage :
+`~/work/bin/atelier-chrome` avec `ATELIER_CHROME_VERIFIER=1`, puis un
+`take_screenshot` réel, puis `/chrome/health`.

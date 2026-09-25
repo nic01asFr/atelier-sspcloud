@@ -206,3 +206,43 @@ def test_le_plafond_de_navigateurs(banc: dict[str, Path]) -> None:
     finally:
         troisieme.kill()
         troisieme.wait(5)
+
+
+# --- Chrome du volume (docs/navigateur-atelier.md, « Chrome durable ») -------
+
+
+def _chrome_du_volume(work: Path, genre: str, version: str) -> Path:
+    if genre == "chrome-headless-shell":
+        chemin = work / ".tools/chrome-headless-shell" / f"linux-{version}" / "chrome-headless-shell-linux64/chrome-headless-shell"
+    else:
+        chemin = work / ".tools/chrome" / f"linux-{version}" / "chrome-linux64/chrome"
+    return _executable(chemin, '#!/bin/bash\nprintf "%s\n" "$@" > "$NOTES_CHROME"\n')
+
+
+def test_le_chrome_du_volume_passe_avant_celui_du_systeme(banc: dict[str, Path], tmp_path: Path) -> None:
+    """Le pod ne tourne pas sur l'image de l'Atelier : /usr/bin/google-chrome ne survit pas."""
+    systeme = _executable(tmp_path / "systeme" / "google-chrome", "#!/bin/bash\nexit 0\n")
+    ancien = _chrome_du_volume(banc["work"], "chrome-headless-shell", "99.0.1.2")
+    recent = _chrome_du_volume(banc["work"], "chrome-headless-shell", "153.0.8010.47")
+    _chrome_du_volume(banc["work"], "chrome", "140.0.1.1")
+    env = _env(banc, ATELIER_CHROME_VERIFIER="1", PATH=f"{systeme.parent}:/usr/bin:/bin")
+    env.pop("ATELIER_CHROME_BIN")
+    r = subprocess.run([str(LANCEUR)], env=env, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert f"chrome={recent}" in r.stdout, "la version la plus récente, pas l'ordre alphabétique"
+    shutil.rmtree(recent.parents[1])
+    shutil.rmtree(ancien.parents[1])
+    r = subprocess.run([str(LANCEUR)], env=env, capture_output=True, text=True)
+    assert "chrome-linux64/chrome" in r.stdout, "Chrome for Testing, à défaut"
+    shutil.rmtree(banc["work"] / ".tools/chrome")
+    r = subprocess.run([str(LANCEUR)], env=env, capture_output=True, text=True)
+    assert f"chrome={systeme}" in r.stdout, "le système, en dernier recours"
+
+
+def test_chrome_headless_shell_recoit_headless_sans_mode(banc: dict[str, Path], tmp_path: Path) -> None:
+    shell = _chrome_du_volume(banc["work"], "chrome-headless-shell", "153.0.8010.47")
+    notes = tmp_path / "notes-chrome"
+    env = _env(banc, ATELIER_CHROME_ROLE="navigateur", ATELIER_CHROME_BIN=str(shell), NOTES_CHROME=str(notes))
+    r = subprocess.run([str(LANCEUR), "--headless=new", "--user-data-dir=/tmp/x"], env=env, timeout=10)
+    assert r.returncode == 0
+    assert notes.read_text(encoding="utf-8").splitlines() == ["--headless", "--user-data-dir=/tmp/x"]
