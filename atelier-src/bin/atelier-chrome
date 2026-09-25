@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+# atelier-chrome — le navigateur de l'Atelier, en stdio.
+#
+# Chaque client MCP qui déclare ce navigateur (une conversation de l'Atelier,
+# VS Code, le terminal, un agent wikichat, la passerelle) lance ce script. Il
+# démarre `chrome-devtools-mcp` (serveur officiel, Apache-2.0) avec un Chrome
+# sans écran à lui : un profil jetable par processus, jamais celui de la
+# personne, aucun port réseau ouvert (Chrome parle au serveur par un tube).
+# Chrome n'est lancé qu'au premier outil qui en a besoin ; tant que l'agent ne
+# navigue pas, seul le serveur tourne (environ 120 Mo).
+#
+# Deux rôles, selon la variable ATELIER_CHROME_ROLE :
+#
+# - serveur (défaut) : choisit les options, crée le profil sous
+#   $RACINE/profil.<pid>, lance le serveur, relaie SIGTERM/SIGINT/SIGHUP, et
+#   efface le profil en sortant. Les profils laissés par un processus tué
+#   (SIGKILL) sont balayés au lancement suivant.
+# - navigateur : c'est ce script que le serveur prend pour Chrome
+#   (`--executablePath`). Il compte les Chrome vivants de ce compte et refuse,
+#   avec un message que l'agent lit, d'en ouvrir plus que ATELIER_CHROME_MAX ;
+#   sinon il cède la place au vrai Chrome (exec), sans rien garder entre eux.
+#
+# Réglages (environnement) :
+#   ATELIER_CHROME_MAX       Chrome simultanés permis pour ce compte (défaut 6)
+#   ATELIER_CHROME_OUTILS    courant (défaut) | complet | minimal
+#   ATELIER_CHROME_PORTEE    conversation (défaut) | passerelle
+#   ATELIER_CHROME_RESEAU    tout (défaut en conversation) | public (défaut
+#                            pour la passerelle : adresses privées refusées)
+#   ATELIER_CHROME_BIN       Chrome à utiliser (sinon cherché)
+#   ATELIER_CHROME_MCP_JS    point d'entrée de chrome-devtools-mcp (sinon cherché)
+#   ATELIER_CHROME_JOURNAL   fichier de journal du serveur (aucun par défaut)
+#   ATELIER_CHROME_RACINE    dossier des profils et du comptage
+#   ATELIER_CHROME_VERIFIER=1  vérifie l'installation, n'ouvre rien, sort.
+set -u
+
+WORK="${ATELIER_WORK:-$HOME/work}"
+RACINE="${ATELIER_CHROME_RACINE:-${TMPDIR:-/tmp}/atelier-chrome-$(id -u)}"
+MAX="${ATELIER_CHROME_MAX:-6}"
+SOI="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+
+dire() { printf 'atelier-chrome : %s\n' "$*" >&2; }
+
+trouver_chrome() {
+  local c
+  if [ -n "${ATELIER_CHROME_BIN:-}" ]; then
+    [ -x "$ATELIER_CHROME_BIN" ] && { echo "$ATELIER_CHROME_BIN"; return 0; }
+    return 1
+  fi
+  for c in google-chrome google-chrome-stable chromium chromium-browser; do
+    command -v "$c" >/dev/null 2>&1 && { command -v "$c"; return 0; }
+  done
+  for c in /opt/google/chrome/chrome "$WORK"/.tools/chrome/*/chrome-linux64/chrome; do
+    [ -x "$c" ] && { echo "$c"; return 0; }
+  done
+  return 1
+}
+
+trouver_serveur() {
+  local c
+  if [ -n "${ATELIER_CHROME_MCP_JS:-}" ]; then
+    [ -f "$ATELIER_CHROME_MCP_JS" ] && { echo "$ATELIER_CHROME_MCP_JS"; return 0; }
+    return 1
+  fi
+  for c in \
+    "${ATELIER_OUTILS:-/opt/atelier/outils}/chrome-devtools-mcp" \
+    "$WORK/.tools/chrome-devtools-mcp" \
+    "$WORK/mcp/tools"; do
+    c="$c/node_modules/chrome-devtools-mcp/build/src/bin/chrome-devtools-mcp.js"
+    [ -f "$c" ] && { echo "$c"; return 0; }
+  done
+  return 1
+}
+
+trouver_node() {
+  if [ -n "${ATELIER_NODE:-}" ] && [ -x "$ATELIER_NODE" ]; then echo "$ATELIER_NODE"; return 0; fi
+  command -v node >/dev/null 2>&1 && { command -v node; return 0; }
+  [ -x "$WORK/bin/node" ] && { echo "$WORK/bin/node"; return 0; }
+  return 1
+}
+
+# Un pid n'est compté que s'il est encore un Chrome : un pid réutilisé par un
+# autre programme ne doit pas bloquer l'ouverture d'un navigateur.
+est_un_chrome() {
+  [ -r "/proc/$1/cmdline" ] && tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null | grep -q chrome
+}
+
+# --- rôle navigateur ------------------------------------------------------
+if [ "${ATELIER_CHROME_ROLE:-serveur}" = "navigateur" ]; then
+  CHROME="$(trouver_chrome)" || { dire "aucun Chrome sur cette machine (ATELIER_CHROME_BIN)"; exit 127; }
+  mkdir -p "$RACINE/navigateurs" && chmod 700 "$RACINE"
+  exec 9>"$RACINE/verrou"
+  command -v flock >/dev/null 2>&1 && flock -w 10 9
+  ouverts=0
+  for f in "$RACINE"/navigateurs/*; do
+    [ -e "$f" ] || continue
+    p="${f##*/}"
+    if est_un_chrome "$p"; then ouverts=$((ouverts + 1)); else rm -f "$f"; fi
+  done
+  if [ "$ouverts" -ge "$MAX" ]; then
+    dire "$ouverts navigateurs déjà ouverts sur ce pod, pour $MAX permis. Fermez une" \
+      "conversation qui s'en sert (ou attendez qu'elle s'éteigne), puis réessayez."
+    exit 75
+  fi
+  : > "$RACINE/navigateurs/$$"
+  exec 9>&-
+  unset ATELIER_CHROME_ROLE
+  exec "$CHROME" "$@"
+fi
+
+# --- rôle serveur ---------------------------------------------------------
+NODE="$(trouver_node)" || { dire "node introuvable"; exit 127; }
+SERVEUR="$(trouver_serveur)" || {
+  dire "chrome-devtools-mcp n'est pas installé (npm install --prefix $WORK/.tools/chrome-devtools-mcp chrome-devtools-mcp)"
+  exit 127
+}
+trouver_chrome >/dev/null || { dire "aucun Chrome sur cette machine (ATELIER_CHROME_BIN)"; exit 127; }
+
+if [ "${ATELIER_CHROME_VERIFIER:-}" = "1" ]; then
+  printf 'node=%s\nserveur=%s\nchrome=%s\n' "$NODE" "$SERVEUR" "$(trouver_chrome)"
+  exit 0
+fi
+
+mkdir -p "$RACINE" && chmod 700 "$RACINE"
+# Les profils d'un serveur tué sans pouvoir ranger (SIGKILL, OOM) : leur
+# propriétaire n'existe plus, on les efface.
+for d in "$RACINE"/profil.*; do
+  [ -d "$d" ] || continue
+  p="${d##*.}"
+  kill -0 "$p" 2>/dev/null || rm -rf "$d"
+done
+PROFIL="$RACINE/profil.$$"
+mkdir -m 700 "$PROFIL"
+
+portee="${ATELIER_CHROME_PORTEE:-conversation}"
+reseau="${ATELIER_CHROME_RESEAU:-}"
+[ -n "$reseau" ] || { [ "$portee" = "passerelle" ] && reseau=public || reseau=tout; }
+
+args=(
+  --headless
+  --userDataDir "$PROFIL"
+  --executablePath "$SOI"
+  --viewport 1280x720
+  --no-usage-statistics
+  --no-performance-crux
+  --redact-network-headers
+  --screenshotFormat jpeg
+  --screenshotQuality 80
+  --screenshotMaxWidth 1280
+  --screenshotMaxHeight 2000
+)
+case "${ATELIER_CHROME_OUTILS:-courant}" in
+  minimal) args+=(--slim) ;;
+  complet) ;;
+  *)
+    # 24 outils au lieu de 30 : sans traces de performance, instantanés de
+    # mémoire ni émulation, on économise ~2 000 jetons de schémas par
+    # conversation. Et sans identifiant de page obligatoire : un serveur par
+    # conversation n'a qu'un agent à servir.
+    args+=(--no-page-id-routing --no-category-performance --no-category-memory --no-category-emulation)
+    ;;
+esac
+if [ "$reseau" = "public" ]; then
+  # Refuse d'emblée les adresses du pod et du namespace : boucle locale,
+  # plages privées, lien local (métadonnées), noms sans point (services du
+  # cluster), .local/.internal. C'est un contrôle des adresses demandées,
+  # pas un pare-feu : une redirection depuis un site public passe encore.
+  args+=(--blockedUrlPattern '*://(localhost|0\.0\.0\.0|127\..*|10\..*|192\.168\..*|172\.(?:1[6-9]|2[0-9]|3[01])\..*|169\.254\..*|100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\..*|\[.*\]|[^.]+|.*\.local|.*\.internal|.*\.localhost):*/*')
+fi
+# Où les outils peuvent écrire (captures, traces) : le dossier temporaire, et
+# le dossier du projet en conversation — pas au-delà.
+args+=(--workspace "${TMPDIR:-/tmp}")
+if [ "$portee" != "passerelle" ] && [ "$PWD" != "/" ] && [ "$PWD" != "$HOME" ]; then
+  args+=(--workspace "$PWD")
+fi
+[ -n "${ATELIER_CHROME_JOURNAL:-}" ] && args+=(--logFile "$ATELIER_CHROME_JOURNAL")
+
+export CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1
+export CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1
+export ATELIER_CHROME_ROLE=navigateur
+export ATELIER_CHROME_RACINE="$RACINE"
+export ATELIER_CHROME_MAX="$MAX"
+
+enfant=""
+ranger() { rm -rf "$PROFIL"; }
+arreter() {
+  [ -n "$enfant" ] && kill -TERM "$enfant" 2>/dev/null
+  [ -n "$enfant" ] && wait "$enfant" 2>/dev/null
+  exit 143
+}
+trap ranger EXIT
+trap arreter TERM INT HUP
+
+# En tâche de fond pour pouvoir relayer les signaux ; l'entrée standard est
+# donnée explicitement, sans quoi bash la remplacerait par /dev/null.
+"$NODE" "$SERVEUR" "${args[@]}" <&0 &
+enfant=$!
+wait "$enfant"
+code=$?
+enfant=""
+exit "$code"
