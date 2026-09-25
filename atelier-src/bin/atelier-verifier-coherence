@@ -129,6 +129,38 @@ def lancer(claude: str, cwd: Path, env: dict[str, str], extra: list[str], via_sh
     return {s["name"]: s.get("status") for s in init.get("mcp_servers") or []}
 
 
+def chemins_de_la_source(script: Path, environ: dict[str, str], maison: Path) -> list[Path]:
+    """Où chercher le paquet `mcp_gateway`, du plus sûr au plus probable.
+
+    Le script vit dans `atelier-src/bin/` quand on le lance depuis le dépôt,
+    mais dans `~/work/bin/` une fois installé (`install/atelier-init.sh` l'y
+    recopie) : `parents[1]` y désigne `~/work`, qui ne contient pas le paquet,
+    et il fallait exporter `PYTHONPATH` à la main.
+    """
+    travail = Path(environ.get("ATELIER_WORK") or maison / "work")
+    ici = script.resolve().parent
+    return [ici.parent, ici.parent / "atelier-src", travail / "atelier-src", maison / "work" / "atelier-src"]
+
+
+def trouver_la_source(script: Path, environ: dict[str, str], maison: Path) -> Path | None:
+    """Le dossier à mettre en tête de `sys.path`, ou None si le paquet est déjà importable.
+
+    Sans importer le paquet : sa configuration lit `HOME` à l'import, et le
+    HOME de test n'est pas encore posé à ce moment.
+    """
+    import importlib.util
+
+    for dossier in chemins_de_la_source(script, environ, maison):
+        if (dossier / "mcp_gateway" / "atelier" / "__init__.py").is_file():
+            return dossier
+    if importlib.util.find_spec("mcp_gateway") is not None:
+        return None
+    raise SystemExit(
+        "mcp_gateway introuvable : ni à côté du script, ni dans $ATELIER_WORK/atelier-src, "
+        "ni installé. Lancez install/atelier-init.sh."
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--claude", default=str(Path.home() / "work" / "bin" / "claude"))
@@ -136,6 +168,7 @@ def main() -> int:
     args = parser.parse_args()
     claude = str(Path(args.claude).resolve())
 
+    source = trouver_la_source(Path(__file__), dict(os.environ), Path.home())
     racine = Path(tempfile.mkdtemp(prefix="atelier-coherence-"))
     maison = racine / "maison"
     maison.mkdir()
@@ -143,7 +176,8 @@ def main() -> int:
     os.environ["HOME"] = str(maison)
     os.environ["USERPROFILE"] = str(maison)
     os.environ.pop("ATELIER_SESSION", None)
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    if source is not None:
+        sys.path.insert(0, str(source))
 
     from mcp_gateway.atelier.coherence import comparer, surface_atelier, surface_vscode
     from mcp_gateway.atelier.config import AtelierSettings

@@ -253,12 +253,36 @@ def _merge_claude_settings_file(path: Path, settings: AtelierSettings) -> None:
     niveau = effort_accepte_partout(data.get("effortLevel") or settings.effort)
     data["effortLevel"] = niveau
     env["CLAUDE_CODE_EFFORT_LEVEL"] = niveau
+    _retirer_l_effort_par_modele(data)
     # WebSearch simule une recherche sur cette passerelle : refusé pour toutes
     # les surfaces qui lisent ce fichier (voir `navigateur`).
     from mcp_gateway.atelier.navigateur import refuser_les_outils_simules
 
     data = refuser_les_outils_simules(data, settings)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def _retirer_l_effort_par_modele(data: dict[str, object]) -> None:
+    """Retire `modelSettings.<modèle>.effortLevel` : l'effort n'a qu'une source.
+
+    Mesuré sur le pod le 25/09 (`docs/vision/mesures-vague1.md`) :
+    `CLAUDE_CODE_EFFORT_LEVEL` l'emporte sur `modelSettings` et sur `--effort`
+    (39 requêtes sur 39 en `medium` malgré un `xhigh` par modèle), et `xhigh`
+    n'apporte rien de mieux. Laissé, ce réglage fait croire à un effort qui
+    n'est jamais appliqué. Le reste de `modelSettings` n'est pas touché ; une
+    entrée vidée disparaît, et la clé avec elle si plus rien n'y reste.
+    """
+    par_modele = data.get("modelSettings")
+    if not isinstance(par_modele, dict):
+        return
+    for modele in list(par_modele):
+        reglages = par_modele[modele]
+        if isinstance(reglages, dict) and "effortLevel" in reglages:
+            reglages.pop("effortLevel", None)
+            if not reglages:
+                par_modele.pop(modele, None)
+    if not par_modele:
+        data.pop("modelSettings", None)
 
 
 def write_claude_settings_env(settings: AtelierSettings) -> None:

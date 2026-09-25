@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextvars
 import functools
 import json
 import logging
@@ -45,6 +46,12 @@ MCP_PROTOCOL_VERSION = "2025-06-18"
 
 
 _log = logging.getLogger("mcp_gateway.mcp.gateway")
+
+# Le méta-outil par lequel passe l'appel en cours, vide pour un appel direct.
+# Les outils locaux (le catalogue de commandes de l'Atelier) le lisent pour le
+# journal : la classe d'une commande est vérifiée de la même façon par les
+# deux chemins, puisque `gateway_call_tool` repasse par `tools_call`.
+VIA_META_OUTIL: contextvars.ContextVar[str] = contextvars.ContextVar("via_meta_outil", default="")
 
 
 def _texte(texte: str, *, erreur: bool | None = None) -> dict:
@@ -600,12 +607,16 @@ async def _gerer_call_tool(passerelle: McpGateway, appel: _Appel) -> dict:
         return _texte("Appel récursif refusé.", erreur=True)
     # Même chemin que n'importe quel appel : le garde du profil s'applique
     # à la cible, gateway_call_tool n'élargit donc jamais le périmètre.
-    result = await passerelle.tools_call(
-        target,
-        appel.arguments.get("arguments") or {},
-        appel.session_id,
-        internal=appel.internal,
-    )
+    via = VIA_META_OUTIL.set("gateway_call_tool")
+    try:
+        result = await passerelle.tools_call(
+            target,
+            appel.arguments.get("arguments") or {},
+            appel.session_id,
+            internal=appel.internal,
+        )
+    finally:
+        VIA_META_OUTIL.reset(via)
     # Un échec doit rendre de quoi se corriger : sans cela l'assistant
     # relance à l'identique, ou repart en recherche pour rien.
     return passerelle._enrich_call_failure(result, target, appel.session_id)

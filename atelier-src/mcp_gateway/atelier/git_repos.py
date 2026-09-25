@@ -50,10 +50,14 @@ log = logging.getLogger("atelier.git")
 GITIGNORE = """# Écrit par l'Atelier.
 
 # Ce qu'il dépose lui-même : état de session, réglages de la machine.
+# Dans .atelier/, seule la déclaration du projet se versionne (projet.json,
+# env.json qui ne porte que des références) ; contexte.md se régénère.
 .mcp.json
 .claude/settings.local.json
 .claude/projects/
-.atelier/
+.atelier/*
+!.atelier/projet.json
+!.atelier/env.json
 .wikichat/
 .vscode/
 
@@ -184,10 +188,21 @@ LIGNES_DE_L_ATELIER = (
     ".mcp.json",
     ".claude/settings.local.json",
     ".claude/projects/",
-    ".atelier/",
+    ".atelier/*",
+    "!.atelier/projet.json",
+    "!.atelier/env.json",
     ".wikichat/",
     ".vscode/",
 )
+
+# Un .gitignore d'avant la structure type ignore `.atelier/` en entier. Git ne
+# ré-inclut rien sous un dossier exclu : y ajouter les exceptions ne servirait
+# à rien, et doublerait la règle. Ces projets-là se migrent (vague 2).
+_EQUIVALENTS_ANCIENS = {
+    ".atelier/*": ".atelier/",
+    "!.atelier/projet.json": ".atelier/",
+    "!.atelier/env.json": ".atelier/",
+}
 
 
 def completer_le_gitignore(chemin: Path) -> list[str]:
@@ -202,7 +217,11 @@ def completer_le_gitignore(chemin: Path) -> list[str]:
         return list(LIGNES_DE_L_ATELIER)
     contenu = gitignore.read_text(encoding="utf-8")
     presentes = {l.strip() for l in contenu.splitlines()}
-    manquantes = [l for l in LIGNES_DE_L_ATELIER if l not in presentes]
+    manquantes = [
+        l
+        for l in LIGNES_DE_L_ATELIER
+        if l not in presentes and _EQUIVALENTS_ANCIENS.get(l) not in presentes
+    ]
     if not manquantes:
         return []
     ajout = "" if contenu.endswith(chr(10)) or not contenu else chr(10)
@@ -295,7 +314,9 @@ def fichiers_sensibles_dans_l_histoire(chemin: Path) -> list[str]:
     return _sensibles(trace.split(chr(10)))
 
 
-def initialiser(settings: AtelierSettings, chemin: Path) -> EtatDepot:
+def initialiser(
+    settings: AtelierSettings, chemin: Path, message: str = "Ouvrir le projet"
+) -> EtatDepot:
     """Fait du dossier un dépôt, s'il n'en est pas déjà un.
 
     Idempotent : rappelée sur un projet déjà versionné, elle ne touche à rien
@@ -315,9 +336,9 @@ def initialiser(settings: AtelierSettings, chemin: Path) -> EtatDepot:
     # même si le projet est encore vide.
     _git(chemin, "add", "-A")
     if _git(chemin, "status", "--porcelain", verifier=False):
-        _git(chemin, "commit", "-m", "Ouvrir le projet", "--no-verify")
+        _git(chemin, "commit", "-m", message, "--no-verify")
     else:
-        _git(chemin, "commit", "--allow-empty", "-m", "Ouvrir le projet", "--no-verify")
+        _git(chemin, "commit", "--allow-empty", "-m", message, "--no-verify")
     log.info("dépôt initialisé : %s", chemin)
     return etat(chemin)
 
@@ -333,6 +354,38 @@ def enregistrer(settings: AtelierSettings, chemin: Path, message: str) -> EtatDe
         return etat(chemin)
     _git(chemin, "commit", "-m", message.strip() or "Enregistrer le travail", "--no-verify")
     return etat(chemin)
+
+
+def enregistrer_fichiers(
+    settings: AtelierSettings, chemin: Path, fichiers: list[str], message: str
+) -> str:
+    """Commite ces fichiers-là, et eux seuls. Rend l'empreinte du commit, ou "".
+
+    Pour les commandes de l'Atelier qui touchent un fichier suivi (`projet.json`) :
+    `enregistrer` prend tout (`add -A`) et emporterait le travail en cours d'un
+    agent dans un commit qui n'est pas le sien. Ici, le reste de l'arbre n'est
+    ni ajouté ni commité.
+    """
+    if not (chemin / ".git").is_dir() or not fichiers:
+        return ""
+    _identite(settings, chemin)
+    _git(chemin, "add", "--", *fichiers)
+    if not _git(chemin, "diff", "--cached", "--name-only", "--", *fichiers, verifier=False):
+        return ""
+    _git(chemin, "commit", "-m", message, "--no-verify", "--only", "--", *fichiers)
+    return _git(chemin, "rev-parse", "HEAD", verifier=False)
+
+
+def dernier_commit(chemin: Path) -> dict[str, str]:
+    """L'empreinte et le message du dernier commit : une preuve lisible."""
+    if not (chemin / ".git").is_dir():
+        return {}
+    brut = _git(chemin, "log", "-1", "--pretty=format:%H%x1f%s", verifier=False)
+    separateur = chr(31)
+    if separateur not in brut:
+        return {}
+    empreinte, sujet = brut.split(separateur, 1)
+    return {"commit": empreinte, "message": sujet}
 
 
 # --- GitHub : le geste délibéré ------------------------------------------

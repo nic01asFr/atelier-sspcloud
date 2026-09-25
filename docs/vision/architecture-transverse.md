@@ -86,7 +86,7 @@ chacune. Pour une conversation, c'est **`session_id`**. Il circule sous plusieur
 | Navigateur | profil jetable et, plus tard, association conversation → profil | profil par processus ; association à faire (P5) |
 | Hôte des applications | acteur du code de passage d'agent | à faire (`synthese.md`, navigateur) |
 | Relais LLM (coût) | en-tête d'origine `X-Atelier-Origine` | à vérifier (A10) |
-| Journal unique | champ `acteur` | à faire |
+| Journal unique | champ `acteur` (`conversation:<session_id>`, `personne`, `cle-proprietaire`, `client-distant`, `gardien:<nom>`) | existe (vague 1, `commandes/journal.py`) |
 
 **Règle** : une couche qui a besoin de savoir « qui » lit cette clé. Elle ne crée pas son propre
 identifiant. Une surface qui ne sait pas la transmettre (VS Code, terminal) l'obtient par le hook
@@ -321,6 +321,9 @@ sortie, pas la vue d'ensemble.
   journal : ce ne sont pas des stockages de plus. Il vit dans l'Atelier.
 - **Une file « À valider »** : propositions des gardiens, des agents et des créations, et
   décisions en attente de l'Assistant.
+- **État (vague 1)** : le journal et la file existent, avec leur API ; leurs contrats sont
+  au §1.8 (« Commandes : ce qui existe »). L'écran « À valider » et la page du journal restent à
+  faire (équipe P).
 
 ### 1.8 Les commandes de l'Atelier
 
@@ -347,6 +350,136 @@ avec son acteur (§1.2). La carte (§1.3) est recalculée après chaque commande
 Critère pour qu'un acteur agisse seul plutôt que de confier le travail à un agent code
 (`assistant-role.md` §3.2) : une commande existe ; elle touche un objet de l'Atelier et non le
 contenu d'un dépôt ; elle est courte ; elle a une `inverse` ; elle rend une preuve.
+
+#### Commandes : ce qui existe (vague 1, équipe F, branche `fondations`)
+
+**Existe.** Le catalogue vit dans `atelier-src/mcp_gateway/atelier/commandes/` :
+
+| Module | Rôle |
+|---|---|
+| `modele.py` | `Commande` (`nom`, `objet`, `classe`, `inverse`, `regles`, `schema`, `executer`, `apercu`, `allegement`, `exposee_mcp`), `Effet`, `Contexte` |
+| `catalogue.py` | la porte unique : vérification de classe, jetons de confirmation, carte d'action, journal |
+| `existants.py` | les 14 outils `atelier_*` d'avant, déclarés sans changer de nom ni de code |
+| `natives.py` | projets, conversations, « À valider », journal, annuler |
+| `journal.py` | le journal unique (§1.7) |
+| `a_valider.py` | la file « À valider » (S3) |
+| `structure.py` | schéma de `projet.json` et gabarit de projet (lot G) |
+| `routes.py` | `/v1/commandes`, `/v1/journal`, `/v1/a-valider` |
+
+Branché par une ligne dans `api.py` (`enregistrer_les_commandes(app)`) ; `gateway_runtime.py` donne le
+catalogue à la passerelle comme famille d'outils locaux.
+
+**Classes.** `lecture` s'ajoute aux trois classes, pour ce qui ne change rien (lister, lire) : ni
+carte, ni ligne au journal (un `atelier_suivre` toutes les trente secondes le noierait).
+
+| Classe | Appel d'un modèle (MCP, ou clé du propriétaire en HTTP) | Appel de la personne (session de l'interface) |
+|---|---|---|
+| `lecture` | exécutée | exécutée |
+| `reversible` | exécutée ; carte avec « Annuler » | idem |
+| `engageante` | **aperçu + jeton**, rien n'est fait ; rappel avec `confirmation` = jeton | idem ; ou `POST /v1/commandes/confirmer` sur le jeton d'un agent : c'est son « Oui » |
+| `reservee` | **refusée** | exécutée |
+
+La vérification a lieu dans `Catalogue.executer`, à chaque appel. `gateway_call_tool` repasse par
+`McpGateway.tools_call`, donc par le catalogue : il ne contourne rien (testé). La clé du
+propriétaire n'est pas « la personne » : les agents du pod la lisent. Le jeton ne vaut qu'une
+fois, dix minutes, pour la même commande, les mêmes arguments et le même acteur (la personne peut
+confirmer celui d'un agent). `Commande.allegement` peut rendre un appel plus léger selon ses
+arguments, jamais plus lourd : `atelier_decider` avec `deny` est réversible (A-5, refuser seul),
+avec `allow` engageant.
+
+**Schéma publié d'une commande** (`GET /v1/commandes`, et `_meta["atelier/commande"]` des outils MCP) :
+
+```json
+{"nom": "atelier_projet_creer", "description": "…", "objet": "projet", "classe": "reversible",
+ "inverse": "atelier_projet_ranger", "regles": ["slug unique, dérivé du titre", "…"],
+ "schema": {"type": "object", "properties": {"…": {}}}, "exposee_mcp": true}
+```
+
+**Résultat d'une commande qui agit** : la charge de la commande, plus une `carte` construite par
+elle (jamais rédigée par le modèle) :
+
+```json
+{"carte": {"titre": "Projet créé", "resume": "…", "voir": {"libelle": "Voir", "lien": "/?slug=carte"},
+  "annuler": {"libelle": "Annuler", "commande": "atelier_annuler", "arguments": {"action": "<id>"},
+              "inverse": "atelier_projet_ranger"},
+  "preuve": {"commit": {"commit": "…", "message": "Ouvrir le projet"}, "…": "…"},
+  "action": "<id du journal>", "par": "conversation:<session_id>", "quand": "…"}}
+```
+
+HTTP : `POST /v1/commandes/<nom>` `{arguments, confirmation?}` rend
+`{statut: fait|apercu|refus|erreur, action, resultat}` (200, 200, 403, 422).
+
+**Les commandes** (`GET /v1/commandes` fait foi) :
+
+| Commande | Classe | Inverse | État |
+|---|---|---|---|
+| `atelier_projets`, `atelier_conversations`, `atelier_suivre`, `atelier_transcript`, `atelier_artefacts`, `atelier_artefact_journal`, `atelier_artefact_verifier` | lecture | — | existent (enrobées) |
+| `atelier_ouvrir` | reversible | `atelier_conversation_ranger` | existe (enrobée) |
+| `atelier_envoyer` | reversible | `atelier_interrompre` | existe (enrobée) |
+| `atelier_interrompre` | reversible | — (arrêter ne défait rien) | existe (enrobée) |
+| `atelier_decider` | engageante (`deny` : reversible) | — | existe (enrobée) |
+| `atelier_artefact_creer` | reversible | — (pas de suppression d'artefact) | existe (enrobée) |
+| `atelier_artefact_demarrer` / `_arreter` | reversible | l'une l'autre | existent (enrobées) |
+| `atelier_projet_creer`, `_modifier`, `_ranger`, `_ressortir` | reversible | `_ranger` ; valeurs d'avant ; `_ressortir` ; `_ranger` | existent |
+| `atelier_projet_publier` | reservee (non exposée en MCP) | — | existe |
+| `atelier_conversation_ranger` / `_ressortir` | reversible | l'une l'autre | existent |
+| `atelier_a_valider` | lecture | — | existe |
+| `atelier_a_valider_refuser` / `_rouvrir` | reversible | l'une l'autre | existent |
+| `atelier_a_valider_accepter` | reservee (non exposée en MCP) | — (l'action exécutée a sa propre carte) | existe |
+| `atelier_journal` | lecture | — | existe |
+| `atelier_annuler` | reversible | — | existe : applique l'inverse notée au journal, une seule fois |
+| `atelier_montrer`, `atelier_navigateur_ouvrir` (équipe P) | lecture ; reversible | — | déclarées d'avance, annoncées dès que P les sert |
+
+Un outil `atelier_*` servi par `outils_conversation.py` sans déclaration passe en `reversible`,
+`objet: non_declare`, et le journal le montre. Pour en déclarer un :
+`catalogue.declarer_outil(nom, DeclarationOutil(objet, classe, inverse, regles, carte))`.
+
+Les descriptions de `atelier_artefacts` et voisins portent les mots de l'interface (« création »,
+« page », « application », « ce que j'ai fabriqué ») et disent qu'une composition est autre chose
+(mesure E1 : « créations » menait aux compositions, 0 sur 6).
+
+**Journal unique** (§1.7, `coherence-croisee.md` §2) : `~/work/.atelier-etat/journal/AAAA-MM.jsonl`,
+une ligne par événement :
+
+```json
+{"id": "20260925-3fa9c1d2e4", "quand": "2026-09-25T14:02:11.412+00:00", "source": "commande",
+ "acteur": "conversation:<session_id>", "objet": {"type": "projet", "id": "carte"},
+ "action": {"commande": "atelier_projet_creer", "classe": "reversible", "origine": "mcp",
+            "via": "gateway_call_tool", "arguments": {}, "avant": null, "apres": {},
+            "inverse": {"commande": "atelier_projet_ranger", "arguments": {"projet": "carte"}}},
+ "resultat": "fait|apercu|refus|erreur", "cout": {"jetons": 0, "secondes": 0.41}, "empreinte": "…"}
+```
+
+`source` ∈ `commande`, `controle`, `capacite`, `promotion`, `vue`, `automate`, `geste`,
+`validation` ; toute autre est refusée. Écriture par `Journal(dossier).ecrire(Evenement(...))`,
+utilisable hors du service (l'exécuteur des gardiens). Aucune valeur secrète : une clé dont le nom
+annonce un secret est masquée, et toute valeur de `claude-env.sh` est remplacée par `[secret]`
+partout où elle apparaît. Lecture : `GET /v1/journal?depuis&source&acteur&objet_type&objet&commande&limite`,
+ou l'outil `atelier_journal`. `atelier/journal.py` (fusion des registres d'une conversation) est
+une autre chose et reste tel quel.
+
+**File « À valider »** (S3) : un fichier par proposition dans `~/work/.atelier-etat/a-valider/`.
+
+- Dépôt, par une seule fonction : `FileAValider.deposer(source, titre, resume, *, acteur, projet,
+  detail, action={commande, arguments}, empreinte)`, ou `POST /v1/a-valider`.
+  `source` ∈ `gardien`, `agent`, `creation`, `memoire`, `assistant`. Une même `empreinte` encore
+  en attente n'est pas dupliquée (`occurrences` augmente).
+- Modèle : `{id, source, titre, resume, acteur, projet, detail, action, empreinte, creee_le,
+  modifiee_le, occurrences, statut: en_attente|acceptee|refusee, decision: {par, quand, motif, resultat}}`.
+- Lecture : `GET /v1/a-valider?statut&projet&source` ou `atelier_a_valider`.
+- Décision : `POST /v1/a-valider/<id>/decision` `{decision: accepter|refuser, motif, complete?}`,
+  qui passe par `atelier_a_valider_accepter` (réservée : exécute l'action proposée par le
+  catalogue) ou `_refuser`.
+- **Branchement sur le pilote de wikichat, sans migration** : les actions `pending` de
+  `.wikichat/proposed-actions.json` sont lues par `/pilote/api/data` et apparaissent sous l'id
+  `pilote:<agent>:<action>` ; la décision part à `/pilote/api/agent/<id>/decide`. wikichat reste la
+  maison de la coordination (S5). `decisions.py` (autorisations d'un tour vivant du CLI) reste à
+  part : ce n'est pas une proposition, et y toucher casserait la reprise du tour.
+
+**Ce qui reste** : recalcul de la carte après commande (le crochet `apres_commande` existe, la carte
+non) ; « plus de trois actions à la suite » comme engageant ; coût en part du forfait dans
+l'aperçu ; inverses de `atelier_artefact_creer` et `atelier_interrompre` ; les commandes de la
+vague 2 (agents, connecteurs, liens entre projets) ; l'écran « À valider » (équipe P).
 
 ## 2. Projets système
 

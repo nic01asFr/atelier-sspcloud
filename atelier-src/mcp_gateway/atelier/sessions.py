@@ -1132,7 +1132,7 @@ class SessionStore:
         # tour suivant, sans intervention.
         from mcp_gateway.atelier.project_context import ecrire_contexte
 
-        ecrire_contexte(cwd, rec.slug)
+        ecrire_contexte(cwd, rec.slug, self.settings)
         from mcp_gateway.atelier.session_attachments import enrich_message_with_attachments
 
         full_message = enrich_message_with_attachments(cwd, message, attachment_ids)

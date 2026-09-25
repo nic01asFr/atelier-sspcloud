@@ -92,16 +92,84 @@ def split_terms(query: str | None) -> list[str]:
     return [w for w in re.split(r"\W+", normalize(query)) if len(w) >= MIN_TERM_LENGTH]
 
 
+# Mots d'intention, en français et en anglais, que la personne emploie pour un
+# outil sans qu'ils figurent dans son nom ni dans sa description (souvent en
+# anglais). Mesuré sur le pod le 25/09 : « connaissance » et « mémoire » ne
+# trouvaient pas `wikichat__search_knowledge`, et l'assistant concluait à une
+# absence. Indexés avec le poids de la description ; pas d'embeddings.
+#
+# Par outil : la clé est le nom sans le préfixe du serveur (`search_knowledge`
+# pour `wikichat__search_knowledge`), ou le nom entier.
+MOTS_CLES_PAR_OUTIL: dict[str, str] = {
+    "search_knowledge": "connaissance connaissances savoir memoire souvenir retrouver chercher recherche "
+    "notes fiches axes knowledge memory recall",
+    "recall": "memoire souvenir rappeler retrouver retenu remember memory",
+    "remember": "memoire retenir souvenir noter memoriser memory",
+    "forget": "memoire oublier effacer souvenir memory",
+    "list_ideas": "idees idee pistes envies ideas",
+    "add_idea": "idee noter piste envie idea",
+    "list_projects": "projets liste inventaire projects",
+    "add_project_note": "note projet noter consigner",
+    "get_briefing": "resume point situation briefing",
+    "send_message": "message ecrire envoyer repondre fil",
+    "read_messages": "messages courrier lire fil",
+    "atelier_artefacts": "creations creation page pages application applications fabrique fabriques "
+    "ce que j ai fabrique artifacts",
+    "atelier_artefact_creer": "creation page application fabriquer nouvelle",
+    "atelier_artefact_demarrer": "creation application lancer demarrer ouvrir",
+    "atelier_artefact_arreter": "creation application arreter stopper",
+    "atelier_a_valider": "valider propositions attente accord decisions",
+    "atelier_journal": "journal historique fait aujourd hui actions",
+    "atelier_projet_creer": "projet nouveau creer ouvrir",
+}
+
+# Par serveur : ce que le service entier évoque. Un point de plus à chacun de
+# ses outils, pour que le bon serveur remonte même quand aucun outil n'est nommé.
+MOTS_CLES_PAR_SERVEUR: dict[str, str] = {
+    "wikichat": "memoire connaissance coordination projets idees knowledge memory",
+}
+
+
+def _mots_cles(tool: dict[str, Any]) -> tuple[str, str]:
+    """Les mots d'intention d'un outil (les siens et ceux de la table), puis ceux de son serveur.
+
+    Comptés séparément : l'outil qui porte le mot l'emporte sur ses voisins du
+    même serveur, qui ne le portent que par leur service.
+    """
+    nom = str(tool.get("name") or "")
+    court = nom.split("__", 1)[1] if "__" in nom else nom
+    propres = " ".join(
+        m
+        for m in (
+            str(tool.get("keywords") or ""),
+            MOTS_CLES_PAR_OUTIL.get(nom, "") or MOTS_CLES_PAR_OUTIL.get(court, ""),
+        )
+        if m
+    )
+    serveur = _server_of(tool).split(":")[-1]
+    du_serveur = " ".join(
+        mots
+        for cle, mots in MOTS_CLES_PAR_SERVEUR.items()
+        if serveur == cle or serveur.startswith(cle + "-") or serveur.startswith(cle + "_")
+    )
+    return normalize(propres), normalize(du_serveur)
+
+
 def lexical_score(tool: dict[str, Any], terms: list[str]) -> int:
     if not terms:
         return 0
     name = normalize(str(tool.get("name") or ""))
     description = normalize(str(tool.get("description") or ""))
+    propres, du_serveur = _mots_cles(tool)
     score = 0
     for term in terms:
         if term in name:
             score += NAME_WEIGHT
         if term in description:
+            score += DESCRIPTION_WEIGHT
+        if term in propres:
+            score += DESCRIPTION_WEIGHT
+        if term in du_serveur:
             score += DESCRIPTION_WEIGHT
     return score
 

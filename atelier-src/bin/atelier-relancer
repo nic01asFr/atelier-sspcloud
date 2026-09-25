@@ -35,6 +35,54 @@ for p in glob.glob('/proc/[0-9]*'):
 PY
 )
 
+# Les réglages du service en place, lus avant de l'arrêter : ses adresses
+# publiques surtout. Relancé sans elles, l'Atelier annonçait une adresse
+# interne à ses clients OAuth et n'ouvrait plus l'hôte des applications, à
+# moins de les réexporter à la main. Ordre de priorité : ce que l'appelant
+# exporte, puis ce que portait le processus en service (ATELIER_*), puis le
+# fichier que l'Atelier écrit à chaque démarrage. Aucune valeur n'est affichée.
+REPRIS=""
+reprendre() {
+  # $1 : NOM=valeur ; $2 : d'où elle vient. N'exporte que ATELIER_*, et
+  # jamais par-dessus ce que l'appelant a déjà posé.
+  nom=${1%%=*}
+  valeur=${1#*=}
+  case "$nom" in
+    ATELIER_*) ;;
+    *) return 0 ;;
+  esac
+  case "$nom" in
+    *[!A-Z0-9_]*) return 0 ;;
+  esac
+  eval "deja=\${$nom+x}"
+  if [ -z "$deja" ]; then
+    export "$nom=$valeur"
+    REPRIS="$REPRIS $nom($2)"
+  fi
+}
+if [ -n "$PID" ] && [ -r "/proc/$PID/environ" ]; then
+  HERITE=$(tr '\000' '\n' < "/proc/$PID/environ" | grep '^ATELIER_' || true)
+  while IFS= read -r ligne; do
+    [ -n "$ligne" ] && reprendre "$ligne" processus
+  done <<FIN
+$HERITE
+FIN
+fi
+ADRESSES="$WORK/.atelier-etat/adresses.env"
+if [ -r "$ADRESSES" ]; then
+  while IFS= read -r ligne; do
+    case "$ligne" in
+      ATELIER_*=*)
+        valeur=${ligne#*=}
+        valeur=${valeur#\'}
+        valeur=${valeur%\'}
+        reprendre "${ligne%%=*}=$valeur" fichier
+        ;;
+    esac
+  done < "$ADRESSES"
+fi
+[ -n "$REPRIS" ] && printf 'réglages repris :%s\n' "$REPRIS"
+
 # Arrêt gracieux, puis forcé. Uvicorn attend que les connexions se ferment
 # avant de sortir ; or nos flux d'événements restent ouverts par conception,
 # si bien qu'il ne sort jamais de lui-même.

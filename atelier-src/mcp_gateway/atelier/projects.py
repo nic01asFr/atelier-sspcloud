@@ -87,6 +87,14 @@ class ProjectStore:
         )
 
     def _title_for_slug(self, slug: str, meta: dict[str, Any]) -> str:
+        # Le titre que le projet se donne dans `.atelier/projet.json` fait foi
+        # (structure type) : c'est celui que lisent aussi wikichat et les agents.
+        if slug != self.settings.assistant_slug:
+            from mcp_gateway.atelier.commandes.structure import titre_declare
+
+            declare = titre_declare(self.settings.projects_dir / slug)
+            if declare:
+                return declare
         entry = meta.get("projects", {}).get(slug, {})
         t = str(entry.get("title") or "").strip()
         if t:
@@ -225,6 +233,8 @@ class ProjectStore:
             if not t:
                 raise ValueError("title cannot be empty")
             entry["title"] = t
+            if slug != self.settings.assistant_slug:
+                self._titre_dans_projet_json(slug, t)
         if archived is not None:
             entry["archived"] = bool(archived)
         entry["updated_at"] = self._now()
@@ -248,6 +258,34 @@ class ProjectStore:
             created_at=str(entry.get("created_at") or ""),
             updated_at=str(entry.get("updated_at") or ""),
         )
+
+    def _titre_dans_projet_json(self, slug: str, titre: str) -> None:
+        """Renommer, c'est aussi changer le titre que le projet déclare.
+
+        Sans cela `projet.json`, qui prime à l'affichage, reprendrait l'ancien
+        nom au rechargement. Un `projet.json` invalide n'est pas réécrit : on
+        ne corrige pas en silence ce qu'un agent a mal écrit. Seul ce fichier
+        est commité, jamais le travail en cours.
+        """
+        from mcp_gateway.atelier.commandes import structure
+
+        racine = self.settings.projects_dir / slug
+        try:
+            declaration = structure.lire(racine)
+        except structure.ErreurProjetJson as exc:
+            log.warning("projet.json de %s non mis à jour : %s", slug, exc)
+            return
+        if declaration is None or declaration.titre == titre:
+            return
+        donnees = declaration.en_json()
+        donnees["titre"] = titre
+        structure.ecrire(racine, structure.valider(donnees))
+        try:
+            git_repos.enregistrer_fichiers(
+                self.settings, racine, [structure.CHEMIN.as_posix()], "Renommer le projet"
+            )
+        except (git_repos.ErreurDepot, OSError, subprocess.SubprocessError) as exc:
+            log.warning("renommage de %s non commité : %s", slug, exc)
 
     def marquer_dossier_agent(self, chemin: Path, agent: str = "") -> bool:
         """Signale qu'un dossier sert de plan de travail à un agent.
