@@ -35,6 +35,29 @@ def effort_accepte_partout(niveau: str | None) -> str:
     return EFFORT_SUR_LA_PASSERELLE
 
 
+# La fenêtre réelle de chaque modèle servi par la passerelle, en jetons.
+# Mesurée le 25 septembre 2026 (essai de fenêtre, /tmp/compaction-essai) : au-
+# delà, litellm répond 400 `ContextWindowExceededError`. Le harnais donne au
+# CLI la fenêtre du modèle du tour ; VS Code et le terminal, qui ne savent pas
+# d'avance quel modèle servira, reçoivent la plus petite.
+FENETRES_DES_MODELES: dict[str, int] = {
+    "qwen3-6-35b-moe": 131072,
+    "qwen3-8-27b": 131072,
+    "gemma4-26b-moe": 131072,
+}
+FENETRE_PAR_DEFAUT = 131072
+
+
+def fenetre_du_modele(modele: str | None) -> int:
+    """La fenêtre d'un modèle ; celle par défaut s'il est inconnu ou absent."""
+    return FENETRES_DES_MODELES.get((modele or "").strip(), FENETRE_PAR_DEFAUT)
+
+
+def fenetre_minimale() -> int:
+    """La fenêtre qui tient quel que soit le modèle : celle des surfaces sans tour."""
+    return min([FENETRE_PAR_DEFAUT, *FENETRES_DES_MODELES.values()])
+
+
 def _default_work() -> Path:
     return Path(os.environ.get("ATELIER_WORK", os.environ.get("HOME", "/home/onyxia") + "/work"))
 
@@ -55,6 +78,27 @@ class AtelierSettings(BaseSettings):
     # a été tué en plein travail. On donne le temps d'une tâche longue, sans
     # renoncer à un plafond : un tour parti en boucle doit finir par s'arrêter.
     turn_timeout_s: int = 2700
+    # Le relais LLM (`relais_llm`) : entre Claude Code et la passerelle de
+    # modèles, il rend le décompte de jetons que la passerelle rapporte à zéro
+    # en flux, et traduit son erreur de fenêtre dépassée dans les mots que
+    # Claude Code reconnaît. Avec lui, la compaction native du CLI fonctionne,
+    # sur toutes les surfaces. Faux = on s'en passe, et la compaction de
+    # l'Atelier (plus bas) reprend du service.
+    relais_llm: bool = True
+    relais_llm_port: int = 8790
+    # Caractères par jeton, pour estimer ce que la passerelle ne compte pas.
+    # Mesuré : 363 000 caractères de conversation valent 99 016 jetons réels
+    # (3,67) ; 3,4 surestime un peu, ce qui fait compacter un peu tôt plutôt
+    # qu'un peu tard.
+    relais_llm_ratio: float = 3.4
+
+    # --- Compaction de l'Atelier : repli quand le relais est absent -------
+    #
+    # Tout ce qui suit ne joue que si le relais ne répond pas. Avec lui, la
+    # compaction native du CLI se déclenche d'elle-même (mesuré : essai B,
+    # auto-compaction à ~106 000 jetons) et la compaction de l'Atelier ne
+    # ferait que doubler le travail.
+    #
     # Au-delà de ce poids estimé, l'Atelier fait compacter la conversation
     # avant d'envoyer le tour suivant. Claude Code ne s'en charge pas ici : sa
     # bascule automatique se décide sur les jetons consommés, que la passerelle
@@ -88,15 +132,6 @@ class AtelierSettings(BaseSettings):
     # rend plus la main — c'est le signe qu'il n'y a plus rien à gagner.
     contexte_reprises_max: int = 3
 
-    # Ce que le CLI, lui, doit croire de sa propre fenêtre. Son compte de
-    # jetons sous-estime d'environ 2,7 fois ce que le modèle servi facture :
-    # une conversation qu'il situait à 50 000 a été refusée à 122 881. On lui
-    # donne donc une fenêtre bien plus étroite que la vraie, pour que sa
-    # compaction tombe à temps.
-    #
-    # Ces deux réglages vivaient à la main sur le pod, donc nulle part : ils
-    # auraient disparu à sa recréation, et l'erreur de contexte serait revenue
-    # sans qu'on sache pourquoi.
     cli_fenetre_compaction: int = 30000
     cli_contexte_max: int = 40000
     # Plafond de sortie donné au CLI. Il compte dans la fenêtre du modèle :

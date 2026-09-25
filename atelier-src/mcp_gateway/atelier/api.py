@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import queue
 import re
@@ -549,6 +550,16 @@ def build_app(
                 write_claude_settings_env(settings)
             except OSError:
                 pass
+            # Le relais LLM, par qui toutes les surfaces parlent au modèle.
+            # Lancé ici s'il manque (un pod où l'init ne l'a pas démarré) ;
+            # détaché, il survit aux redémarrages de l'Atelier.
+            from mcp_gateway.atelier.relais_llm import assurer_le_relais
+
+            try:
+                if not await asyncio.to_thread(assurer_le_relais, settings):
+                    log.warning("relais LLM absent : compaction de l'Atelier en repli")
+            except OSError as exc:
+                log.warning("relais LLM non lancé : %s", exc)
             # Une seule version du CLI partout, et le mode du service comme
             # point de départ de VS Code.
             for alignement in (
