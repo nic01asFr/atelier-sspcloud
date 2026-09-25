@@ -136,14 +136,24 @@ async def gateway_startup(app: FastAPI, atelier_settings: AtelierSettings) -> No
     # Les verbes de l'Atelier — conduire une conversation — servis par la même
     # porte que le pool. Ils tiennent aux magasins du service, que seul ce
     # processus a : c'est pourquoi ils ne peuvent venir d'aucun serveur amont.
+    #
+    # Ils passent par le catalogue de commandes (`commandes/`), qui vérifie la
+    # classe de chacun et journalise, que l'appel soit direct ou passe par
+    # `gateway_call_tool`.
     outils_atelier = None
-    if getattr(app.state, "store", None) is not None:
+    outils_locaux: Any = None
+    catalogue = getattr(app.state, "commandes", None)
+    if catalogue is not None:
+        outils_atelier = catalogue.outils
+        outils_locaux = catalogue
+    elif getattr(app.state, "store", None) is not None:
         outils_atelier = OutilsAtelier(
             store=app.state.store,
             projects=app.state.projects,
             harness=app.state.harness,
             apps=getattr(app.state, "apps", None),
         )
+        outils_locaux = outils_atelier
     app.state.outils_atelier = outils_atelier
     app.state.mcp = McpGateway(
         app.state.catalog,
@@ -151,7 +161,7 @@ async def gateway_startup(app: FastAPI, atelier_settings: AtelierSettings) -> No
         app.state.pool,
         app.state.compositions,
         tools_change_tracker=app.state.tools_change_tracker,
-        outils_locaux=outils_atelier,
+        outils_locaux=outils_locaux,
     )
     mcp_holder["mcp"] = app.state.mcp
     app.state.compositions.bind_call_tool(composition_tool_call)
