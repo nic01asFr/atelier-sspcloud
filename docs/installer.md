@@ -89,8 +89,13 @@ pour relancer seulement l'Atelier : `~/work/bin/atelier-relancer`.
 | `ATELIER_DEPOT`, `ATELIER_BRANCHE` | d'où vient l'Atelier ; vide = déjà dans l'image | ce dépôt, `main` |
 | `WIKICHAT_DEPOT`, `ATELIER_SANS_WIKICHAT` | d'où vient wikichat ; `1` pour s'en passer | `github.com/nic01asFr/wikichat`, `0` |
 | `ANTHROPIC_BASE_URL` | la passerelle de modèles | `https://llm.lab.sspcloud.fr/api` |
-| `ATELIER_MODELE`, `ATELIER_MODELES_DE_REPLI` | modèles | `qwen3-6-35b-moe` ; `gemma4-26b-moe,qwen3-8-27b` |
+| `ATELIER_MODELE`, `ATELIER_MODELE_OPUS`, `ATELIER_MODELES_DE_REPLI` | modèle principal, créneau opus, replis (le dernier sert aussi haiku) | `qwen3-6-35b-moe` ; `qwen3-6-35b-moe` ; `qwen3-8-27b` |
 | `CODE_SERVER_VERSION`, `NODE_VERSION` | versions épinglées | `4.135.0`, `22.23.2` |
+
+`gemma4-26b-moe` n'est plus proposé à Claude Code (ni créneau opus, ni repli) :
+mesuré le 25/09/2026, il échoue dès le premier tour (`'None' has no attribute
+'split'`). Un pod installé avant garde son `settings.json` ; l'Atelier l'en
+retire à son démarrage (`MODELES_ECARTES`, `write_claude_settings_env`).
 
 Les réglages du service lui-même (`AtelierSettings`, préfixe `ATELIER_`) se
 donnent de la même façon : mode de permission par défaut, fenêtre de

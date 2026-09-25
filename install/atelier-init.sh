@@ -26,7 +26,8 @@
 #   WIKICHAT_DEPOT           dépôt git de wikichat ; vide = déjà là (WIKICHAT_SRC) ou absent
 #   ATELIER_SANS_WIKICHAT    1 pour s'en passer tout à fait
 #   ANTHROPIC_BASE_URL       passerelle de modèles
-#   ATELIER_MODELE           modèle principal ; ATELIER_MODELES_DE_REPLI : replis
+#   ATELIER_MODELE           modèle principal ; ATELIER_MODELE_OPUS : créneau opus ;
+#                            ATELIER_MODELES_DE_REPLI : replis (le dernier sert aussi haiku)
 #   CODE_SERVER_VERSION, NODE_VERSION : versions épinglées
 #   ATELIER_NODE_DIR, ATELIER_CODE_SERVER_DIR, ATELIER_EXTENSIONS : outils déjà posés
 #   ATELIER_AVANT_PLAN       1 pour tenir l'Atelier au premier plan (conteneur)
@@ -41,7 +42,12 @@ VERSION_CODE_SERVER="${CODE_SERVER_VERSION:-4.135.0}"
 VERSION_NODE="${NODE_VERSION:-22.23.2}"
 PASSERELLE_LLM="${ANTHROPIC_BASE_URL:-https://llm.lab.sspcloud.fr/api}"
 MODELE="${ATELIER_MODELE:-qwen3-6-35b-moe}"
-MODELES_DE_REPLI="${ATELIER_MODELES_DE_REPLI:-gemma4-26b-moe,qwen3-8-27b}"
+# gemma4-26b-moe n'est plus ni au créneau opus ni parmi les replis : mesuré le
+# 25/09/2026, il échoue dès le premier tour de Claude Code (« 'None' has no
+# attribute 'split' »). Le créneau opus prend le modèle principal, le seul
+# qui tienne des tours longs ; qwen3-8-27b reste le repli et le créneau haiku.
+MODELE_OPUS="${ATELIER_MODELE_OPUS:-qwen3-6-35b-moe}"
+MODELES_DE_REPLI="${ATELIER_MODELES_DE_REPLI:-qwen3-8-27b}"
 PORT_ATELIER="${ATELIER_PORT:-8787}"
 PORT_CODE_SERVER=8080
 PORT_WIKICHAT=3777
@@ -248,7 +254,7 @@ if [ ! -s "$WORK/.claude/settings.json" ]; then
     "ANTHROPIC_MODEL": "$MODELE",
     "ANTHROPIC_DEFAULT_MODEL": "$MODELE",
     "ANTHROPIC_DEFAULT_SONNET_MODEL": "$MODELE",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "${MODELES_DE_REPLI%%,*}",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "$MODELE_OPUS",
     "ANTHROPIC_DEFAULT_HAIKU_MODEL": "${MODELES_DE_REPLI##*,}",
     "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "131072",
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8192",

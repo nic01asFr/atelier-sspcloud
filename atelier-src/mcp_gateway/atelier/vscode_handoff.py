@@ -8,6 +8,8 @@ import shutil
 from pathlib import Path
 
 from mcp_gateway.atelier.config import (
+    MODELE_PRINCIPAL,
+    MODELES_ECARTES,
     OBSOLETES,
     AtelierSettings,
     effort_accepte_partout,
@@ -108,6 +110,35 @@ def claude_extension_env(
     return env
 
 
+def _ecarter_les_modeles_casses(data: dict[str, object], env: dict) -> None:
+    """Retire des créneaux et des replis les modèles qui font tomber un tour.
+
+    Un pod installé avant garde `gemma4-26b-moe` au créneau opus et dans
+    `fallbackModel` : l'init n'écrase pas un fichier existant. Le créneau
+    reprend le modèle principal ; le repli est simplement retiré.
+    """
+    for cle in (
+        "ANTHROPIC_MODEL",
+        "ANTHROPIC_DEFAULT_MODEL",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    ):
+        if str(env.get(cle) or "").strip() in MODELES_ECARTES:
+            env[cle] = MODELE_PRINCIPAL
+    if str(data.get("model") or "").strip() in MODELES_ECARTES:
+        data["model"] = MODELE_PRINCIPAL
+    replis = data.get("fallbackModel")
+    if isinstance(replis, list):
+        gardes = [m for m in replis if str(m).strip() not in MODELES_ECARTES]
+        if gardes:
+            data["fallbackModel"] = gardes
+        else:
+            data.pop("fallbackModel", None)
+    elif isinstance(replis, str) and replis.strip() in MODELES_ECARTES:
+        data.pop("fallbackModel", None)
+
+
 def _merge_claude_settings_file(path: Path, settings: AtelierSettings) -> None:
     """Donne au CLI de quoi s'authentifier, sans y écrire le secret.
 
@@ -171,6 +202,7 @@ def _merge_claude_settings_file(path: Path, settings: AtelierSettings) -> None:
     # reasoning effort high » sont tombées dans VS Code, au bout d'une chaîne
     # de replis. Un choix déjà fait est gardé s'il passe partout, relevé à
     # `xhigh` s'il visait plus haut ; sinon, celui du service.
+    _ecarter_les_modeles_casses(data, env)
     niveau = effort_accepte_partout(data.get("effortLevel") or settings.effort)
     data["effortLevel"] = niveau
     env["CLAUDE_CODE_EFFORT_LEVEL"] = niveau

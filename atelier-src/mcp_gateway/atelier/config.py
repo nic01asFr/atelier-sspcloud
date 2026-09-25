@@ -58,6 +58,16 @@ def fenetre_minimale() -> int:
     return min([FENETRE_PAR_DEFAUT, *FENETRES_DES_MODELES.values()])
 
 
+# Le modèle principal, qui tient aussi le créneau opus.
+MODELE_PRINCIPAL = "qwen3-6-35b-moe"
+# Les modèles qu'on ne propose plus à Claude Code, ni en créneau ni en repli.
+# gemma4-26b-moe : mesuré le 25 septembre 2026, il échoue dès le premier tour
+# (« 'None' has no attribute 'split' ») — le mettre au créneau opus ou dans les
+# replis, c'était faire tomber la conversation au moment où l'on en change.
+# Il reste servi par la passerelle pour d'autres usages (traduction brute).
+MODELES_ECARTES = frozenset({"gemma4-26b-moe"})
+
+
 # Les réglages d'avant le relais, à retirer partout où ils traînent (fichier
 # de réglages du CLI, environnement hérité). `CLAUDE_CODE_AUTO_COMPACT_WINDOW`
 # faisait compacter à 30 000 jetons une conversation que le CLI croyait vide ;
