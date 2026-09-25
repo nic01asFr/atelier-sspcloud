@@ -264,27 +264,25 @@ def _merge_claude_settings_file(path: Path, settings: AtelierSettings) -> None:
 def write_claude_settings_env(settings: AtelierSettings) -> None:
     """~/.claude + PVC durable : source d'auth pour l'extension (évite le login Claude.ai).
 
-    Les deux fichiers sont un seul réglage, que `claude_home.sync_claude_home`
-    recopie l'un sur l'autre (le plus récent l'emporte). On part donc du plus
-    récent, on y fusionne nos clés, et l'on écrit le même contenu des deux
-    côtés. Les fusionner chacun de son côté faisait perdre ce qu'un autre
-    venait d'écrire dans l'un d'eux : wikichat pose ses hooks
-    (`wikichat-hook.mjs`) dans `~/.claude/settings.json` à son démarrage, juste
-    avant celui de l'Atelier ; la copie durable, réécrite ensuite sans eux,
-    devenait la plus récente et le tour suivant l'étalait sur la première.
-    Tout ce que l'Atelier ne pose pas lui-même (hooks, permissions, choix de la
-    personne) est gardé tel quel.
+    Un seul fichier physique, celui du volume, dont `~/.claude/settings.json`
+    est un lien (`claude_home.unifier_les_reglages`, qui y fusionne d'abord un
+    vrai fichier trouvé à la place du lien). On y fusionne nos clés ; tout ce
+    que l'Atelier ne pose pas lui-même (hooks de wikichat, permissions, choix
+    de la personne) reste tel quel. Deux copies fusionnées chacune de son côté,
+    puis recopiées l'une sur l'autre, faisaient perdre les hooks que wikichat
+    venait de poser.
     """
-    home = Path.home() / ".claude" / "settings.json"
-    durable = settings.work_dir / ".claude" / "settings.json"
+    from mcp_gateway.atelier.claude_home import unifier_les_reglages
+
     if not settings.llm_key_path.is_file():
         return
-    existants = [c for c in (home, durable) if c.is_file()]
-    base = max(existants, key=lambda c: c.stat().st_mtime) if existants else home
-    _merge_claude_settings_file(base, settings)
-    autre = durable if base == home else home
-    autre.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(base, autre)
+    physique = unifier_les_reglages(settings)
+    _merge_claude_settings_file(physique, settings)
+    home = Path.home() / ".claude" / "settings.json"
+    if not home.is_symlink():
+        # Pas de lien possible (Windows sans privilège) : la même chose des deux côtés.
+        home.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(physique, home)
 
 
 def sync_claude_home(settings: AtelierSettings, slug: str) -> None:

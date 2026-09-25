@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 
@@ -201,30 +202,66 @@ def test_sans_slug_le_nom_n_est_jamais_atelier(reglages: AtelierSettings) -> Non
     assert not nom.startswith("atelier")
 
 
-# --- (d) les hooks wikichat survivent ---------------------------------------
+# --- (d) les hooks wikichat survivent : un seul fichier de réglages ---------
 
 HOOK = 'node "/home/onyxia/work/wikichat/src/scripts/wikichat-hook.mjs" '
-AVEC_HOOKS = {
-    "model": "qwen3-6-35b-moe",
-    "hooks": {
-        "SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": HOOK + "session-start", "timeout": 10}]}],
-        "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": HOOK + "prompt", "timeout": 5}]}],
+FIGER = "/home/onyxia/work/bin/atelier-figer-le-travail.sh"
+ANCIEN_HOOK = 'node "/home/onyxia/work/wikichat/src/scripts/wikichat-mailbox-hook.mjs"'
+
+
+def _hooks_wikichat() -> dict:
+    """Ce que pose `overlay-installer.mjs` (hooksVoulus, guetteur compris)."""
+    return {
+        "SessionStart": [{"type": "command", "command": HOOK + "session-start", "timeout": 10}],
+        "UserPromptSubmit": [{"type": "command", "command": HOOK + "prompt", "timeout": 5}],
         "Stop": [
+            {"type": "command", "command": HOOK + "stop", "timeout": 10},
+            {"type": "command", "command": HOOK + "guetter", "asyncRewake": True, "timeout": 1800},
+        ],
+        "SessionEnd": [{"type": "command", "command": HOOK + "session-end"}],
+    }
+
+
+def _wikichat_ecrit(chemin: Path) -> None:
+    """Comme `ensureHooks` de wikichat : lit (à travers un lien), retire ses
+    entrées (ancien hook compris), repose les siennes, puis écrit un fichier
+    temporaire et le renomme par-dessus, ce qui remplace un lien par un fichier."""
+    reglages = json.loads(chemin.read_text(encoding="utf-8")) if chemin.exists() else {}
+    hooks = reglages.get("hooks") if isinstance(reglages.get("hooks"), dict) else {}
+    voulus = _hooks_wikichat()
+    for evenement in set(hooks) | set(voulus):
+        gardes = []
+        for groupe in hooks.get(evenement, []):
+            autres = [h for h in groupe.get("hooks", []) if "wikichat" not in h.get("command", "")]
+            if autres:
+                gardes.append({**groupe, "hooks": autres})
+        if evenement in voulus:
+            gardes.append({"matcher": "", "hooks": voulus[evenement]})
+        hooks[evenement] = gardes
+    reglages["hooks"] = hooks
+    temporaire = chemin.with_name(chemin.name + ".wikichat-tmp")
+    temporaire.write_text(json.dumps(reglages, indent=2), encoding="utf-8")
+    os.replace(temporaire, chemin)
+
+
+def _init_ecrit(reglages: AtelierSettings) -> Path:
+    """Le settings.json que pose `atelier-init.sh` sur le volume (ancien hook compris)."""
+    durable = reglages.work_dir / ".claude" / "settings.json"
+    durable.parent.mkdir(parents=True, exist_ok=True)
+    durable.write_text(
+        json.dumps(
             {
-                "matcher": "",
-                "hooks": [
-                    {"type": "command", "command": HOOK + "stop", "timeout": 10},
-                    {"type": "command", "command": HOOK + "guetter", "asyncRewake": True, "timeout": 1800},
-                ],
+                "model": "qwen3-6-35b-moe",
+                "hooks": {
+                    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": ANCIEN_HOOK}]}],
+                    "SessionEnd": [{"matcher": "", "hooks": [{"type": "command", "command": FIGER}]}],
+                },
+                "env": {"ANTHROPIC_MODEL": "qwen3-6-35b-moe"},
             }
-        ],
-        "SessionEnd": [
-            {"matcher": "", "hooks": [{"type": "command", "command": "/home/onyxia/work/bin/atelier-figer-le-travail.sh"}]},
-            {"matcher": "", "hooks": [{"type": "command", "command": HOOK + "session-end"}]},
-        ],
-    },
-}
-SANS_HOOKS = {"model": "qwen3-6-35b-moe", "hooks": {}}
+        ),
+        encoding="utf-8",
+    )
+    return durable
 
 
 def _cle_llm(reglages: AtelierSettings) -> None:
@@ -232,61 +269,133 @@ def _cle_llm(reglages: AtelierSettings) -> None:
     reglages.llm_key_path.write_text("factice", encoding="utf-8")
 
 
-def _ecrire(chemin: Path, donnees: dict, age_s: float = 0) -> None:
-    chemin.parent.mkdir(parents=True, exist_ok=True)
-    chemin.write_text(json.dumps(donnees), encoding="utf-8")
-    if age_s:
-        instant = time.time() - age_s
-        os.utime(chemin, (instant, instant))
+def _vieillir(chemin: Path, age_s: float) -> None:
+    instant = time.time() - age_s
+    os.utime(chemin, (instant, instant))
 
 
-def _hooks(chemin: Path) -> dict:
-    return json.loads(chemin.read_text(encoding="utf-8")).get("hooks")
+def _commandes(chemin: Path) -> list[str]:
+    hooks = json.loads(chemin.read_text(encoding="utf-8")).get("hooks") or {}
+    return [h["command"] for groupes in hooks.values() for g in groupes for h in g["hooks"]]
 
 
-def test_la_reecriture_des_reglages_garde_les_hooks(reglages: AtelierSettings) -> None:
-    _cle_llm(reglages)
+def _lien_possible(tmp_path: Path) -> bool:
+    try:
+        (tmp_path / "sonde-lien").symlink_to(tmp_path)
+    except OSError:
+        return False
+    return True
+
+
+def _verifier(reglages: AtelierSettings, tmp_path: Path) -> None:
     maison = Path.home() / ".claude" / "settings.json"
     durable = reglages.work_dir / ".claude" / "settings.json"
-    _ecrire(maison, AVEC_HOOKS)
-    _ecrire(durable, AVEC_HOOKS)
-    write_claude_settings_env(reglages)
     for chemin in (maison, durable):
-        assert _hooks(chemin) == AVEC_HOOKS["hooks"], chemin
-        assert json.loads(chemin.read_text(encoding="utf-8"))["apiKeyHelper"].startswith("cat ")
-
-
-@pytest.mark.parametrize("ordre", ["demarrage", "vscode"])
-def test_des_hooks_poses_par_wikichat_juste_avant_ne_sont_pas_perdus(
-    reglages: AtelierSettings, ordre: str
-) -> None:
-    """L'ordre réel du pod : l'init recopie la copie durable (sans hooks), wikichat
-    démarre et pose ses hooks dans ~/.claude/settings.json, puis l'Atelier démarre
-    (réglages), puis un tour synchronise ~/.claude et la copie durable."""
-    _cle_llm(reglages)
-    maison = Path.home() / ".claude" / "settings.json"
-    durable = reglages.work_dir / ".claude" / "settings.json"
-    _ecrire(durable, SANS_HOOKS, age_s=60)
-    _ecrire(maison, AVEC_HOOKS, age_s=30)
-    if ordre == "demarrage":
-        write_claude_settings_env(reglages)
-        synchroniser(reglages)  # début du tour suivant
+        lu = json.loads(chemin.read_text(encoding="utf-8"))
+        commandes = _commandes(chemin)
+        assert "WebSearch" in lu["permissions"]["deny"], chemin
+        for evenement in ("session-start", "prompt", "stop", "guetter", "session-end"):
+            assert HOOK + evenement in commandes, (chemin, evenement)
+        assert FIGER in commandes, chemin
+        assert ANCIEN_HOOK not in commandes, "l'ancien hook ne revient pas à côté du nouveau"
+        assert lu["apiKeyHelper"].startswith("cat "), chemin
+        assert lu["model"] == "qwen3-6-35b-moe"
+    if _lien_possible(tmp_path):
+        assert maison.is_symlink() and maison.resolve() == durable.resolve()
     else:
-        projet = reglages.projects_dir / "p"
-        prepare_vscode_handoff(reglages, "p", "conv-hooks", projet)
-        synchroniser(reglages)
-    for chemin in (maison, durable):
-        assert _hooks(chemin) == AVEC_HOOKS["hooks"], chemin
+        assert maison.read_bytes() == durable.read_bytes()
 
 
-def test_une_copie_durable_plus_recente_l_emporte_comme_a_la_synchronisation(
-    reglages: AtelierSettings,
+def test_refus_websearch_hooks_wikichat_et_vscode_coexistent(
+    reglages: AtelierSettings, tmp_path: Path
 ) -> None:
-    """Même règle que `sync_claude_home` : le plus récent fait foi, des deux côtés."""
+    """L'ordre du pod : l'init pose le volume, wikichat démarre et écrit ses hooks
+    par renommage dans ~/.claude, l'Atelier démarre (réglages, refus de
+    WebSearch), une conversation part dans VS Code, un tour synchronise ; puis
+    wikichat redémarre et réécrit, et un tour synchronise encore."""
     _cle_llm(reglages)
+    durable = _init_ecrit(reglages)
+    _vieillir(durable, 120)
     maison = Path.home() / ".claude" / "settings.json"
-    durable = reglages.work_dir / ".claude" / "settings.json"
-    _ecrire(maison, SANS_HOOKS, age_s=60)
-    _ecrire(durable, AVEC_HOOKS, age_s=30)
+    maison.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(durable, maison)  # une ancienne init recopiait le volume dans ~/.claude
+    _wikichat_ecrit(maison)
+    _vieillir(maison, 60)
+    write_claude_settings_env(reglages)  # démarrage de l'Atelier
+    prepare_vscode_handoff(reglages, "p", "conv-vscode", reglages.projects_dir / "p")
+    synchroniser(reglages)  # début d'un tour
+    _verifier(reglages, tmp_path)
+    # wikichat redémarre : il lit à travers le lien, puis le remplace par un fichier.
+    _wikichat_ecrit(maison)
+    synchroniser(reglages)
     write_claude_settings_env(reglages)
-    assert _hooks(maison) == _hooks(durable) == AVEC_HOOKS["hooks"]
+    _verifier(reglages, tmp_path)
+
+
+def test_la_reecriture_des_reglages_garde_les_hooks(reglages: AtelierSettings, tmp_path: Path) -> None:
+    _cle_llm(reglages)
+    _init_ecrit(reglages)
+    maison = Path.home() / ".claude" / "settings.json"
+    maison.parent.mkdir(parents=True, exist_ok=True)
+    maison.write_text("{}", encoding="utf-8")
+    _wikichat_ecrit(maison)
+    write_claude_settings_env(reglages)
+    write_claude_settings_env(reglages)
+    _verifier(reglages, tmp_path)
+
+
+def test_une_copie_durable_plus_recente_garde_les_hooks_de_la_maison(
+    reglages: AtelierSettings, tmp_path: Path
+) -> None:
+    """Le volume réécrit après wikichat : ses hooks ne sont pas perdus pour autant."""
+    _cle_llm(reglages)
+    durable = _init_ecrit(reglages)
+    maison = Path.home() / ".claude" / "settings.json"
+    maison.parent.mkdir(parents=True, exist_ok=True)
+    maison.write_text("{}", encoding="utf-8")
+    _wikichat_ecrit(maison)
+    _vieillir(maison, 60)
+    durable.write_text(durable.read_text(encoding="utf-8"), encoding="utf-8")  # plus récent
+    write_claude_settings_env(reglages)
+    commandes = _commandes(durable)
+    assert HOOK + "stop" in commandes and FIGER in commandes
+
+
+def test_un_fichier_illisible_n_est_jamais_ecrase(reglages: AtelierSettings) -> None:
+    from mcp_gateway.atelier.claude_home import unifier_les_reglages
+
+    _init_ecrit(reglages)
+    maison = Path.home() / ".claude" / "settings.json"
+    maison.parent.mkdir(parents=True, exist_ok=True)
+    maison.write_text("{pas du json", encoding="utf-8")
+    unifier_les_reglages(reglages)
+    assert maison.read_text(encoding="utf-8") == "{pas du json"
+    assert not maison.is_symlink()
+
+
+def test_la_fusion_des_reglages() -> None:
+    from mcp_gateway.atelier.claude_home import fusionner_les_reglages
+
+    ancien = {
+        "model": "a",
+        "effortLevel": "low",
+        "env": {"A": "1", "B": "ancien"},
+        "permissions": {"deny": ["WebSearch"], "allow": ["Bash(ls:*)"]},
+        "hooks": {
+            "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": ANCIEN_HOOK}]}],
+            "SessionEnd": [{"matcher": "", "hooks": [{"type": "command", "command": FIGER}]}],
+        },
+    }
+    recent = {
+        "model": "b",
+        "env": {"B": "recent"},
+        "permissions": {"deny": ["Bash(rm:*)"]},
+        "hooks": {"Stop": [{"matcher": "", "hooks": [{"type": "command", "command": HOOK + "stop"}]}]},
+    }
+    fusion = fusionner_les_reglages(recent, ancien)
+    assert fusion["model"] == "b" and fusion["effortLevel"] == "low"
+    assert fusion["env"] == {"A": "1", "B": "recent"}
+    assert fusion["permissions"] == {"deny": ["Bash(rm:*)", "WebSearch"], "allow": ["Bash(ls:*)"]}
+    commandes = [h["command"] for g in fusion["hooks"].values() for x in g for h in x["hooks"]]
+    assert HOOK + "stop" in commandes and FIGER in commandes
+    assert ANCIEN_HOOK not in commandes

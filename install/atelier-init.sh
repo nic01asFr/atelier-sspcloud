@@ -341,11 +341,14 @@ if [ ! -s "$WORK/.claude/settings.json" ]; then
 EOF
 fi
 mkdir -p "$HOME/.claude"
-# Seulement s'il manque ou s'il est plus ancien : un ~/.claude/settings.json plus
-# récent porte ce que d'autres y ont posé depuis (les hooks de wikichat), que
-# l'Atelier reporte sur la copie durable (write_claude_settings_env).
-if [ ! -f "$HOME/.claude/settings.json" ] || [ "$WORK/.claude/settings.json" -nt "$HOME/.claude/settings.json" ]; then
-  cp -f "$WORK/.claude/settings.json" "$HOME/.claude/settings.json"
+# Un seul fichier : ~/.claude/settings.json est un lien vers celui du volume.
+# L'Atelier, wikichat (ses hooks) et Claude Code y écrivent ; deux copies
+# recopiées l'une sur l'autre effaçaient les entrées d'un auteur. Un vrai
+# fichier déjà là (init rejouée sur un pod en marche, ou lien remplacé par un
+# auteur qui écrit par renommage) est laissé : l'Atelier le fusionne dans celui
+# du volume puis repose le lien (claude_home.unifier_les_reglages).
+if [ ! -e "$HOME/.claude/settings.json" ] || [ -L "$HOME/.claude/settings.json" ]; then
+  ln -sfn "$WORK/.claude/settings.json" "$HOME/.claude/settings.json"
 fi
 
 cat > "$BIN/claude-env.sh" <<EOF
@@ -358,8 +361,8 @@ fi
 export PATH="\$WORK/bin:\${PATH}"
 if [ -f "\$WORK/.claude/settings.json" ]; then
   mkdir -p "\$HOME/.claude"
-  if [ ! -f "\$HOME/.claude/settings.json" ] || [ "\$WORK/.claude/settings.json" -nt "\$HOME/.claude/settings.json" ]; then
-    cp -f "\$WORK/.claude/settings.json" "\$HOME/.claude/settings.json" 2>/dev/null || true
+  if [ ! -e "\$HOME/.claude/settings.json" ] || [ -L "\$HOME/.claude/settings.json" ]; then
+    ln -sfn "\$WORK/.claude/settings.json" "\$HOME/.claude/settings.json" 2>/dev/null || true
   fi
 fi
 export ANTHROPIC_MODEL="\${ANTHROPIC_MODEL:-$MODELE}"
