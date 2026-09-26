@@ -67,6 +67,10 @@ def register_modes_routes(app: FastAPI, settings: AtelierSettings, auth_dep: Cal
             raise HTTPException(400, f"mode inconnu : {demande} ({', '.join(MODES)})")
         ecrire_mode_du_projet(settings, dossier, demande)
         etat = _etat(settings, dossier)
+        # Les processus gardés des conversations qui suivent ce défaut ne
+        # doivent pas garder l'ancien (même règle que `PATCH /v1/sessions/{id}`).
+        store = getattr(app.state, "store", None)
+        etat["processus_prevenus"] = store.defaut_du_projet_change(slug) if store is not None else {}
         etat["avertissement"] = (
             "Sans garde-fou : l'agent agit sans rien demander, y compris hors du projet."
             if etat["mode"] == BYPASS

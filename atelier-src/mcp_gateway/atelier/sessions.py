@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal
 
+from fastapi import APIRouter, Depends, HTTPException, Request
+
 from mcp_gateway.atelier.config import AtelierSettings
 from mcp_gateway.atelier.harness import (
     AtelierEvent,
@@ -249,6 +251,147 @@ CRITERE_ABSORPTION = 1
 _VERROU_ADOPTION = threading.RLock()
 
 
+# Ce que dit `entrypoint` dans `<config>/sessions/<pid>.json` (relevé en 2.1.282).
+SURFACES_DES_ENTREES = {"claude-vscode": "vscode", "cli": "terminal", "sdk-cli": "atelier", "sdk-ts": "atelier"}
+
+
+def dossiers_de_config_claude(settings: AtelierSettings) -> list[Path]:
+    """Où Claude Code tient ses fichiers de processus : `CLAUDE_CONFIG_DIR`, `~/.claude`, le volume."""
+    from mcp_gateway.atelier.claude_home import durable_claude_dir, home_claude_dir
+
+    candidats = []
+    if os.environ.get("CLAUDE_CONFIG_DIR"):
+        candidats.append(Path(os.environ["CLAUDE_CONFIG_DIR"]))
+    candidats += [home_claude_dir(), durable_claude_dir(settings)]
+    vus: list[Path] = []
+    for c in candidats:
+        try:
+            r = c.resolve()
+        except OSError:
+            continue
+        if r not in vus:
+            vus.append(r)
+    return vus
+
+
+def pid_vivant(pid: int) -> bool:
+    """Le processus existe-t-il ? Sans jamais lui envoyer de signal.
+
+    Sous Windows, `os.kill(pid, 0)` enverrait CTRL_C_EVENT : on demande l'état
+    au système à la place.
+    """
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            noyau = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            poignee = noyau.OpenProcess(0x1000, False, int(pid))
+            if not poignee:
+                return False
+            try:
+                code = ctypes.c_ulong()
+                noyau.GetExitCodeProcess(poignee, ctypes.byref(code))
+                return code.value == 259
+            finally:
+                noyau.CloseHandle(poignee)
+        except (OSError, AttributeError):
+            return False
+    return Path(f"/proc/{pid}").exists()
+
+
+def mode_de_la_ligne_de_commande(argv: list[str]) -> str | None:
+    """Le mode que la ligne de commande d'un `claude` lui a donné, s'il le dit."""
+    for a, b in zip(argv, argv[1:]):
+        if a == "--permission-mode":
+            return b
+    for a in argv:
+        if a.startswith("--permission-mode="):
+            return a.split("=", 1)[1]
+        if a == "--dangerously-skip-permissions":
+            return "bypassPermissions"
+    return None
+
+
+def _ligne_de_commande(pid: int) -> list[str]:
+    try:
+        brut = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return []
+    return [a.decode("utf-8", "replace") for a in brut.split(b"\0") if a]
+
+
+def processus_cli_de(
+    dossiers: list[Path],
+    cli_id: str,
+    *,
+    vivant: Callable[[int], bool] = pid_vivant,
+    ligne_de_commande: Callable[[int], list[str]] = _ligne_de_commande,
+) -> list[dict[str, Any]]:
+    """Les processus `claude` vivants dont `sessions/<pid>.json` nomme cette conversation."""
+    sortie: list[dict[str, Any]] = []
+    if not cli_id:
+        return sortie
+    vus: set[int] = set()
+    for dossier in dossiers:
+        repertoire = dossier / "sessions"
+        if not repertoire.is_dir():
+            continue
+        for fichier in repertoire.glob("*.json"):
+            try:
+                donnees = json.loads(fichier.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(donnees, dict) or donnees.get("sessionId") != cli_id:
+                continue
+            try:
+                pid = int(donnees.get("pid") or fichier.stem)
+            except (TypeError, ValueError):
+                continue
+            if pid in vus or not vivant(pid):
+                continue
+            vus.add(pid)
+            entree = str(donnees.get("entrypoint") or "")
+            sortie.append(
+                {
+                    "pid": pid,
+                    "surface": SURFACES_DES_ENTREES.get(entree, entree or "inconnue"),
+                    "entrypoint": entree,
+                    "statut": donnees.get("status"),
+                    "depuis": donnees.get("startedAt"),
+                    "version": donnees.get("version"),
+                    "mode_au_lancement": mode_de_la_ligne_de_commande(ligne_de_commande(pid)),
+                }
+            )
+    return sortie
+
+
+def enregistrer_les_routes_des_processus(app: Any) -> None:
+    """`GET /v1/sessions/{id}/processus` : la ligne que `api.py` appelle."""
+    from mcp_gateway.atelier.auth import ENTETE_INTERFACE
+    from mcp_gateway.atelier.vscode_bridge import COOKIE_NAME
+    from mcp_gateway.auth import bearer_from_header
+
+    router = APIRouter(prefix="/v1")
+
+    def proprietaire(request: Request) -> str:
+        return app.state.auth.check_api(
+            bearer_from_header(request.headers.get("authorization")),
+            request.cookies.get(COOKIE_NAME),
+            request.headers.get(ENTETE_INTERFACE) == "1",
+        )
+
+    @router.get("/sessions/{session_id}/processus")
+    def processus(session_id: str, _qui: str = Depends(proprietaire)) -> dict[str, Any]:
+        try:
+            return app.state.store.processus_de_la_conversation(session_id)
+        except KeyError:
+            raise HTTPException(404, "session not found") from None
+
+    app.include_router(router)
+
+
 @dataclass
 class SessionRecord:
     session_id: str
@@ -285,6 +428,16 @@ class SessionRecord:
     # que l'ancienne règle écartait et que la nouvelle reprendrait. On rebalaie
     # une fois, plutôt que de les perdre en silence.
     critere_absorption: int = 0
+    # Un agent lancé (lot D) : qui l'a demandé (`wikichat:trigger:…`,
+    # `gardien:<contrôle>`, `conversation:<id>`). Vide pour une conversation
+    # ouverte par la personne. La vue Agents le lit pour montrer les agents
+    # spécifiques à côté des autres.
+    lance_par: str = ""
+    # Le nom sous lequel cet agent parle à wikichat quand ce n'est pas celui
+    # que l'Atelier dérive (`<slug>-<id6>`) : un agent nommé de wikichat
+    # (« Librarian ») garde son nom en passant par l'Atelier, et son courrier
+    # le trouve.
+    nom_wikichat: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -482,7 +635,85 @@ class SessionStore:
         if effort is not None:
             rec.effort = effort_valide(effort)
         self.save(rec)
+        if permission_mode is not None:
+            # Le processus gardé de cette conversation ne garde pas l'ancien
+            # mode (constaté le 26/09 : un bypass qui survivait au retour au
+            # défaut du projet). Celui de VS Code, l'Atelier ne le pilote pas :
+            # `processus_de_la_conversation` dit s'il est ouvert.
+            from mcp_gateway.atelier.modes_permission import mode_resolu
+
+            try:
+                nouveau, _source = mode_resolu(self.settings, rec.cwd, self._claude_cli_id(rec))
+                self.harness.changer_de_mode(session_id, nouveau)
+            except (OSError, ValueError) as exc:
+                log.warning("mode de %s non transmis au processus : %s", session_id, exc)
         return rec
+
+    def defaut_du_projet_change(self, slug: str) -> dict[str, str]:
+        """Le défaut d'un projet a changé : prévenir les processus de ses conversations qui le suivent.
+
+        Une conversation qui a son propre choix de mode le garde ; les autres
+        suivent le projet, et leur processus gardé ne doit pas garder l'ancien
+        défaut. Rend `{conversation: aucun|eteint|envoye}`.
+        """
+        from mcp_gateway.atelier.modes_permission import mode_de_la_conversation, mode_resolu
+
+        faits: dict[str, str] = {}
+        for rec in self.list_sessions(slug):
+            cli_id = self._claude_cli_id(rec)
+            if mode_de_la_conversation(cli_id):
+                continue
+            try:
+                nouveau, _source = mode_resolu(self.settings, rec.cwd, cli_id)
+                faits[rec.session_id] = self.harness.changer_de_mode(rec.session_id, nouveau)
+            except (OSError, ValueError) as exc:
+                log.warning("mode de %s non transmis au processus : %s", rec.session_id, exc)
+        return faits
+
+    def processus_de_la_conversation(self, session_id: str) -> dict[str, Any]:
+        """Les processus `claude` vivants de cette conversation, et ce que vaut un changement de mode.
+
+        Lus dans `<config>/sessions/<pid>.json`, que Claude Code tient pour
+        chaque processus (`sessionId`, `entrypoint`, `status`) : VS Code
+        (`claude-vscode`), le terminal (`cli`), les tours de l'Atelier. Le mode
+        au lancement vient de la ligne de commande (`/proc`, Linux seulement).
+
+        L'Atelier ne pilote que ses propres processus. Celui de VS Code garde
+        son mode jusqu'à ce que l'onglet se ferme : l'interface doit dire
+        « s'applique à la prochaine ouverture dans VS Code ».
+        """
+        rec = self.get(session_id)
+        if rec is None:
+            raise KeyError(session_id)
+        from mcp_gateway.atelier.modes_permission import mode_resolu
+
+        cli_id = self._claude_cli_id(rec)
+        choisi, source = mode_resolu(self.settings, rec.cwd, cli_id)
+        processus = processus_cli_de(dossiers_de_config_claude(self.settings), cli_id)
+        gardes = getattr(self.harness, "processus_vivants", None)
+        atelier = self.harness.tour_en_cours(session_id) or (
+            callable(gardes) and session_id in gardes()
+        )
+        if atelier and not any(p["surface"] == "atelier" for p in processus):
+            processus.append({"pid": None, "surface": "atelier", "statut": "garde", "mode_au_lancement": None})
+        vscode = [p for p in processus if p["surface"] == "vscode"]
+        sortie: dict[str, Any] = {
+            "conversation": session_id,
+            "cli_id": cli_id,
+            "mode_choisi": choisi,
+            "source_du_mode": source,
+            "processus": processus,
+            "vscode_vivant": bool(vscode),
+        }
+        if vscode:
+            sortie["note"] = (
+                "Un onglet VS Code de cette conversation est ouvert : un changement de mode "
+                "s'applique à la prochaine ouverture dans VS Code."
+            )
+            differents = [p for p in vscode if p.get("mode_au_lancement") and p["mode_au_lancement"] != choisi]
+            if differents:
+                sortie["ecart"] = {"vivant": differents[0]["mode_au_lancement"], "choisi": choisi}
+        return sortie
 
     def delete(self, session_id: str, *, remove_files: bool = True) -> None:
         rec_avant = self.get(session_id)
@@ -989,6 +1220,8 @@ class SessionStore:
         le coordinateur rattache une session à son canal-projet d'après son
         dossier de travail.
         """
+        if (rec.nom_wikichat or "").strip():
+            return rec.nom_wikichat.strip()
         # Jamais `atelier` : wikichat tient ce nom pour générique. Sans slug,
         # celui du projet par défaut, là où la conversation travaille alors.
         slug = (rec.slug or "").strip() or self.settings.default_slug
@@ -1149,8 +1382,17 @@ class SessionStore:
         peut_attendre: bool = False,
         reprises: int = 0,
         mode: str = "",
+        delai_s: int | None = None,
+        regles: dict[str, list[str]] | None = None,
+        env_tour: dict[str, str] | None = None,
     ) -> TurnResult:
         """Joue un tour.
+
+        `delai_s`, `regles` et `env_tour` sont ceux d'un agent lancé (lot D,
+        `lancements`) : sa durée plafonnée (jamais au-delà de celle du
+        service), les règles de permission imposées à son fil (`allow`,
+        `deny`), et l'environnement de sa copie de travail (les gardes git
+        d'une réparation).
 
         `peut_attendre` dit si une question d'autorisation peut rester en
         suspens. Vrai seulement quand le tour part par le flux d'événements :
@@ -1254,7 +1496,11 @@ class SessionStore:
                 claude_session_id=claude_cli_id,
                 transcript_path=Path(rec.transcript_path),
                 log_path=Path(rec.log_path),
-                timeout_s=self.settings.turn_timeout_s,
+                timeout_s=(
+                    min(int(delai_s), self.settings.turn_timeout_s)
+                    if delai_s and delai_s > 0
+                    else self.settings.turn_timeout_s
+                ),
                 mcp_config_path=mcp_config_path,
                 # La même règle que VS Code et le terminal : le choix de la
                 # conversation, sinon le défaut du projet, sinon celui du
@@ -1270,6 +1516,10 @@ class SessionStore:
                 agent_name=self._nom_wikichat(rec),
                 poids_initial=self.poids_de_la_conversation(rec) if resume else 0,
                 on_event=on_event,
+                # Seulement quand il y en a : un harnais écrit avant le lot D
+                # (ceux des tests) ne connaît pas ces arguments.
+                **({"regles_imposees": regles} if regles else {}),
+                **({"env_en_plus": env_tour} if env_tour else {}),
             )
         except Exception as exc:  # noqa: BLE001 — surface cause to API
             rec.state = "failed"
@@ -1312,6 +1562,9 @@ class SessionStore:
                 peut_attendre=peut_attendre,
                 reprises=reprises + 1,
                 mode=mode,
+                delai_s=delai_s,
+                regles=regles,
+                env_tour=env_tour,
             )
 
         # Un tour peut traiter plusieurs messages depuis qu'on écrit pendant

@@ -67,6 +67,8 @@ from mcp_gateway.atelier.vscode_bridge import (
 )
 from mcp_gateway.atelier.claude_home import aligner_le_lien_claude
 from mcp_gateway.atelier.commandes import enregistrer as enregistrer_les_commandes
+from mcp_gateway.atelier.lancements import enregistrer_les_lancements
+from mcp_gateway.atelier.sessions import enregistrer_les_routes_des_processus
 from mcp_gateway.atelier.vscode_handoff import (
     ecrire_mode_machine,
     prepare_vscode_handoff,
@@ -159,6 +161,10 @@ class VeilleDesJournaux:
         self._arret: dict[str, threading.Event] = {}
 
     def surveiller(self, session_id: str) -> None:
+        # L'état de départ se relève ici, avant de rendre la main, et non dans
+        # le fil : un fil lent à démarrer (vu en CI Linux) le relevait après
+        # une écriture faite juste après `surveiller`, et ne la voyait jamais.
+        connue = self._empreinte(session_id)
         with self._verrou:
             self._compte[session_id] = self._compte.get(session_id, 0) + 1
             if self._compte[session_id] > 1:
@@ -166,7 +172,7 @@ class VeilleDesJournaux:
             arret = threading.Event()
             self._arret[session_id] = arret
             fil = threading.Thread(
-                target=self._boucle, args=(session_id, arret), daemon=True
+                target=self._boucle, args=(session_id, arret, connue), daemon=True
             )
             self._fils[session_id] = fil
         fil.start()
@@ -194,8 +200,9 @@ class VeilleDesJournaux:
                 marques.append(None)
         return tuple(marques)
 
-    def _boucle(self, session_id: str, arret: threading.Event) -> None:
-        connue = self._empreinte(session_id)
+    def _boucle(self, session_id: str, arret: threading.Event, connue: tuple | None = None) -> None:
+        if connue is None:
+            connue = self._empreinte(session_id)
         while not arret.wait(self.INTERVALLE_S):
             actuelle = self._empreinte(session_id)
             if actuelle == connue:
@@ -2582,6 +2589,8 @@ def build_app(
 
     app.include_router(router)
     enregistrer_les_commandes(app)
+    enregistrer_les_lancements(app)
+    enregistrer_les_routes_des_processus(app)
 
     # La porte MCP de l'Atelier : ce que l'interface sait faire devient
     # appelable par un agent (voir mcp_endpoint).

@@ -8,7 +8,10 @@ exactement comme le vrai.
 
 Mots reconnus dans le message : `crash` écrit une erreur sur la sortie
 d'erreur ; `dors N` met N secondes à répondre ; `bavard N` écrit N réponses
-d'affilée avant de conclure, pour éprouver ce qui compte le poids d'un tour.
+d'affilée avant de conclure, pour éprouver ce qui compte le poids d'un tour ;
+`mode ?` répond le mode de permission en vigueur (celui de `--permission-mode`,
+changé par un `control_request` `set_permission_mode`, que le faux consigne
+dans `FAUX_CLAUDE_CONTROLES` s'il est posé).
 """
 
 from __future__ import annotations
@@ -29,16 +32,44 @@ def _texte(contenu: object) -> str:
     return ""
 
 
+def _mode_de_depart(argv: list[str]) -> str:
+    for a, b in zip(argv, argv[1:]):
+        if a == "--permission-mode":
+            return b
+    return "?"
+
+
 def main() -> None:
     premier = True
+    # Le mode du processus : celui de sa ligne de commande, puis ce qu'un
+    # `set_permission_mode` lui dit, comme le vrai (2.1.282, entrée stream-json).
+    mode = _mode_de_depart(sys.argv[1:])
     for ligne in sys.stdin:
         try:
             entree = json.loads(ligne)
         except ValueError:
             continue
+        if entree.get("type") == "control_request":
+            requete = entree.get("request") or {}
+            trace = os.environ.get("FAUX_CLAUDE_CONTROLES")
+            if trace:
+                with open(trace, "a", encoding="utf-8") as f:
+                    f.write(json.dumps(requete) + chr(10))
+            if requete.get("subtype") == "set_permission_mode":
+                mode = str(requete.get("mode") or mode)
+            print(
+                json.dumps(
+                    {"type": "control_response", "response": {"subtype": "success", "request_id": entree.get("request_id"), "response": {"mode": mode}}},
+                    separators=(",", ":"),
+                )
+            )
+            sys.stdout.flush()
+            continue
         if entree.get("type") != "user":
             continue
         texte = _texte((entree.get("message") or {}).get("content"))
+        if texte == "mode ?":
+            texte = f"mode:{mode}"
         if premier:
             print(json.dumps({"type": "system", "subtype": "init", "mcp_servers": []}))
             premier = False

@@ -212,10 +212,22 @@ class Harness(ABC):
         agent_name: str = "",
         poids_initial: int = 0,
         on_event: Callable[[AtelierEvent], None] | None = None,
+        regles_imposees: dict[str, list[str]] | None = None,
+        env_en_plus: dict[str, str] | None = None,
     ) -> TurnResult: ...
 
     @abstractmethod
     def interrupt(self, session_id: str) -> bool: ...
+
+    def changer_de_mode(self, session_id: str, mode: str) -> str:
+        """Le mode de la conversation a changé : que son processus ne garde pas l'ancien.
+
+        Rend ce qui a été fait : `aucun` (pas de processus gardé), `eteint`
+        (un processus au repos, éteint : le tour suivant repart avec le bon
+        mode) ou `envoye` (un tour travaille : le nouveau mode lui est
+        transmis). Par défaut, rien à faire.
+        """
+        return "aucun"
 
     @abstractmethod
     def tour_en_cours(self, session_id: str) -> bool:
@@ -241,6 +253,14 @@ class FakeHarness(Harness):
             decisions_dir or Path(tempfile.gettempdir()) / "atelier-decisions-fictives"
         )
         self.messages = FileDesMessages()
+        # Ce que chaque tour a reçu (les derniers seulement) : les tests des
+        # lancements y lisent le mode, la durée, les règles et l'environnement.
+        self.appels: list[dict[str, Any]] = []
+        # Rappel facultatif, joué pendant le tour dans le dossier et avec
+        # l'environnement que recevrait l'agent : un test y fait ce qu'un agent
+        # ferait (commiter, tenter de pousser).
+        self.pendant_le_tour: Callable[..., None] | None = None
+        self.modes_changes: list[tuple[str, str]] = []
 
     def run_turn(
         self,
@@ -261,10 +281,30 @@ class FakeHarness(Harness):
         agent_name: str = "",
         poids_initial: int = 0,
         on_event: Callable[[AtelierEvent], None] | None = None,
+        regles_imposees: dict[str, list[str]] | None = None,
+        env_en_plus: dict[str, str] | None = None,
     ) -> TurnResult:
         self._running[session_id] = True
+        self.appels.append(
+            {
+                "session_id": session_id,
+                "cwd": str(cwd),
+                "permission_mode": permission_mode,
+                "timeout_s": timeout_s,
+                "peut_attendre": peut_attendre,
+                "agent_name": agent_name,
+                "model": model,
+                "regles_imposees": regles_imposees or {},
+                "env_en_plus": dict(env_en_plus or {}),
+            }
+        )
+        del self.appels[:-50]
         log_path.parent.mkdir(parents=True, exist_ok=True)
         transcript_path.parent.mkdir(parents=True, exist_ok=True)
+        if self.pendant_le_tour is not None:
+            self.pendant_le_tour(
+                session_id=session_id, message=message, cwd=cwd, env=dict(env_en_plus or {})
+            )
         lower = message.lower()
         if "retiens" in lower or "retenir" in lower:
             import re
@@ -314,6 +354,10 @@ class FakeHarness(Harness):
     def interrupt(self, session_id: str) -> bool:
         self._running[session_id] = False
         return True
+
+    def changer_de_mode(self, session_id: str, mode: str) -> str:
+        self.modes_changes.append((session_id, mode))
+        return "aucun"
 
     def tour_en_cours(self, session_id: str) -> bool:
         return bool(self._running.get(session_id))
@@ -753,14 +797,24 @@ class ClaudeHarness(Harness):
             return []
         return ["--settings", json.dumps(reglages, ensure_ascii=False)]
 
-    def _arguments_de_reglages(self, session_id: str, model: str | None) -> list[str]:
+    def _arguments_de_reglages(
+        self,
+        session_id: str,
+        model: str | None,
+        regles_imposees: dict[str, list[str]] | None = None,
+    ) -> list[str]:
         """Un seul `--settings` : les règles du fil, l'environnement imposé, et
-        le refus des outils que la passerelle LLM simule (WebSearch)."""
+        le refus des outils que la passerelle LLM simule (WebSearch).
+
+        `regles_imposees` : celles d'un agent lancé (`lancements`), ajoutées à
+        `permissions.allow` et `permissions.deny`. Un refus l'emporte sur tout
+        mode, bypass compris : c'est par là qu'un réparateur ne pousse pas."""
         from mcp_gateway.atelier.navigateur import refuser_les_outils_simules
 
         reglages = refuser_les_outils_simules(
             dict(reglages_cli(self.decisions.regles(session_id)) or {}), self.settings
         )
+        reglages = fondre_les_regles(reglages, regles_imposees)
         env = dict(reglages.get("env") or {})
         env.update(self._env_impose(model))
         reglages["env"] = env
@@ -900,6 +954,8 @@ class ClaudeHarness(Harness):
         agent_name: str = "",
         poids_initial: int = 0,
         on_event: Callable[[AtelierEvent], None] | None = None,
+        regles_imposees: dict[str, list[str]] | None = None,
+        env_en_plus: dict[str, str] | None = None,
     ) -> TurnResult:
         claude = self._resolve_claude_bin()
         cli_id = (claude_session_id or session_id).strip()
@@ -928,7 +984,7 @@ class ClaudeHarness(Harness):
         niveau = effort_valide(effort)
         if niveau:
             cmd.extend(["--effort", effort_accepte_partout(niveau)])
-        cmd.extend(self._arguments_de_reglages(session_id, model))
+        cmd.extend(self._arguments_de_reglages(session_id, model, regles_imposees))
         if resume:
             cmd.extend(["--resume", cli_id])
         else:
@@ -984,14 +1040,14 @@ class ClaudeHarness(Harness):
             effort,
             agent_name,
             mcp_cfg,
-            empreinte_env(self._variables_du_projet(cwd)),
+            empreinte_env(self._variables_du_projet(cwd)) + empreinte_du_lancement(regles_imposees, env_en_plus),
         )
         vivant = self._reprendre(session_id, empreinte)
         if vivant is None:
             proc = subprocess.Popen(
                 cmd,
                 cwd=str(cwd),
-                env=self._env(agent_name, cwd, session_id, model),
+                env={**self._env(agent_name, cwd, session_id, model), **(env_en_plus or {})},
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -1378,6 +1434,50 @@ class ClaudeHarness(Harness):
             fil = self._veilleur
         fil.start()
 
+    def changer_de_mode(self, session_id: str, mode: str) -> str:
+        """Un processus gardé ne doit pas garder l'ancien mode (constaté le 26/09).
+
+        Un mode se donne au CLI à son lancement (`--permission-mode`) ; un
+        processus gardé entre deux tours le garde tant qu'il vit. Constaté sur
+        le pod : une conversation repassée au défaut du projet dans l'app
+        tournait encore en bypass une heure et demie plus tard.
+
+        - Au repos : on l'éteint. Le tour suivant reprend la conversation
+          (`--resume`) avec le bon mode ; rien n'est perdu.
+        - En plein tour : on lui envoie `set_permission_mode`, que le CLI
+          accepte sur son entrée stream-json (relevé dans le binaire 2.1.282 :
+          `control_request` de sous-type `set_permission_mode`, `{mode}`). Son
+          empreinte garde l'ancien mode : au tour suivant, il repart de toute
+          façon, que le CLI ait appliqué le changement ou non.
+        """
+        with self._verrou:
+            vivant = self._vivants.get(session_id)
+            en_tour = session_id in self._en_tour
+        if vivant is None or vivant.proc.poll() is not None:
+            return "aucun"
+        if not en_tour:
+            self._eteindre(session_id)
+            return "eteint"
+        demande = {
+            "type": "control_request",
+            "request_id": f"atelier-mode-{uuid.uuid4().hex[:12]}",
+            "request": {"subtype": "set_permission_mode", "mode": mode_permission_valide(mode)},
+        }
+        proc = vivant.proc
+        if proc.stdin is None or proc.stdin.closed:
+            return "aucun"
+        try:
+            proc.stdin.write(json.dumps(demande, ensure_ascii=False) + chr(10))
+            proc.stdin.flush()
+        except (OSError, ValueError):
+            return "aucun"
+        try:
+            with vivant.log_path.open("a", encoding="utf-8") as lf:
+                lf.write(f"mode changé en cours de tour : {mode_permission_valide(mode)}" + chr(10))
+        except OSError:
+            pass
+        return "envoye"
+
     def processus_vivants(self) -> list[str]:
         """Les conversations dont un processus est gardé — pour l'état et les tests."""
         with self._verrou:
@@ -1407,6 +1507,38 @@ class ClaudeHarness(Harness):
             except subprocess.TimeoutExpired:
                 proc.kill()
         return True
+
+
+def fondre_les_regles(
+    reglages: dict[str, Any], regles_imposees: dict[str, list[str]] | None
+) -> dict[str, Any]:
+    """Ajoute à `permissions.allow` et `.deny` les règles imposées à un agent lancé."""
+    if not regles_imposees:
+        return reglages
+    sortie = dict(reglages)
+    permissions = dict(sortie.get("permissions") or {})
+    for cle in ("allow", "deny"):
+        ajout = [str(r) for r in (regles_imposees.get(cle) or []) if str(r).strip()]
+        if not ajout:
+            continue
+        deja = [str(r) for r in (permissions.get(cle) or [])]
+        permissions[cle] = deja + [r for r in ajout if r not in deja]
+    sortie["permissions"] = permissions
+    return sortie
+
+
+def empreinte_du_lancement(
+    regles_imposees: dict[str, list[str]] | None, env_en_plus: dict[str, str] | None
+) -> str:
+    """Ce qui distingue le processus d'un agent lancé : ses règles et son environnement.
+
+    Un processus gardé d'un tour à l'autre sert tant que rien de ce qui le
+    configure ne change ; des règles imposées différentes obligent à repartir.
+    """
+    if not regles_imposees and not env_en_plus:
+        return ""
+    charge = json.dumps([regles_imposees or {}, env_en_plus or {}], sort_keys=True, ensure_ascii=False)
+    return "|lancement:" + hashlib.sha256(charge.encode("utf-8")).hexdigest()[:16]
 
 
 def new_session_id() -> str:

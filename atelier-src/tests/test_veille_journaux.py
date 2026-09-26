@@ -102,6 +102,35 @@ def test_deux_onglets_ne_font_qu_une_veille(tmp_path: Path) -> None:
         veille.relacher("s1")
 
 
+def test_un_fil_lent_a_demarrer_ne_perd_pas_l_ecriture_qui_suit(tmp_path: Path) -> None:
+    """La cause de l'échec intermittent en CI Linux, rendue certaine.
+
+    Le fil de veille relevait lui-même l'état de départ. S'il démarrait après
+    l'écriture faite juste après `surveiller` — un ordonnanceur chargé suffit —
+    il prenait cette écriture pour l'état de départ et ne la signalait jamais.
+    On retarde ici le démarrage du fil : l'écriture doit quand même arriver.
+    """
+
+    class VeilleLente(VeilleDesJournaux):
+        def _boucle(self, *args, **kwargs):  # type: ignore[override]
+            time.sleep(0.3)
+            return super()._boucle(*args, **kwargs)
+
+    registre = tmp_path / "cli.jsonl"
+    registre.write_text("a\n", encoding="utf-8")
+    diffusion = DiffusionDesTours()
+    veille = VeilleLente(diffusion, lambda _sid: [registre])
+    veille.INTERVALLE_S = 0.05
+    file = diffusion.souscrire("s1")
+    veille.surveiller("s1")
+    try:
+        with registre.open("a", encoding="utf-8") as f:
+            f.write("b\n")
+        assert _attendre(file) is not None, "l'écriture faite avant le démarrage du fil est perdue"
+    finally:
+        veille.relacher("s1")
+
+
 def test_la_veille_s_arrete_quand_plus_personne_ne_regarde(tmp_path: Path) -> None:
     """Un guetteur par conversation abandonnée finirait par en faire beaucoup."""
     registre = tmp_path / "cli.jsonl"

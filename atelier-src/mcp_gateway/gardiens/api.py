@@ -35,7 +35,14 @@ def interrupteurs(executeur: Any) -> dict[str, Any]:
         "gardiens": True,  # s'il répond, il n'est pas coupé (ATELIER_GARDIENS=0 l'empêche de démarrer)
         "gestes": executeur.permettre_gestes,
         "a_blanc": executeur.a_blanc,
+        "reparations": _reparations_permises(executeur),
     }
+
+
+def _reparations_permises(executeur: Any) -> bool:
+    from mcp_gateway.gardiens.reparations import reparations_permises
+
+    return getattr(executeur, "reparations", None) is not None and reparations_permises(executeur.ctx.env)[0]
 
 
 def router(executeur: Any, chemin: str, requete: dict[str, list[str]]) -> tuple[int, Any]:
@@ -79,6 +86,12 @@ def router(executeur: Any, chemin: str, requete: dict[str, list[str]]) -> tuple[
                 }
             )
         return 200, {"echeances": sorted(liste, key=lambda e: e["prochaine"])}
+    if chemin == "/reparations":
+        # Les agents réparateurs demandés (G5) : la vue Agents les montre à côté
+        # des autres agents spécifiques. Leur conversation et leur proposition
+        # se lisent dans l'Atelier (`/v1/lancements`, « À valider »).
+        registre = list(getattr(getattr(executeur, "reparations", None), "registre", []) or [])
+        return 200, {"reparations": registre[-100:], "interrupteurs": interrupteurs(executeur)}
     if chemin == "/alertes":
         toutes = (requete.get("toutes") or ["0"])[0] == "1"
         return 200, {"alertes": executeur.alertes_ouvertes(toutes)}
