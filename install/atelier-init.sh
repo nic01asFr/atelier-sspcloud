@@ -290,7 +290,7 @@ chmod 600 "$SECRETS"/* 2>/dev/null || true
 ENV_SECRETS="$SECRETS/claude-env.sh"
 if [ -f "$HOME/.bashrc" ] || [ -w "$HOME" ]; then
   if [ -f "$SOURCE_ATELIER/bin/atelier-bashrc" ]; then
-    etat_bashrc="$(sh "$SOURCE_ATELIER/bin/atelier-bashrc" "$HOME/.bashrc" "$ENV_SECRETS" 2>/dev/null || echo "échec")"
+    etat_bashrc="$(sh "$SOURCE_ATELIER/bin/atelier-bashrc" "$HOME/.bashrc" "$ENV_SECRETS" "$BIN/atelier-claude-vscode" "$BIN/claude" 2>/dev/null || echo "échec")"
     case "$etat_bashrc" in
       posé) dire "~/.bashrc charge $ENV_SECRETS avant sa garde non interactive" ;;
       inchangé) ;;

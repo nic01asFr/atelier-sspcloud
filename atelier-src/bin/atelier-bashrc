@@ -2,7 +2,7 @@
 # atelier-bashrc — fait charger le fichier d'environnement unique par ~/.bashrc,
 # AVANT la garde non interactive.
 #
-#   atelier-bashrc <bashrc> <claude-env.sh>
+#   atelier-bashrc <bashrc> <claude-env.sh> [<enveloppeur> <claude>]
 #
 # Audit G1 (25/09) : la ligne était ajoutée à la fin de ~/.bashrc, après
 # `case $- in *i*) ;; *) return;; esac`. Un shell non interactif (`bash -lc`,
@@ -14,16 +14,22 @@
 # le bloc en tête du fichier, donc avant toute garde. Idempotent : un second
 # passage ne change rien, et le fichier n'est réécrit que s'il change.
 #
+# Avec un enveloppeur, il pose aussi l'alias `claude` du terminal interactif :
+# `atelier-claude-vscode <claude> …`, qui applique le mode choisi pour une
+# conversation reprise (docs/vision/profils-acces.md, « Mode de permission »).
+#
 # Rien n'est affiché du contenu : ni du fichier d'environnement, ni du bashrc.
 
 set -eu
 
-if [ "$#" -ne 2 ]; then
-  echo "usage : atelier-bashrc <bashrc> <claude-env.sh>" >&2
+if [ "$#" -ne 2 ] && [ "$#" -ne 4 ]; then
+  echo "usage : atelier-bashrc <bashrc> <claude-env.sh> [<enveloppeur> <claude>]" >&2
   exit 64
 fi
 BASHRC=$1
 ENV_SECRETS=$2
+ENVELOPPEUR=${3:-}
+CLAUDE=${4:-}
 MARQUE="# Atelier : valeurs des références \${ATELIER_MCP_...}, avant la garde non interactive (voir docs/coherence-projet.md)"
 LIGNE="[ -r \"$ENV_SECRETS\" ] && . \"$ENV_SECRETS\""
 
@@ -32,9 +38,12 @@ LIGNE="[ -r \"$ENV_SECRETS\" ] && . \"$ENV_SECRETS\""
 provisoire="$BASHRC.atelier-tmp"
 {
   printf '%s\n%s\n' "$MARQUE" "$LIGNE"
+  if [ -n "$ENVELOPPEUR" ]; then
+    printf '%s\n' "alias claude='\"$ENVELOPPEUR\" \"$CLAUDE\"'  # Atelier : mode de la conversation reprise"
+  fi
   # Tout le reste, moins nos anciennes lignes : le commentaire (ancienne et
   # nouvelle formulation) et toute ligne qui charge ce fichier.
-  grep -vF -e "$ENV_SECRETS" -e "# Atelier : valeurs des références" "$BASHRC" || true
+  grep -vF -e "$ENV_SECRETS" -e "# Atelier : valeurs des références" -e "# Atelier : mode de la conversation reprise" "$BASHRC" || true
 } > "$provisoire"
 
 # L'ancienne pose ajoutait une ligne vide avant son commentaire : on retire les

@@ -687,7 +687,7 @@ class OutilsAtelier:
             return voulu
         if propre:
             return propre
-        defaut = str(getattr(self.store.settings, "permission_mode", "") or "acceptEdits")
+        defaut = _mode_du_projet(getattr(rec, "cwd", "") or "") or str(getattr(self.store.settings, "permission_mode", "") or "acceptEdits")
         if defaut == BYPASS and not autorise_bypass:
             return "acceptEdits"
         return defaut

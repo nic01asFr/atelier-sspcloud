@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import queue
 import re
@@ -20,7 +21,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from mcp_gateway.atelier.claude_home import binaire_claude_le_plus_recent, sync_claude_home
+from mcp_gateway.atelier.claude_home import (
+    aligner_le_lien_claude,
+    binaire_claude_le_plus_recent,
+    sync_claude_home,
+)
 from mcp_gateway.atelier.config import (
     EFFORT_SUR_LA_PASSERELLE,
     OBSOLETES,
@@ -37,6 +42,8 @@ from mcp_gateway.atelier.decisions import (
 )
 from mcp_gateway.atelier.events import AtelierEvent, parse_stream_json_line
 from mcp_gateway.atelier.mcp_sync import materialize_mcp_config
+
+log = logging.getLogger("atelier.harness")
 
 
 # Le lecteur de l'interface ne se sert que de ces enregistrements. Le flux
@@ -312,43 +319,34 @@ class FakeHarness(Harness):
         return bool(self._running.get(session_id))
 
 
-# Les modes que le CLI accepte, et que l'Atelier propose. Éprouvés un par un
-# sur le pod, avec trois sondes : éditer dans le projet, y lancer une commande,
-# et écrire hors du projet.
+# Les modes : une seule liste pour l'app, VS Code et le terminal
+# (`docs/vision/profils-acces.md`, et `modes_permission` pour où ils vivent).
 #
 #   mode                edition   commande   hors projet
 #   plan                non       non        —
-#   manual              demande   demande    demande
+#   default             demande   demande    demande
 #   acceptEdits         oui       oui        demande
-#   auto                oui       oui        demande
 #   bypassPermissions   oui       oui        oui
 #
 # « demande » se lit à la lettre depuis que le harnais tient le canal : le CLI
-# ne refuse plus, il pose la question et attend. Les colonnes « non » d'hier
-# sont devenues des questions.
+# ne refuse plus, il pose la question et attend. La mémoire des décisions rend
+# `default` tenable : on accorde une fois, on ne repose plus.
 #
-# Deux modes sont écartés, mais pas pour la même raison.
-#
-# `dontAsk` refuse tout, y compris ce qu'on croyait anodin — vérifié, il ne crée
-# pas plus un fichier qu'il ne lance une commande. Le nom trompe : ne pas
-# demander veut dire refuser ce qui aurait demandé. Rien ne le rattrapera.
-#
-# `manual` est là, désormais. Il demande une approbation à chaque geste, ce qui
-# était invivable tant qu'on ne savait pas retenir une réponse : dix-sept
-# questions pour un seul tour, mesuré. La mémoire des décisions le rend tenable
-# — on accorde une fois, on ne repose plus.
-#
-# Une réserve tout de même, à dire à l'écran : un tour lancé hors de
-# l'interface n'a personne pour répondre, et en `manual` tout passe par la
-# porte. Une conversation d'agent réglée ainsi refusera donc tout.
-MODES_PERMISSION = ("bypassPermissions", "acceptEdits", "auto", "manual", "plan")
-MODE_PERMISSION_DEFAUT = "acceptEdits"
-# Un tour que personne ne regarde ne peut pas attendre une autorisation : le
-# harnais refuse d'office ce qui demande (voir `SANS_INTERLOCUTEUR`). Sous
-# `acceptEdits`, un agent piloté verrait donc chacune de ses commandes
-# refusée. Faute de mode choisi pour la conversation, un tel tour garde le
-# comportement historique.
-MODE_SANS_INTERLOCUTEUR = "bypassPermissions"
+# Les anciens noms se lisent encore : `manual` est l'autre nom de `default`
+# (l'extension et le CLI le disent tous deux) ; `auto` repose sur un
+# classifieur que la passerelle LLM du pod ne sert pas, et demandait avant
+# d'écrire là où `acceptEdits` écrit : il devient `default`, qui n'accorde rien
+# de plus. `dontAsk` refuse tout : il n'est pas proposé.
+from mcp_gateway.atelier.modes_permission import (  # noqa: E402
+    MODE_DU_SERVICE as MODE_PERMISSION_DEFAUT,
+    MODES as MODES_PERMISSION,
+    normaliser as _normaliser_le_mode,
+)
+
+# Gardé pour les appelants d'avant : un tour sans interlocuteur ne reçoit plus
+# de bypass implicite. Il suit la même règle que les autres surfaces
+# (conversation, puis projet, puis service).
+MODE_SANS_INTERLOCUTEUR = MODE_PERMISSION_DEFAUT
 NIVEAUX_EFFORT = ("low", "medium", "high", "xhigh", "max")
 # Les niveaux acceptés partout, et celui par défaut : voir `config.py`.
 
@@ -517,9 +515,8 @@ def demande_de_decision(session_id: str, ligne: str) -> Demande | None:
 
 
 def mode_permission_valide(mode: str | None) -> str:
-    """Le mode demandé s'il est connu, celui par défaut sinon."""
-    choix = (mode or "").strip()
-    return choix if choix in MODES_PERMISSION else MODE_PERMISSION_DEFAUT
+    """Le mode demandé, dans la liste des quatre ; celui par défaut sinon."""
+    return _normaliser_le_mode(mode) or MODE_PERMISSION_DEFAUT
 
 
 def effort_valide(niveau: str | None) -> str:
@@ -648,9 +645,17 @@ class ClaudeHarness(Harness):
         trouver les mêmes outils, les mêmes agents, le même comportement. Le
         lien `~/work/bin/claude` ne vient qu'ensuite, pour un poste sans
         extension.
+
+        Et le lien est réaligné ici, à chaque tour : le terminal et wikichat
+        passent par lui. Aligné au seul démarrage, il était resté en 2.1.281
+        quand l'extension, mise à jour après, lançait 2.1.282 (audit M2).
         """
         recent = binaire_claude_le_plus_recent()
         if recent is not None:
+            try:
+                aligner_le_lien_claude(self.settings)
+            except OSError as exc:
+                log.warning("lien claude non réaligné : %s", exc)
             return recent
         claude = self.settings.claude_bin
         if claude.is_symlink():

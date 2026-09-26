@@ -115,14 +115,19 @@ def test_un_enveloppeur_perime_est_remplace(
     assert pose.read_bytes() == SCRIPT.read_bytes()
 
 
-def test_les_reglages_machine_gardent_le_mode_et_perdent_les_secrets(
+def test_les_reglages_machine_perdent_le_mode_impose_et_les_secrets(
     reglages: AtelierSettings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Un fichier machine écrit à la main avec des valeurs en est purgé, le reste gardé."""
     donnees = _code_server(tmp_path, monkeypatch)
     _preparer(reglages)
-    ecrire_mode_machine(reglages, "plan")
     machine = donnees / "Machine/settings.json"
+    machine.parent.mkdir(parents=True, exist_ok=True)
+    # Ce qu'y laissait l'ancien `ecrire_mode_machine` (audit M1).
+    machine.write_text(
+        json.dumps({"claudeCode.initialPermissionMode": "plan", "claudeCode.allowDangerouslySkipPermissions": True}),
+        encoding="utf-8",
+    )
     lu = json.loads(machine.read_text(encoding="utf-8"))
     lu[CLE_ENVIRONNEMENT] = [
         {"name": VARIABLE, "value": JETON},
@@ -132,11 +137,12 @@ def test_les_reglages_machine_gardent_le_mode_et_perdent_les_secrets(
     machine.write_text(json.dumps(lu), encoding="utf-8")
     write_user_code_server_settings(reglages)
     apres = json.loads(machine.read_text(encoding="utf-8"))
-    assert apres["claudeCode.initialPermissionMode"] == "plan"
+    assert "claudeCode.initialPermissionMode" not in apres
+    assert "claudeCode.allowDangerouslySkipPermissions" not in apres
     assert apres[CLE_ENVIRONNEMENT] == [{"name": "HTTP_PROXY", "value": "http://mandataire:3128"}]
     assert JETON not in machine.read_text(encoding="utf-8")
-    # Et le mode, réécrit ensuite, ne retire pas l'enveloppeur.
-    ecrire_mode_machine(reglages, "acceptEdits")
+    # Et le rangement des modes, au démarrage, ne retire pas l'enveloppeur.
+    ecrire_mode_machine(reglages)
     assert CLE_ENVELOPPEUR in json.loads(machine.read_text(encoding="utf-8"))
 
 
