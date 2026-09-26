@@ -120,7 +120,17 @@ def fondre(registres: list[Path]) -> list[dict[str, Any]]:
     retenues: list[tuple[str, int, dict[str, Any]]] = []
     rang = 0
     for chemin in registres:
+        # Une entrée sans horodatage (le `result` qui clôt un tour, dans le
+        # journal de l'Atelier) prend celui de l'entrée qui la précède dans son
+        # registre. Sans cela elle remontait au début de l'histoire : l'affichage
+        # la lisait comme la réponse du tour, puis montrait la vraie réponse une
+        # seconde fois (constaté sur le pod le 26/09).
+        precedent = ""
         for e in _entrees(chemin):
+            if e.get("timestamp"):
+                precedent = str(e.get("timestamp"))
+            elif precedent:
+                e = {**e, "timestamp": precedent}
             uid = str(e.get("uuid") or "")
             if uid and uid in vus_uuid:
                 continue

@@ -173,3 +173,28 @@ def test_un_message_qui_cite_une_balise_n_est_pas_ecarte(tmp_path: Path) -> None
         _ligne("user", "regarde le <projet> dans la table <tr>", "10:00", "u1"),
     ])
     assert len(fondre([reg])) == 1
+
+
+def test_le_resultat_sans_horodatage_reste_a_la_fin_de_son_tour(tmp_path: Path) -> None:
+    # Cas du pod (26/09) : le journal de l'Atelier écrit le `result` du tour
+    # sans horodatage ; il remontait juste après la question et l'affichage
+    # montrait la réponse deux fois.
+    resultat = json.dumps({"type": "result", "subtype": "success", "uuid": "r1", "result": "J'ai listé les fichiers."})
+    atelier = _registre(
+        tmp_path / "a.jsonl",
+        [
+            _ligne("user", "liste les fichiers", "2026-09-26T03:42:35", "q1"),
+            _ligne("assistant", "J'ai listé les fichiers.", "2026-09-26T03:42:47", "a1"),
+            resultat,
+        ],
+    )
+    cli = _registre(
+        tmp_path / "c.jsonl",
+        [
+            _ligne("user", "liste les fichiers", "2026-09-26T03:42:39", "q2"),
+            _ligne("assistant", "J'ai listé les fichiers.", "2026-09-26T03:42:47", "a1"),
+        ],
+    )
+    types = [e["type"] for e in fondre([atelier, cli])]
+    assert types.index("result") > types.index("assistant")
+    assert types[-1] == "result"
