@@ -74,7 +74,7 @@ qui emporte un client branché, en-tête `WWW-Authenticate` retiré. Suite compl
 **Critères d'acceptation** — mesurés sur le pod le 20 septembre 2026, service relancé sur le
 code déployé :
 
-1. ✅ `/mcp` sans jeton → 401 portant `resource_metadata` pointant l'hôte public ; `/.well-known/oauth-protected-resource` → 200 annonçant `https://user-nic01asfr-atelier.user.lab.sspcloud.fr`
+1. ✅ `/mcp` sans jeton → 401 portant `resource_metadata` pointant l'hôte public ; `/.well-known/oauth-protected-resource` → 200 annonçant `https://user-<idep>-atelier.user.lab.sspcloud.fr`
 2. ✅ `/register` d'un client inconnu → 201, puis `/authorize` → page de consentement avec champ clé, **aucune redirection, aucun code**
 3. ✅ Clé invalide → 401 ; clé de l'Atelier → 302 vers la destination déclarée, avec code
 4. ⚠️ Second branchement : **tenu par la suite, pas mesurable en loopback**. Le cookie de session est posé `Secure` ; un client en clair ne le renvoie jamais (0 cookie retenu côté client, 58 sessions ouvertes côté base). Se verra au premier branchement réel, dans le navigateur

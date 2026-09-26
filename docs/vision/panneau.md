@@ -58,14 +58,14 @@ Tests : `tests/test_bureaux.py` (hôte réel et service factice du namespace dan
 
 ### Les services du namespace, découverts sur le pod (lecture seule, 26/09)
 
-Namespace `user-nic01asfr`. L'hôte des applications tourne dans le pod `proj-claude-code-jupyter-python-0` du même namespace : les noms courts des Services s'y résolvent.
+Namespace `user-<idep>` (le pod de mesure). L'hôte des applications tourne dans le pod `proj-claude-code-jupyter-python-0` du même namespace : les noms courts des Services s'y résolvent.
 
 | Service | Service Kubernetes et ports | Ce qui répond | Authentification |
 |---|---|---|---|
-| Blender (`blender-remote-mcp-0`, StatefulSet, `ghcr.io/nic01asfr/blender-remote-mcp:latest`) | `blender-remote-mcp` (ClusterIP) : **8100**, **6080** | 8100 : API (`/mcp`, `/desktop` = `/canvas`, `/stream/{user_id}`, `/api/session/info`, `/health`). 6080 : websockify avec le noVNC d'origine (`/vnc.html`, WebSocket `/websockify`, sous-protocole `binary`). Ingress `user-nic01asfr-blender-mcp` (8100) | 8100 : `/desktop` accepte le cookie `blender_token` égal au jeton porteur de l'entrée `blender` du pool (200 ; l'en-tête `Authorization` y est refusé : 401). 6080 : **aucune** (RFB 3.8, type de sécurité 1 « None ») |
+| Blender (`blender-remote-mcp-0`, StatefulSet, `ghcr.io/nic01asfr/blender-remote-mcp:latest`) | `blender-remote-mcp` (ClusterIP) : **8100**, **6080** | 8100 : API (`/mcp`, `/desktop` = `/canvas`, `/stream/{user_id}`, `/api/session/info`, `/health`). 6080 : websockify avec le noVNC d'origine (`/vnc.html`, WebSocket `/websockify`, sous-protocole `binary`). Ingress `user-<idep>-blender-mcp` (8100) | 8100 : `/desktop` accepte le cookie `blender_token` égal au jeton porteur de l'entrée `blender` du pool (200 ; l'en-tête `Authorization` y est refusé : 401). 6080 : **aucune** (RFB 3.8, type de sécurité 1 « None ») |
 | Bureau QGIS (`qgis-workspace-nic01asfr`) | `qgis-workspace-nic01asfr` (ClusterIP) : 8100, **8080**, **6080** | 8080 : API du bureau (`/api/layers`, `/api/screenshot`…) ; `/vnc` renvoie vers `http://localhost:6080/vnc.html` (inutilisable relayé). 6080 : websockify et noVNC, `/websockify` | 8080 et 6080 : **aucune** dans le cluster (`/api/layers` 200 sans jeton ; RFB type 1) |
-| Portail QGIS (`qgis-hub`) | `qgis-hub` (sans IP, headless) : **8888** | `/desk` (bureau noVNC encadré + discussion), `/workspace/vnc/…` et `/workspace/vnc/websockify` (relais vers le bureau). Ingress `user-nic01asfr-qgis` (http) | cookie `hub_api_key` égal à la clé `qgis_…` de l'entrée `qgis` du pool (`/desk` et `/workspace/vnc/vnc.html` : 200) ; sans : 401 JSON avec `portal_url`. La page `/desk` emploie des chemins **absolus** (`/static`, `/workspace`) |
-| n8n (Deployment `n8n`, `n8nio/n8n:2.38.6` ; conteneurs `n8n`, `mcp`, `portal`, `runners`) | `n8n` (ClusterIP) : **5678**, 3000, 3100 | 5678 : éditeur (`/healthz` 200). 3000 : serveur MCP (`n8n-mcp`). 3100 : portail d'actions. Ingress `user-nic01asfr-n8n`, `-n8n-mcp`, `-n8n-portail` | éditeur : la connexion utilisateur de n8n (`/rest/login` 401), pas de jeton de service. En interne, l'éditeur envoie `X-Frame-Options: SAMEORIGIN` (la mesure A6, faite par l'Ingress public, n'en voyait aucun) ; le relais le retire. Chemins **absolus** (`/assets`, `/rest`, `/static`) : `N8N_PATH` n'est pas réglé |
+| Portail QGIS (`qgis-hub`) | `qgis-hub` (sans IP, headless) : **8888** | `/desk` (bureau noVNC encadré + discussion), `/workspace/vnc/…` et `/workspace/vnc/websockify` (relais vers le bureau). Ingress `user-<idep>-qgis` (http) | cookie `hub_api_key` égal à la clé `qgis_…` de l'entrée `qgis` du pool (`/desk` et `/workspace/vnc/vnc.html` : 200) ; sans : 401 JSON avec `portal_url`. La page `/desk` emploie des chemins **absolus** (`/static`, `/workspace`) |
+| n8n (Deployment `n8n`, `n8nio/n8n:2.38.6` ; conteneurs `n8n`, `mcp`, `portal`, `runners`) | `n8n` (ClusterIP) : **5678**, 3000, 3100 | 5678 : éditeur (`/healthz` 200). 3000 : serveur MCP (`n8n-mcp`). 3100 : portail d'actions. Ingress `user-<idep>-n8n`, `-n8n-mcp`, `-n8n-portail` | éditeur : la connexion utilisateur de n8n (`/rest/login` 401), pas de jeton de service. En interne, l'éditeur envoie `X-Frame-Options: SAMEORIGIN` (la mesure A6, faite par l'Ingress public, n'en voyait aucun) ; le relais le retire. Chemins **absolus** (`/assets`, `/rest`, `/static`) : `N8N_PATH` n'est pas réglé |
 
 Constats de sécurité, à confier aux gardiens (rien n'a été changé) :
 
@@ -749,7 +749,7 @@ Code et pod (lecture seule, 25/09/2026) : `atelier-src/mcp_gateway/atelier/`
 `web/js/api.js`, `artifacts.py`, `artefacts_servis.py`, `apps/proxy.py`,
 `relais_ws.py`, `chrome_proxy.py`, `navigateur.py`, `events.py`,
 `outils_conversation.py`) ; `kubectl get svc,ingress,pods` et sondes HTTP
-internes dans le namespace `user-nic01asfr` ; dépôt `qgis-sspcloud`
+internes dans le namespace `user-<idep>` ; dépôt `qgis-sspcloud`
 (`hub/hub/main.py`, `hub/templates/desk.html`).
 
 Standards et produits (consultés le 25/09/2026) :

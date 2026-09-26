@@ -28,7 +28,7 @@ def test_sans_deploiement_le_projet_reste_valide() -> None:
     "deploiement",
     [
         {"pod": "proj-carte-jupyter-python-0"},
-        {"pod": "proj-carte-jupyter-python-0", "namespace": "user-nic01asfr", "gpu": True,
+        {"pod": "proj-carte-jupyter-python-0", "namespace": "user-jdupont", "gpu": True,
          "commande": "uvicorn app:app --port 8000", "port": 8000},
         {"service": "carte.service.yml"},
         {"service": "services/carte.service.yaml", "gpu": True},

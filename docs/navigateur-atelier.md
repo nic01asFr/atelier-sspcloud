@@ -240,7 +240,7 @@ rend, pour un fournisseur qui le servirait vraiment.
 **Remplaçant structuré** : le service **WebTools** (SearXNG + extraction +
 recherche approfondie) répond dans le namespace (`webtools-mcp-svc:8090/mcp`)
 mais exige désormais **OAuth** (`401`, métadonnées sur
-`user-nic01asfr-webtools-mcp.user.lab.sspcloud.fr`). À brancher dans le pool
+`user-<idep>-webtools-mcp.user.lab.sspcloud.fr`). À brancher dans le pool
 comme connecteur OAuth quand son contrat sera figé ; ses outils passeront
 alors par le même chemin que les autres connecteurs. En attendant : le
 navigateur sur DuckDuckGo, consigne donnée à chaque agent dans la section

@@ -95,8 +95,7 @@ et applications. On doit donc envisager un seul modèle :
 - `docs/coherence-projet.md` : une seule source par sujet ; les lots A à H (B : `SessionStart`
   et `contexte.md` ; C : une identité par conversation ; D : lancements par l'Atelier) ; la
   compaction native par le relais LLM.
-- wikichat, branche `atelier-coherence` (worktree
-  `C:/Users/Omen/Desktop/LAVAL/wikichat-atelier-coherence`) : hooks `SessionStart`,
+- wikichat, branche `atelier-coherence` (dans son propre worktree) : hooks `SessionStart`,
   `UserPromptSubmit` et `Stop`, briefing plafonné, fils de dialogue, suivi de projet lu dans
   les fichiers (`docs/hooks-et-dialogue.md`).
 - Vision : `synthese.md`, `panneau.md`, `ecosysteme.md`, `gardiens.md`,

@@ -147,7 +147,7 @@ dans `serveur/` du projet (paquet `lecteur_grist`), installé par
   le même `ATELIER_AUTEUR`. `--auth entete --entete-utilisateur
   X-Atelier-Utilisateur` : l'Atelier envoie `proprietaire`, traduit par la
   table `identites` d'`application.json`. Adresse :
-  `https://user-nic01asfr-atelier-apps.user.lab.sspcloud.fr/projet-sans-nom-5/application/`.
+  `https://user-<idep>-atelier-apps.user.lab.sspcloud.fr/projet-sans-nom-5/application/`.
   Vérification de bout en bout sans navigateur ouvert : passage par code
   (`POST /v1/auth/cookie` avec la clé lue sur le disque, jamais affichée,
   puis `…/ouvrir`) ; le cookie `__Host-atelier_apps` ne se montre pas.

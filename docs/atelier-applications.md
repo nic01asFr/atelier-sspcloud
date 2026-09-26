@@ -9,7 +9,7 @@ l'Atelier).
 
 1. Aucun contenu produit par un agent ne s'exécute dans l'origine de l'Atelier.
    Tout passe par une **seconde origine** : `https://<premier-label>-apps.<domaine>`
-   (ex. `user-nic01asfr-atelier-apps.user.lab.sspcloud.fr`), un chemin par
+   (ex. `user-<idep>-atelier-apps.user.lab.sspcloud.fr`), un chemin par
    artefact `/<slug>/<nom>/`. Un seul niveau de sous-domaine : couvert par
    le certificat wildcard de la classe d'Ingress `onyxia`.
 2. `sspcloud.fr` n'est pas dans la Public Suffix List : tous les hôtes

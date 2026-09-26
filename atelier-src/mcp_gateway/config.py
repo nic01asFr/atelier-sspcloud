@@ -17,8 +17,8 @@ def utilisateur_du_pod() -> str:
 
     Mesuré sur SSPCloud : un pod ne reçoit **pas** de variable ONYXIA_USER —
     c'est le chart qui la pose, donc elle manque à toute installation faite en
-    ligne de commande. Le namespace, lui, est toujours monté : « user-nicolaslaval »
-    donne « nicolaslaval ».
+    ligne de commande. Le namespace, lui, est toujours monté : « user-jdupont »
+    donne « jdupont ».
 
     Sans cela, les URL du catalogue — bâties sur ${ONYXIA_USER} — se résolvent
     en « https://user--qgis… », une adresse fausse dont l'échec de sondage

@@ -10,14 +10,13 @@ déploiement d'un projet » de `docs/vision/profils-acces.md` et corrige l'écar
 
 - **Entrée du pool** : `Onyxia` dans `~/work/mcp/gateway.db` (table `sidecars`), préfixe
   `onyxia`, transport `streamable-http`, adresse
-  `https://user-nic01asfr-passerelle-mcp.user.lab.sspcloud.fr/mcp`. Le jeton est dans les
+  `https://user-<idep>-passerelle-mcp.user.lab.sspcloud.fr/mcp`. Le jeton est dans les
   en-têtes de la déclaration ; il n'est reproduit nulle part ici.
 - **Pod** : `passerelle-mcp-dev-jupyter-python-0`, un service Jupyter du namespace
-  `user-nic01asfr`, exposé par l'ingress Onyxia. Le compte de service du pod de l'Atelier ne
+  `user-<idep>`, exposé par l'ingress Onyxia. Le compte de service du pod de l'Atelier ne
   peut pas lire ses pods (`kubectl get pods` refusé) : son lancement exact n'est pas vérifié.
-- **Code** : `sspcloud-mcp` 0.2.0 (`/health` le confirme), dépôt local
-  `C:/Users/Omen/Desktop/LAVAL/Github Repositories/sspcloud_mcp`, remotes
-  `gitlab.cerema.fr/mcp/sspcloud_mcp` et `github.com/nic01asFr/sspcloud-mcp`. Le transport
+- **Code** : `sspcloud-mcp` 0.2.0 (`/health` le confirme), dépôt
+  `github.com/nic01asFr/sspcloud-mcp` (avec un miroir GitLab). Le transport
   HTTP est `sspcloud_mcp/server_http.py` (bibliothèque standard, `ThreadingHTTPServer`) ; les
   outils sont dans `sspcloud_mcp/tools.py`.
 - **Côté Atelier** : la passerelle s'y connecte une fois au démarrage (`upstream/pool.py`) et
@@ -111,7 +110,7 @@ Dans `.atelier/projet.json` (schéma strict de `commandes/structure.py`, classe 
 ```json
 "deploiement": {
   "pod": "proj-carte-jupyter-python-0",
-  "namespace": "user-nic01asfr",
+  "namespace": "user-jdupont",
   "gpu": true,
   "commande": "uvicorn app:app --port 8000",
   "port": 8000

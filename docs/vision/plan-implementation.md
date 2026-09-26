@@ -96,7 +96,7 @@ réparations sont proposées par des agents dédiés, lancés par l'Atelier.
 
 | Équipe | Dépôt, worktree, branche | Possède | Ajoute seulement |
 |---|---|---|---|
-| W | wikichat, `C:/Users/Omen/Desktop/LAVAL/wikichat-lot-w`, `lot-w` (depuis `atelier-coherence`) | tout le dépôt wikichat | — |
+| W | wikichat, `…/wikichat-lot-w`, `lot-w` (depuis `atelier-coherence`) | tout le dépôt wikichat | — |
 | F | Atelier, `…/atelier-fondations`, `fondations` | `mcp_gateway/atelier/commandes/` (nouveau), `journal.py`, `decisions.py`, `projects.py`, `project_context.py`, `git_repos.py`, `bin/atelier-relancer`, `bin/atelier-verifier-coherence`, `install/`, `mcp_gateway/mcp/gateway.py` (vérification de classe) | une ligne dans `api.py` et `config.py` |
 | P | Atelier, `…/atelier-panneau`, `panneau` | `mcp_gateway/atelier/web/`, `artifacts.py`, `artefacts_servis.py`, `apps/` (dont `passage.py`, `proxy.py`), `outils_conversation.py` | une ligne dans `api.py` |
 | G | Atelier, `…/atelier-gardiens`, `gardiens` | `mcp_gateway/gardiens/` (nouveau), `atelier-src/mcp_gateway/atelier/consignes/socle.md` (section hooks), hooks du socle | une ligne dans `install/atelier-init.sh`, coordonnée avec F |
