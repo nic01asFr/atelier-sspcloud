@@ -33,14 +33,22 @@ def _session(atelier: TestClient) -> None:
     assert atelier.post("/v1/auth/cookie", headers=_cle(atelier)).status_code == 200
 
 
+CONTRAT = {"atelier_agent_activer": ["agent"], "atelier_connecteur_accorder": ["nom", "champ", "secret"]}
+
+
 @pytest.fixture()
 def fausses_commandes(atelier: TestClient) -> list[tuple[str, dict[str, Any]]]:
-    """`atelier_agent_activer` et `atelier_connecteur_accorder`, au contrat de K, si absentes."""
+    """`atelier_agent_activer` et `atelier_connecteur_accorder`, au contrat de K.
+
+    Remplacées même quand la branche de K est là : on éprouve le chemin de
+    l'interface, pas le Pilote ni le pool, absents en mode factice. Que les
+    vraies suivent le contrat, `test_les_vraies_commandes_suivent_le_contrat`
+    le vérifie.
+    """
     appels: list[tuple[str, dict[str, Any]]] = []
     catalogue = atelier.app.state.commandes
-    for nom, requis in (("atelier_agent_activer", ["agent"]), ("atelier_connecteur_accorder", ["nom", "champ", "secret"])):
-        if catalogue.commande(nom) is not None:
-            continue
+    for nom, requis in CONTRAT.items():
+        catalogue._natives.pop(nom, None)  # noqa: SLF001 — remplacer, pour ce test seulement
 
         def executer(ctx: Contexte, args: dict[str, Any], nom: str = nom) -> Effet:
             appels.append((nom, dict(args)))
@@ -129,3 +137,19 @@ def test_un_lien_n_est_pas_propose(tmp_path: Path) -> None:
     except OSError:
         pytest.skip("liens symboliques indisponibles ici")
     assert [n["nom"] for n in noms_des_secrets(tmp_path)] == ["vrai"]
+
+
+def test_les_vraies_commandes_suivent_le_contrat(atelier: TestClient) -> None:
+    """Quand la branche de K est fusionnée : mêmes noms, réservées, non exposées, mêmes arguments."""
+    catalogue = atelier.app.state.commandes
+    presentes = {nom: catalogue.commande(nom) for nom in CONTRAT}
+    if not any(presentes.values()):
+        pytest.skip("commandes de l'équipe K absentes (v2-creations pas encore fusionnée)")
+    for nom, requis in CONTRAT.items():
+        c = presentes[nom]
+        assert c is not None, nom
+        assert c.classe == RESERVEE and c.exposee_mcp is False, nom
+        assert set(requis) <= set(c.schema.get("properties", {})), nom
+        assert set(c.schema.get("required", [])) <= set(requis), f"{nom} demande un argument que l'écran n'envoie pas"
+    schema = presentes["atelier_connecteur_accorder"].schema["properties"]
+    assert set(schema.get("schema", {}).get("enum", [])) == {"Bearer", "Token", "Basic"}, "les préfixes de l'écran"
