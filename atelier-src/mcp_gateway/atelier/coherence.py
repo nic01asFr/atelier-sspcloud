@@ -206,3 +206,608 @@ def comparer(
     valeurs = variables_secretes(settings)
     ecarts += secrets_en_clair(fichiers_a_inspecter(settings, cwd), valeurs)
     return ecarts
+
+
+# =============================================================================
+# Vérification réelle : ce que Claude Code annonce au démarrage, par surface
+# =============================================================================
+#
+# Contrat `docs/vision/profils-acces.md`, « Vérification ». Pour chaque vrai
+# projet (et le dossier de l'Assistant) et chaque surface, on lance le vrai
+# `claude -p --output-format stream-json --verbose`, hooks désactivés, sans
+# transcrit, avec une copie du dossier de configuration et une adresse de
+# modèle morte ; on lit `system/init` et l'on tue ce seul processus (et ses
+# descendants, par PID). Puis on compare les surfaces entre elles et au profil.
+#
+# Aucune valeur secrète ne sort : on ne rapporte que des noms (serveurs,
+# outils), des états, des versions, des modes et des codes de sortie.
+
+import os as _os  # noqa: E402
+import shlex as _shlex  # noqa: E402
+import shutil as _shutil  # noqa: E402
+import subprocess as _subprocess  # noqa: E402
+import tempfile as _tempfile  # noqa: E402
+import time as _time  # noqa: E402
+from dataclasses import dataclass as _dataclass  # noqa: E402
+from dataclasses import field as _field  # noqa: E402
+
+SURFACES = ("app", "vscode", "terminal", "bash-lc")
+MODELE_MORT = "http://127.0.0.1:9"
+# Ce qu'un agent code ne doit jamais recevoir (profils-acces.md, profil « agent code »).
+OUTILS_INTERDITS_CODE = (
+    "mcp__atelier__gateway_",
+    "mcp__atelier__composition_",
+)
+WIKICHAT_INTERDITS_CODE = frozenset(
+    {
+        "list_projects",
+        "scan_projects",
+        "audit_all_projects",
+        "spawn_session",
+        "respawn_project_agents",
+        "kill_spawn",
+        "register_trigger",
+        "fire_trigger",
+        "delete_trigger",
+        "set_trigger_enabled",
+        "register_routine",
+        "run_routine",
+        "delete_routine",
+    }
+)
+META_OUTILS = ("mcp__atelier__gateway_find_tools", "mcp__atelier__gateway_call_tool")
+# Outils qui n'existent que selon l'instant (un serveur encore en attente).
+_OUTILS_CIRCONSTANCIELS = frozenset({"WaitForMcpServers"})
+# Les variables d'une conversation ou d'une surface, jamais héritées du lanceur.
+_PROPRES_A_LA_SURFACE = (
+    "ATELIER_SESSION",
+    "WIKICHAT_AGENT",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDECODE",
+)
+
+
+@_dataclass
+class Dossier:
+    slug: str
+    chemin: Path
+    profil: str
+
+
+@_dataclass
+class Lancement:
+    surface: str
+    commande: list[str]
+    env: dict[str, str]
+    cwd: Path
+    effort: str = ""
+
+
+@_dataclass
+class Vu:
+    surface: str
+    ok: bool = False
+    erreur: str = ""
+    version: str = ""
+    mode: str = ""
+    modele: str = ""
+    effort: str = ""
+    serveurs: dict[str, str] = _field(default_factory=dict)
+    outils: list[str] = _field(default_factory=list)
+    duree_s: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "surface": self.surface,
+            "ok": self.ok,
+            "erreur": self.erreur,
+            "version": self.version,
+            "mode": self.mode,
+            "modele": self.modele,
+            "effort": self.effort,
+            "serveurs": dict(sorted(self.serveurs.items())),
+            "outils": sorted(self.outils),
+            "duree_s": round(self.duree_s, 1),
+        }
+
+
+def dossiers_reels(settings: AtelierSettings) -> list[Dossier]:
+    """Les vrais projets (`projects_dir/*`) et le dossier de l'Assistant."""
+    dossiers: list[Dossier] = []
+    if settings.projects_dir.is_dir():
+        for d in sorted(settings.projects_dir.iterdir()):
+            if d.is_dir() and not d.is_symlink() and not d.name.startswith("."):
+                dossiers.append(Dossier(d.name, d, "code"))
+    if settings.assistant_root.is_dir():
+        dossiers.append(Dossier("assistant", settings.assistant_root, "assistant"))
+    return dossiers
+
+
+def echantillon(dossiers: list[Dossier], noms: list[str] | None, rapide: bool) -> list[Dossier]:
+    """Les dossiers demandés ; `rapide` : un par profil (le plus récemment modifié)."""
+    if noms:
+        voulus = set(noms)
+        return [d for d in dossiers if d.slug in voulus]
+    if not rapide:
+        return dossiers
+    choisis: list[Dossier] = []
+    for profil in ("code", "assistant"):
+        candidats = [d for d in dossiers if d.profil == profil]
+        if candidats:
+            choisis.append(max(candidats, key=lambda d: d.chemin.stat().st_mtime))
+    return choisis
+
+
+def _descendants(pid: int) -> list[int]:
+    """Les PID descendants (Linux, par /proc), des plus profonds aux plus proches."""
+    sortie: list[int] = []
+    try:
+        enfants = Path(f"/proc/{pid}/task/{pid}/children").read_text().split()
+    except OSError:
+        return sortie
+    for enfant in enfants:
+        if enfant.isdigit():
+            sortie += _descendants(int(enfant))
+            sortie.append(int(enfant))
+    return sortie
+
+
+def _tuer(proc: Any) -> None:
+    """Tue ce processus et ses descendants, par PID : jamais par motif."""
+    import signal
+
+    for pid in _descendants(proc.pid):
+        try:
+            _os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
+        except OSError:
+            pass
+    try:
+        proc.kill()
+    except OSError:
+        pass
+    try:
+        proc.wait(timeout=10)
+    except Exception:  # noqa: BLE001 — un processus récalcitrant ne bloque pas le rapport
+        pass
+
+
+def lire_init(lancement: Lancement, delai: float = 60.0) -> Vu:
+    """Lance, lit `system/init`, tue. Rien de ce que le processus écrit n'est rapporté."""
+    import queue
+    import threading
+
+    vu = Vu(lancement.surface, effort=lancement.effort)
+    debut = _time.monotonic()
+    try:
+        proc = _subprocess.Popen(
+            lancement.commande,
+            cwd=str(lancement.cwd),
+            env=lancement.env,
+            stdin=_subprocess.PIPE,
+            stdout=_subprocess.PIPE,
+            stderr=_subprocess.DEVNULL,
+            text=True,
+        )
+    except OSError as exc:
+        vu.erreur = f"lancement impossible : {type(exc).__name__}"
+        return vu
+    lignes: queue.Queue[str] = queue.Queue()
+
+    def lire() -> None:
+        try:
+            for ligne in proc.stdout:  # type: ignore[union-attr]
+                lignes.put(ligne)
+        except (OSError, ValueError):
+            pass
+        lignes.put("")
+
+    threading.Thread(target=lire, daemon=True).start()
+    try:
+        message = {"type": "user", "message": {"role": "user", "content": "ok"}}
+        proc.stdin.write(json.dumps(message) + "\n")  # type: ignore[union-attr]
+        proc.stdin.flush()  # type: ignore[union-attr]
+    except OSError:
+        pass
+    init: dict[str, Any] = {}
+    fin = debut + delai
+    while _time.monotonic() < fin:
+        try:
+            ligne = lignes.get(timeout=max(0.1, fin - _time.monotonic()))
+        except queue.Empty:
+            break
+        if not ligne:
+            break
+        try:
+            ev = json.loads(ligne)
+        except ValueError:
+            continue
+        if isinstance(ev, dict) and ev.get("type") == "system" and ev.get("subtype") == "init":
+            init = ev
+            break
+    vu.duree_s = _time.monotonic() - debut
+    _tuer(proc)
+    if not init:
+        vu.erreur = "pas d'événement system/init" + (" (délai dépassé)" if _time.monotonic() >= fin else "")
+        return vu
+    vu.ok = True
+    vu.version = str(init.get("claude_code_version") or init.get("version") or "")
+    vu.mode = str(init.get("permissionMode") or "")
+    vu.modele = str(init.get("model") or "")
+    vu.serveurs = {
+        str(s.get("name")): str(s.get("status") or "")
+        for s in init.get("mcp_servers") or []
+        if isinstance(s, dict) and s.get("name")
+    }
+    vu.outils = sorted(str(t) for t in init.get("tools") or [] if isinstance(t, str))
+    return vu
+
+
+def _config_temporaire(racine: Path) -> Path:
+    """Une copie du dossier de configuration : le CLI y écrit, pas dans le vrai."""
+    cible = racine / "config"
+    cible.mkdir(parents=True, exist_ok=True)
+    maison = Path.home()
+    if (maison / ".claude.json").is_file():
+        _shutil.copy2(maison / ".claude.json", cible / ".claude.json")
+    source = maison / ".claude"
+    for nom in ("settings.json", "CLAUDE.md"):
+        if (source / nom).is_file():
+            _shutil.copy2(source / nom, cible / nom)
+    for nom in ("commands", "skills", "plugins", "agents"):
+        if (source / nom).is_dir():
+            _shutil.copytree(source / nom, cible / nom, symlinks=True, dirs_exist_ok=True)
+    return cible
+
+
+def _env_de_base() -> dict[str, str]:
+    """L'environnement du lanceur, sans ce qui appartient à une conversation ni les valeurs des références.
+
+    Les `ATELIER_MCP_*` sont retirées : chaque surface doit les obtenir par son
+    propre chemin (harnais, enveloppeur, `~/.bashrc`) — c'est ce qu'on vérifie.
+    """
+    return {
+        k: v
+        for k, v in _os.environ.items()
+        if k not in _PROPRES_A_LA_SURFACE and not k.startswith("ATELIER_MCP_")
+    }
+
+
+def _effort_des_reglages() -> str:
+    """L'effort que verra le CLI hors `--settings` : `settings.json`, puis l'environnement.
+
+    Mesuré le 25/09 : `env` de `settings.json` l'emporte sur l'environnement
+    du processus. `system/init` ne le dit pas : c'est une valeur déduite.
+    """
+    donnees = _json(Path.home() / ".claude" / "settings.json")
+    env = donnees.get("env") if isinstance(donnees.get("env"), dict) else {}
+    return str(env.get("CLAUDE_CODE_EFFORT_LEVEL") or donnees.get("effortLevel") or _os.environ.get("CLAUDE_CODE_EFFORT_LEVEL") or "")
+
+
+def lancements(
+    settings: AtelierSettings,
+    dossier: Dossier,
+    config: Path,
+    *,
+    avec_wikichat: bool = False,
+    claude: Path | None = None,
+) -> list[Lancement]:
+    """Les quatre lancements d'un dossier, tels que chaque surface les fait."""
+    from mcp_gateway.atelier.claude_home import binaire_claude_le_plus_recent
+    from mcp_gateway.atelier.config import effort_accepte_partout
+    from mcp_gateway.atelier.env_projet import variables_du_projet
+    from mcp_gateway.atelier.env_secrets import chemin_du_fichier, lire_le_fichier
+    from mcp_gateway.atelier.harness import ClaudeHarness
+    from mcp_gateway.atelier.mcp_sync import configuration_du_profil, resoudre_les_variables
+    from mcp_gateway.atelier.modes_permission import CLE_BYPASS, mode_resolu
+    from mcp_gateway.atelier.navigateur import refuser_les_outils_simules
+    from mcp_gateway.atelier.vscode_handoff import enveloppeur_vscode
+
+    binaire = claude or binaire_claude_le_plus_recent() or settings.claude_bin
+    session = f"verif-{dossier.slug}"[:60]
+    commun = [
+        "-p",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--max-turns",
+        "1",
+        "--no-session-persistence",
+        "--permission-prompt-tool",
+        "stdio",
+    ]
+    base = _env_de_base()
+    base["CLAUDE_CONFIG_DIR"] = str(config)
+    if not avec_wikichat:
+        # Le pont wikichat ne se connecte pas : sinon chaque mesure fixerait
+        # une identité dans wikichat (audit, §1).
+        base["WIKICHAT_PORT"] = "1"
+    # Hooks désactivés, et une adresse de modèle morte : `--settings` l'emporte
+    # sur `settings.json` (mesuré, 2.1.281). Aucun modèle n'est appelé.
+    reglages: dict[str, Any] = {"disableAllHooks": True, "env": {"ANTHROPIC_BASE_URL": MODELE_MORT}}
+    sortie: list[Lancement] = []
+
+    # --- app : ce que ferait le harnais pour une conversation neuve ---------
+    effectif = config.parent / f"effectif-{dossier.slug}.json"
+    serveurs = {
+        nom: resoudre_les_variables(cfg, session=session, agent=f"{dossier.slug}-verif")
+        for nom, cfg in configuration_du_profil(settings, profil=dossier.profil, cwd=dossier.chemin).items()
+    }
+    effectif.write_text(json.dumps({"mcpServers": serveurs}, indent=2), encoding="utf-8")
+    harnais = ClaudeHarness.__new__(ClaudeHarness)
+    harnais.settings = settings
+    impose = harnais._env_impose(None)
+    env_app = dict(base)
+    env_app.update(lire_le_fichier(chemin_du_fichier(settings)))
+    env_app.update(variables_du_projet(settings.secrets_dir, dossier.chemin))
+    env_app.update(impose)
+    env_app["CLAUDE_CODE_EFFORT_LEVEL"] = effort_accepte_partout(settings.effort)
+    env_app["ATELIER_SESSION"] = session
+    env_app["WIKICHAT_AGENT"] = f"{dossier.slug}-verif"
+    env_app["PATH"] = str(settings.work_dir / "bin") + _os.pathsep + env_app.get("PATH", "")
+    reglages_app = refuser_les_outils_simules({}, settings)
+    reglages_app["env"] = {**impose, **reglages["env"]}
+    reglages_app["disableAllHooks"] = True
+    mode_app, _ = mode_resolu(settings, dossier.chemin, session)
+    sortie.append(
+        Lancement(
+            "app",
+            [
+                str(binaire),
+                *commun,
+                "--permission-mode",
+                mode_app,
+                "--settings",
+                json.dumps(reglages_app),
+                "--mcp-config",
+                str(effectif),
+                "--strict-mcp-config",
+            ],
+            env_app,
+            dossier.chemin,
+            effort=_effort_des_reglages() or env_app["CLAUDE_CODE_EFFORT_LEVEL"],
+        )
+    )
+
+    # --- vscode : la ligne de l'extension (2.1.282), par l'enveloppeur -------
+    machine = _json(donnees_code_server() / "Machine" / "settings.json")
+    utilisateur = _json(donnees_code_server() / "User" / "settings.json")
+    env_vscode = dict(base)
+    for entree in utilisateur.get("claudeCode.environmentVariables") or []:
+        if isinstance(entree, dict) and entree.get("name"):
+            env_vscode[str(entree["name"])] = str(entree.get("value") or "")
+    env_vscode["CLAUDE_CODE_ENTRYPOINT"] = "claude-vscode"
+    ligne_vscode = [str(binaire), *commun, "--setting-sources=user,project,local", "--permission-mode", "default"]
+    if machine.get(CLE_BYPASS):
+        ligne_vscode.append("--allow-dangerously-skip-permissions")
+    ligne_vscode += ["--no-chrome", "--settings", json.dumps(reglages)]
+    enveloppeur = enveloppeur_vscode(settings)
+    commande_vscode = ([str(enveloppeur)] if enveloppeur.is_file() else []) + ligne_vscode
+    sortie.append(Lancement("vscode", commande_vscode, env_vscode, dossier.chemin, effort=_effort_des_reglages()))
+
+    # --- terminal interactif et bash -lc : le vrai chemin du shell ------------
+    ligne = " ".join(_shlex.quote(a) for a in ["claude", *commun, "--settings", json.dumps(reglages)])
+    for surface, option in (("terminal", "-ic"), ("bash-lc", "-lc")):
+        sortie.append(
+            Lancement(surface, ["bash", option, ligne], dict(base), dossier.chemin, effort=_effort_des_reglages())
+        )
+    return sortie
+
+
+def version_de_l_extension() -> str:
+    from mcp_gateway.atelier.claude_home import _version, binaire_claude_le_plus_recent
+
+    binaire = binaire_claude_le_plus_recent()
+    if binaire is None:
+        return ""
+    return ".".join(str(n) for n in _version(binaire.parents[2]))
+
+
+def verifier_le_hook_de_garde(dossier: Path) -> dict[str, Any]:
+    """Lance à blanc, depuis le dossier du projet, le hook `garde_bash` posé dans les réglages.
+
+    Il doit refuser `killall node` par le code 2 (audit G2). Rend `{pose, code}`.
+    """
+    donnees = _json(Path.home() / ".claude" / "settings.json")
+    commandes = [
+        h.get("command")
+        for g in ((donnees.get("hooks") or {}).get("PreToolUse") or [])
+        if isinstance(g, dict)
+        for h in (g.get("hooks") or [])
+        if isinstance(h, dict) and "garde_bash" in str(h.get("command", ""))
+    ]
+    if not commandes:
+        return {"pose": False, "code": None}
+    appel = json.dumps(
+        {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "killall node"}}
+    )
+    env = {k: v for k, v in _os.environ.items() if k != "PYTHONPATH"}
+    try:
+        fini = _subprocess.run(
+            ["sh", "-c", str(commandes[0])],
+            input=appel,
+            capture_output=True,
+            text=True,
+            cwd=str(dossier),
+            env=env,
+            timeout=30,
+        )
+        code: int | None = fini.returncode
+    except (OSError, _subprocess.TimeoutExpired):
+        code = None
+    return {"pose": True, "code": code}
+
+
+def hooks_introuvables() -> list[str]:
+    """Les hooks de `settings.json` dont le programme n'existe pas (« événement : programme »)."""
+    donnees = _json(Path.home() / ".claude" / "settings.json")
+    manquants: list[str] = []
+    for evenement, groupes in (donnees.get("hooks") or {}).items():
+        for g in groupes if isinstance(groupes, list) else []:
+            for h in (g.get("hooks") if isinstance(g, dict) else None) or []:
+                commande = str(h.get("command") or "") if isinstance(h, dict) else ""
+                try:
+                    mots = _shlex.split(commande, posix=True)
+                except ValueError:
+                    continue
+                # `VAR=valeur programme …` : le programme suit les affectations.
+                mots = [m for m in mots if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", m)]
+                if not mots:
+                    continue
+                programme = _os.path.expanduser(mots[0])
+                if not (_shutil.which(programme) or Path(programme).is_file()):
+                    manquants.append(f"{evenement} : {Path(programme).name}")
+    return manquants
+
+
+def _outils_comparables(vu: Vu, connectes: set[str]) -> set[str]:
+    sortie = set()
+    for outil in vu.outils:
+        if outil in _OUTILS_CIRCONSTANCIELS:
+            continue
+        if outil.startswith("mcp__") and outil.split("__")[1] not in connectes:
+            continue
+        sortie.add(outil)
+    return sortie
+
+
+def ecarts_du_dossier(
+    settings: AtelierSettings, dossier: Dossier, vus: dict[str, Vu], version_attendue: str
+) -> list[str]:
+    """Les surfaces entre elles, puis au profil du contrat."""
+    from mcp_gateway.atelier.mcp_sync import configuration_du_profil
+    from mcp_gateway.atelier.modes_permission import mode_resolu
+
+    ecarts: list[str] = []
+    for surface, vu in vus.items():
+        if not vu.ok:
+            ecarts.append(f"{surface} : {vu.erreur}")
+    lus = {s: v for s, v in vus.items() if v.ok}
+    if not lus:
+        return ecarts
+    # Entre surfaces.
+    for champ in ("version", "mode", "modele", "effort"):
+        valeurs = {s: getattr(v, champ) for s, v in lus.items()}
+        if len(set(valeurs.values())) > 1:
+            ecarts.append(f"{champ} différent selon la surface : {valeurs}")
+    noms = {s: set(v.serveurs) for s, v in lus.items()}
+    if len({frozenset(n) for n in noms.values()}) > 1:
+        tous = set().union(*noms.values())
+        ecarts.append(
+            "serveurs différents : "
+            + "; ".join(f"{s} sans {sorted(tous - n)}" for s, n in noms.items() if tous - n)
+        )
+    for s, v in lus.items():
+        echoues = sorted(n for n, etat in v.serveurs.items() if etat == "failed")
+        if echoues:
+            ecarts.append(f"{s} : serveurs en échec {echoues}")
+    connectes = set.intersection(*[{n for n, e in v.serveurs.items() if e == "connected"} for v in lus.values()])
+    outils = {s: _outils_comparables(v, connectes) for s, v in lus.items()}
+    reference_surface, reference = next(iter(outils.items()))
+    for s, o in outils.items():
+        if o != reference:
+            ecarts.append(
+                f"outils différents de {reference_surface} ({s}) : en plus {sorted(o - reference)[:8]},"
+                f" en moins {sorted(reference - o)[:8]}"
+            )
+    # Au profil.
+    attendu_mode, source = mode_resolu(settings, dossier.chemin, f"verif-{dossier.slug}"[:60])
+    attendus = set(configuration_du_profil(settings, profil=dossier.profil, cwd=dossier.chemin))
+    for s, v in lus.items():
+        if version_attendue and v.version != version_attendue:
+            ecarts.append(f"{s} : version {v.version}, l'extension est en {version_attendue}")
+        if v.mode != attendu_mode:
+            ecarts.append(f"{s} : mode {v.mode}, attendu {attendu_mode} ({source})")
+        if set(v.serveurs) != attendus:
+            ecarts.append(
+                f"{s} : serveurs {sorted(v.serveurs)}, le profil {dossier.profil} en donne {sorted(attendus)}"
+            )
+        if "WebSearch" in v.outils:
+            ecarts.append(f"{s} : WebSearch présent, refusé par le socle")
+        if dossier.profil == "code":
+            interdits = sorted(
+                t
+                for t in v.outils
+                if t.startswith(OUTILS_INTERDITS_CODE)
+                or (t.startswith("mcp__wikichat__") and t.split("__", 2)[2] in WIKICHAT_INTERDITS_CODE)
+            )
+            if interdits:
+                ecarts.append(f"{s} : outils hors du profil code {interdits[:8]}")
+        elif v.serveurs.get("atelier") == "connected":
+            manquants = [t for t in META_OUTILS if t not in v.outils]
+            if manquants:
+                ecarts.append(f"{s} : l'Assistant n'a pas les méta-outils {manquants}")
+    return ecarts
+
+
+def verifier_reel(
+    settings: AtelierSettings,
+    *,
+    projets: list[str] | None = None,
+    rapide: bool = False,
+    avec_wikichat: bool = False,
+    claude: Path | None = None,
+    surfaces: tuple[str, ...] = SURFACES,
+    delai: float = 60.0,
+) -> dict[str, Any]:
+    """Le rapport : par dossier, ce que chaque surface a annoncé, et les écarts."""
+    dossiers = echantillon(dossiers_reels(settings), projets, rapide)
+    version = version_de_l_extension()
+    racine = Path(_tempfile.mkdtemp(prefix="atelier-coherence-"))
+    rapport: dict[str, Any] = {"version_extension": version, "dossiers": [], "ecarts": 0}
+    try:
+        config = _config_temporaire(racine)
+        manquants = hooks_introuvables()
+        rapport["hooks_introuvables"] = manquants
+        rapport["ecarts"] += len(manquants)
+        for dossier in dossiers:
+            vus: dict[str, Vu] = {}
+            for lancement in lancements(settings, dossier, config, avec_wikichat=avec_wikichat, claude=claude):
+                if lancement.surface in surfaces:
+                    vus[lancement.surface] = lire_init(lancement, delai)
+            ecarts = ecarts_du_dossier(settings, dossier, vus, version)
+            garde = verifier_le_hook_de_garde(dossier.chemin)
+            if not garde["pose"]:
+                ecarts.append("hook garde_bash absent des réglages")
+            elif garde["code"] != 2:
+                ecarts.append(f"hook garde_bash lancé depuis le projet : code {garde['code']}, attendu 2")
+            rapport["dossiers"].append(
+                {
+                    "slug": dossier.slug,
+                    "profil": dossier.profil,
+                    "surfaces": {s: v.to_dict() for s, v in vus.items()},
+                    "hook_garde": garde,
+                    "ecarts": ecarts,
+                }
+            )
+            rapport["ecarts"] += len(ecarts)
+    finally:
+        _shutil.rmtree(racine, ignore_errors=True)
+    return rapport
+
+
+def rapport_en_texte(rapport: dict[str, Any]) -> str:
+    lignes = [f"Extension Claude Code : {rapport.get('version_extension') or 'introuvable'}"]
+    for manque in rapport.get("hooks_introuvables") or []:
+        lignes.append(f"  hook introuvable : {manque}")
+    for d in rapport.get("dossiers") or []:
+        lignes.append("")
+        lignes.append(f"[{d['slug']}] profil {d['profil']}")
+        for s, v in d["surfaces"].items():
+            if not v["ok"]:
+                lignes.append(f"  {s:9} ÉCHEC : {v['erreur']}")
+                continue
+            serveurs = ", ".join(f"{n}:{e}" for n, e in v["serveurs"].items())
+            lignes.append(
+                f"  {s:9} {v['version']} mode={v['mode']} modele={v['modele']} effort={v['effort'] or '?'}"
+                f" outils={len(v['outils'])} [{serveurs}] ({v['duree_s']} s)"
+            )
+        garde = d["hook_garde"]
+        lignes.append(f"  hook garde_bash : {'code ' + str(garde['code']) if garde['pose'] else 'absent'}")
+        for e in d["ecarts"]:
+            lignes.append(f"  ÉCART : {e}")
+    lignes.append("")
+    lignes.append(f"{rapport.get('ecarts', 0)} écart(s).")
+    return "\n".join(lignes)

@@ -149,7 +149,8 @@ def test_ouvrir_vs_code_ne_recopie_plus_le_mode(atelier: TestClient, tmp_path: P
     r = atelier.get(f"/v1/vscode/open?session={sid}", headers=entete, follow_redirects=False)
     assert r.status_code == 302
     dossier = Path(folder_abs(atelier.app.state.settings, "essai"))
-    assert mode_du_projet(dossier) == ""
+    # Le projet garde le défaut du service, posé à sa liaison : pas le bypass de la conversation.
+    assert mode_du_projet(dossier) == "acceptEdits"
     assert CLE_MODE_INITIAL not in _machine()
     # Le choix est là où l'extension le lit, et le bypass lui est permis.
     assert mode_de_la_conversation(sid) == "bypassPermissions"

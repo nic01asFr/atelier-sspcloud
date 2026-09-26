@@ -1029,6 +1029,11 @@ def lier_le_projet(
                 encoding="utf-8",
             )
     approuver_les_serveurs_du_projet(cwd, sorted(ecrits), adresses_directes_d_onyxia(_pool_enabled(settings)))
+    # Le mode aussi, le même sur toutes les surfaces : sans défaut de projet,
+    # le CLI partirait en `default` dans VS Code et au terminal.
+    from mcp_gateway.atelier.modes_permission import assurer_le_defaut_du_projet
+
+    assurer_le_defaut_du_projet(settings, cwd)
     return sorted(ecrits)
 
 

@@ -227,6 +227,36 @@ def ecrire_mode_du_projet(settings: AtelierSettings, dossier: Path, mode: str | 
     return voulu
 
 
+def assurer_le_defaut_du_projet(settings: AtelierSettings, dossier: Path) -> str:
+    """Écrit le défaut du service dans un projet qui n'en a pas. Rend le défaut du projet.
+
+    Sans `defaultMode`, le CLI part en `default` dans VS Code et au terminal,
+    quand l'app applique le défaut du service (`acceptEdits`) : deux modes pour
+    une même conversation. Le défaut du service est donc posé dans le projet à
+    sa liaison, là où toutes les surfaces le lisent. Jamais `bypassPermissions`
+    (`mode_du_service`), donc rien à accorder dans les réglages machine.
+    """
+    existant = mode_du_projet_brut(dossier)
+    if existant:
+        return normaliser(existant)
+    chemin = _reglages_locaux(dossier)
+    donnees = _lire_json(chemin)
+    if donnees is None:
+        return ""
+    voulu = mode_du_service(settings)
+    permissions = donnees.get("permissions")
+    permissions = dict(permissions) if isinstance(permissions, dict) else {}
+    permissions["defaultMode"] = voulu
+    donnees["permissions"] = permissions
+    try:
+        chemin.parent.mkdir(parents=True, exist_ok=True)
+        chemin.write_text(json.dumps(donnees, indent=2) + "\n", encoding="utf-8")
+    except OSError as exc:
+        log.warning("défaut de mode non écrit dans %s : %s", dossier, exc)
+        return ""
+    return voulu
+
+
 # --- Résolution ------------------------------------------------------------
 
 

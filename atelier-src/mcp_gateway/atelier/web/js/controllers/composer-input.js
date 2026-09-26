@@ -135,9 +135,7 @@ export function createComposerInputController(ctx) {
   const AVERTISSEMENT_BYPASS =
     "Sans garde-fou : l’agent agira sans rien demander — modifier ou supprimer des " +
     "fichiers, lancer des commandes, y compris hors du projet. Ce choix vaut aussi " +
-    "dans VS Code et au terminal pour cette conversation.
-
-Continuer ?";
+    "dans VS Code et au terminal pour cette conversation.\n\nContinuer ?";
 
   function slugCourant() {
     const courante = state.sessions?.find((x) => x.session_id === state.sessionId);
@@ -180,9 +178,7 @@ Continuer ?";
     if (!slug || !mode) return;
     if (mode === "bypassPermissions" && !window.confirm(
       "Sans garde-fou pour tout le projet : chaque conversation sans choix propre agira " +
-      "sans rien demander, dans l’Atelier, dans VS Code et au terminal.
-
-Continuer ?",
+      "sans rien demander, dans l’Atelier, dans VS Code et au terminal.\n\nContinuer ?",
     )) return;
     try {
       await api.setProjectMode(state.token, slug, mode);
