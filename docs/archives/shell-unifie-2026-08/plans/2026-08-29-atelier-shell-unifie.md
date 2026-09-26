@@ -8,7 +8,7 @@
 
 **Tech Stack:** Atelier web (vanilla JS modules), FastAPI routes existantes, CSS `app.css`.
 
-**Spec:** `docs/superpowers/specs/2026-08-29-atelier-shell-unifie-design.md`
+**Spec:** `docs/archives/shell-unifie-2026-08/specs/2026-08-29-atelier-shell-unifie-design.md`
 
 ## Global Constraints
 

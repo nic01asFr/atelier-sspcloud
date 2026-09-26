@@ -90,7 +90,7 @@ et applications. On doit donc envisager un seul modèle :
   - sessions dans `assistant/sessions/<uuid>/` ;
   - binding MCP de niveau 2 ;
   - synchronisation `~/.wikichat` ↔ dépôt jamais activée.
-- `docs/superpowers/specs/2026-08-29-atelier-shell-unifie-design.md` : l'interface à vues
+- `docs/archives/shell-unifie-2026-08/specs/2026-08-29-atelier-shell-unifie-design.md` : l'interface à vues
   Code / Assistant / Connecteurs / Agent.
 - `docs/coherence-projet.md` : une seule source par sujet ; les lots A à H (B : `SessionStart`
   et `contexte.md` ; C : une identité par conversation ; D : lancements par l'Atelier) ; la

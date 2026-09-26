@@ -25,7 +25,6 @@ Interface : le port 8787 de votre service Onyxia, sous
 | `wikichat-atelier/` | le pilote wikichat déployé avec le service |
 | `deploy-patches/deploy_agent_ui.py` | outil de l'auteur : pousser l'arbre de travail vers un pod par le MCP Onyxia, sans passer par git |
 | `docs/` | installation, cadrage, plans, mécanismes |
-| `filtre.mjs` | garde-fou d'un autre projet, resté ici par accident — à déplacer |
 
 Le reste de `deploy-patches/` n'est pas suivi : ce sont des fichiers de travail
 d'anciennes sessions de déploiement.
@@ -134,7 +133,7 @@ JavaScript en dépendent.
 | [`docs/atelier-wikichat-alignment.md`](docs/atelier-wikichat-alignment.md) | l'articulation avec wikichat |
 | [`docs/atelier-vscode-passage-de-main.md`](docs/atelier-vscode-passage-de-main.md) | comment une conversation s'ouvre dans VS Code, et pourquoi c'est indirect |
 | [`docs/coherence-projet.md`](docs/coherence-projet.md) | la cohérence entre surfaces et les déploiements |
-| [`docs/superpowers/`](docs/superpowers/) | le design du shell unifié et son plan d'implémentation |
+| [`docs/archives/`](docs/archives/README.md) | traces de travail rangées : premier shell, premières captures |
 
 ---
 

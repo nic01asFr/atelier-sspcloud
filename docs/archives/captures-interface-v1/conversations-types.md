@@ -1,6 +1,6 @@
 # Conversations types
 
-Fils fictifs utilisés pour les captures de `docs/screenshots/`.
+Fils fictifs utilisés pour les captures de ce dossier.
 Ils vivent aussi sur le pod, dans les projets `exemple-carrefour` et
 `exemple-ocs`. Ce ne sont pas des conversations de travail.
 
