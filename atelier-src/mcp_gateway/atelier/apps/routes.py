@@ -9,6 +9,10 @@ l'adresse de secours `/v1/artifacts/<projet>/<nom>/` d'un artefact autonome.
 `auteur` et `forcer` servent aux clients hors navigateur (`atelier-app`) :
 un agent n'agit pas sur l'artefact d'une autre conversation sans le dire.
 L'interface agit pour le propriétaire, sans cette règle.
+
+Les routes `/v1/bureaux` font de même pour les services du namespace que
+déclarent les connecteurs (voir `bureaux`) : le catalogue (ni amont ni
+jeton), et « ouvrir », qui émet un code de portée `connecteur:<nom>`.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from mcp_gateway.atelier.apps.manifeste import ManifesteInvalide
-from mcp_gateway.atelier.apps.passage import destination_valide, portee_du_chemin
+from mcp_gateway.atelier.apps.passage import connecteur_de_portee, destination_valide, portee_du_chemin
 from mcp_gateway.atelier.apps.service import ApplicationInconnue, AutreAuteur, ServiceApps
 from mcp_gateway.atelier.apps.superviseur import ErreurApplication, PlafondAtteint
 
@@ -91,7 +95,27 @@ def enregistrer_routes_apps(
         portee = portee_du_chemin(destination.split("?", 1)[0])
         if portee is None or not destination_valide(destination, portee):
             return HTMLResponse("<p>Adresse d'artefact invalide.</p>", status_code=400, headers=ENTETES_PASSAGE)
+        if connecteur_de_portee(portee) is not None and service.bureaux.vue_du_chemin(destination) is None:
+            # Un code ne s'émet que pour une vue que le pool déclare.
+            return HTMLResponse("<p>Service inconnu.</p>", status_code=404, headers=ENTETES_PASSAGE)
         return renvoi_par_code(service, sid_ou_refus(request), portee, destination)
+
+    # ── Les services du namespace (bureaux, éditeurs) ─────────────────
+
+    @router.get("/bureaux")
+    def bureaux_liste(_owner: str = Depends(require_owner)) -> dict[str, Any]:
+        """Ce que les connecteurs actifs montrent : de quoi remplir l'onglet « Bureaux »."""
+        return {"expose": service.expose, **service.bureaux.fiches()}
+
+    @router.get("/bureaux/{connecteur}/{vue}/ouvrir", response_model=None)
+    def bureaux_ouvrir(connecteur: str, vue: str, request: Request, _owner: str = Depends(require_owner_nav)):
+        """Ouvre la vue d'un service : un code de la portée de ce seul connecteur."""
+        trouvee = service.bureaux.vue(connecteur, vue)
+        if trouvee is None:
+            raise HTTPException(404, "service inconnu")
+        if not service.expose:
+            raise HTTPException(409, "un service ne s'ouvre que sur l'hôte des applications (ATELIER_APPS_PUBLIC_URL vide)")
+        return renvoi_par_code(service, sid_ou_refus(request), trouvee.portee, trouvee.adresse_accueil)
 
     @router.get("/apps")
     def apps_liste(slug: str | None = None, _owner: str = Depends(require_owner)) -> dict[str, Any]:

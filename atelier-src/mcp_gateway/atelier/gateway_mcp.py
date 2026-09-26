@@ -120,7 +120,9 @@ class IntegratedMcpStore:
             if not is_registry_enabled(self._conn, entry.server_id):
                 continue
             cfg = deepcopy(entry.config)
-            for k in ("_metadata", "enabled"):
+            # `atelier` : ce qui est propre à l'Atelier (vues, source), jamais
+            # écrit dans un `.mcp.json` (coherence-croisee.md M3).
+            for k in ("_metadata", "enabled", "atelier"):
                 cfg.pop(k, None)
             out[entry.server_id] = _avec_son_transport(cfg)
         return out

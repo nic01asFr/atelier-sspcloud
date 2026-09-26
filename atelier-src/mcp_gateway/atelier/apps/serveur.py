@@ -12,7 +12,10 @@ Ingress, autre origine. On n'y trouve rien de l'Atelier — ni `/v1`, ni
   autonome), ou le processus que déclare son `artefact.json`, relayé par le
   mandataire (mode serveur) ;
 - `/<slug>/@<jeton>/<nom>/…`, la lecture sous jeton des pages d'un artefact
-  (leurs sous-ressources partent sans cookie, d'une origine opaque).
+  (leurs sous-ressources partent sans cookie, d'une origine opaque) ;
+- `/_services/<connecteur>/<vue>/…`, un service du namespace que ce
+  connecteur déclare (bureau noVNC, éditeur), relayé avec son jeton posé
+  ici, jamais dans la page (voir `bureaux`).
 
 Toute requête dont l'hôte n'est pas celui des applications reçoit 421 : un
 Ingress mal réglé ne doit pas faire servir ce contenu sous une autre adresse,
@@ -47,6 +50,7 @@ from starlette.websockets import WebSocket
 
 from mcp_gateway.atelier import artifacts as art
 from mcp_gateway.atelier.apps import proxy as px
+from mcp_gateway.atelier.apps import bureaux as bx
 from mcp_gateway.atelier.apps.cadrage import CadrageDesReponses
 from mcp_gateway.atelier.apps.manifeste import Manifeste, ManifesteInvalide, nom_valide
 from mcp_gateway.atelier.apps.passage import COOKIE_APPS, DUREE_SESSION_S, destination_valide
@@ -58,6 +62,8 @@ from mcp_gateway.atelier.relais_ws import relayer
 log = logging.getLogger("atelier.apps.serveur")
 
 ENTETES_PASSAGE = {"Referrer-Policy": "no-referrer", "Cache-Control": "no-store"}
+# Plafond d'un corps envoyé à un service du namespace (un envoi de fichier à n8n).
+SERVICE_CORPS_MAX = 64 * 2**20
 
 
 def _page(titre: str, texte: str, *, rafraichir: int | None = None) -> str:
@@ -418,6 +424,136 @@ def construire_app_apps(service: ServiceApps, *, origine_atelier: Callable[[], s
             connexion=service.superviseur.connexion(slug, nom),
         )
 
+    # ── Les services du namespace (voir `bureaux`) ────────────────────
+
+    def jeton_de(vue: Any) -> str | None:
+        """La valeur du jeton de la vue (vide sans jeton), ou None s'il est illisible."""
+        try:
+            return service.bureaux.valeur_du_jeton(vue)
+        except bx.DeclarationInvalide as exc:
+            log.warning("vue %s : jeton illisible (%s)", vue.prefixe, exc)
+            return None
+
+    async def service_http(request: Request) -> Response:
+        vue = service.bureaux.vue(request.path_params["connecteur"], request.path_params["vue"])
+        if vue is None:
+            return Response(_page("Introuvable", "Aucun service de ce nom n'est déclaré."), 404,
+                            media_type="text/html; charset=utf-8")
+        if not session_couvre(request, vue.portee):
+            return vers_l_entree(request)
+        valeur = jeton_de(vue)
+        if valeur is None:
+            return Response(_page("Service indisponible", "Le jeton de ce service est introuvable."), 502,
+                            media_type="text/html; charset=utf-8")
+        refus = px.refus_meme_site(request.method, request.headers, service.origine)
+        if refus:
+            return JSONResponse({"detail": refus}, status_code=403)
+        if request.url.path == vue.prefixe:
+            suite = f"?{request.url.query}" if request.url.query else ""
+            return RedirectResponse(vue.prefixe + "/" + suite, 308)
+
+        entetes = px.entetes_vers_amont(
+            [(k.decode("latin-1"), v.decode("latin-1")) for k, v in request.scope["headers"]],
+            prefixe=vue.prefixe,
+            hote_public=service.hote,
+            client_ip=(request.client.host if request.client else ""),
+            acteur=acteur_de(request),
+        )
+        requete = request.url.query
+        motifs: list[bytes] = []
+        if vue.jeton is not None:
+            entetes, requete = bx.poser_jeton(entetes, requete, vue.jeton, valeur)
+            motifs = bx.motifs_du_jeton(valeur)
+            # Ce qu'on ne lit pas, on ne le caviarde pas : le corps vient en clair.
+            entetes = [(k, v) for k, v in entetes if k.lower() != "accept-encoding"]
+            entetes.append(("Accept-Encoding", "identity"))
+        chemin = vue.chemin_amont(request.url.path)
+        url = vue.amont + quote(chemin, safe="/%:@!$&'()*+,;=~-._") + (f"?{requete}" if requete else "")
+        annonce = request.headers.get("content-length")
+        a_un_corps = bool(annonce and annonce != "0") or "transfer-encoding" in request.headers
+        contenu = px.corps_borne(request.stream(), SERVICE_CORPS_MAX) if a_un_corps else None
+        client = client_pour(None)
+        try:
+            reponse = await client.send(
+                client.build_request(request.method, url, headers=entetes, content=contenu), stream=True
+            )
+        except px.CorpsTropGros:
+            return JSONResponse({"detail": "corps trop gros"}, status_code=413)
+        except httpx.HTTPError as exc:
+            if isinstance(exc.__cause__, px.CorpsTropGros):
+                return JSONResponse({"detail": "corps trop gros"}, status_code=413)
+            log.info("service %s injoignable : %s", vue.prefixe, type(exc).__name__)
+            return Response(_page("Service injoignable", f"{vue.titre} ne répond pas."), 502,
+                            media_type="text/html; charset=utf-8")
+        codage = (reponse.headers.get("content-encoding") or "identity").strip().lower()
+        if motifs and codage not in ("", "identity"):
+            await reponse.aclose()
+            log.warning("service %s : réponse compressée malgré identity, non relayée", vue.prefixe)
+            return Response(_page("Réponse illisible", "Le service a compressé sa réponse : elle n'est pas relayée."),
+                            502, media_type="text/html; charset=utf-8")
+
+        async def flux() -> Any:
+            try:
+                async for morceau in bx.caviarder(reponse.aiter_raw(), motifs):
+                    yield morceau
+            finally:
+                await reponse.aclose()
+
+        bruts = bx.entetes_sans_jeton(list(reponse.headers.multi_items()), motifs)
+        sortie = StreamingResponse(flux(), status_code=reponse.status_code)
+        sortie.raw_headers = px.entetes_vers_client(
+            bruts,
+            prefixe=vue.prefixe,
+            chemin_retire=vue.chemin == "retire",
+            amont=vue.amont,
+            origine_apps=service.origine,
+            origine_atelier=origine_atelier(),
+        )
+        return sortie
+
+    async def service_ws(websocket: WebSocket) -> None:
+        origine = (websocket.headers.get("origin") or "").rstrip("/").lower()
+        if not origine or origine != service.origine:
+            await websocket.close(code=px.FERME_ORIGINE_REFUSEE)
+            return
+        connecteur = websocket.path_params["connecteur"]
+        nom = websocket.path_params["vue"]
+        vue = service.bureaux.vue(connecteur, nom)
+        if vue is None:
+            await websocket.close(code=px.FERME_NON_DECLARE)
+            return
+        if not session_couvre(websocket, vue.portee):
+            await websocket.close(code=px.FERME_NON_AUTHENTIFIE)
+            return
+        valeur = jeton_de(vue)
+        if valeur is None:
+            await websocket.close(code=px.FERME_AMONT_INJOIGNABLE)
+            return
+        entetes = px.entetes_vers_amont(
+            [(k.decode("latin-1"), v.decode("latin-1")) for k, v in websocket.scope["headers"]],
+            prefixe=vue.prefixe,
+            hote_public=service.hote,
+            client_ip=(websocket.client.host if websocket.client else ""),
+            websocket=True,
+            acteur=acteur_de(websocket),
+        )
+        requete = websocket.url.query
+        if vue.jeton is not None:
+            entetes, requete = bx.poser_jeton(entetes, requete, vue.jeton, valeur)
+        chemin = vue.chemin_amont(websocket.url.path)
+        schema = "wss" if vue.amont.startswith("https:") else "ws"
+        url = f"{schema}://{vue.amont.split('://', 1)[1]}{quote(chemin, safe='/%:@!$&()*+,;=~-._')}"
+        if requete:
+            url += f"?{requete}"
+        await relayer(
+            websocket,
+            url,
+            entetes=entetes,
+            journal=f"ws {vue.prefixe}",
+            taille_max=px.WS_TAILLE_MAX,
+            ping_s=px.WS_PING_S,
+        )
+
     async def fermer_clients() -> None:
         for c in clients.values():
             await c.aclose()
@@ -427,6 +563,11 @@ def construire_app_apps(service: ServiceApps, *, origine_atelier: Callable[[], s
     routes = [
         Route("/_sante", sante, methods=["GET", "HEAD"]),
         Route("/_atelier/entree", entree, methods=["GET"]),
+        # Avant `/{slug}/…` : `_services` n'est pas un projet.
+        Route("/_services/{connecteur}/{vue}", service_http, methods=toutes),
+        Route("/_services/{connecteur}/{vue}/{reste:path}", service_http, methods=toutes),
+        WebSocketRoute("/_services/{connecteur}/{vue}/{reste:path}", service_ws),
+        WebSocketRoute("/_services/{connecteur}/{vue}", service_ws),
         Route("/{slug}", projet_seul, methods=["GET", "HEAD"]),
         Route("/{slug}/{reste:path}", projet, methods=toutes),
         WebSocketRoute("/{slug}/{nom}/{reste:path}", application_ws),

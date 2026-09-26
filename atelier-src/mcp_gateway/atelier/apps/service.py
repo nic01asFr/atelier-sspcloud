@@ -65,6 +65,39 @@ class ServiceApps:
         self.settings = settings
         self.superviseur = superviseur or Superviseur(settings)
         self.passage = passage or Passage(settings.gateway_db_path)
+        self._bureaux: Any = None
+
+    # ── Les services du namespace (voir `bureaux`) ────────────────────
+
+    @property
+    def bureaux(self) -> Any:
+        """Les vues que les connecteurs du pool déclarent (`atelier.vues`)."""
+        if self._bureaux is None:
+            from mcp_gateway.atelier.apps.bureaux import Bureaux
+
+            settings = self.settings
+
+            def lire_pool() -> dict[str, Any]:
+                from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
+                from mcp_gateway.db import connect
+
+                conn = connect(settings.gateway_db_path)
+                try:
+                    return IntegratedMcpStore(conn).list_servers()
+                finally:
+                    conn.close()
+
+            def variables() -> dict[str, str]:
+                from mcp_gateway.atelier.env_secrets import variables_secretes
+
+                return variables_secretes(settings)
+
+            self._bureaux = Bureaux(lire_pool, settings.secrets_dir / "apps", variables=variables)
+        return self._bureaux
+
+    @bureaux.setter
+    def bureaux(self, valeur: Any) -> None:
+        self._bureaux = valeur
 
     # ── Le second hôte ────────────────────────────────────────────────
 
