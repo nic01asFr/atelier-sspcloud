@@ -126,6 +126,9 @@ def test_la_consigne_forte_et_le_mode_d_emploi_des_meta_outils(reglages: Atelier
         assert condition in consignes, condition
     for classe in ("réversible", "engageante", "réservée"):
         assert f"**{classe}**" in consignes
+    # Mesuré sur le pod : après un refus, le modèle annonçait parfois un résultat inventé.
+    assert "Un appel refusé ou en échec ne s'est **pas** produit" in consignes
+    assert "« refusé »" in consignes and "en attente de votre" in consignes
 
 
 def test_chaque_commande_citee_existe_et_est_permise_a_l_assistant(reglages: AtelierSettings) -> None:
@@ -139,6 +142,7 @@ def test_chaque_commande_citee_existe_et_est_permise_a_l_assistant(reglages: Ate
             assert commande is not None, f"{nom} : inconnue du catalogue"
             assert commande.exposee_mcp and commande.classe != RESERVEE, nom
             assert profils.outil_permis(nom, profils.PROFIL_ASSISTANT), nom
+            assert nom not in profils.HORS_LISTE_ASSISTANT, f"{nom} : cité, mais pas déclaré à l'Assistant"
             assert not profils.outil_permis(nom, profils.PROFIL_CODE) or nom in profils.OUTILS_DU_PROFIL_CODE
         assert catalogue.commande("atelier_lancer_agent").classe == ENGAGEANTE
 

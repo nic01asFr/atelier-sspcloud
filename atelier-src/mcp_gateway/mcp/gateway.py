@@ -194,10 +194,19 @@ class McpGateway:
         bundle = self.catalog.bundles.get(self.bundles.get(session_id))
         return getattr(bundle, "tool_exposure", "full") or "full"
 
-    def _definitions_locales(self) -> list[dict]:
+    def _definitions_locales(self, *, pour_la_recherche: bool = False) -> list[dict]:
+        """Les outils locaux déclarés ; `pour_la_recherche` : tous ceux que le profil permet.
+
+        Un profil peut ne pas déclarer un outil qu'il permet (l'Assistant et
+        ses anciennes commandes de conversation) : la recherche et l'aide à
+        l'appel le connaissent quand même.
+        """
         if self.outils_locaux is None:
             return []
         try:
+            a_chercher = getattr(self.outils_locaux, "definitions_a_chercher", None)
+            if pour_la_recherche and a_chercher is not None:
+                return list(a_chercher())
             return list(self.outils_locaux.definitions())
         except Exception:  # noqa: BLE001
             # Une famille d'outils qui ne sait pas se décrire ne doit pas
@@ -268,7 +277,7 @@ class McpGateway:
             return result
         # Les commandes de l'Atelier sont appelables par gateway_call_tool : un
         # refus de leur part n'est pas un « nom inconnu ».
-        tools = list(tools) + self._definitions_locales()
+        tools = list(tools) + self._definitions_locales(pour_la_recherche=True)
 
         spec = next((t for t in tools if str(t.get("name")) == target), None)
 
@@ -308,7 +317,7 @@ class McpGateway:
         `server` `atelier`, pour qu'on puisse les chercher par service.
         """
         sortie = []
-        for definition in self._definitions_locales():
+        for definition in self._definitions_locales(pour_la_recherche=True):
             if not isinstance(definition, dict) or not definition.get("name"):
                 continue
             outil = dict(definition)
