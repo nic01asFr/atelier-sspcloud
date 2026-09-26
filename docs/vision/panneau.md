@@ -4,6 +4,93 @@
 25/09/2026. Suit le format de `docs/vision/cadre.md`. **Proposition, à
 valider.** Aucun code n'a été modifié pour l'écrire.
 
+## État (vague 2, équipe B, 26/09/2026, branche `v2-bureaux`) : P4, les bureaux
+
+### Fait
+
+| Quoi | Ce qui existe | Où |
+|---|---|---|
+| **Services du namespace relayés (J-d)** | L'hôte des applications relaie `/_services/<connecteur>/<vue>/…` (HTTP en flux et WebSocket, par `relais_ws`) vers l'adresse **interne** que déclare le connecteur. Un amont en boucle locale (`127.0.0.1`, `localhost`, `::1`, `169.254.*`, `0.0.0.0`) est refusé : l'hôte n'est pas une porte vers ce pod. | `apps/bureaux.py`, `apps/serveur.py` |
+| **Déclaration (M3)** | Clé `atelier.vues` de l'entrée du pool : `{nom, genre: bureau\|application, amont, vnc, accueil, titre, chemin: retire\|garde, jeton: {depuis, pose}}`. La clé `atelier` entière est retirée à la matérialisation (`IntegratedMcpStore.enabled_mcp_servers`) : elle n'apparaît dans aucun `.mcp.json` ni `claude-mcp.json`. Une déclaration fautive est écartée seule, et dite (`refusees` de `GET /v1/bureaux`). | `apps/bureaux.py`, `gateway_mcp.py` |
+| **Jeton côté serveur** | `depuis` : `entete:<Nom>` (l'en-tête de l'entrée du connecteur, sans `Bearer`, référence `${…}` développée) ou `secret:<réf>` (`~/work/.secrets/apps/`). `pose` : `cookie:<nom>`, `entete:<Nom>` ou `requete:<nom>`, après avoir retiré ce que le navigateur aurait mis au même endroit. Au retour : tout en-tête qui porte le jeton disparaît (`Set-Cookie`, `Location`…), le corps est caviardé en flux (brut ou encodé, même coupé entre deux morceaux) ; l'amont est appelé en `Accept-Encoding: identity`, et une réponse compressée quand même n'est pas relayée (502). L'adresse d'ouverture et le catalogue ne portent ni jeton ni amont. | `apps/bureaux.py`, `apps/serveur.py` |
+| **Cadrage** | La politique de P0 (`apps/cadrage.py`), sans rien de neuf : `frame-ancestors <Atelier>` seul, `X-Frame-Options` retiré, sur un amont sans aucun en-tête comme sur un amont contraire. | `apps/proxy.py`, `apps/cadrage.py` |
+| **Portée « connecteur »** | Une portée est un projet (`demo`) ou un connecteur (`connecteur:qgis`, racine `/_services/qgis/`). Un code ouvert pour le bureau QGIS n'ouvre ni un projet, ni un autre connecteur (et réciproquement) ; `/v1/apps/entree` n'émet de code de connecteur que pour une vue déclarée ; un code d'agent reste borné à un projet. Comme pour les projets, une session owner s'élargit d'une portée à l'autre (un seul cookie par hôte), une session d'agent jamais. | `apps/passage.py`, `apps/routes.py` |
+| **Routes de l'Atelier** | `GET /v1/bureaux` (catalogue : connecteur, nom, genre, titre, adresse d'ouverture) ; `GET /v1/bureaux/{connecteur}/{vue}/ouvrir` (session du navigateur exigée, 302 vers l'entrée de l'hôte avec un code de portée `connecteur:<nom>`). Aucune ligne dans `api.py` : posées par `enregistrer_routes_apps`. | `apps/routes.py` |
+| **Panneau** | Le « + » du panneau a deux rayons, « Créations » et « Bureaux ». « Montrer » sur un bureau ouvre son onglet (cadre par `/v1/bureaux/…/ouvrir`, même bac à sable). Un service ne s'ouvre **jamais** sur un événement : un `panneau_montrer` qui en décrit un est ignoré (J-f). Il n'est ni épinglé ni enregistré (il ne revient pas seul) ; son cadre n'existe que tant que son onglet est affiché : onglet masqué ou panneau replié, le cadre part et le flux s'arrête. | `web/js/views/panneau.js` |
+
+Tests : `tests/test_bureaux.py` (hôte réel et service factice du namespace dans leurs fils : jeton dans le corps, coupé, dans `Set-Cookie`, `Location`, réponse compressée ; cadrage d'un amont nu et d'un amont contraire ; portée qui refuse un autre connecteur et un projet ; WebSocket relayé dont l'amont exige le jeton ; catalogue et ouverture côté Atelier ; clé `atelier` absente de la matérialisation) et le bloc « bureaux » de `tests/js/panneau.suite.mjs`.
+
+### Les services du namespace, découverts sur le pod (lecture seule, 26/09)
+
+Namespace `user-nic01asfr`. L'hôte des applications tourne dans le pod `proj-claude-code-jupyter-python-0` du même namespace : les noms courts des Services s'y résolvent.
+
+| Service | Service Kubernetes et ports | Ce qui répond | Authentification |
+|---|---|---|---|
+| Blender (`blender-remote-mcp-0`, StatefulSet, `ghcr.io/nic01asfr/blender-remote-mcp:latest`) | `blender-remote-mcp` (ClusterIP) : **8100**, **6080** | 8100 : API (`/mcp`, `/desktop` = `/canvas`, `/stream/{user_id}`, `/api/session/info`, `/health`). 6080 : websockify avec le noVNC d'origine (`/vnc.html`, WebSocket `/websockify`, sous-protocole `binary`). Ingress `user-nic01asfr-blender-mcp` (8100) | 8100 : `/desktop` accepte le cookie `blender_token` égal au jeton porteur de l'entrée `blender` du pool (200 ; l'en-tête `Authorization` y est refusé : 401). 6080 : **aucune** (RFB 3.8, type de sécurité 1 « None ») |
+| Bureau QGIS (`qgis-workspace-nic01asfr`) | `qgis-workspace-nic01asfr` (ClusterIP) : 8100, **8080**, **6080** | 8080 : API du bureau (`/api/layers`, `/api/screenshot`…) ; `/vnc` renvoie vers `http://localhost:6080/vnc.html` (inutilisable relayé). 6080 : websockify et noVNC, `/websockify` | 8080 et 6080 : **aucune** dans le cluster (`/api/layers` 200 sans jeton ; RFB type 1) |
+| Portail QGIS (`qgis-hub`) | `qgis-hub` (sans IP, headless) : **8888** | `/desk` (bureau noVNC encadré + discussion), `/workspace/vnc/…` et `/workspace/vnc/websockify` (relais vers le bureau). Ingress `user-nic01asfr-qgis` (http) | cookie `hub_api_key` égal à la clé `qgis_…` de l'entrée `qgis` du pool (`/desk` et `/workspace/vnc/vnc.html` : 200) ; sans : 401 JSON avec `portal_url`. La page `/desk` emploie des chemins **absolus** (`/static`, `/workspace`) |
+| n8n (Deployment `n8n`, `n8nio/n8n:2.38.6` ; conteneurs `n8n`, `mcp`, `portal`, `runners`) | `n8n` (ClusterIP) : **5678**, 3000, 3100 | 5678 : éditeur (`/healthz` 200). 3000 : serveur MCP (`n8n-mcp`). 3100 : portail d'actions. Ingress `user-nic01asfr-n8n`, `-n8n-mcp`, `-n8n-portail` | éditeur : la connexion utilisateur de n8n (`/rest/login` 401), pas de jeton de service. En interne, l'éditeur envoie `X-Frame-Options: SAMEORIGIN` (la mesure A6, faite par l'Ingress public, n'en voyait aucun) ; le relais le retire. Chemins **absolus** (`/assets`, `/rest`, `/static`) : `N8N_PATH` n'est pas réglé |
+
+Constats de sécurité, à confier aux gardiens (rien n'a été changé) :
+
+- les websockify de Blender et du bureau QGIS (`:6080`) et l'API du bureau QGIS (`:8080`) ne demandent **aucune** authentification : tout pod qui les joint prend la main sur le bureau. Le relais de l'Atelier devient la seule porte gardée ; une `NetworkPolicy` qui réserve ces ports à l'Atelier et au portail QGIS fermerait le reste ;
+- l'entrée `n8n` du pool porte son jeton **en clair dans `args`** (`--header Authorization: Bearer …`), là où les autres entrées l'ont dans `headers`. Il a transité par la sortie d'une commande de découverte de cette équipe (sortie non recopiée ici) : c'est une raison de plus de le faire tourner (question déjà « en attente » dans `decisions.md`).
+
+### Déclarations à poser sur le pod (après déploiement de cette branche)
+
+| Connecteur | `atelier.vues` | Statut |
+|---|---|---|
+| `blender` | `[{"nom": "bureau", "genre": "bureau", "amont": "http://blender-remote-mcp:6080", "vnc": "/websockify", "titre": "Bureau Blender"}]` | à poser : noVNC d'origine, chemins relatifs, aucun jeton |
+| `qgis` | `[{"nom": "bureau", "genre": "bureau", "amont": "http://qgis-workspace-nic01asfr:6080", "vnc": "/websockify", "titre": "Bureau QGIS"}]` | à poser : même forme que Blender |
+| `n8n` | `[{"nom": "editeur", "genre": "application", "amont": "http://n8n:5678", "chemin": "garde", "titre": "Éditeur n8n"}]` | **seulement si** n8n est réglé avec `N8N_PATH=/_services/n8n/editeur/`, ce qui déplace aussi son adresse publique : décision de Nicolas. Sans cela, ses chemins absolus tombent hors du préfixe |
+| `qgis` (`/desk`) | `{"nom": "portail", "genre": "application", "amont": "http://qgis-hub:8888", "accueil": "/desk", "jeton": {"depuis": "entete:Authorization", "pose": "cookie:hub_api_key"}}` | **pas en l'état** : `/desk` charge `/static/…` et `/workspace/…` en absolu. Il faudrait que le portail sache vivre sous un préfixe |
+| `blender` (`/canvas`) | `{"nom": "canvas", "genre": "application", "amont": "http://blender-remote-mcp:8100", "accueil": "/canvas", "jeton": {"depuis": "entete:Authorization", "pose": "cookie:blender_token"}}` | **à essayer** : le cookie est vérifié (200), mais la page n'a pas été lue (lecture refusée pendant la découverte) ; si elle emploie des chemins absolus ou son jeton côté navigateur, elle ne marchera pas relayée (le relais caviarde le jeton) |
+
+Procédure : dans le pod de l'Atelier, avec le Python de l'Atelier, poser la clé sans toucher au reste de l'entrée (ni `_metadata`, ni les en-têtes : un aller-retour par `PUT /v1/mcp/servers/{nom}` réécrirait les en-têtes masqués) et sans rien afficher :
+
+```python
+from mcp_gateway.atelier.config import AtelierSettings
+from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
+from mcp_gateway.db import connect
+from mcp_gateway.registry import get_registry_server
+
+VUES = {
+    "blender": [{"nom": "bureau", "genre": "bureau", "amont": "http://blender-remote-mcp:6080",
+                 "vnc": "/websockify", "titre": "Bureau Blender"}],
+    "qgis": [{"nom": "bureau", "genre": "bureau", "amont": "http://qgis-workspace-nic01asfr:6080",
+              "vnc": "/websockify", "titre": "Bureau QGIS"}],
+}
+conn = connect(AtelierSettings().gateway_db_path)
+store = IntegratedMcpStore(conn)
+actifs = {n: e.get("enabled", True) for n, e in store.list_servers().items()}
+for nom, vues in VUES.items():
+    config = dict(get_registry_server(conn, nom).config)  # _metadata compris
+    config["atelier"] = {**(config.get("atelier") or {}), "vues": vues}
+    store.upsert(nom, {**config, "enabled": actifs[nom]})
+conn.close()
+print("déclarées :", ", ".join(VUES))
+```
+
+Puis `GET /v1/bureaux` (liste et `refusees`), et ouvrir chaque bureau depuis le panneau. Aucun redémarrage : l'hôte relit le pool toutes les 5 s.
+
+### Vérifié
+
+- Tout ce qui est dit dans « Fait », par les tests (Python et suite JS), contre un vrai serveur de l'hôte et un vrai service factice.
+- Sur le pod, au niveau du protocole : les adresses et ports ci-dessus ; la poignée de main RFB des deux websockify (`binary`, RFB 3.8, sans mot de passe) ; `blender_token` et `hub_api_key` acceptés ; les en-têtes de l'éditeur n8n.
+
+### Non vérifié (ne se voit que sur le pod, après déploiement)
+
+- Le **rendu réel** d'un bureau dans le panneau (noVNC de Blender ou de QGIS dans l'iframe, souris et clavier, fluidité), et le cookie `__Host-atelier_apps` dans l'iframe sur `https` (A7 n'a été fait qu'en local).
+- Le passage de l'Ingress de l'hôte des applications pour les WebSocket longs de noVNC (délais de l'Ingress Onyxia).
+- L'éditeur n8n relayé (`N8N_PATH`, contrôle d'`Origin` de sa connexion `push`), `/canvas` de Blender, `/desk` du portail QGIS.
+
+### Reste
+
+- Le contenu des trames WebSocket n'est pas caviardé (flux VNC binaire) : un service qui renverrait son jeton par son WebSocket le livrerait.
+- Deux flux vivants au plus, vignettes, liseré « l'agent agit », « Prendre la main », capture par outil (suite de P4) ; épingler un éditeur (non vivant) au projet.
+- Proposer à l'équipe K que `atelier_connecteur_ajouter` refuse `atelier.vues` venu d'un agent (un agent ne doit pas se déclarer un amont), ou le passe par « À valider ».
+- `NetworkPolicy` des ports 6080 et 8080 (constat ci-dessus).
+
 ## État (vague 1, équipe P, 25/09/2026, branche `panneau`)
 
 Ce document reste la proposition d'origine ; cette section dit ce qui en est
@@ -76,10 +163,8 @@ rétrécie. Une fois, un premier envoi est parti deux fois (deux
 ### Reste
 
 - **Vague 2** : P3 (hôte MCP Apps : pont `postMessage`, contexte de vue,
-  « Montrer » depuis une vue, interfaces `ui://`) ; P4 (bureaux noVNC relayés
-  par l'hôte des applications, jeton du service posé côté serveur, jamais dans
-  une URL servie au navigateur ; Blender `/canvas` = `/desktop`, `/stream`
-  MJPEG authentifié) ; page Gardiens et onglet Automates (sur l'API de G) ;
+  « Montrer » depuis une vue, interfaces `ui://`) ; P4 (fait en vague 2 par
+  l'équipe B, voir plus haut) ; page Gardiens et onglet Automates (sur l'API de G) ;
   « Annuler » des cartes d'action.
 - **Envoi rejoué** : l'adresse du flux porte le message ; une reconnexion
   d'`EventSource` relancerait le tour. Proposition au coordinateur (fichier

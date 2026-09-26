@@ -10,7 +10,10 @@
 //   - les demandes d'un tour disparu se replient en une ligne ;
 //   - ce qu'un hook dit (relance de wikichat) se lit dans le fil ;
 //   - le texte affiché suit le lexique : « Créations », « Montrer », jamais
-//     « artefact ».
+//     « artefact » ;
+//   - un bureau (service du namespace) s'ouvre par l'Atelier, depuis l'onglet
+//     « Bureaux » du catalogue, jamais sur un événement (J-f) ; masqué ou
+//     panneau replié, son cadre part et le flux s'arrête.
 
 import { berceau, cliquer, ecouter, texte } from "./dom-minimal.mjs";
 import { bilan, egal, nePorte, porte, verifier } from "./verifier.mjs";
@@ -18,8 +21,11 @@ import { bilan, egal, nePorte, porte, verifier } from "./verifier.mjs";
 import {
   adresseDeLaVue,
   createPanneauView,
+  estUnFluxVivant,
+  estUnService,
   fusionnerVues,
   libelleEpingle,
+  vueDeService,
 } from "../../mcp_gateway/atelier/web/js/views/panneau.js";
 import { rendrePanneauApplications } from "../../mcp_gateway/atelier/web/js/views/applications.js";
 import { libelleEchanges, rendreFils } from "../../mcp_gateway/atelier/web/js/views/fils.js";
@@ -110,6 +116,93 @@ async function attendre() {
   cliquer(fermer);
   await attendre();
   verifier(appels.some((a) => a[0] === "retirer"), "fermer retire l'onglet côté service");
+}
+
+// ── Les bureaux : par l'Atelier, sur un geste, jamais en tâche de fond ─
+{
+  const fiche = { connecteur: "blender", nom: "bureau", genre: "bureau", titre: "Bureau Blender", ouvrir: "/v1/bureaux/blender/bureau/ouvrir" };
+  const vue = vueDeService(fiche);
+  egal(adresseDeLaVue(vue), "/v1/bureaux/blender/bureau/ouvrir", "un bureau s'ouvre par l'Atelier");
+  verifier(estUnService(vue) && estUnFluxVivant(vue), "un bureau est un flux vivant");
+  verifier(!estUnFluxVivant(vueDeService({ ...fiche, nom: "editeur", genre: "application" })), "un éditeur n'en est pas un");
+  verifier(!estUnService({ projet: "demo", nom: "carte" }), "une création n'est pas un service");
+  nePorte(JSON.stringify(vue), "amont", "l'onglet ne connaît pas l'amont");
+
+  // Un panneau neuf, sur des éléments neufs : ceux du bloc précédent partent.
+  const ids = ["panneau", "view-code", "session-panneau-button", "panneau-onglets", "panneau-outils",
+    "panneau-catalogue", "panneau-corps", "panneau-note", "panneau-ajouter", "panneau-replier"];
+  for (const id of ids) {
+    document.getElementById(id)?.remove();
+    const n = document.createElement(id === "panneau" ? "aside" : "div");
+    n.id = id;
+    document.body.appendChild(n);
+  }
+  document.getElementById("panneau").hidden = true;
+  document.getElementById("panneau-catalogue").hidden = true;
+
+  const carte = { id: "v_1", genre: "creation", projet: "demo", nom: "carte", chemin: "", titre: "Carte", epingle: "conversation", par: "personne" };
+  const appels = [];
+  const api = {
+    panneauVues: async () => ({ vues: [carte] }),
+    panneauEnregistrer: async (sid, v) => (appels.push(["enregistrer"]), v),
+    panneauRetirer: async (sid, id) => (appels.push(["retirer", id]), { retiree: true }),
+    listApps: async () => ({ expose: true, artefacts: [] }),
+    artifactsUrl: () => "/v1/artifacts/demo/",
+    listBureaux: async () => (appels.push(["bureaux"]), { expose: true, vues: [fiche], refusees: [] }),
+  };
+  const state = { view: "code", sessionId: "s2", slug: "demo", sessions: [] };
+  const panneau = createPanneauView({ state, api, render: () => {} });
+  panneau.bind();
+  panneau.renderPanneau();
+  await attendre();
+
+  const aside = document.getElementById("panneau");
+  const corps = document.getElementById("panneau-corps");
+  const cadreDuBureau = () => corps.querySelectorAll(".panneau-cadre").find((f) => (f.getAttribute("src") || f.src) === "/v1/bureaux/blender/bureau/ouvrir") || null;
+  const onglet = (t) => document.getElementById("panneau-onglets").querySelectorAll("button").find((b) => texte(b) === t);
+
+  // L'agent ne peut pas ouvrir un bureau : l'événement est pris, rien ne s'ouvre.
+  verifier(panneau.surEvenement({ kind: "systeme", cause: "panneau_montrer", session_id: "s2", text: JSON.stringify(vue) }), "l'événement est reconnu");
+  verifier(aside.hidden, "un bureau ne s'ouvre jamais seul (J-f)");
+  egal(document.getElementById("session-panneau-button").textContent, "Panneau (1)", "aucun onglet de plus");
+
+  // La personne : « + », puis l'onglet « Bureaux » du catalogue.
+  cliquer(document.getElementById("session-panneau-button"));
+  cliquer(document.getElementById("panneau-ajouter"));
+  const catalogue = document.getElementById("panneau-catalogue");
+  verifier(!catalogue.hidden, "le catalogue s'ouvre");
+  const rayons = catalogue.querySelectorAll("button").filter((b) => b.getAttribute("role") === "tab").map((b) => texte(b));
+  egal(rayons, ["Créations", "Bureaux"], "deux rayons au catalogue");
+  cliquer(catalogue.querySelectorAll("button").find((b) => texte(b) === "Bureaux"));
+  await attendre();
+  verifier(appels.some((a) => a[0] === "bureaux"), "les bureaux se lisent sur l'Atelier");
+  porte(texte(catalogue), "Bureau Blender", "le bureau est proposé");
+  nePorte(texte(catalogue), "rtefact", "le lexique tient");
+  cliquer(catalogue.querySelectorAll("button").find((b) => texte(b) === "Montrer"));
+  verifier(!aside.hidden && catalogue.hidden, "Montrer ouvre l'onglet du bureau");
+  verifier(cadreDuBureau(), "le cadre passe par l'Atelier");
+  porte(cadreDuBureau().getAttribute("sandbox"), "allow-same-origin", "noVNC a besoin de son cookie sur l'hôte");
+  nePorte(cadreDuBureau().getAttribute("sandbox"), "allow-top-navigation", "jamais la navigation du haut");
+  const gestes = document.getElementById("panneau-outils").querySelectorAll("button").map((b) => texte(b));
+  egal(gestes, ["Recharger", "Détacher", "Fermer"], "un bureau ne s'épingle pas");
+  verifier(!appels.some((a) => a[0] === "enregistrer"), "et ne s'enregistre pas");
+
+  // Masqué, le flux s'arrête ; affiché, il repart.
+  cliquer(onglet("Carte"));
+  verifier(cadreDuBureau() === null, "onglet masqué : le cadre du bureau part");
+  verifier(corps.querySelectorAll(".panneau-cadre").length === 1, "la création, elle, garde son cadre");
+  cliquer(onglet("Bureau Blender"));
+  verifier(cadreDuBureau(), "rendu visible, le bureau revient");
+  cliquer(document.getElementById("panneau-replier"));
+  verifier(cadreDuBureau() === null, "panneau replié : aucun bureau ne tourne");
+
+  // Fermer : rien à retirer côté Atelier.
+  panneau.ouvrir(true);
+  cliquer(onglet("Bureau Blender"));
+  cliquer(document.getElementById("panneau-outils").querySelectorAll("button").find((b) => texte(b) === "Fermer"));
+  await attendre();
+  verifier(!appels.some((a) => a[0] === "retirer"), "fermer un bureau n'appelle pas le panneau de l'Atelier");
+  egal(document.getElementById("panneau-onglets").querySelectorAll("button").map((b) => texte(b)), ["Carte"], "l'onglet est parti");
 }
 
 // ── Les créations : « Montrer » remplace le nouvel onglet ──────────────

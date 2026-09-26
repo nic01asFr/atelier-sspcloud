@@ -19,6 +19,14 @@
  * « Montrer » (outil de l'agent) ouvre le panneau seul (J-f).
  *
  * Tout ce qui vient d'une création (titre, nom) est posé en `textContent`.
+ *
+ * Les services du namespace (bureau de Blender ou de QGIS, éditeur n8n)
+ * s'ouvrent depuis l'onglet « Bureaux » du catalogue, par l'Atelier
+ * (`/v1/bureaux/<connecteur>/<vue>/ouvrir`), et sont relayés par l'hôte des
+ * applications, le jeton du service posé côté serveur. Un bureau est un flux
+ * vivant : il ne s'ouvre que sur un geste de la personne, jamais sur un
+ * événement (J-f), n'est pas épinglé, et son cadre n'existe que tant que son
+ * onglet est affiché (masqué, le flux s'arrête).
  */
 
 import { rendrePanneauApplications } from "./applications.js";
@@ -28,8 +36,34 @@ const BAC_A_SABLE =
 
 // Sous 720 px (règle CSS), le panneau devient une feuille plein écran.
 
+/** Une vue d'un service du namespace (bureau, éditeur), et non une création. */
+export function estUnService(vue) {
+  return !!(vue && vue.connecteur);
+}
+
+/** Un flux vivant : ne s'ouvre jamais seul, ne tourne que s'il est affiché. */
+export function estUnFluxVivant(vue) {
+  return estUnService(vue) && vue.genre === "bureau";
+}
+
+/** L'onglet d'un service, tiré de sa fiche du catalogue. */
+export function vueDeService(fiche) {
+  return {
+    id: `s_${fiche.connecteur}_${fiche.nom}`,
+    genre: fiche.genre,
+    connecteur: fiche.connecteur,
+    nom: fiche.nom,
+    titre: fiche.titre || `${fiche.connecteur} : ${fiche.nom}`,
+    par: "personne",
+  };
+}
+
 /** L'adresse, sur l'Atelier, qui ouvre la vue par le passage. */
 export function adresseDeLaVue(vue) {
+  if (estUnService(vue)) {
+    if (!vue.nom) return "";
+    return `/v1/bureaux/${encodeURIComponent(vue.connecteur)}/${encodeURIComponent(vue.nom)}/ouvrir`;
+  }
   if (!vue || !vue.projet || !vue.nom) return "";
   const base = `/v1/apps/${encodeURIComponent(vue.projet)}/${encodeURIComponent(vue.nom)}/ouvrir`;
   return vue.chemin ? `${base}?chemin=${encodeURIComponent(vue.chemin)}` : base;
@@ -46,6 +80,13 @@ export function libelleEpingle(vue) {
   return vue?.epingle === "projet"
     ? { texte: "Épinglée au projet", titre: "Ne garder que dans cette conversation", suivante: "conversation" }
     : { texte: "Épingler au projet", titre: "Montrer dans toutes les conversations du projet", suivante: "projet" };
+}
+
+/** Les services du catalogue, lus sur l'Atelier (repli si `api` ne les porte pas). */
+async function lireBureaux() {
+  const res = await fetch("/v1/bureaux", { headers: { "X-Atelier-Interface": "1", Accept: "application/json" } });
+  if (!res.ok) throw new Error(`services illisibles (${res.status})`);
+  return res.json();
 }
 
 function el(balise, classe, texte) {
@@ -77,7 +118,7 @@ export function createPanneauView(ctx) {
   const iframes = new Map();
   let sessionChargee = null;
   let chargement = null;
-  const local = { vues: [], actif: null, ouvert: false, catalogue: false, erreur: "" };
+  const local = { vues: [], actif: null, ouvert: false, catalogue: false, erreur: "", rayon: "creations" };
 
   const racine = () => document.getElementById("panneau");
   const vueCode = () => document.getElementById("view-code");
@@ -132,7 +173,10 @@ export function createPanneauView(ctx) {
     if (ev?.cause !== "panneau_montrer" || !ev.text) return false;
     if (ev.session_id && ev.session_id !== state.sessionId) return true;
     try {
-      montrer(JSON.parse(ev.text));
+      const vue = JSON.parse(ev.text);
+      // Un service (bureau, éditeur) ne s'ouvre que sur un geste (J-f).
+      if (estUnService(vue)) return true;
+      montrer(vue);
     } catch {
       /* un descripteur illisible ne s'affiche pas */
     }
@@ -156,6 +200,8 @@ export function createPanneauView(ctx) {
     if (local.actif === vue.id) local.actif = local.vues.length ? local.vues[local.vues.length - 1].id : null;
     if (!local.vues.length) local.ouvert = false;
     rendre();
+    // Un service n'est pas enregistré : rien à retirer côté Atelier.
+    if (estUnService(vue)) return;
     try {
       await api.panneauRetirer(state.sessionId, vue.id);
     } catch (err) {
@@ -183,13 +229,70 @@ export function createPanneauView(ctx) {
     return f;
   }
 
-  function rendreCatalogue(zone, { relecture = false } = {}) {
+  /** Le catalogue : deux rayons, les créations du projet et les bureaux des connecteurs. */
+  function rendreCatalogue(zone, options = {}) {
+    const rayons = el("div", "panneau-onglets");
+    rayons.setAttribute("role", "tablist");
+    rayons.setAttribute("aria-label", "Catalogue du panneau");
+    const contenu = el("div", "panneau-rayon");
+    for (const [cle, libelle] of [["creations", "Créations"], ["bureaux", "Bureaux"]]) {
+      const b = el("button", "panneau-onglet", libelle);
+      b.type = "button";
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", local.rayon === cle ? "true" : "false");
+      b.addEventListener("click", () => {
+        if (local.rayon === cle) return;
+        local.rayon = cle;
+        rendreCatalogue(zone);
+      });
+      rayons.appendChild(b);
+    }
+    zone.replaceChildren(rayons, contenu);
+    if (local.rayon === "bureaux") rendreBureaux(contenu);
+    else rendreCreations(contenu, options);
+  }
+
+  /** Le rayon « Bureaux » : les services que déclarent les connecteurs actifs. */
+  function rendreBureaux(zone) {
+    zone.replaceChildren(el("p", "apps-note", "Chargement des bureaux…"));
+    const lire = api.listBureaux || lireBureaux;
+    Promise.resolve()
+      .then(() => lire())
+      .then((etat) => {
+        const liste = el("div", "apps-liste");
+        liste.appendChild(el("div", "apps-titre", "Bureaux et éditeurs des connecteurs"));
+        const fiches = etat?.vues || [];
+        if (!etat?.expose) {
+          liste.appendChild(
+            el("p", "apps-note", "Pas d'hôte des applications sur cette installation : les bureaux ne s'ouvrent pas."),
+          );
+        } else if (!fiches.length) {
+          liste.appendChild(el("p", "apps-note", "Aucun connecteur actif ne propose de bureau."));
+        }
+        for (const f of fiches) {
+          const ligne = el("div", "apps-ligne");
+          ligne.dataset.service = `${f.connecteur}/${f.nom}`;
+          ligne.appendChild(el("span", "apps-nom", f.titre || f.nom));
+          ligne.appendChild(el("span", "apps-etat", f.genre === "bureau" ? "bureau" : "éditeur"));
+          const b = bouton("Montrer", "Afficher dans le panneau, à côté du fil", () =>
+            montrer(vueDeService(f), { recharger: false }),
+          );
+          if (!etat.expose) b.setAttribute("disabled", "");
+          ligne.appendChild(b);
+          liste.appendChild(ligne);
+        }
+        zone.replaceChildren(liste);
+      })
+      .catch((err) => zone.replaceChildren(el("p", "apps-note", `Bureaux illisibles : ${err.message}`)));
+  }
+
+  function rendreCreations(zone, { relecture = false } = {}) {
     const slug = state.slug || state.sessions?.find((s) => s.session_id === state.sessionId)?.slug || "";
     // Une relecture (après un geste, ou pendant qu'une création démarre) garde
     // la liste affichée : la remplacer par « Chargement… » chaque seconde
     // ferait clignoter le panneau.
     if (!relecture) zone.replaceChildren(el("p", "apps-note", "Chargement des créations…"));
-    const recharger = () => rendreCatalogue(zone, { relecture: true });
+    const recharger = () => rendreCreations(zone, { relecture: true });
     api
       .listApps(slug)
       .then((etat) =>
@@ -218,6 +321,14 @@ export function createPanneauView(ctx) {
     const visible = state.view === "code" && !!state.sessionId && local.ouvert;
     aside.hidden = !visible;
     code.classList.toggle("panneau-ouvert", visible);
+    if (!visible) {
+      // Panneau replié : aucun bureau ne tourne pour rien.
+      for (const v of local.vues) {
+        if (!estUnFluxVivant(v)) continue;
+        iframes.get(v.id)?.remove();
+        iframes.delete(v.id);
+      }
+    }
     const bascule = document.getElementById("session-panneau-button");
     if (bascule) {
       bascule.hidden = !(state.view === "code" && state.sessionId);
@@ -249,16 +360,23 @@ export function createPanneauView(ctx) {
     const outils = document.getElementById("panneau-outils");
     if (active) {
       const epingle = libelleEpingle(active);
-      outils.replaceChildren(
-        bouton(epingle.texte, epingle.titre, () => enregistrer({ ...active, epingle: epingle.suivante }),
-          `ghost panneau-btn${active.epingle === "projet" ? " panneau-btn-actif" : ""}`),
-        bouton("Recharger", "Recharger cette création", () => {
+      const gestes = [];
+      // Un service n'est pas épinglé : il ne revient pas seul (J-f).
+      if (!estUnService(active)) {
+        gestes.push(
+          bouton(epingle.texte, epingle.titre, () => enregistrer({ ...active, epingle: epingle.suivante }),
+            `ghost panneau-btn${active.epingle === "projet" ? " panneau-btn-actif" : ""}`),
+        );
+      }
+      gestes.push(
+        bouton("Recharger", estUnService(active) ? "Recharger cet onglet" : "Recharger cette création", () => {
           const f = iframes.get(active.id);
           if (f) f.src = adresseDeLaVue(active);
         }),
         bouton("Détacher", "Ouvrir dans un onglet du navigateur", () => detacher(active)),
         bouton("Fermer", "Fermer cet onglet du panneau", () => fermerOnglet(active)),
       );
+      outils.replaceChildren(...gestes);
       outils.hidden = false;
     } else {
       outils.replaceChildren();
@@ -272,9 +390,16 @@ export function createPanneauView(ctx) {
 
     const corps = document.getElementById("panneau-corps");
     for (const v of local.vues) {
+      const masquee = montrerCatalogue || v.id !== local.actif;
+      if (masquee && estUnFluxVivant(v)) {
+        // Un bureau masqué ne tourne pas : son cadre part, le flux s'arrête.
+        iframes.get(v.id)?.remove();
+        iframes.delete(v.id);
+        continue;
+      }
       const f = iframePour(v);
       if (f.parentNode !== corps) corps.appendChild(f);
-      f.hidden = montrerCatalogue || v.id !== local.actif;
+      f.hidden = masquee;
     }
     for (const [id, f] of iframes) {
       if (!local.vues.some((v) => v.id === id)) {
