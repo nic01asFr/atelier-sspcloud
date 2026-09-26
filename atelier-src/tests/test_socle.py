@@ -185,3 +185,7 @@ def test_le_bloc_de_l_init_pose_le_socle(tmp_path: Path) -> None:
     assert "socle des agents" in fini.stdout
     assert (work / "projects" / "CLAUDE.md").is_file()
 
+
+def test_le_socle_tient_dans_son_budget() -> None:
+    """Lu à chaque tour par chaque agent : 1 300 mots au plus, compaction comprise."""
+    assert len(socle.SOURCE.read_text(encoding="utf-8").split()) <= 1300
