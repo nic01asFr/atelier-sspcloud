@@ -113,20 +113,43 @@ MOTS_CLES_PAR_OUTIL: dict[str, str] = {
     "get_briefing": "resume point situation briefing",
     "send_message": "message ecrire envoyer repondre fil",
     "read_messages": "messages courrier lire fil",
+    # Les commandes de l'Atelier : `gateway_find_tools` les indexe avec le
+    # pool (audit M7). Les mots sont ceux de l'interface et de la personne.
     "atelier_artefacts": "creations creation page pages application applications fabrique fabriques "
     "ce que j ai fabrique artifacts",
     "atelier_artefact_creer": "creation page application fabriquer nouvelle",
     "atelier_artefact_demarrer": "creation application lancer demarrer ouvrir",
     "atelier_artefact_arreter": "creation application arreter stopper",
+    "atelier_artefact_journal": "creation application erreur plantage logs journal pourquoi",
+    "atelier_artefact_verifier": "creation application verifier valide manifeste etat",
+    "atelier_montrer": "montrer afficher voir panneau apercu presenter page creation",
+    "atelier_navigateur_ouvrir": "navigateur chrome ouvrir voir page creation tester verifier",
+    "atelier_projets": "projets liste inventaire espaces dossiers projects",
+    "atelier_conversations": "conversations fils discussions sessions agents en cours",
+    "atelier_ouvrir": "conversation nouvelle ouvrir demarrer agent confier",
+    "atelier_envoyer": "message envoyer demander confier tour agent conversation",
+    "atelier_suivre": "suivre avancement progression tour agent conversation",
+    "atelier_interrompre": "arreter interrompre stopper tour agent conversation",
+    "atelier_transcript": "transcript historique fil conversation relire",
+    "atelier_decider": "autorisation autorisations permission accorder refuser demande attente decider",
     "atelier_a_valider": "valider propositions attente accord decisions",
+    "atelier_a_valider_refuser": "valider proposition refuser rejeter",
+    "atelier_a_valider_rouvrir": "valider proposition rouvrir reprendre",
     "atelier_journal": "journal historique fait aujourd hui actions",
+    "atelier_annuler": "annuler defaire revenir inverse",
     "atelier_projet_creer": "projet nouveau creer ouvrir",
+    "atelier_projet_modifier": "projet renommer modifier titre description",
+    "atelier_projet_ranger": "projet ranger archiver cacher",
+    "atelier_projet_ressortir": "projet ressortir desarchiver restaurer",
+    "atelier_conversation_ranger": "conversation ranger archiver cacher",
+    "atelier_conversation_ressortir": "conversation ressortir desarchiver restaurer",
 }
 
 # Par serveur : ce que le service entier évoque. Un point de plus à chacun de
 # ses outils, pour que le bon serveur remonte même quand aucun outil n'est nommé.
 MOTS_CLES_PAR_SERVEUR: dict[str, str] = {
     "wikichat": "memoire connaissance coordination projets idees knowledge memory",
+    "atelier": "atelier",
 }
 
 

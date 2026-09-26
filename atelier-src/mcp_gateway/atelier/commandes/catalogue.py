@@ -38,6 +38,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from mcp_gateway.atelier.commandes import profils
 from mcp_gateway.atelier.commandes.journal import Evenement, Journal, empreinte, maintenant, nouvel_identifiant
 from mcp_gateway.atelier.commandes.modele import (
     ENGAGEANTE,
@@ -244,7 +245,25 @@ class Catalogue:
 
     # ── La face MCP (outils locaux de la passerelle) ────────────────────
 
+    # Le profil de l'appel en cours (`commandes/profils.py`), tel que la
+    # passerelle le lit : un profil restreint ne voit que ses outils.
+
+    def restreint(self) -> bool:
+        return profils.est_restreint()
+
+    @staticmethod
+    def message_hors_profil(nom: str) -> str:
+        return profils.message_hors_profil(nom)
+
+    @staticmethod
+    def instructions_du_profil() -> str:
+        return profils.INSTRUCTIONS_CODE if profils.est_restreint() else ""
+
     def definitions(self) -> list[dict[str, Any]]:
+        """Les outils MCP, filtrés et mis en forme pour le profil de l'appel."""
+        return profils.definitions_du_profil(self._definitions_completes())
+
+    def _definitions_completes(self) -> list[dict[str, Any]]:
         sortie: list[dict[str, Any]] = []
         for commande in sorted(self.commandes().values(), key=lambda c: c.nom):
             if not commande.exposee_mcp:
@@ -430,6 +449,22 @@ class Catalogue:
                 arguments=arguments, resultat=REFUSE, effet=None, debut=debut, motif=motif,
             )
             return Reponse(REFUSE, {"erreur": motif, "classe": classe}, identifiant)
+
+        if profils.est_restreint():
+            # Le profil se tient ici aussi, pour tout chemin : la porte MCP,
+            # `/v1/commandes`, `atelier-app`. Le projet vient de la
+            # conversation, jamais d'un argument.
+            from mcp_gateway.atelier.outils_conversation import CONVERSATION_APPELANTE
+
+            try:
+                arguments = profils.cadrer_les_arguments(
+                    nom,
+                    arguments,
+                    store=getattr(self.outils, "store", None),
+                    conversation=CONVERSATION_APPELANTE.get(),
+                )
+            except profils.HorsProfil as exc:
+                return refuser(str(exc))
 
         if classe == RESERVEE and not ctx.est_la_personne:
             return refuser(
