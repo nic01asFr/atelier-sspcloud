@@ -172,7 +172,7 @@ def test_les_residus_sont_ranges_une_fois(reglages: AtelierSettings) -> None:
         )
     fait = nettoyer_les_residus(reglages, [("conv-a", "manual"), ("conv-b", "")])
     assert sorted(fait["projets"]) == ["ancien", "classe", "sans-nom"]
-    assert mode_du_projet(projets / "sans-nom") == ""
+    assert mode_du_projet(projets / "sans-nom") == "acceptEdits"  # le défaut du service
     assert mode_du_projet(projets / "ancien") == "default"
     assert mode_du_projet(projets / "plan") == "plan"
     garde = json.loads((projets / "sans-nom/.claude/settings.local.json").read_text(encoding="utf-8"))
@@ -183,6 +183,16 @@ def test_les_residus_sont_ranges_une_fois(reglages: AtelierSettings) -> None:
     ecrire_mode_du_projet(reglages, projets / "sans-nom", "bypassPermissions")
     nettoyer_les_residus(reglages)
     assert mode_du_projet(projets / "sans-nom") == "bypassPermissions"
+
+
+def test_les_modes_des_fiches_passent_dans_le_magasin(reglages: AtelierSettings) -> None:
+    reglages.sessions_dir.mkdir(parents=True, exist_ok=True)
+    (reglages.sessions_dir / "s1.json").write_text(
+        json.dumps({"session_id": "s1", "claude_session_id": "cli-1", "permission_mode": "plan"}), encoding="utf-8"
+    )
+    (reglages.sessions_dir / "s2.json").write_text(json.dumps({"session_id": "s2", "permission_mode": ""}), encoding="utf-8")
+    assert nettoyer_les_residus(reglages)["conversations"] == 1
+    assert mode_de_la_conversation("cli-1") == "plan"
 
 
 def test_un_choix_perime_ne_compte_plus(reglages: AtelierSettings) -> None:

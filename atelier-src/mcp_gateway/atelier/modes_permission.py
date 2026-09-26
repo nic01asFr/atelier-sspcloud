@@ -334,15 +334,31 @@ def ecrire_les_reglages_machine(settings: AtelierSettings) -> dict[str, Any]:
 MARQUE_NETTOYAGE = "modes-permission-v1"
 
 
+def _modes_des_fiches(settings: AtelierSettings) -> list[tuple[str, str]]:
+    """(identifiant du CLI, mode) des fiches de conversation qui en portaient un."""
+    sortie: list[tuple[str, str]] = []
+    dossier = getattr(settings, "sessions_dir", None)
+    if not isinstance(dossier, Path) or not dossier.is_dir():
+        return sortie
+    for fichier in sorted(dossier.glob("*.json")):
+        donnees = _lire_json(fichier) or {}
+        mode = str(donnees.get("permission_mode") or "")
+        identifiant = str(donnees.get("claude_session_id") or donnees.get("session_id") or "")
+        if mode and identifiant:
+            sortie.append((identifiant, mode))
+    return sortie
+
+
 def nettoyer_les_residus(settings: AtelierSettings, fiches: list[tuple[str, str]] | None = None) -> dict[str, Any]:
     """Une fois : range les anciens choix et retire ce qui imposait un mode.
 
     - le `defaultMode` d'un projet réécrit dans la liste (`manual`, `auto`
-      deviennent `default`) ; `bypassPermissions` y est retiré : il y avait été
-      recopié depuis la conversation ouverte dans VS Code par l'ancien
-      `ecrire_mode_du_dossier`, pas choisi pour le projet ;
-    - les modes des fiches de conversation (`fiches` : identifiant du CLI,
-      mode) passent dans le magasin, s'il n'y a rien déjà ;
+      deviennent `default`) ; `bypassPermissions` y est remplacé par le défaut
+      du service : il y avait été recopié depuis la conversation ouverte dans
+      VS Code par l'ancien `ecrire_mode_du_dossier`, pas choisi pour le projet ;
+    - les modes des fiches de conversation (`fiches`, sinon celles du dossier
+      des sessions : identifiant du CLI, mode) passent dans le magasin, s'il
+      n'y a rien déjà ;
     - les réglages machine sont réécrits.
 
     Idempotent ; la marque évite de retirer à nouveau un bypass choisi depuis
@@ -356,12 +372,14 @@ def nettoyer_les_residus(settings: AtelierSettings, fiches: list[tuple[str, str]
             if not brut:
                 continue
             voulu = normaliser(brut)
-            if voulu == BYPASS:
-                voulu = ""
+            if voulu == BYPASS or not voulu:
+                # Pas choisi pour le projet : le défaut du service, que lisent
+                # toutes les surfaces (`assurer_le_defaut_du_projet`).
+                voulu = mode_du_service(settings)
             if voulu != brut:
                 ecrire_mode_du_projet(settings, dossier, voulu)
                 fait["projets"].append(dossier.name)
-        for identifiant, mode in fiches or []:
+        for identifiant, mode in (fiches if fiches is not None else _modes_des_fiches(settings)):
             if normaliser(mode) and not mode_de_la_conversation(identifiant):
                 fichier = _fichier(identifiant)
                 if fichier is None:
