@@ -68,15 +68,20 @@ def sans_amonts_gateway(servers: dict[str, Any]) -> dict[str, Any]:
 
 
 def pour_le_home(servers: dict[str, Any]) -> dict[str, Any]:
-    """Le HOME porte Onyxia : les projets sans `.mcp.json` en héritent.
+    """Les déclarations du pool pour un fichier hors profil (`claude-mcp.json`).
 
-    On n'écarte que l'alias déguisé (`Onyxia_nic01asfr`), qui n'est pas
-    le service Onyxia — c'est la porte `/mcp` de l'Atelier.
+    On écarte l'alias déguisé (`Onyxia_nic01asfr`), qui n'est pas le service
+    Onyxia — c'est la porte `/mcp` de l'Atelier — et Onyxia lui-même, que
+    personne ne joint plus en direct.
 
     Le navigateur n'y demande rien de plus : c'est un serveur stdio, dont
     chaque client lance son propre processus — le cloisonnement est là.
     """
     propre = sans_amonts_gateway(servers)
+    # Plus personne ne joint Onyxia en direct (contrat de l'équipe O) : il
+    # passe par le mandataire de la passerelle, que seul le profil distribue.
+    directes = adresses_directes_d_onyxia(propre)
+    propre = {nom: cfg for nom, cfg in propre.items() if not _est_onyxia_direct(nom, cfg, directes)}
     sortie: dict[str, Any] = {}
     for nom, cfg in propre.items():
         if isinstance(cfg, dict):
@@ -122,37 +127,74 @@ def est_onyxia(nom: str) -> bool:
 
 
 def _onyxia_bouchon(
-    settings: AtelierSettings, slug: str, profil: str
+    settings: AtelierSettings,
+    slug: str,
+    profil: str,
+    *,
+    pool: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    """En attendant `onyxia_projet` (équipe O) : rien pour `code`, l'entrée du pool pour `assistant`.
+    """En attendant `onyxia_projet` (équipe O), avec sa signature et ses règles.
 
-    L'ancien `assurer_onyxia_natif` imposait Onyxia à tout projet de code dès
-    que le pool l'avait (audit G3) : chaque tour attendait 30 s une poignée de
-    main qui ne venait pas. Un agent code n'a plus Onyxia que par le
-    déploiement de son projet, ce que dira le module de l'équipe O.
+    - `code` : rien. L'ancien `assurer_onyxia_natif` imposait Onyxia à tout
+      projet dès que le pool l'avait (audit G3) : chaque tour attendait 30 s
+      une poignée de main qui ne venait pas. Un agent code n'a plus Onyxia que
+      par le déploiement de son projet (bloc `deploiement` de `projet.json`),
+      ce que dit le module de l'équipe O ;
+    - `assistant` : l'entrée du mandataire de la passerelle, `/mcp/onyxia`.
+      Plus personne ne joint Onyxia en direct.
+
+    Rien si le pool n'a pas d'Onyxia.
     """
     del slug
     if profil != "assistant":
         return None
-    for nom, cfg in _pool_enabled(settings).items():
-        if est_onyxia(nom) and isinstance(cfg, dict):
-            return cfg
-    return None
+    pool = _pool_enabled(settings) if pool is None else pool
+    if not any(est_onyxia(nom) for nom in pool):
+        return None
+    return {
+        "type": "http",
+        "url": f"http://127.0.0.1:{settings.port}/mcp/onyxia",
+        "headers": {"Authorization": "Bearer ${ATELIER_MCP_KEY}"},
+    }
 
 
 def onyxia_du_profil(
-    settings: AtelierSettings, slug: str, profil: str
+    settings: AtelierSettings,
+    slug: str,
+    profil: str,
+    *,
+    pool: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    """L'entrée Onyxia que reçoit ce dossier (contrat c) : celle de `onyxia_pour_projet`.
+    """L'entrée Onyxia que reçoit ce dossier (contrat c), sous le nom `Onyxia`.
 
-    Le module de l'équipe O fait foi dès qu'il existe ; sinon, le bouchon.
+    `onyxia_pour_projet(settings, slug, profil, *, pool=None) -> dict | None`,
+    du module de l'équipe O, fait foi dès qu'il existe ; sinon, le bouchon.
     """
     try:
         from mcp_gateway.atelier.onyxia_projet import onyxia_pour_projet  # type: ignore[import-not-found]
     except ImportError:
-        return _onyxia_bouchon(settings, slug, profil)
-    entree = onyxia_pour_projet(settings, slug, profil)
+        onyxia_pour_projet = _onyxia_bouchon
+    entree = onyxia_pour_projet(settings, slug, profil, pool=pool)
     return entree if isinstance(entree, dict) and entree else None
+
+
+def adresses_directes_d_onyxia(pool: dict[str, Any]) -> set[str]:
+    """Les adresses du service Onyxia lui-même (`passerelle-mcp…`), telles que le pool les déclare."""
+    return {
+        str(cfg.get("url") or "").rstrip("/")
+        for nom, cfg in pool.items()
+        if est_onyxia(nom) and isinstance(cfg, dict) and cfg.get("url")
+    }
+
+
+def _est_onyxia_direct(nom: str, cfg: Any, directes: set[str]) -> bool:
+    """Une entrée qui joint Onyxia sans passer par le mandataire de l'Atelier."""
+    if not isinstance(cfg, dict):
+        return est_onyxia(nom)
+    url = str(cfg.get("url") or "").rstrip("/")
+    if url and url in directes:
+        return True
+    return est_onyxia(nom) and "/mcp/onyxia" not in url
 
 
 # --- Connecteurs en échec d'authentification --------------------------------
@@ -415,7 +457,9 @@ def compute_binding_merged(
     """
     profil = profil_du_type(kind)
     slug = slug_du_dossier(settings, cwd, profil)
-    pool = _sans_echecs_d_authentification(settings, _pool_enabled(settings))
+    pool_entier = _pool_enabled(settings)
+    directes = adresses_directes_d_onyxia(pool_entier)
+    pool = _sans_echecs_d_authentification(settings, pool_entier)
     if profil == "code":
         merged = merge_session_mcp_servers(pool, _binding_du_dossier(cwd))
     else:
@@ -430,9 +474,11 @@ def compute_binding_merged(
     merged = {
         nom: cfg
         for nom, cfg in merged.items()
-        if not est_onyxia(nom) and not (nom != SERVICE_ATELIER and _vise_la_passerelle(cfg, settings))
+        if not _est_onyxia_direct(nom, cfg, directes)
+        and not est_onyxia(nom)
+        and not (nom != SERVICE_ATELIER and _vise_la_passerelle(cfg, settings))
     }
-    onyxia = onyxia_du_profil(settings, slug, profil)
+    onyxia = onyxia_du_profil(settings, slug, profil, pool=pool_entier)
     if onyxia is not None:
         merged[SERVICE_ONYXIA] = onyxia
     merged = integrer_wikichat(integrer_le_navigateur(merged, settings), settings)
@@ -940,7 +986,7 @@ def lier_le_projet(
                 " cette marque.\n",
                 encoding="utf-8",
             )
-    approuver_les_serveurs_du_projet(cwd, sorted(ecrits))
+    approuver_les_serveurs_du_projet(cwd, sorted(ecrits), adresses_directes_d_onyxia(_pool_enabled(settings)))
     return sorted(ecrits)
 
 
@@ -994,11 +1040,15 @@ def lier_tous_les_projets(settings: AtelierSettings) -> int:
 SERVEURS_OBSOLETES = frozenset({"chrome-devtools"})
 
 
-def retirer_les_serveurs_obsoletes(data: dict[str, Any]) -> list[str]:
+def retirer_les_serveurs_obsoletes(data: dict[str, Any], directes: set[str] | None = None) -> list[str]:
     """Retire des portées de projet de `~/.claude.json` les serveurs obsolètes.
 
-    Rend `dossier:nom` pour chaque retrait. Le reste du fichier n'est pas touché.
+    Les anciens serveurs (`SERVEURS_OBSOLETES`), et toute entrée qui joint
+    Onyxia en direct (`directes` : ses adresses dans le pool) : plus personne
+    ne le joint sans le mandataire. Rend `dossier:nom` pour chaque retrait. Le
+    reste du fichier n'est pas touché.
     """
+    directes = directes or set()
     retires: list[str] = []
     projets = data.get("projects")
     if not isinstance(projets, dict):
@@ -1009,7 +1059,9 @@ def retirer_les_serveurs_obsoletes(data: dict[str, Any]) -> list[str]:
         serveurs = entree.get("mcpServers")
         if not isinstance(serveurs, dict):
             continue
-        for nom in [n for n in serveurs if n in SERVEURS_OBSOLETES]:
+        for nom in [
+            n for n, c in serveurs.items() if n in SERVEURS_OBSOLETES or _est_onyxia_direct(n, c, directes)
+        ]:
             del serveurs[nom]
             retires.append(f"{dossier}:{nom}")
         if not serveurs:
@@ -1017,7 +1069,7 @@ def retirer_les_serveurs_obsoletes(data: dict[str, Any]) -> list[str]:
     return retires
 
 
-def approuver_les_serveurs_du_projet(dossier: Path, noms: list[str]) -> bool:
+def approuver_les_serveurs_du_projet(dossier: Path, noms: list[str], directes: set[str] | None = None) -> bool:
     """Approuve dans `~/.claude.json` les serveurs du `.mcp.json` du dossier.
 
     Sans approbation, Claude Code demande à l'ouverture (ou ignore en `-p`)
@@ -1055,7 +1107,7 @@ def approuver_les_serveurs_du_projet(dossier: Path, noms: list[str]) -> bool:
                 entree[cle] = reste
             else:
                 entree.pop(cle, None)
-    retirer_les_serveurs_obsoletes({"projects": {str(dossier): entree}})
+    retirer_les_serveurs_obsoletes({"projects": {str(dossier): entree}}, directes)
     if json.dumps(entree, sort_keys=True) == avant:
         return False
     _ecrire_claude_json(chemin, data)
@@ -1246,10 +1298,11 @@ def materialize_mcp_config(settings: AtelierSettings) -> Path:
     # `.mcp.json` de chaque projet (liaison), pour que VS Code et le terminal
     # voient les mêmes connecteurs que le tour de l'Atelier.
     commun = portee_utilisateur(settings)
-    _merge_user_claude_json(settings.work_dir / ".claude.json", commun)
+    directes = adresses_directes_d_onyxia(servers)
+    _merge_user_claude_json(settings.work_dir / ".claude.json", commun, directes)
     home_claude = Path.home() / ".claude.json"
     try:
-        _merge_user_claude_json(home_claude, commun)
+        _merge_user_claude_json(home_claude, commun, directes)
     except OSError:
         pass
 
@@ -1275,7 +1328,9 @@ def materialize_mcp_config(settings: AtelierSettings) -> Path:
     return cfg_path
 
 
-def _merge_user_claude_json(path: Path, servers: dict[str, dict[str, Any]]) -> None:
+def _merge_user_claude_json(
+    path: Path, servers: dict[str, dict[str, Any]], directes: set[str] | None = None
+) -> None:
     data: dict[str, Any] = {}
     if path.is_file():
         try:
@@ -1287,7 +1342,7 @@ def _merge_user_claude_json(path: Path, servers: dict[str, dict[str, Any]]) -> N
     data["mcpServers"] = pour_le_home(servers)
     # Les serveurs obsolètes des portées de projet (audit M4) partent à chaque
     # matérialisation, pas seulement quand on ouvre le projet.
-    for retrait in retirer_les_serveurs_obsoletes(data):
+    for retrait in retirer_les_serveurs_obsoletes(data, directes):
         log.info("serveur obsolète retiré de %s : %s", path, retrait)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")

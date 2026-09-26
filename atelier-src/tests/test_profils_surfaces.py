@@ -123,12 +123,20 @@ def test_code_sans_onyxia_ni_porte_deguisee_vers_les_meta_outils(reglages: Ateli
 def test_le_module_de_l_equipe_o_fait_foi_des_qu_il_existe(
     reglages: AtelierSettings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Contrat c : `onyxia_pour_projet(settings, slug, profil) -> dict | None`."""
-    appels: list[tuple[str, str]] = []
+    """Contrat c : `onyxia_pour_projet(settings, slug, profil, *, pool=None) -> dict | None`, nom `Onyxia`."""
+    appels: list[tuple[str, str, bool]] = []
 
-    def onyxia_pour_projet(settings: AtelierSettings, slug: str, profil: str) -> dict | None:
-        appels.append((slug, profil))
-        return {"type": "http", "url": f"https://onyxia.exemple/pod/{slug}"} if slug == "deploye" else None
+    def onyxia_pour_projet(
+        settings: AtelierSettings, slug: str, profil: str, *, pool: dict | None = None
+    ) -> dict | None:
+        appels.append((slug, profil, pool is not None and "Onyxia" in pool))
+        if slug != "deploye":
+            return None
+        return {
+            "type": "http",
+            "url": f"http://127.0.0.1:{settings.port}/mcp/onyxia/projet/{slug}",
+            "headers": {"Authorization": "Bearer ${ATELIER_MCP_KEY}"},
+        }
 
     module = types.ModuleType("mcp_gateway.atelier.onyxia_projet")
     module.onyxia_pour_projet = onyxia_pour_projet  # type: ignore[attr-defined]
@@ -138,9 +146,10 @@ def test_le_module_de_l_equipe_o_fait_foi_des_qu_il_existe(
     autre = reglages.projects_dir / "autre"
     lier_le_projet(reglages, deploye)
     lier_le_projet(reglages, autre)
-    assert _lire(deploye / ".mcp.json")["Onyxia"]["url"] == "https://onyxia.exemple/pod/deploye"
+    assert _lire(deploye / ".mcp.json")["Onyxia"]["url"] == f"http://127.0.0.1:{reglages.port}/mcp/onyxia/projet/deploye"
     assert "Onyxia" not in _lire(autre / ".mcp.json")
-    assert ("deploye", "code") in appels and ("autre", "code") in appels
+    # Le pool lui est passé, Onyxia compris.
+    assert ("deploye", "code", True) in appels and ("autre", "code", True) in appels
 
 
 def test_assistant_converti_au_format_claude_code(reglages: AtelierSettings) -> None:
@@ -163,8 +172,9 @@ def test_assistant_converti_au_format_claude_code(reglages: AtelierSettings) -> 
         assert all(set(c) - {"enabled"} for c in serveurs.values()), dossier
         assert serveurs[SERVICE_ATELIER]["headers"][ENTETE_PROFIL] == "assistant"
         assert serveurs["wikichat"]["env"]["WIKICHAT_PROFIL"] == "assistant"
-        # Onyxia au complet pour l'Assistant (bouchon : l'entrée du pool, en référence).
-        assert serveurs["Onyxia"]["url"] == ONYXIA["url"]
+        # Onyxia au complet pour l'Assistant, par le mandataire de la passerelle.
+        assert serveurs["Onyxia"]["url"] == f"http://127.0.0.1:{reglages.port}/mcp/onyxia"
+        assert serveurs["Onyxia"]["headers"]["Authorization"] == "Bearer ${ATELIER_MCP_KEY}"
         assert "jeton-onyxia" not in (dossier / ".mcp.json").read_text(encoding="utf-8")
         # Les autres outils passent par la passerelle : qgis n'est pas en natif.
         assert "qgis" not in serveurs
@@ -222,3 +232,37 @@ def test_l_ancien_chrome_devtools_quitte_les_portees_de_projet(reglages: Atelier
     assert donnees["projects"]["/w/projets/nouveau-projet"]["hasTrustDialogAccepted"] is True
     assert donnees["projects"]["/w/projets/garde"]["mcpServers"] == {"a-moi": {"type": "http", "url": "http://x/mcp"}}
     assert donnees["userID"] == "moi"
+
+
+def test_aucune_surface_ne_joint_plus_onyxia_en_direct(reglages: AtelierSettings) -> None:
+    """Contrat de l'équipe O : Onyxia passe par le mandataire `/mcp/onyxia`, jamais en direct.
+
+    Ni les `.mcp.json` (projet et Assistant), ni le fichier effectif d'un tour,
+    ni `claude-mcp.json`, ni `~/.claude.json` (racine et portées de projet)
+    ne portent plus l'adresse du service Onyxia.
+    """
+    _pool_complet(reglages)
+    maison = Path.home() / ".claude.json"
+    projet = reglages.projects_dir / "p"
+    maison.write_text(
+        json.dumps({"projects": {str(projet): {"mcpServers": {"Onyxia": ONYXIA, "autre": {"type": "http", "url": ONYXIA["url"]}}}}}),
+        encoding="utf-8",
+    )
+    reglages.assistant_root.mkdir(parents=True, exist_ok=True)
+    (projet / ".mcp.json").parent.mkdir(parents=True, exist_ok=True)
+    (projet / ".mcp.json").write_text(json.dumps({"mcpServers": {"Onyxia": ONYXIA}}), encoding="utf-8")
+    materialize_mcp_config(reglages)
+    fichiers = [
+        projet / ".mcp.json",
+        reglages.assistant_root / ".mcp.json",
+        materialize_session_mcp(reglages, "c", kind="code", cwd=projet),
+        materialize_session_mcp(reglages, "a", kind="assistant", cwd=reglages.assistant_root),
+        reglages.mcp_config_path,
+        reglages.work_dir / ".claude" / "mcp-config.json",
+        reglages.work_dir / ".claude.json",
+        maison,
+    ]
+    for fichier in fichiers:
+        assert ONYXIA["url"] not in fichier.read_text(encoding="utf-8"), fichier
+    # L'Assistant garde Onyxia, par le mandataire.
+    assert _lire(reglages.assistant_root / ".mcp.json")["Onyxia"]["url"].endswith("/mcp/onyxia")
