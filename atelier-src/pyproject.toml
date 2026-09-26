@@ -1,7 +1,8 @@
 [project]
 name = "mcp-gateway-atelier"
 version = "0.2.0"
-description = "Atelier hub with integrated MCP gateway pool"
+description = "Atelier : Claude Code sur un pod SSPCloud, avec ses projets, ses connecteurs et VS Code"
+license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
 dependencies = [
   "fastapi>=0.115",
@@ -14,6 +15,11 @@ dependencies = [
   # Les artefacts Markdown arrivent rendus en HTML ; sans lui, en texte brut.
   "mistune>=3.0",
 ]
+
+[project.urls]
+Homepage = "https://nic01asfr.github.io/atelier-sspcloud/"
+Source = "https://github.com/nic01asFr/atelier-sspcloud"
+Documentation = "https://github.com/nic01asFr/atelier-sspcloud/blob/main/docs/README.md"
 
 [build-system]
 requires = ["setuptools>=68"]
