@@ -100,6 +100,9 @@ class Commande:
     apercu: Apercu | None = None
     # Faux : absente des outils MCP (l'interface seule la voit).
     exposee_mcp: bool = True
+    # Les arguments tels que le journal les garde (le journal se relit par un
+    # modèle, `atelier_journal`) : retirer ce qu'il ne doit pas revoir.
+    arguments_au_journal: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
     def __post_init__(self) -> None:
         if self.classe not in CLASSES:

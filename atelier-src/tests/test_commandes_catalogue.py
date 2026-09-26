@@ -149,6 +149,27 @@ def test_une_commande_engageante_rend_un_apercu_sans_agir(tmp_path: Path) -> Non
     assert engageant.appels == []
 
 
+def test_un_apercu_qui_refuse_rend_un_refus_sans_jeton(tmp_path: Path) -> None:
+    from mcp_gateway.atelier.commandes.modele import Refus
+
+    catalogue = Catalogue(journal=Journal(tmp_path / "journal"))
+    fait = _Compteur()
+
+    def apercu(ctx: Contexte, args: dict[str, Any]) -> dict[str, Any]:
+        raise Refus("valeur interdite")
+
+    catalogue.ajouter(
+        Commande(nom="atelier_essai_apercu", description="essai", objet="essai", classe=ENGAGEANTE,
+                 executer=fait, apercu=apercu)
+    )
+    modele = Contexte(acteur="conversation:c1", origine=ORIGINE_MCP)
+    reponse = _executer(catalogue.executer("atelier_essai_apercu", {"valeur": 1}, modele))
+    assert reponse.statut == REFUSE and reponse.charge["erreur"] == "valeur interdite"
+    assert "confirmation" not in reponse.charge and not catalogue._jetons  # noqa: SLF001
+    assert not fait.appels
+    assert catalogue.journal.lire(commande="atelier_essai_apercu")[0]["resultat"] == "refus"
+
+
 def test_le_jeton_ne_vaut_qu_une_fois_et_pour_les_memes_arguments(tmp_path: Path) -> None:
     catalogue, engageant, _ = _catalogue(tmp_path)
     jeton = _executer(catalogue.executer("atelier_essai_engageant", {"valeur": 5}, _modele())).charge[

@@ -143,6 +143,22 @@ MOTS_CLES_PAR_OUTIL: dict[str, str] = {
     "atelier_projet_ressortir": "projet ressortir desarchiver restaurer",
     "atelier_conversation_ranger": "conversation ranger archiver cacher",
     "atelier_conversation_ressortir": "conversation ressortir desarchiver restaurer",
+    # Commandes de création (vague 2, équipe K), en français et en anglais.
+    "atelier_agent_creer": "agent agents creer nouvel planifie planifier automatique tache recurrente "
+    "chaque jour horaire routine create new scheduled agent task automate",
+    "atelier_agent_modifier": "agent modifier changer consigne horaire budget edit update agent",
+    "atelier_agent_supprimer": "agent supprimer retirer effacer delete remove agent",
+    "atelier_agent_desactiver": "agent desactiver couper arreter pause suspendre disable stop pause agent",
+    "atelier_connecteur_ajouter": "connecteur connecteurs ajouter brancher nouveau service outil pool "
+    "add connector new service plug",
+    "atelier_connecteur_retirer": "connecteur retirer enlever debrancher couper remove connector unplug",
+    "atelier_connecteur_choisir": "connecteur connecteurs choisir projet selection activer outils du projet "
+    "choose select connectors project",
+    "atelier_projets_lier": "lier relier liens lien relation relations projets projet depend dependance "
+    "link projects relation depends",
+    "atelier_projet_structurer": "structurer structure type migrer migration ranger projet etat gabarit "
+    "structure migrate project template",
+    "atelier_projet_destructurer": "structure defaire migration annuler projet undo structure migration",
 }
 
 # Par serveur : ce que le service entier évoque. Un point de plus à chacun de

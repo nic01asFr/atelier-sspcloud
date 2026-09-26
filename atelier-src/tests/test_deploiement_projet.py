@@ -84,6 +84,18 @@ def test_declarer_un_pod_reutilise_project_bind_et_ecrit_la_fiche(atelier) -> No
 
 
 @besoin_de_git
+def test_annuler_sa_declaration_retire_la_liaison_sans_nouvel_accord(atelier) -> None:  # noqa: ANN001
+    slug = _projet(atelier)
+    _brancher(atelier, FauxOnyxia())
+    reponse = _executer(atelier, NOM, {"projet": slug, "service": "carte.service.yml"})
+    assert reponse.statut == FAIT, reponse.charge
+    # L'inverse (la commande elle-même, engageante) s'applique : le « Oui » d'origine vaut pour elle.
+    annule = _executer(atelier, "atelier_annuler", {"action": reponse.action}, confirme=False)
+    assert annule.statut == FAIT, annule.charge
+    assert _fiche(atelier, slug).deploiement is None
+
+
+@besoin_de_git
 def test_un_pod_qu_onyxia_refuse_n_est_pas_declare(atelier) -> None:  # noqa: ANN001
     slug = _projet(atelier)
 
@@ -133,6 +145,19 @@ def test_arguments_invalides_refuses(atelier, arguments: dict[str, Any]) -> None
     slug = _projet(atelier)
     reponse = _executer(atelier, NOM, {"projet": slug, **arguments})
     assert reponse.statut == REFUSE, reponse.charge
+
+
+@besoin_de_git
+@pytest.mark.parametrize("arguments", [{"pod": POD, "service": "carte.service.yml"}, {"pod": "Pas Un Pod"}])
+def test_un_apercu_aux_arguments_faux_est_un_refus(atelier, arguments: dict[str, Any]) -> None:  # noqa: ANN001
+    """Sans confirmation, l'aperçu refuse lui-même, sans jeton ni exception (catalogue)."""
+    slug = _projet(atelier)
+    reponse = _executer(atelier, NOM, {"projet": slug, **arguments}, confirme=False)
+    assert reponse.statut == REFUSE, reponse.charge
+    assert "déploiement invalide" in reponse.charge["erreur"] and "confirmation" not in reponse.charge
+    ligne = atelier.app.state.commandes.journal.lire(commande=NOM, limite=1)[0]
+    assert ligne["resultat"] == "refus"
+    assert _executer(atelier, NOM, {"projet": "inconnu", "pod": POD}, confirme=False).statut == REFUSE
 
 
 def test_projet_inconnu_ou_assistant_refuse(atelier) -> None:  # noqa: ANN001

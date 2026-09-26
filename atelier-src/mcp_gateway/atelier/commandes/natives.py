@@ -28,6 +28,7 @@ from mcp_gateway.atelier.commandes.a_valider import (
 from mcp_gateway.atelier.commandes.catalogue import FAIT, Catalogue
 from mcp_gateway.atelier.commandes.journal import maintenant
 from mcp_gateway.atelier.commandes.modele import (
+    ENGAGEANTE,
     LECTURE,
     RESERVEE,
     REVERSIBLE,
@@ -734,7 +735,24 @@ def inscrire_les_natives(catalogue: Catalogue, s: Services) -> None:
             for e in deja
         ):
             raise Refus("déjà annulée")
-        reponse = await catalogue.executer(str(inverse["commande"]), dict(inverse.get("arguments") or {}), ctx)
+        arguments = dict(inverse.get("arguments") or {})
+        commande_inverse = catalogue.commande(str(inverse["commande"]))
+        ctx_inverse = ctx
+        consentement = False
+        if (
+            commande_inverse is not None
+            and commande_inverse.classe_pour(arguments) == ENGAGEANTE
+            and (ctx.est_la_personne or ctx.acteur == evenement.get("acteur"))
+        ):
+            # Défaire son propre geste : le « Oui » donné à l'action (ou la
+            # personne elle-même) vaut pour son inverse. Même acteur, et le
+            # journal de l'inverse dit par où elle est passée. Une inverse
+            # réservée reste refusée à un modèle : la classe est revérifiée.
+            ctx_inverse = Contexte(
+                acteur=ctx.acteur, origine=ctx.origine, via=f"atelier_annuler:{ident}", confirme=True
+            )
+            consentement = True
+        reponse = await catalogue.executer(str(inverse["commande"]), arguments, ctx_inverse)
         if reponse.statut != FAIT:
             raise Refus(f"l'inverse n'a pas abouti ({reponse.statut}) : {reponse.charge}")
         return Effet(
@@ -742,7 +760,7 @@ def inscrire_les_natives(catalogue: Catalogue, s: Services) -> None:
             objet_id=ident,
             titre="Action annulée",
             resume=f"{(evenement.get('action') or {}).get('commande')} défait par {inverse['commande']}",
-            preuve={"action_inverse": reponse.action},
+            preuve={"action_inverse": reponse.action, "consentement_de_l_action": consentement},
         )
 
     catalogue.ajouter(
@@ -756,6 +774,9 @@ def inscrire_les_natives(catalogue: Catalogue, s: Services) -> None:
             classe=REVERSIBLE,
             regles=[
                 "l'inverse passe par le catalogue, avec sa propre classe et son journal",
+                "une inverse engageante s'applique sans nouvel accord quand son auteur (ou la personne) "
+                "annule : via atelier_annuler:<action> au journal",
+                "une inverse réservée reste refusée à un modèle",
                 "une action ne s'annule qu'une fois",
             ],
             executer=annuler,

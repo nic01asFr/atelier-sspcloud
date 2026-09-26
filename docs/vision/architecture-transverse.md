@@ -476,10 +476,87 @@ une autre chose et reste tel quel.
   maison de la coordination (S5). `decisions.py` (autorisations d'un tour vivant du CLI) reste à
   part : ce n'est pas une proposition, et y toucher casserait la reprise du tour.
 
+#### Commandes de création (vague 2, équipe K, branche `v2-creations`)
+
+**Existe.** Cinq modules nouveaux dans `commandes/`, branchés par une ligne
+(`inscrire_les_creations(app, catalogue)`) dans `commandes/__init__.py` :
+
+| Module | Rôle |
+|---|---|
+| `creations.py` | ce qu'elles partagent : lecture des arguments, et les accès extérieurs rangés dans `app.state.creations` (Pilote, outils wikichat par le pool, cartographie, sonde d'un connecteur), qu'un test remplace par des faux |
+| `agents.py` | agents planifiés ou à la demande, dans le Pilote de wikichat |
+| `connecteurs.py` | pool de la passerelle, choix d'un projet, accord d'un secret |
+| `liens.py` | relations entre projets, écrites dans wikichat |
+| `migration.py` | migration d'un projet d'avant vers la structure type |
+
+| Commande | Classe | Inverse | Ce qu'elle garantit |
+|---|---|---|---|
+| `atelier_agent_creer` | reversible | `atelier_agent_supprimer` | naît **désactivé** (J-b) ; **budget obligatoire** (`tours` 1-100 par lancement, `par_jour` 1-24, `pause_s`) ; outils en liste fermée (intégrés sauf WebSearch, ou connecteurs du pool) ; dédié à un projet (son dossier) ou non (`~/work/agents/<id>`) ; horaire cron, ou à la demande |
+| `atelier_agent_modifier` | reversible | elle-même (valeurs d'avant) | une modification par un modèle **désactive** l'agent ; la personne le réactive |
+| `atelier_agent_supprimer` | reversible | `atelier_agent_creer` (même id, désactivé) | un modèle ne supprime pas un agent actif ; dossier et propositions gardés |
+| `atelier_agent_activer` | **reservee**, non exposée en MCP | `atelier_agent_desactiver` | la personne seule (J-b2) ; refusée sans budget lisible |
+| `atelier_agent_desactiver` | reversible | `atelier_agent_activer` | permise à tous ; l'annuler (réactiver) revient à la personne |
+| `atelier_connecteur_ajouter` | **engageante** | `atelier_connecteur_retirer` | ajoute au pool (`gateway.db`), régénère par `mcp_sync.sync_summary`, rend la sonde (`probe_registry_server`) ; **aucun secret en argument** (en-tête ou variable secrète, `${…}`, adresse à jeton : refusés) ; `projets[]` facultatif |
+| `atelier_connecteur_retirer` | reversible | `atelier_connecteur_ajouter` avec `reprendre` (engageante) | met hors service sans effacer : l'annulation remet la déclaration, secret compris, sans qu'il passe par un argument ; `reprendre` n'ouvre que ce que l'Atelier a retiré |
+| `atelier_connecteur_choisir` | reversible | elle-même (choix d'avant, ou `heriter`) | `connecteurs[]` du pool, ou `heriter=true` ; passe par `mcp_sync.write_project_binding` et donc par `configuration_du_profil` (appelée, pas modifiée) |
+| `atelier_connecteur_accorder` | **reservee**, non exposée en MCP | — | donne un secret **désigné par son nom** (fichier du dossier des secrets, lu par le serveur) à `headers.<Nom>` ou `env.<NOM>` ; la valeur n'apparaît ni au journal, ni dans la carte, ni dans un `.mcp.json` |
+| `atelier_projets_lier` | reversible | elle-même (`relations` d'avant) | écrit `set_project_meta.relations` par l'outil `wikichat__set_project_meta` (pool) ; garde les autres relations (lues dans `GET /api/cartographie`, puis réécrites en entier) ; `retirer=true` ; déclare d'abord un projet inconnu de wikichat |
+| `atelier_projet_structurer` | **engageante** (`a_blanc=true` : lecture) | `atelier_projet_destructurer` | migration vers la structure type, décrite dans `docs/structure-projet.md` |
+| `atelier_projet_destructurer` | reversible | `atelier_projet_structurer` | remet l'état d'avant la migration ; refuse si un fichier posé a changé depuis |
+
+**Choix : les agents vivent dans le Pilote de wikichat.** Un agent y est un trigger `cron` +
+`spawn_session` ; c'est déjà ce que la vue Agents crée (`POST /v1/agent`) et montre, et wikichat
+ordonne les automates (§1.7, J-a). Écrire ailleurs aurait fait un second registre. Les profils
+d'agents de l'Atelier (`pilote-bindings`) ne servent qu'à pré-remplir des outils dans le formulaire :
+la commande prend la liste fermée directement. Le Pilote ne connaissant que l'horaire, un agent à
+la demande y a l'horaire `0 0 31 2 *` (jamais) et ne part que par « Lancer ». La bascule du Pilote
+est un `toggle` : `activer` et `desactiver` relisent l'état avant et après.
+
+**Clé `atelier` d'une entrée du pool** (vues relayées des bureaux, équipe B, `apps/bureaux.py`).
+`atelier_connecteur_ajouter` la refuse à un modèle, dès l'aperçu : une vue relayée ouvre un service
+interne dans le navigateur de la personne, qui seule la pose (interface, ou « À valider », dont
+l'acceptation s'exécute au nom de la personne). Elle n'est jamais rendue : ni dans l'aperçu, ni
+dans la réponse, ni dans le journal (`Commande.arguments_au_journal`, appliqué par le catalogue),
+remplacée par `vues_relayees: <nombre>`. `retirer`, sa reprise et `accorder` réécrivent l'entrée en
+la gardant telle quelle. Testé.
+
+**Recherche.** Leurs mots d'intention, en français et en anglais, sont dans
+`tool_search.MOTS_CLES_PAR_OUTIL` (« créer un agent », « ajouter un connecteur », « lier des
+projets », « structurer le projet », « create a scheduled agent », « link projects »…) ; vérifié
+par 11 requêtes contre les vraies déclarations du catalogue (`test_recherche_intention.py`).
+
+**Profil.** Aucune n'est dans la liste du profil `code` (refus à la liste et à l'appel, testé) ;
+le profil `assistant` voit les exposées, jamais les deux réservées.
+
+**Vérifié** (`tests/test_commandes_agents.py`, `_connecteurs.py`, `_liens.py`, `_migration.py`,
+76 tests) : classe, inverse et exposition de chacune ; refus en profil `code` ; journal (acteur,
+classe, inverse, `apercu` puis `fait` pour les engageantes, `refus` pour une réservée appelée
+par un modèle) ; chaque « Annuler » par `atelier_annuler`. Le Pilote et wikichat sont des faux
+qui suivent leur API (`pilote.mjs`, `tools.mjs`, contrat de la cartographie) ; le pool, `mcp_sync`,
+git et la migration sont réels.
+
+**Aperçu qui refuse** (corrigé dans `catalogue.py`). Un aperçu d'engageante qui lève `Refus`
+(arguments faux) rend `statut: refus`, sans jeton, journalisé `refus`, au lieu de faire tomber
+l'appel en exception. `atelier_projet_deployer_declarer` en profite (testé).
+
+**Annuler une inverse engageante** (`natives.py`, `atelier_annuler`). Quand l'auteur de l'action
+(même acteur) ou la personne l'annule, son geste vaut accord pour l'inverse : elle s'exécute sans
+nouvel aperçu, avec cet acteur, et son journal porte `via: atelier_annuler:<action>` ; la carte
+d'annulation le dit (`preuve.consentement_de_l_action`). Un autre modèle retombe sur l'aperçu
+(refus). Une inverse réservée reste refusée à tout modèle (la classe est revérifiée). `retirer` a
+donc de nouveau son inverse naturelle, `atelier_connecteur_ajouter` avec `reprendre`, **engageante**
+(l'allègement en réversible est retiré) ; `atelier_projet_deployer_declarer` s'annule aussi.
+
+**Non vérifié** : contre le vrai Pilote et le vrai wikichat du pod (aucun essai en réel, pod en
+lecture seule) ; la sonde réelle d'un connecteur ajouté ; le budget en jetons, que le Pilote ne
+plafonne pas (seuls les tours, les lancements par jour et la pause le sont ; plafonds de lancement :
+lot D, équipe L) ; une relation vers un projet absent de la cartographie serait perdue à la
+réécriture (le nombre est rendu dans la preuve).
+
 **Ce qui reste** : recalcul de la carte après commande (le crochet `apres_commande` existe, la carte
 non) ; « plus de trois actions à la suite » comme engageant ; coût en part du forfait dans
-l'aperçu ; inverses de `atelier_artefact_creer` et `atelier_interrompre` ; les commandes de la
-vague 2 (agents, connecteurs, liens entre projets) ; l'écran « À valider » (équipe P).
+l'aperçu ; inverses de `atelier_artefact_creer` et `atelier_interrompre` ; l'écran d'accord qui appelle
+`atelier_agent_activer` et `atelier_connecteur_accorder` ; l'écran « À valider » (équipe P).
 
 ## 2. Projets système
 

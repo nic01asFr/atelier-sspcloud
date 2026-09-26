@@ -1,0 +1,7 @@
+CLAUDE.md
+.atelier/connecteurs-herites
+.atelier/OPEN_CLAUDE_SESSION.md
+.claude/settings.local.json
+.mcp.json
+.wikichat/context.json
+.venv/pyvenv.cfg
