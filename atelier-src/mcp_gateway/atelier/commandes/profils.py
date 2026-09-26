@@ -73,7 +73,12 @@ OUTILS_CREATIONS = (
     "atelier_artefact_arreter",
     "atelier_artefact_journal",
 )
-OUTILS_DU_PROFIL_CODE = frozenset(OUTILS_CREATIONS + ("atelier_montrer", "atelier_navigateur_ouvrir"))
+# La mémoire des conversations de son projet (fiches de projet, A-7) : le
+# projet est cadré comme pour les créations.
+OUTILS_MEMOIRE_DU_PROJET = ("atelier_rappel", "atelier_fiche")
+OUTILS_DU_PROFIL_CODE = frozenset(
+    OUTILS_CREATIONS + ("atelier_montrer", "atelier_navigateur_ouvrir") + OUTILS_MEMOIRE_DU_PROJET
+)
 
 # Un identifiant de conversation : celui de l'Atelier ou celui du CLI. Il
 # nomme un fichier du magasin ; rien d'autre ne passe.
@@ -83,7 +88,8 @@ INSTRUCTIONS_CODE = (
     "Serveur de l'Atelier, profil code : les outils de ton projet seulement. "
     "Tes créations (atelier_artefact_*), atelier_montrer pour les montrer dans le "
     "panneau de ta conversation, atelier_navigateur_ouvrir pour les ouvrir dans ton "
-    "navigateur. Le projet est celui de ta conversation : inutile de le passer. "
+    "navigateur, atelier_rappel et atelier_fiche pour retrouver les conversations "
+    "passées de ton projet. Le projet est celui de ta conversation : inutile de le passer. "
     "Pour voir ou faire agir un autre projet, écris à ses agents par wikichat."
 )
 
