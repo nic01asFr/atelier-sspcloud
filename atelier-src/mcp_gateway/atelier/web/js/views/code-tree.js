@@ -177,11 +177,16 @@ ${project?.title || s.slug} · ${S.sessionMetaLine(s)}`;
     chevron.appendChild(icone("chevron-droite"));
     chevron.setAttribute("aria-expanded", expanded ? "true" : "false");
     chevron.setAttribute("aria-label", `${expanded ? "Replier" : "Déplier"} ${project.title || project.slug}`);
-    chevron.addEventListener("click", () => {
+    chevron.addEventListener("click", (e) => {
       S.toggleExpanded(state, project.slug);
       renderProjectTree();
-      // Le bouton a été reconstruit : le focus clavier le suit.
-      $("project-tree")?.querySelector(`.project-block[data-slug="${CSS.escape(project.slug)}"] .chevron`)?.focus();
+      // Le bouton a été reconstruit : au clavier (un clic sans pointeur a
+      // `detail` à 0), le focus le suit ; à la souris, on ne l'impose pas.
+      if (e.detail === 0) {
+        for (const bloc of $("project-tree")?.querySelectorAll(".project-block") || []) {
+          if (bloc.dataset.slug === project.slug) bloc.querySelector(".chevron")?.focus();
+        }
+      }
     });
 
     // Renommage inline : un seul geste, a la creation comme plus tard.
