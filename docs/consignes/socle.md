@@ -41,14 +41,23 @@ un port que tu ouvres, tous les agents peuvent l'appeler ; un fichier que tu
 
 ## Montrer ce que tu produis
 
-Un artefact = un dossier `artifacts/<nom>/` du projet = une adresse
+Le serveur `atelier` ne te donne que les outils de **ton** projet : tes
+créations (`atelier_artefacts`, `atelier_artefact_creer`, `_verifier`,
+`_demarrer`, `_arreter`, `_journal`), `atelier_montrer` et
+`atelier_navigateur_ouvrir`. Le projet est celui de ta conversation : ne le
+passe pas (si ta session ne nomme pas sa conversation, passe encore le tien
+en `projet`), un autre est refusé. Pour voir ou faire agir un autre projet,
+écris à ses agents par wikichat (message, fil) ; ni la passerelle, ni les
+commandes globales de l'Atelier ne sont à toi.
+
+Une création = un dossier `artifacts/<nom>/` du projet = une adresse
 `https://<hôte des applications>/<projet>/<nom>/`, derrière la connexion de
 l'Atelier (`atelier_artefacts` la donne). Le nom : minuscules, chiffres,
 tirets. Jamais un port du pod, jamais l'adresse de l'Atelier lui-même.
 
 **Mode autonome** (des fichiers) :
 
-1. `atelier_artefact_creer(projet, nom)` — refusé si le nom est pris.
+1. `atelier_artefact_creer(nom)` — refusé si le nom est pris.
 2. Dépose tes fichiers dans `artifacts/<nom>/` : `index.html` s'ouvre à la
    racine, liens relatifs entre pages, CSS/JS/images relatifs autorisés, rien
    d'extérieur (CDN, polices en ligne) : embarque-le.
@@ -58,7 +67,7 @@ tirets. Jamais un port du pod, jamais l'adresse de l'Atelier lui-même.
 
 **Mode serveur** (un processus) :
 
-1. `atelier_artefact_creer(projet, nom, mode="serveur")` : il pose un
+1. `atelier_artefact_creer(nom, mode="serveur")` : il pose un
    `artifacts/<nom>/artefact.json` à compléter.
 2. Complète-le : `commande` en liste d'arguments avec `{port}` (jamais de
    numéro de port), `repertoire` relatif au dossier de l'artefact (`"../.."`
@@ -70,9 +79,19 @@ tirets. Jamais un port du pod, jamais l'adresse de l'Atelier lui-même.
    `atelier_artefact_journal` si ça ne démarre pas. L'Atelier attribue le
    port, surveille, redémarre, arrête après inactivité.
 
-La même adresse vaut dans les deux modes. Tu n'agis pas sur l'artefact d'une
-autre conversation (`forcer` seulement si on te le demande). Sans outils MCP :
-`~/work/bin/atelier-app creer|verifier|demarrer|arreter|journal`.
+La même adresse vaut dans les deux modes. Tu n'agis pas sur la création d'une
+autre conversation (`forcer` seulement si on te le demande).
+
+**La montrer** : dès qu'une page est prête ou modifiée, `atelier_montrer(nom,
+chemin)` l'ouvre dans le panneau de ta conversation, chez la personne. Pour la
+vérifier toi-même, `atelier_navigateur_ouvrir(chemin)` rend une adresse à usage
+unique (deux minutes) à ouvrir aussitôt avec ton navigateur. Ton navigateur est
+à toi seul ; au-delà de son plafond d'onglets (8 par défaut), `new_page` est
+refusé : ferme un onglet (`close_page`) ou réutilise-le (`navigate_page`).
+
+Sans outils MCP : `~/work/bin/atelier-app creer|verifier|demarrer|arreter|journal
+<projet> <nom>`, et `atelier-app montrer|ouvrir-navigateur <nom> [chemin]`, qui
+passent par les mêmes gardes que les outils (projet tiré de ta conversation).
 
 Ce que tu ne fais pas :
 

@@ -78,3 +78,143 @@ L'accès d'un agent code à Onyxia est alors cadré par le fait de vouloir dépl
   - hooks réellement exécutables depuis le projet.
 - Il compare les deux profils à ce contrat.
 - Les gardiens le font tourner régulièrement, sans modèle.
+
+## État — équipe A (serveur `atelier`, navigateur, `atelier-app`), 26/09/2026
+
+Branche `lot-profils`. « Vérifié » = exécuté et vu fonctionner (tests `pytest`
+de comportement, ou essai réel nommé) ; « non vérifié » = écrit seulement.
+
+### Serveur `atelier` par profil
+
+La porte `/mcp` et `/v1/commandes` lisent `X-Atelier-Profil` et
+`X-Atelier-Conversation` (`commandes/profils.py`). Le filtre tient à la liste
+(`tools/list`, `GET /v1/commandes`) **et** à l'appel (`tools/call`,
+`POST /v1/commandes/<nom>`), dans la passerelle (`mcp/gateway.py`) et dans le
+catalogue (`commandes/catalogue.py`).
+
+| Profil | Outils |
+|---|---|
+| `code` | exactement 8 : `atelier_artefacts`, `atelier_artefact_creer`, `atelier_artefact_verifier`, `atelier_artefact_demarrer`, `atelier_artefact_arreter`, `atelier_artefact_journal`, `atelier_montrer`, `atelier_navigateur_ouvrir`. Schémas adaptés : `projet` facultatif, `auteur` retiré. Consignes d'initialisation propres ; `prompts` et `resources` de la passerelle vides |
+| `assistant` | les 27 commandes exposées (`atelier_a_valider`, `_a_valider_refuser`, `_a_valider_rouvrir`, `atelier_annuler`, les 6 des créations, `atelier_conversation_ranger`, `_ressortir`, `atelier_conversations`, `atelier_decider`, `atelier_envoyer`, `atelier_interrompre`, `atelier_journal`, `atelier_montrer`, `atelier_navigateur_ouvrir`, `atelier_ouvrir`, `atelier_projet_creer`, `_modifier`, `_ranger`, `_ressortir`, `atelier_projets`, `atelier_suivre`, `atelier_transcript`), plus ce que le profil de la passerelle expose (méta-outils `gateway_*`, compositions). `atelier_projet_publier` et `atelier_a_valider_accepter` restent `reservee`, jamais exposées |
+
+**Qui décide du profil : la conversation, côté serveur**
+(`profils.profil_effectif`). La porte lit `X-Atelier-Conversation` et sa fiche :
+
+| Requête | Profil retenu |
+|---|---|
+| conversation de l'Assistant (`kind = assistant`, ou dossier sous `assistant_root`) | `assistant` ; `code` si l'en-tête annonce `code` |
+| toute autre conversation, connue ou non (`poste` compris) | `code`, quel que soit l'en-tête |
+| sans conversation (passerelle, claude.ai, ancien client) | comportement d'avant (tout), sauf en-tête `code` ; journalisé |
+| en-tête de valeur inconnue | `code` |
+
+**Projet d'une conversation inconnue** (VS Code, terminal) : en profil `code`
+seulement, le projet vient de `X-Atelier-Projet` (écrit par S dans le
+`.mcp.json` du projet), s'il nomme un dossier existant sous `projects_dir` ;
+sinon refus. Pour une conversation connue, la fiche décide et un désaccord
+avec l'en-tête est journalisé. L'en-tête ne donne jamais `assistant`.
+**Vérifié** : création écrite dans le projet annoncé, projet inexistant ou
+forgé refusé, en-tête ignoré par une conversation connue, jamais `assistant`.
+Limite : `atelier_montrer` et `atelier_navigateur_ouvrir` demandent encore une
+conversation connue de l'Atelier (le panneau est celui d'une conversation).
+
+`X-Atelier-Profil` ne peut que restreindre. Une conversation sans en-tête ou
+sans conversation est notée dans le journal `atelier.profils` (une ligne par
+conversation, rappelée au plus toutes les dix minutes). L'équipe O peut
+reprendre `profil_effectif` pour son mandataire Onyxia : la conversation
+décide, l'en-tête restreint.
+
+- **Vérifié** (`tests/test_profils_acces.py`, par la vraie porte `/mcp`, la vraie
+  passerelle et le vrai catalogue ; seul le pool amont est simulé) : liste
+  exacte des deux profils ; refus à l'appel en `code` de `gateway_find_tools`,
+  `gateway_call_tool`, `gateway_list_compositions`, d'une composition, d'un
+  outil du pool (rien n'atteint le pool), de `atelier_decider`, `_journal`,
+  `_a_valider`, `_projets`, `_suivre`, `_transcript`, `_envoyer`,
+  `_projet_creer` ; refus au journal avec l'acteur `conversation:<id>` ;
+  projet tiré de la conversation (liste bornée à ses créations, création
+  écrite dans son dossier avec la conversation pour auteur, `projet` étranger
+  refusé) ; refus sans conversation, avec `poste`, une conversation inconnue
+  ou un identifiant forgé (`../..`) ; conversation retrouvée par
+  `claude_session_id` (reprise dans VS Code) ; mêmes gardes par
+  `/v1/commandes` ; profil déduit : un agent code qui annonce `assistant`
+  reste en `code` (liste et appel, par `/mcp` et `/v1/commandes`), une
+  conversation inconnue est en `code`, la conversation de l'Assistant a tout,
+  et restreinte si elle annonce `code` ; compatibilité sans conversation et sa
+  ligne de journal.
+- **Recherche de l'Assistant (audit M7)** : `gateway_find_tools` cherche aussi
+  dans les commandes `atelier_*` (`kind` et `server` = `atelier`), avec des mots
+  d'intention pour chacune (`tool_search.MOTS_CLES_PAR_OUTIL`). Un refus d'une
+  commande appelée par `gateway_call_tool` n'est plus présenté comme « nom
+  inconnu ». **Vérifié** par 7 requêtes d'intention (« montrer ma page dans le
+  panneau » → `atelier_montrer`, « autorisation en attente » →
+  `atelier_decider`, etc.), le filtre `server="atelier"` et l'inventaire.
+- **Non vérifié** : le comportement sur le pod avec un vrai `claude` (la
+  déclaration qui pose `X-Atelier-Profil` est à l'équipe S) ; le nombre réel
+  d'outils `gateway_*` et `composition_*` que verra l'Assistant dépend du
+  profil de passerelle actif (7 et 2 mesurés par l'audit).
+- **Limite connue** : la clé de la porte, `ATELIER_MCP_KEY`, est celle du
+  propriétaire. Un agent qui la lit et **omet l'en-tête de conversation** garde
+  un accès complet (cas « sans conversation »). Il peut aussi nommer la
+  conversation d'un autre. Fermer ce trou demande des capacités courtes par
+  conversation, émises par l'Atelier et vérifiées par la porte : hors de ce
+  lot.
+- **Changement visible dès maintenant** : VS Code et le terminal envoient
+  aujourd'hui `X-Atelier-Conversation: poste`. Ils passent donc en `code`, et
+  comme `poste` ne nomme aucun projet, leurs 8 outils répondent « le projet ne
+  peut pas être établi ». `atelier-app` (qui prend `CLAUDE_CODE_SESSION_ID`)
+  marche pour une conversation reprise de l'Atelier.
+- **À la charge de S** : écrire `X-Atelier-Profil: code` dans la déclaration
+  `atelier` des projets de code (`.mcp.json` et fichier effectif) et
+  `assistant` pour l'Assistant ; hors de l'Atelier, faire porter à
+  `X-Atelier-Conversation` l'identifiant du CLI plutôt que `poste`
+  (`${ATELIER_SESSION:-${CLAUDE_CODE_SESSION_ID}}`, si Claude Code développe
+  cette variable dans les en-têtes : à vérifier). Une conversation ouverte
+  directement dans VS Code, jamais vue par l'Atelier, restera inconnue : le
+  profil `code` n'y trouve pas de projet tant que l'Atelier n'adopte pas la
+  conversation.
+
+### Navigateur
+
+- Une fenêtre Chrome isolée par conversation : inchangé (un processus
+  `atelier-chrome` par client, `docs/navigateur-atelier.md` §3).
+- **Plafond d'onglets** `ATELIER_CHROME_ONGLETS_MAX` (8 par défaut, 0 = sans) :
+  filtre stdio `bin/atelier-chrome-onglets.mjs` que le lanceur place devant
+  `chrome-devtools-mcp`. **Vérifié** : `tests/test_plafond_onglets.py` (faux
+  serveur au format 1.10.1) ; essai réel sous Windows, filtre devant le vrai
+  `chrome-devtools-mcp` 1.10.1 et un vrai Chrome, plafond 4 : trois `new_page`
+  passent, le quatrième rend « Plafond d'onglets atteint… Ferme un onglet ».
+  Le format `## Pages` / `<id>: …` a été relu dans le `McpResponse.js` installé
+  sur le pod (lecture seule). **Non vérifié** : le lanceur modifié sur Linux
+  (ses tests, `tests/test_lanceur_chrome.py`, sont sautés hors Linux ; seule la
+  sortie `ATELIER_CHROME_VERIFIER=1` a été vue sous Git Bash).
+- **Coût mesuré** d'un onglet (Windows, mémoire privée) : ≈ 30 à 50 Mo pour une
+  page légère, ≈ 200 à 260 Mo pour une page lourde (détail :
+  `docs/navigateur-atelier.md` §3, « Plafond »). Pas de mesure sur le pod.
+- **Identité `passerelle-atelier`** (documentée, inchangée) : quand un outil
+  `wikichat__*` est appelé par `gateway_call_tool` (ou par une composition), il
+  part par l'entrée SSE du pool, que `wikichat_mcp.renommer_la_passerelle`
+  réécrit au démarrage en `?agent=passerelle-atelier`. wikichat voit donc
+  l'auteur `passerelle-atelier`, pas la conversation qui a appelé (audit M8) :
+  mémoire, messages et notes écrits par ce chemin portent ce nom. Un agent code
+  n'a plus ce chemin (profil `code` : pas de passerelle) ; il parle à wikichat
+  par son pont natif, sous son propre nom. L'Assistant l'a encore : qu'il
+  préfère son pont natif pour wikichat. Retirer wikichat du catalogue proposé
+  reste au lot F / à l'équipe W.
+
+### `atelier-app`
+
+- `atelier-app montrer <nom> [chemin]` et `atelier-app ouvrir-navigateur <nom>
+  [chemin]` appellent `POST /v1/commandes/atelier_montrer` et
+  `…/atelier_navigateur_ouvrir` avec `X-Atelier-Conversation`
+  (`ATELIER_SESSION`, sinon `CLAUDE_CODE_SESSION_ID`) et `X-Atelier-Profil:
+  code` : mêmes gardes que les outils. Code 1 sur un refus, 2 sans
+  conversation. **Vérifié** : `tests/test_atelier_app_montrer.py` lance le vrai
+  script (`sh`, `curl`, `python3`) contre un Atelier de test servi par
+  uvicorn. Les sous-commandes d'avant (`creer`… `journal`) passent toujours par
+  `/v1/apps`, sans profil.
+
+### Consignes
+
+`docs/consignes/socle.md`, « Montrer ce que tu produis », réécrite pour le
+profil `code` ; `transcripts-youtube.md` ne passe plus `projet`. À reposer sur
+le pod (`~/work/projects/CLAUDE.md` et le projet concerné) : **non fait**, pod
+en lecture seule pendant ce lot.

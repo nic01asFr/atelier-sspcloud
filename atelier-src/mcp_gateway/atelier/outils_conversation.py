@@ -958,7 +958,11 @@ class OutilsAtelier:
             raise _Refus(
                 "conversation inconnue : ta session MCP ne porte pas l'en-tête X-Atelier-Conversation"
             )
-        rec = self.store.get(conversation)
+        from mcp_gateway.atelier.commandes.profils import fiche_de_la_conversation
+
+        # Par l'identifiant de l'Atelier, ou par celui du CLI quand la
+        # conversation continue dans VS Code ou au terminal.
+        rec = fiche_de_la_conversation(self.store, conversation)
         if rec is None:
             raise _Refus(f"conversation inconnue : {conversation}")
         return rec

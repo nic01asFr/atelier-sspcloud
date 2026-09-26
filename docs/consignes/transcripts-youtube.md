@@ -41,8 +41,9 @@ C'est un **artefact serveur** (voir le socle) : l'Atelier le lance d'après
 sous `/projet-sans-nom-4/youtube-transcript/` sur l'hôte des applications,
 préfixe transmis par `X-Forwarded-Prefix`.
 
-- Pour le démarrer : `atelier_artefact_demarrer(projet="projet-sans-nom-4",
-  nom="youtube-transcript")`, puis `atelier_artefact_journal` s'il échoue.
+- Pour le démarrer : `atelier_artefact_demarrer(nom="youtube-transcript")` (le
+  projet est celui de ta conversation), puis `atelier_artefact_journal` s'il
+  échoue, et `atelier_montrer(nom="youtube-transcript")` quand il répond.
   Ne lance pas `backend.py` en présentant `127.0.0.1:18765` comme une
   adresse à ouvrir ; ne passe pas par `/vscode/proxy/` (fermé).
 - Ne rajoute pas de CORS : la page et l'API sont servies par la même origine.

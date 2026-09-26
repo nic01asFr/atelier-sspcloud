@@ -40,6 +40,23 @@ def _est_initialize(body: object) -> bool:
     return False
 
 
+def _methodes(body: object) -> list[str]:
+    if isinstance(body, dict):
+        return [str(body.get("method") or "")]
+    if isinstance(body, list):
+        return [str(m.get("method") or "") for m in body if isinstance(m, dict)]
+    return []
+
+
+def _magasin(request: Request, passerelle: Any) -> Any:
+    """Le magasin des conversations, d'où le profil se déduit."""
+    store = getattr(request.app.state, "store", None)
+    if store is not None:
+        return store
+    outils = getattr(getattr(passerelle, "outils_locaux", None), "outils", None)
+    return getattr(outils, "store", None)
+
+
 def _renommer(resultat: object) -> None:
     """Le serveur se présente sous le nom de l'Atelier.
 
@@ -122,9 +139,30 @@ def register_mcp_endpoint(app: FastAPI, auth: Any) -> None:
             CONVERSATION_APPELANTE,
         )
 
-        jeton = CONVERSATION_APPELANTE.set(
-            (request.headers.get("x-atelier-conversation") or "").strip()[:200]
+        from mcp_gateway.atelier.commandes.profils import (
+            ENTETE_PROFIL,
+            ENTETE_PROJET,
+            PROFIL_APPELANT,
+            PROJET_ANNONCE,
+            noter_un_appel_sans_profil,
+            profil_effectif,
         )
+
+        conversation = (request.headers.get("x-atelier-conversation") or "").strip()[:200]
+        jeton = CONVERSATION_APPELANTE.set(conversation)
+        # Le profil borne ce que la passerelle montre et laisse appeler
+        # (`commandes/profils.py`). C'est la conversation qui le décide ;
+        # l'en-tête ne peut que restreindre. Sans conversation : tout, comme
+        # avant, et on le note.
+        annonce = request.headers.get(ENTETE_PROFIL)
+        profil = profil_effectif(annonce, conversation, _magasin(request, passerelle))
+        if not conversation or not (annonce or "").strip():
+            actives = [m for m in _methodes(body) if m in ("initialize", "tools/list", "tools/call")]
+            if actives:
+                noter_un_appel_sans_profil(conversation, actives[0], profil=profil)
+        jeton_profil = PROFIL_APPELANT.set(profil)
+        # Le projet annoncé : pour une conversation inconnue, en profil code seulement.
+        jeton_projet = PROJET_ANNONCE.set((request.headers.get(ENTETE_PROJET) or "").strip()[:100])
         # La clé du propriétaire est celle des agents du pod et de wikichat :
         # des automates. Un jeton OAuth vient d'un client distant où une
         # personne lit (claude.ai). Voir `atelier_envoyer`, `peut_attendre`.
@@ -138,6 +176,8 @@ def register_mcp_endpoint(app: FastAPI, auth: Any) -> None:
         finally:
             CONVERSATION_APPELANTE.reset(jeton)
             APPEL_INTERACTIF.reset(interactif)
+            PROFIL_APPELANT.reset(jeton_profil)
+            PROJET_ANNONCE.reset(jeton_projet)
         _renommer(resultat)
         entetes = {"Mcp-Session-Id": assigne} if assigne else None
         return JSONResponse(content=resultat or {}, headers=entetes)

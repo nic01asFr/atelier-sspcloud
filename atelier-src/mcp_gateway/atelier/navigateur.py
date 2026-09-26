@@ -44,6 +44,10 @@ ENTETE_CONVERSATION = "X-Atelier-Conversation"
 CONVERSATION_HORS_ATELIER = "poste"
 # L'environnement de l'instance que la passerelle lance pour ses clients.
 ENV_PASSERELLE = {"ATELIER_CHROME_PORTEE": "passerelle"}
+# Les plafonds par défaut du lanceur : Chrome simultanés pour le compte, et
+# onglets par conversation.
+NAVIGATEURS_MAX = 6
+ONGLETS_MAX = 8
 
 
 def est_le_navigateur(nom: str, cfg: dict[str, Any] | None = None) -> bool:  # noqa: ARG001
@@ -126,7 +130,13 @@ def _verifier_le_lanceur(lanceur: Path) -> dict[str, Any]:
         lignes = (sortie.stderr or "").strip().splitlines()
         return {"pret": False, "raison": lignes[-1] if lignes else f"code {sortie.returncode}"}
     trouve = dict(ligne.split("=", 1) for ligne in sortie.stdout.splitlines() if "=" in ligne)
-    return {"pret": True, "chrome": trouve.get("chrome", ""), "serveur": trouve.get("serveur", "")}
+    return {
+        "pret": True,
+        "chrome": trouve.get("chrome", ""),
+        "serveur": trouve.get("serveur", ""),
+        # Le filtre du plafond d'onglets ; « aucun » : pas de plafond d'onglets.
+        "filtreOnglets": trouve.get("filtre", ""),
+    }
 
 
 def racine_des_navigateurs() -> Path:
@@ -176,19 +186,40 @@ def etat_local(settings: AtelierSettings) -> dict[str, Any]:
                 etat=_verifier_le_lanceur(lanceur), quand=maintenant, lanceur=str(lanceur)
             )
         verification = dict(_VERIFICATION["etat"])
-    try:
-        plafond = int(os.environ.get("ATELIER_CHROME_MAX") or 6)
-    except ValueError:
-        plafond = 6
     return {
         "configure": True,
         "mode": "stdio",
         "lanceur": str(lanceur),
         "bureau": False,
         "navigateurs": navigateurs_ouverts(),
-        "maxNavigateurs": plafond,
+        "maxNavigateurs": plafond_de_navigateurs(),
+        "maxOnglets": plafond_d_onglets(),
         **verification,
     }
+
+
+def _entier(variable: str, defaut: int) -> int:
+    try:
+        return max(0, int(os.environ.get(variable) or defaut))
+    except ValueError:
+        return defaut
+
+
+def plafond_de_navigateurs() -> int:
+    """Chrome simultanés permis pour le compte (`ATELIER_CHROME_MAX`, défaut 6)."""
+    return _entier("ATELIER_CHROME_MAX", NAVIGATEURS_MAX)
+
+
+def plafond_d_onglets() -> int:
+    """Onglets permis par conversation (`ATELIER_CHROME_ONGLETS_MAX`, défaut 8 ; 0 = sans).
+
+    Tenu par le filtre `bin/atelier-chrome-onglets.mjs`, que le lanceur place
+    entre le client et chrome-devtools-mcp : au-delà, `new_page` rend « ferme
+    un onglet » sans rien ouvrir. Mesuré le 26/09 sous Windows (serveur
+    1.10.1, Chrome stable du poste, mémoire privée des processus Chrome) : ≈ 30 à 50 Mo par
+    onglet de page légère, ≈ 200 à 260 Mo par onglet de page lourde.
+    """
+    return _entier("ATELIER_CHROME_ONGLETS_MAX", ONGLETS_MAX)
 
 
 # -- WebSearch -------------------------------------------------------------

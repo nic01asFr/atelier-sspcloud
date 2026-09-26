@@ -205,7 +205,35 @@ class McpGateway:
             _log.exception("définitions des outils locaux")
             return []
 
+    # -- Profil restreint ----------------------------------------------------
+    #
+    # Les outils locaux peuvent annoncer que l'appel en cours vient d'un profil
+    # restreint (l'Atelier : `X-Atelier-Profil: code`, voir
+    # `atelier/commandes/profils.py`). La passerelle ne montre alors que les
+    # outils locaux que ce profil permet, et refuse tout autre nom à l'appel :
+    # ni méta-outils, ni compositions, ni pool. Sans cette annonce, rien ne
+    # change.
+
+    def _restreint(self) -> bool:
+        annonce = getattr(self.outils_locaux, "restreint", None)
+        if annonce is None:
+            return False
+        try:
+            return bool(annonce())
+        except Exception:  # noqa: BLE001
+            # Dans le doute, restreindre : un profil illisible n'ouvre rien.
+            _log.exception("profil des outils locaux")
+            return True
+
+    def _refus_du_profil(self, nom: str) -> dict:
+        message = getattr(self.outils_locaux, "message_hors_profil", None)
+        texte = message(nom) if message is not None else f"Outil hors du profil : {nom}"
+        return _texte(texte, erreur=True)
+
     async def tools_list(self, session_id: str | None) -> list[dict]:
+        if self._restreint():
+            # Les définitions locales sont déjà celles du profil.
+            return self._definitions_locales()
         payload = self._resolve_exposed(session_id)
         tools = payload["tools"]
         if self._tool_exposure(session_id) == "discover":
@@ -238,6 +266,9 @@ class McpGateway:
             tools = self._resolve_exposed(session_id).get("tools", [])
         except Exception:
             return result
+        # Les commandes de l'Atelier sont appelables par gateway_call_tool : un
+        # refus de leur part n'est pas un « nom inconnu ».
+        tools = list(tools) + self._definitions_locales()
 
         spec = next((t for t in tools if str(t.get("name")) == target), None)
 
@@ -268,10 +299,30 @@ class McpGateway:
         ]
         return enriched
 
+    def _outils_locaux_a_chercher(self) -> list[dict]:
+        """Les outils locaux, dans la forme que la recherche lit.
+
+        Ils ne viennent ni du pool ni d'un profil de la passerelle : sans eux,
+        `gateway_find_tools` ne trouvait aucune commande `atelier_*` alors que
+        `gateway_call_tool` les appelle (audit M7). Ils portent `kind` et
+        `server` `atelier`, pour qu'on puisse les chercher par service.
+        """
+        sortie = []
+        for definition in self._definitions_locales():
+            if not isinstance(definition, dict) or not definition.get("name"):
+                continue
+            outil = dict(definition)
+            outil.setdefault("kind", "atelier")
+            outil.setdefault("server", "atelier")
+            sortie.append(outil)
+        return sortie
+
     def _find_tools(self, arguments: dict[str, Any], session_id: str | None) -> dict:
         """Recherche dans le périmètre du profil : jamais au-delà."""
         payload = self._resolve_exposed(session_id)
-        tools = payload.get("tools", [])
+        tools = list(payload.get("tools", []))
+        connus = {str(t.get("name") or "") for t in tools}
+        tools += [t for t in self._outils_locaux_a_chercher() if t["name"] not in connus]
 
         usage: dict[str, int] = {}
         pins: set[str] = set()
@@ -357,6 +408,17 @@ class McpGateway:
         *,
         internal: bool = False,
     ) -> dict:
+        # Un profil restreint n'atteint que ses outils locaux : tout autre nom
+        # (méta-outil, composition, outil du pool) est refusé ici, avant
+        # toute résolution. Un outil local hors profil est refusé par les
+        # outils locaux eux-mêmes, qui le journalisent.
+        if self._restreint():
+            if self.outils_locaux is not None and name.startswith("atelier_"):
+                reponse = await self.outils_locaux.appeler(name, arguments)
+                if reponse is not None:
+                    return reponse
+            return self._refus_du_profil(name)
+
         # Avant tout le reste : ces outils ne viennent ni du pool ni d'un
         # profil, ils appartiennent au service. Les faire passer par la
         # résolution de profil les ferait refuser comme « hors périmètre ».
@@ -483,7 +545,12 @@ class McpGateway:
 
     def _build_initialize_result(self, session_id: str | None) -> dict[str, Any]:
         instructions = ""
-        if self.pool.db and self.compositions:
+        if self._restreint():
+            # Les consignes de la passerelle parlent de méta-outils que ce
+            # profil n'a pas : on lui donne les siennes.
+            propres = getattr(self.outils_locaux, "instructions_du_profil", None)
+            instructions = str(propres() or "") if propres is not None else ""
+        elif self.pool.db and self.compositions:
             profile = resolve_profile_for_session(
                 self.pool.db, self.catalog, self.bundles, session_id
             )
@@ -537,6 +604,23 @@ class McpGateway:
                 session_id,
             )
             return {"jsonrpc": "2.0", "id": req_id, "result": result}
+
+        if self._restreint() and method in (
+            "prompts/list", "prompts/get", "resources/list", "resources/read"
+        ):
+            # Le profil de la passerelle (consigne, services) ne concerne pas
+            # un profil restreint : il n'en voit rien.
+            vide = {
+                "prompts/list": {"prompts": []},
+                "resources/list": {"resources": []},
+            }.get(method)
+            if vide is not None:
+                return {"jsonrpc": "2.0", "id": req_id, "result": vide}
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": -32000, "message": "hors du profil"},
+            }
 
         if method == "prompts/list":
             return {
