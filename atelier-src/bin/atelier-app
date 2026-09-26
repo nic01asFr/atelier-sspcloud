@@ -7,6 +7,8 @@
 #   atelier-app demarrer <projet> <nom> [--forcer]
 #   atelier-app arreter  <projet> <nom> [--forcer]
 #   atelier-app journal  <projet> <nom> [lignes]
+#   atelier-app montrer           <nom> [chemin]
+#   atelier-app ouvrir-navigateur <nom> [chemin]
 #
 # Un artefact est un dossier <projet>/artifacts/<nom>/, servi sur l'hôte des
 # applications : ses fichiers en bac à sable, ou, s'il porte un
@@ -16,6 +18,14 @@
 #
 # L'auteur est $WIKICHAT_AGENT (ou $ATELIER_AUTEUR) : on n'agit pas sur
 # l'artefact d'une autre conversation sans --forcer.
+#
+# `montrer` et `ouvrir-navigateur` passent par les commandes de l'Atelier
+# (/v1/commandes), comme les outils atelier_montrer et
+# atelier_navigateur_ouvrir, avec les mêmes gardes : profil code, et le projet
+# est celui de la conversation ($ATELIER_SESSION, ou $CLAUDE_CODE_SESSION_ID
+# hors de l'Atelier), jamais un argument. `montrer` ouvre la création dans le
+# panneau de la conversation ; `ouvrir-navigateur` rend une adresse d'entrée à
+# usage unique (deux minutes) à ouvrir avec le navigateur de l'agent.
 #
 # Déposé dans ~/work/bin/ par install/atelier-init.sh.
 set -u
@@ -44,8 +54,30 @@ encoder() {
 }
 
 usage() {
-  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
   exit 2
+}
+
+commande_atelier() {
+  # $1 commande, $2 arguments en JSON. La conversation et le profil voyagent
+  # en en-têtes, comme depuis la porte MCP ; un refus sort en code 1.
+  conversation=$(printf '%s' "${ATELIER_SESSION:-${CLAUDE_CODE_SESSION_ID:-}}" | tr -d '\r\n')
+  if [ -z "$conversation" ]; then
+    echo "atelier-app : conversation inconnue (ni ATELIER_SESSION ni CLAUDE_CODE_SESSION_ID)" >&2
+    exit 2
+  fi
+  reponse=$(printf 'Authorization: Bearer %s\nX-Atelier-Conversation: %s\nX-Atelier-Profil: code\nContent-Type: application/json\n' \
+      "$CLE" "$conversation" \
+    | curl -sS -X POST -H @- --data-binary "{\"arguments\": $2}" \
+      -w '\n%{http_code}' --max-time 120 "$URL/v1/commandes/$1") || exit 1
+  statut=$(printf '%s\n' "$reponse" | tail -n 1)
+  printf '%s\n' "$reponse" | sed '$d'
+  [ "$statut" -lt 400 ] 2>/dev/null || exit 1
+}
+
+json() {
+  # Un objet JSON de paires nom valeur, valeurs vides omises.
+  python3 -c 'import json, sys; a = sys.argv[1:]; print(json.dumps({a[i]: a[i + 1] for i in range(0, len(a), 2) if a[i + 1]}, ensure_ascii=False))' "$@"
 }
 
 suite_auteur() {
@@ -81,6 +113,12 @@ case "$commande" in
   journal)
     [ -n "${2:-}" ] || usage
     appel GET "/v1/apps/$1/$2/journal?lignes=${3:-200}" ;;
+  montrer)
+    [ -n "${1:-}" ] || usage
+    commande_atelier atelier_montrer "$(json nom "$1" chemin "${2:-}")" ;;
+  ouvrir-navigateur)
+    [ -n "${1:-}" ] || usage
+    commande_atelier atelier_navigateur_ouvrir "$(json chemin "$1/${2:-}")" ;;
   *)
     usage ;;
 esac
