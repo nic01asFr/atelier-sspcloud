@@ -372,7 +372,9 @@ class Catalogue:
             "commande": commande.nom,
             "classe": classe,
             "origine": ctx.origine,
-            "arguments": arguments,
+            "arguments": (
+                commande.arguments_au_journal(arguments) if commande.arguments_au_journal else arguments
+            ),
             "avant": effet.avant if effet else None,
             "apres": effet.apres if effet else None,
             "inverse": inverse,

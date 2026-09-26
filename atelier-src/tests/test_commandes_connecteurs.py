@@ -328,3 +328,41 @@ def test_accorder_refuse_une_valeur_ou_un_chemin(atelier: Any) -> None:
             contexte_interface(),
         )
         assert reponse.statut == REFUSE
+
+
+# ── La clé `atelier` d'une entrée du pool (vues relayées, équipe B) ─────
+
+VUES = {"vues": [{"nom": "bureau", "genre": "bureau", "amont": "http://blender-remote-mcp:6080", "vnc": "/websockify"}]}
+
+
+def test_un_modele_ne_pose_pas_la_cle_atelier(atelier: Any, sondes: list[str]) -> None:
+    arguments = {"nom": "blender", "url": "http://blender.invalid/mcp", "atelier": VUES}
+    reponse = _executer(atelier, "atelier_connecteur_ajouter", arguments)
+    assert reponse.statut == REFUSE and "la personne" in reponse.charge["erreur"]
+    assert "confirmation" not in reponse.charge
+    assert "blender" not in _pool(atelier)
+
+
+def test_la_personne_pose_la_cle_atelier_qui_n_est_jamais_rendue(atelier: Any, sondes: list[str]) -> None:
+    arguments = {"nom": "blender", "url": "http://blender.invalid/mcp", "atelier": VUES}
+    apercu = _executer(atelier, "atelier_connecteur_ajouter", arguments, contexte_interface())
+    assert apercu.statut == APERCU
+    assert "atelier" not in apercu.charge["apercu"]["declaration"]
+    assert apercu.charge["apercu"]["declaration"]["vues_relayees"] == 1
+    fait = _executer(
+        atelier, "atelier_connecteur_ajouter", {**arguments, "confirmation": apercu.charge["confirmation"]},
+        contexte_interface(),
+    )
+    assert fait.statut == FAIT, fait.charge
+    assert _pool(atelier)["blender"]["atelier"] == VUES
+    assert "blender-remote-mcp" not in json.dumps(fait.charge)
+    journal = atelier.app.state.commandes.journal.lire(commande="atelier_connecteur_ajouter", limite=5)
+    assert "blender-remote-mcp" not in json.dumps(journal)
+    assert journal[0]["action"]["arguments"]["vues_relayees"] == 1
+    # Un modèle qui retire puis annule ne perd ni n'expose la clé.
+    retire = _executer(atelier, "atelier_connecteur_retirer", {"nom": "blender"})
+    assert retire.statut == FAIT, retire.charge
+    remis = _executer(atelier, "atelier_annuler", {"action": retire.action})
+    assert remis.statut == FAIT, remis.charge
+    assert _pool(atelier)["blender"]["atelier"] == VUES
+    assert "blender-remote-mcp" not in json.dumps(retire.charge) + json.dumps(remis.charge)

@@ -512,6 +512,14 @@ la commande prend la liste fermée directement. Le Pilote ne connaissant que l'h
 la demande y a l'horaire `0 0 31 2 *` (jamais) et ne part que par « Lancer ». La bascule du Pilote
 est un `toggle` : `activer` et `desactiver` relisent l'état avant et après.
 
+**Clé `atelier` d'une entrée du pool** (vues relayées des bureaux, équipe B, `apps/bureaux.py`).
+`atelier_connecteur_ajouter` la refuse à un modèle, dès l'aperçu : une vue relayée ouvre un service
+interne dans le navigateur de la personne, qui seule la pose (interface, ou « À valider », dont
+l'acceptation s'exécute au nom de la personne). Elle n'est jamais rendue : ni dans l'aperçu, ni
+dans la réponse, ni dans le journal (`Commande.arguments_au_journal`, appliqué par le catalogue),
+remplacée par `vues_relayees: <nombre>`. `retirer`, sa reprise et `accorder` réécrivent l'entrée en
+la gardant telle quelle. Testé.
+
 **Recherche.** Leurs mots d'intention, en français et en anglais, sont dans
 `tool_search.MOTS_CLES_PAR_OUTIL` (« créer un agent », « ajouter un connecteur », « lier des
 projets », « structurer le projet », « create a scheduled agent », « link projects »…) ; vérifié

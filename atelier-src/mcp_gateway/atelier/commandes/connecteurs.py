@@ -58,6 +58,20 @@ _SCHEMAS = ("Bearer", "Token", "Basic")
 _CHAMP_SECRET = re.compile(r"^(headers|env)\.([A-Za-z0-9_.-]{1,64})$")
 
 
+# La clé de l'Atelier dans une entrée du pool : ses vues relayées (`apps/bureaux.py`,
+# équipe B). Posée par la personne seule, jamais rendue à un modèle.
+CLE_ATELIER = "atelier"
+
+
+def sans_cle_atelier(cfg: dict[str, Any]) -> dict[str, Any]:
+    """La déclaration telle qu'on la rend : sans la clé `atelier`, qui dit seulement combien de vues."""
+    sortie = {k: v for k, v in cfg.items() if k != CLE_ATELIER}
+    vues = (cfg.get(CLE_ATELIER) or {}).get("vues") if isinstance(cfg.get(CLE_ATELIER), dict) else None
+    if isinstance(vues, list):
+        sortie["vues_relayees"] = len(vues)
+    return sortie
+
+
 def _secrets_de_l_adresse(url: str) -> list[str]:
     from mcp_gateway.atelier.mcp_secrets import est_un_nom_secret
 
@@ -153,7 +167,7 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
 
     # ── Ajouter ─────────────────────────────────────────────────────────
 
-    def declaration(args: dict[str, Any]) -> dict[str, Any]:
+    def declaration(ctx: Contexte, args: dict[str, Any]) -> dict[str, Any]:
         from mcp_gateway.atelier.mcp_secrets import secrets_en_clair
 
         url = texte(args, "url", maximum=500)
@@ -185,6 +199,18 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
                 if not isinstance(env, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in env.items()):
                     raise Refus("env : un objet {NOM: valeur}")
                 cfg["env"] = dict(env)
+        vues = args.get(CLE_ATELIER)
+        if vues is not None:
+            # Une vue relayée ouvre un service interne dans le navigateur de la
+            # personne (bureaux, équipe B) : seule la personne la pose.
+            if not ctx.est_la_personne:
+                raise Refus(
+                    f"la clé {CLE_ATELIER} (vues relayées d'un service interne) ne se pose que par la "
+                    "personne : écran des connecteurs, ou une proposition « À valider »"
+                )
+            if not isinstance(vues, dict):
+                raise Refus(f"{CLE_ATELIER} : un objet, par exemple {{vues: [...]}}")
+            cfg[CLE_ATELIER] = json.loads(json.dumps(vues))
         trouves = secrets_en_clair(cfg)
         if url:
             trouves += _secrets_de_l_adresse(url)
@@ -228,13 +254,13 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
         if booleen(args, "reprendre"):
             reprise_possible(nom, args)
             return {"connecteur": nom, "effet": "remis en service tel qu'il était avant son retrait"}
-        cfg = declaration(args)
+        cfg = declaration(ctx, args)
         projets = liste_de_noms(args, "projets") or []
         for slug in projets:
             projet_existant(slug)
         return {
             "connecteur": nom,
-            "declaration": cfg,
+            "declaration": sans_cle_atelier(cfg),
             "effet": (
                 "ajouté au pool : tout projet qui hérite du pool le reçoit"
                 + (f", et il est choisi pour {', '.join(projets)}" if projets else "")
@@ -246,7 +272,7 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
         nom = nom_valide(args)
         if booleen(args, "reprendre"):
             return await reprendre(ctx, nom, args)
-        cfg = declaration(args)
+        cfg = declaration(ctx, args)
         projets = liste_de_noms(args, "projets") or []
         chemins = [projet_existant(slug) for slug in projets]
         conn = ouvrir()
@@ -276,7 +302,7 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
             voir="/?vue=connecteurs",
             preuve={"pool": {"present": True, "actif": True}, "sonde": sonde, "synchro": synchro, "projets": choisis},
             avant=None,
-            apres={"connecteur": nom, "declaration": cfg, "projets": projets},
+            apres={"connecteur": nom, "declaration": sans_cle_atelier(cfg), "projets": projets},
             inverse_arguments={"nom": nom},
         )
 
@@ -319,9 +345,11 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
                 "régénère les configurations par mcp_sync (même chemin que la page Connecteurs)",
                 "rend la sonde du connecteur",
                 "reprendre : seulement un connecteur retiré par l'Atelier (inverse de retirer)",
+                "la clé atelier (vues relayées) : la personne seule ; jamais rendue dans une réponse",
             ],
             executer=ajouter,
             apercu=apercu_ajouter,
+            arguments_au_journal=sans_cle_atelier,
             schema={
                 "type": "object",
                 "properties": {
@@ -334,6 +362,10 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
                     "env": {"type": "object", "description": "Variables non secrètes."},
                     "projets": {"type": "array", "items": {"type": "string"}},
                     "reprendre": {"type": "boolean", "description": "Remet en service un connecteur retiré."},
+                    "atelier": {
+                        "type": "object",
+                        "description": "Vues relayées (bureaux) : la personne seule ; refusé à un modèle.",
+                    },
                 },
                 "required": ["nom"],
             },
@@ -612,4 +644,4 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
     )
 
 
-__all__ = ["ACCORDER", "AJOUTER", "CHOISIR", "RETIRER", "inscrire_les_connecteurs"]
+__all__ = ["ACCORDER", "AJOUTER", "CHOISIR", "CLE_ATELIER", "RETIRER", "inscrire_les_connecteurs", "sans_cle_atelier"]
