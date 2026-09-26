@@ -17,6 +17,40 @@
  */
 
 import { $ } from "../core/dom.js";
+import { icone } from "../ui/icones.js";
+
+/** Comparaison sans accents ni casse : « memoris » trouve « Mémoriser ». */
+export function sansAccent(t) {
+  return String(t || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
+}
+
+/**
+ * Filtre les options d'une liste d'outils groupée par connecteur.
+ *
+ * Plusieurs centaines d'outils dans une seule liste déroulante : on ne
+ * trouvait le sien qu'en la parcourant. La recherche porte sur le libellé,
+ * le nom technique et le connecteur ; un groupe vide se masque.
+ *
+ * @returns {number} le nombre d'outils encore visibles
+ */
+export function filtrerOutils(select, requete) {
+  const q = sansAccent(requete).trim();
+  let visibles = 0;
+  for (const groupe of select.querySelectorAll("optgroup")) {
+    let dedans = 0;
+    for (const opt of groupe.querySelectorAll("option")) {
+      const ok = !q || sansAccent(`${opt.textContent} ${opt.value} ${groupe.label}`).includes(q);
+      opt.hidden = !ok;
+      if (ok) dedans += 1;
+    }
+    groupe.hidden = dedans === 0;
+    visibles += dedans;
+  }
+  return visibles;
+}
 
 const TYPES = {
   tool: { titre: "Outil", aide: "Appelle un outil et retient son résultat." },
@@ -50,11 +84,16 @@ function champTexte(label, valeur, oninput, opts = {}) {
   return wrap;
 }
 
-function lien(texte, titre, actif, onclick) {
+function lien(texte, titre, actif, onclick, nomIcone = "") {
   const b = document.createElement("button");
   b.type = "button";
-  b.className = "linklike";
-  b.textContent = texte;
+  b.className = nomIcone ? "icon-btn composition-step-btn" : "linklike";
+  if (nomIcone) {
+    b.appendChild(icone(nomIcone));
+    b.setAttribute("aria-label", `${texte} : ${titre}`);
+  } else {
+    b.textContent = texte;
+  }
   b.title = titre;
   b.disabled = !actif;
   b.addEventListener("click", onclick);
@@ -63,13 +102,26 @@ function lien(texte, titre, actif, onclick) {
 
 /** Les outils appelables, groupés par service, pour une liste déroulante. */
 function selecteurOutil(etape, i, state, actions) {
-  const wrap = document.createElement("label");
-  wrap.className = "field";
-  const span = document.createElement("span");
+  const wrap = document.createElement("div");
+  wrap.className = "field composition-outil";
+  const span = document.createElement("label");
   span.textContent = "Outil utilisé";
+  const idSelect = `composition-outil-${i}`;
+  span.htmlFor = idSelect;
   wrap.appendChild(span);
 
+  // Chercher avant de choisir : la liste compte plusieurs centaines d'outils.
+  const recherche = document.createElement("input");
+  recherche.type = "search";
+  recherche.className = "composition-outil-recherche";
+  recherche.placeholder = "Chercher un outil : action, connecteur…";
+  recherche.setAttribute("aria-label", "Chercher un outil");
+  const compte = document.createElement("span");
+  compte.className = "modal-hint composition-outil-compte";
+  compte.setAttribute("aria-live", "polite");
+
   const select = document.createElement("select");
+  select.id = idSelect;
   const vide = document.createElement("option");
   vide.value = "";
   vide.textContent = "— choisir un outil —";
@@ -102,7 +154,36 @@ function selecteurOutil(etape, i, state, actions) {
     select.appendChild(opt);
   }
   select.addEventListener("change", () => actions.majEtape(i, { tool: select.value }, true));
-  wrap.appendChild(select);
+
+  const total = select.querySelectorAll("option").length - 1;
+  const groupes = select.querySelectorAll("optgroup").length;
+  const direCompte = (n) => {
+    compte.textContent = recherche.value.trim()
+      ? `${n} outil${n > 1 ? "s" : ""} trouvé${n > 1 ? "s" : ""}`
+      : `${total} outils, ${groupes} connecteurs`;
+  };
+  recherche.addEventListener("input", () => direCompte(filtrerOutils(select, recherche.value)));
+  recherche.addEventListener("keydown", (e) => {
+    // Entrée mène à la liste filtrée plutôt que d'envoyer quoi que ce soit.
+    if (e.key === "Enter") {
+      e.preventDefault();
+      select.focus();
+    }
+  });
+  direCompte(total);
+  wrap.append(recherche, compte, select);
+
+  // Ce que fait l'outil choisi, en une ligne, sous la liste.
+  const choisi = (state.toolsByService || [])
+    .flatMap((s) => s.tools || [])
+    .find((t) => t.name === etape.tool);
+  const quoi = choisi ? choisi.resume || choisi.description || "" : "";
+  if (quoi) {
+    const aide = document.createElement("p");
+    aide.className = "modal-hint composition-outil-aide";
+    aide.textContent = quoi.length > 220 ? `${quoi.slice(0, 219)}…` : quoi;
+    wrap.appendChild(aide);
+  }
   return wrap;
 }
 
@@ -337,11 +418,15 @@ function renderEtape(etape, i, draft, state, actions) {
   barre.className = "composition-step-actions";
   barre.addEventListener("click", (e) => e.preventDefault());
   const total = (draft.steps || []).length;
-  barre.appendChild(lien("Monter", "Exécuter plus tôt", i > 0, () => actions.deplacerEtape(i, -1)));
   barre.appendChild(
-    lien("Descendre", "Exécuter plus tard", i < total - 1, () => actions.deplacerEtape(i, 1))
+    lien("Monter", "Exécuter plus tôt", i > 0, () => actions.deplacerEtape(i, -1), "fleche-haut")
   );
-  barre.appendChild(lien("Retirer", "Supprimer cette étape", total > 1, () => actions.retirerEtape(i)));
+  barre.appendChild(
+    lien("Descendre", "Exécuter plus tard", i < total - 1, () => actions.deplacerEtape(i, 1), "fleche-bas")
+  );
+  barre.appendChild(
+    lien("Retirer", "Supprimer cette étape", total > 1, () => actions.retirerEtape(i), "croix")
+  );
   entete.appendChild(barre);
   bloc.appendChild(entete);
 
@@ -403,7 +488,8 @@ export function renderCompositionBuilder(state, actions) {
   lead.className = "connectors-lead";
   lead.textContent = draft.id
     ? "Les corrections prennent effet à la prochaine exécution."
-    : "Un enchaînement d’appels, enregistré comme un outil. Il part en brouillon : vous l’activerez après l’avoir essayé.";
+    : "Choisissez les outils à enchaîner, dans l’ordre : le résultat d’une étape peut nourrir la suivante. "
+      + "La composition part en brouillon ; vous l’activerez après l’avoir essayée.";
   head.appendChild(h);
   head.appendChild(lead);
   body.appendChild(head);
@@ -465,7 +551,9 @@ export function renderCompositionBuilder(state, actions) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "ghost btn-sm";
-    b.textContent = "+ " + def.titre;
+    const dit = document.createElement("span");
+    dit.textContent = def.titre;
+    b.append(icone("plus"), dit);
     b.title = def.aide;
     b.addEventListener("click", () => actions.ajouterEtape(type));
     ajouts.appendChild(b);

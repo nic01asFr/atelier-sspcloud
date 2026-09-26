@@ -5654,3 +5654,190 @@ button.session-face-link[aria-expanded="true"] {
     margin-left: auto;
   }
 }
+
+/* ── Champs : une seule famille ─────────────────────────────────────── */
+
+/* Une liste déroulante ou une zone de texte d'un formulaire a la même
+   allure qu'un champ : la liste des outils d'une composition s'affichait
+   en barre grise, sans bordure ni rayon. */
+.field select,
+.field textarea,
+.field input[type="search"],
+.journal-filtre,
+.composer-mode {
+  min-height: 34px;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: var(--rayon-2);
+  background: var(--surface-1);
+  color: var(--texte-1);
+  font: inherit;
+  font-size: var(--t-m);
+}
+
+.field select:hover,
+.field input[type="search"]:hover {
+  border-color: var(--texte-3);
+}
+
+.field select:focus-visible,
+.field textarea:focus-visible,
+.field input:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.field > label,
+.field > span:first-child {
+  color: var(--texte-2);
+  font-size: var(--t-s);
+  font-weight: 500;
+}
+
+.modal-hint {
+  color: var(--texte-3);
+  font-size: var(--t-xs);
+}
+
+/* « Détails techniques » : ce qui sert au débogage, replié. */
+.details-techniques {
+  margin-top: var(--esp-3);
+  color: var(--texte-3);
+  font-size: var(--t-s);
+}
+
+.details-techniques > summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+/* ── Compositions ───────────────────────────────────────────────────── */
+
+.composition-titre {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--esp-3);
+}
+
+.composition-titre .connectors-title {
+  margin: 0;
+}
+
+.composition-ligne {
+  cursor: pointer;
+  align-items: center;
+  transition: border-color var(--duree), background var(--duree);
+}
+
+.composition-ligne:hover {
+  border-color: var(--texte-3);
+  background: var(--surface-survol);
+}
+
+.composition-ligne .mcp-badge {
+  flex: none;
+}
+
+.composition-step {
+  border-radius: var(--rayon-3);
+  background: var(--surface-2);
+}
+
+.composition-step-head {
+  align-items: center;
+}
+
+.composition-step-resume {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  color: var(--texte-3);
+}
+
+.composition-step-actions {
+  gap: 2px;
+}
+
+.composition-step-btn:disabled {
+  opacity: 0.35;
+}
+
+.composition-outil {
+  gap: var(--esp-1);
+}
+
+.composition-outil-recherche {
+  width: 100%;
+}
+
+.composition-outil-compte {
+  margin-top: -2px;
+}
+
+.composition-outil-aide {
+  margin: 2px 0 0;
+  color: var(--texte-2);
+}
+
+.composition-ajouts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-2);
+}
+
+.composition-steps li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--esp-1) var(--esp-2);
+}
+
+.composition-step-quoi {
+  color: var(--texte-2);
+  font-size: var(--t-s);
+}
+
+.composition-step-tool {
+  color: var(--texte-3);
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+}
+
+.composition-steps li > pre {
+  flex-basis: 100%;
+}
+
+/* Le focus d'une ligne activable au clavier se voit comme celui d'un bouton. */
+li[role="button"]:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 720px) {
+  .composition-step-head {
+    flex-wrap: wrap;
+  }
+
+  .composition-step-btn.icon-btn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .agent-head-actions {
+    gap: var(--esp-2);
+  }
+}
+
+/* Un badge d'état ne déborde pas de sa carte : une erreur longue (un chemin
+   entier) sortait du cadre et écrasait le nom du connecteur. Le texte
+   complet reste au survol. */
+.agent-card .mcp-badge {
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

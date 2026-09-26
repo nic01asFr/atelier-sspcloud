@@ -18,6 +18,8 @@ const TRACES = {
   "fleche-gauche": '<path d="M19 12H5"/><path d="m11 6-6 6 6 6"/>',
   "fleche-droite": '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
   plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
+  "fleche-haut": '<path d="M12 19V5"/><path d="m6 11 6-6 6 6"/>',
+  "fleche-bas": '<path d="M12 5v14"/><path d="m6 13 6 6 6-6"/>',
   points: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',
   trombone:
     '<path d="m20 11.5-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"/>',

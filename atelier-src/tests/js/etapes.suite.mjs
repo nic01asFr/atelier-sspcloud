@@ -43,6 +43,8 @@ import { reglagesDepuisMeta } from "../../mcp_gateway/atelier/web/js/controllers
 import { heureDuMessage, nomDeLOrateur, questionPrecedente } from "../../mcp_gateway/atelier/web/js/views/code-chat.js";
 import { empreinteDeLArbre } from "../../mcp_gateway/atelier/web/js/views/code-tree.js";
 import { memeTexte } from "../../mcp_gateway/atelier/web/js/views/agent.js";
+import { filtrerOutils } from "../../mcp_gateway/atelier/web/js/views/composition-builder.js";
+import { badgeStatutComposition } from "../../mcp_gateway/atelier/web/js/views/connectors.js";
 
 const outil = (id, name, input = {}, extra = {}) => ({ type: "tool", id, name, input, output: "", status: "done", ...extra });
 const parole = (t) => ({ type: "text", text: t });
@@ -286,6 +288,34 @@ const parole = (t) => ({ type: "text", text: t });
   // Une description qui répète le nom ne se répète pas.
   verifier(memeTexte("Agent Qgis complet", " agent qgis  complet "), "même texte, casse et espaces mis à part");
   verifier(!memeTexte("", ""), "deux vides ne sont pas « le même texte »");
+}
+
+// ── 7. Compositions : trouver un outil parmi des centaines ──────────────
+
+{
+  const select = document.createElement("select");
+  const groupe = (label, outils) => {
+    const g = document.createElement("optgroup");
+    g.label = label;
+    for (const [valeur, texte] of outils) {
+      const o = document.createElement("option");
+      o.value = valeur;
+      o.textContent = texte;
+      g.appendChild(o);
+    }
+    select.appendChild(g);
+    return g;
+  };
+  const nav = groupe("Navigateur web", [["chrome__navigate_page", "Ouvrir une page"], ["chrome__click", "Cliquer"]]);
+  const data = groupe("data.gouv", [["datagouv__search_datasets", "Chercher des jeux de données"]]);
+  egal(filtrerOutils(select, "donnees"), 1, "la recherche ignore accents et casse");
+  verifier(nav.hidden && !data.hidden, "un connecteur sans outil trouvé se masque");
+  egal(filtrerOutils(select, "navigateur"), 2, "le nom du connecteur compte aussi");
+  egal(filtrerOutils(select, "navigate_page"), 1, "et le nom technique");
+  egal(filtrerOutils(select, ""), 3, "une recherche vide montre tout");
+
+  egal(badgeStatutComposition("production").textContent, "active", "l'état d'une composition se dit en français");
+  egal(badgeStatutComposition("temporary").textContent, "brouillon", "un « temporary » est un brouillon");
 }
 
 bilan("etapes");
