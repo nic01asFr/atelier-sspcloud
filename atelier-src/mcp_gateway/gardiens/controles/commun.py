@@ -82,6 +82,44 @@ def lancer(argv: list[str], delai: float = 20.0, cwd: str | None = None) -> tupl
     return fini.returncode, (fini.stdout or "") + erreur
 
 
+def lancer_en_groupe(argv: list[str], plafond: float, cwd: str | None = None) -> tuple[int, str]:
+    """Une commande longue qui lance elle-même des processus (le vérificateur de cohérence).
+
+    Elle part dans son propre groupe de processus ; au plafond, tout le groupe
+    est tué (par son identifiant, jamais par motif), descendants compris : un
+    `claude` lancé par elle ne survit pas à son parent. Rend (code, sortie
+    standard) ; 124 si le plafond est atteint, 127 si l'exécutable manque. La
+    sortie d'erreur n'est pas rendue : elle n'apporte rien au constat.
+    """
+    import signal
+
+    try:
+        proc = subprocess.Popen(  # noqa: S603 — argv fixé par le contrôle, sans shell
+            argv, cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            text=True, start_new_session=(os.name != "nt"),
+        )
+    except FileNotFoundError:
+        return 127, ""
+    except OSError as exc:
+        return 126, str(exc)
+    try:
+        sortie, _ = proc.communicate(timeout=plafond)
+    except subprocess.TimeoutExpired:
+        try:
+            if os.name != "nt":
+                os.killpg(proc.pid, signal.SIGKILL)
+            else:
+                proc.kill()
+        except OSError:
+            pass
+        try:
+            proc.communicate(timeout=10)
+        except (subprocess.TimeoutExpired, OSError, ValueError):
+            pass
+        return 124, ""
+    return proc.returncode, sortie or ""
+
+
 # --- /proc ------------------------------------------------------------------
 
 
@@ -198,6 +236,7 @@ class Contexte:
     reglages: dict[str, Any] = field(default_factory=dict)
     http: Callable[..., ReponseHttp] = http_get
     commande: Callable[..., tuple[int, str]] = lancer
+    commande_longue: Callable[..., tuple[int, str]] = lancer_en_groupe
     ecoutes: Callable[[], list[Ecoute]] = ecoutes_du_pod
     processus: Callable[[], list[Processus]] = processus_du_pod
     disque: Callable[[Path], tuple[int, int]] = lambda p: _disque(p)  # (total, libre) en octets

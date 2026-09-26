@@ -51,6 +51,10 @@
      "commande": ["interne", "securite.droits"], "delai_s": 10, "si_constat": "signaler",
      "params": {"autres": ["~/.claude.json.avant-*", "~/work/.claude/settings.json.avant-*", "~/.claude/settings.json.avant-*"]}},
     {"id": "securite.bypass", "gardien": "securite", "portee": "pod", "quand": {"toutes_les_min": 5},
-     "commande": ["interne", "securite.bypass"], "delai_s": 15, "si_constat": "signaler"}
+     "commande": ["interne", "securite.bypass"], "delai_s": 15, "si_constat": "signaler"},
+
+    {"id": "coherence.surfaces", "gardien": "coherence", "portee": "atelier", "quand": {"cron": "40 5 * * *", "tz": "Europe/Paris"},
+     "commande": ["interne", "coherence.surfaces"], "delai_s": 600, "si_constat": "signaler",
+     "params": {"rapide": true, "plafond_s": 540, "delai_par_surface_s": 45, "attente_au_demarrage_s": 600}}
   ]
 }

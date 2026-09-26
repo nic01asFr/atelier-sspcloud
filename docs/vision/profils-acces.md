@@ -77,9 +77,18 @@ L'accès d'un agent code à Onyxia est alors cadré par le fait de vouloir dépl
   - modèle et effort ;
   - hooks réellement exécutables depuis le projet.
 - Il compare les deux profils à ce contrat.
-- Les gardiens le font tourner régulièrement, sans modèle. **Pas fait** au 26/09 : aucun
-  contrôle de `gardiens.json` ne le lance ; il se lance à la main
-  (`~/work/bin/atelier-verifier-coherence`).
+- Les gardiens le font tourner une fois par jour, sans modèle : contrôle `coherence.surfaces`
+  du gardien Cohérence (`mcp_gateway/gardiens/controles/coherence.py`, déclaré dans
+  `gardiens.json`), à 5 h 40 (heure de Paris) et dix minutes après chaque démarrage de
+  l'exécuteur. Il lance `atelier-verifier-coherence --rapide --json` (un projet par profil,
+  quatre surfaces, 45 s au plus par surface) dans son propre groupe de processus, sous un
+  plafond de 540 s au-delà duquel tout le groupe est tué. Chaque écart devient une alerte de
+  la vue Agents (même forme que les autres contrôles, `attention` pour un écart marqué
+  « (équipe A) »), fermée quand l'écart disparaît ; un plafond atteint ou un rapport
+  illisible est une alerte d'erreur, qui ne ferme rien. Aucune réparation automatique.
+  Intégré au 26/09 (branche `v4-socle`), testé par la suite ; pas encore vu tourner sur le
+  pod. La vérification complète (tous les projets) reste à la main :
+  `~/work/bin/atelier-verifier-coherence`.
 
 ## État — équipe A (serveur `atelier`, navigateur, `atelier-app`), 26/09/2026
 

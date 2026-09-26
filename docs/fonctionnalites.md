@@ -659,6 +659,7 @@ l'heure (homme mort).
 | `securite.secrets-en-clair` | jetons dans les fichiers que lisent Claude Code ou git (par empreinte) | |
 | `securite.droits` | droits des fichiers de secrets (0600) | |
 | `securite.bypass` | processus `claude` sans garde-fou sans fiche, ou plus permissif que son mode | |
+| `coherence.surfaces` | une fois par jour (5 h 40), le vérificateur du §14 en mode rapide : chaque écart entre surfaces et profil est une alerte | |
 
 Les gestes forment une **liste fermée** (trois relances), coupables par
 `ATELIER_GARDIENS_GESTES=0`, et ne s'appliquent pas à l'Atelier en mode image.
@@ -687,8 +688,9 @@ la fusion des réglages. `ATELIER_GARDIENS_HOOKS=0` empêche la pose ;
 `--verifier <commande>` dit si une commande serait refusée. Si le module ne s'importe pas, le hook
 échoue sans bloquer.
 
-**Ce que ça ne fait pas.** Pas de contrôle de cohérence planifié (le vérificateur du §14 se lance
-à la main) ; pas de vérification des créations par le navigateur ; pas de notification hors de
+**Ce que ça ne fait pas.** Le contrôle de cohérence ne vérifie qu'un projet par profil (la
+vérification complète se lance à la main, §14) et ne répare rien ; pas de vérification des
+créations par le navigateur ; pas de notification hors de
 l'Atelier ; pas de page Gardiens (décision J-i).
 
 **Code** : `mcp_gateway/gardiens/` (`executeur.py`, `controles/`, `gestes.py`, `reparations.py`,
@@ -752,8 +754,15 @@ WebSearch refusé, hook de garde exécutable. Aucun secret affiché.
 
 Sortie 0 sans écart, 1 sinon.
 
-**Ce que ça ne fait pas.** Il n'est pas planifié par les gardiens (contrairement à ce que prévoit
-`vision/profils-acces.md`, « Vérification »).
+**Planifié** (intégré, pas encore vu tourner sur le pod) : le gardien Cohérence le lance une fois
+par jour, à 5 h 40 et dix minutes après chaque démarrage de l'exécuteur (contrôle
+`coherence.surfaces`, `gardiens/controles/coherence.py`) : `--rapide --json`, 45 s au plus par
+surface, plafond de 540 s au-delà duquel le vérificateur et les `claude` qu'il a lancés sont tués.
+Chaque écart est une alerte de la vue Agents (carte « Cohérence »), fermée quand il disparaît ; un
+plafond atteint est une alerte d'erreur, qui ne ferme rien.
+
+**Ce que ça ne fait pas.** Il ne répare rien. Le contrôle quotidien ne couvre qu'un projet par
+profil (le plus récemment modifié).
 
 **Code** : `bin/atelier-verifier-coherence`, `atelier/coherence.py`.
 **Doc** : [`coherence-projet.md`](coherence-projet.md), [`coherence-outils-audit.md`](coherence-outils-audit.md).
@@ -847,7 +856,6 @@ dans « À valider ».
 | Connecteur fait maison d'un projet, appelable depuis claude.ai | J9 | pas fait |
 | Vérification des créations par le navigateur, par les gardiens | `vision/synthese.md` §2 | pas fait |
 | Vue de la carte, tableaux de bord système | `architecture-transverse.md` §5.3 | pas fait (la carte n'est lue que par l'Assistant) |
-| Contrôle de cohérence planifié | `vision/profils-acces.md` | pas fait |
 | Coût par acteur au relais LLM | T18 | pas fait |
 | Voix dans l'interface | A-8 | pas fait (§15) |
 | Capacités courtes par conversation (fermer l'accès complet par la clé du propriétaire) | `vision/profils-acces.md` | pas fait |

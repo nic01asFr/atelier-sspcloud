@@ -196,7 +196,14 @@ class Executeur:
                 st.echecs_consecutifs = int(ancien.get("echecs_consecutifs") or 0)
                 st.premier_echec = ancien.get("premier_echec")
             # Tout part dans la première minute, étalé : on ne sait rien de l'instant.
-            st.prochaine = maintenant + min(rang * 2.0, 60.0)
+            # Un contrôle qui a besoin du service entier (le vérificateur de
+            # cohérence lance `claude` contre l'Atelier et wikichat) attend
+            # `attente_au_demarrage_s` : l'exécuteur démarre avant eux.
+            try:
+                attente = max(0.0, float(c.params.get("attente_au_demarrage_s", 0)))
+            except (TypeError, ValueError):
+                attente = 0.0
+            st.prochaine = maintenant + max(min(rang * 2.0, 60.0), attente)
             if self.actif(c) and st.derniere is not None:
                 attendu = st.derniere + periode_attendue(c.quand, st.derniere) + self.tolerance(c)
                 if maintenant > attendu:

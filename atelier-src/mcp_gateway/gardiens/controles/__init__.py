@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from mcp_gateway.gardiens.controles import automates, sante, securite
+from mcp_gateway.gardiens.controles import automates, coherence, sante, securite
 
 REGISTRE: dict[str, Callable[..., dict[str, Any]]] = {
     "entretien.automates": automates.inventaire,
@@ -21,4 +21,5 @@ REGISTRE: dict[str, Callable[..., dict[str, Any]]] = {
     "securite.secrets": securite.secrets_en_clair,
     "securite.droits": securite.droits,
     "securite.bypass": securite.bypass,
+    "coherence.surfaces": coherence.surfaces,
 }

@@ -76,7 +76,7 @@ def lignes_du_journal(tmp_path: Path) -> list[dict]:
 
 def test_la_declaration_du_paquet_est_valide_et_ne_nomme_que_des_controles_existants() -> None:
     decl = lire()
-    assert {c.gardien for c in decl.controles} == {"sante", "securite", "entretien"}
+    assert {c.gardien for c in decl.controles} == {"sante", "securite", "entretien", "coherence"}
     assert all(c.interne in REGISTRE for c in decl.controles)
     gestes_nommes = {c.geste for c in decl.controles if c.geste}
     assert gestes_nommes == set(gestes.GESTES)
