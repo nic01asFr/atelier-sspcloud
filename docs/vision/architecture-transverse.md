@@ -1056,3 +1056,28 @@ Le journal consigne, dans l'ordre, ce que chaque retour a changé dans la struct
     serveurs stdio par VS Code et le terminal.
 - **Explication de T12** : sur le poste, une tâche planifiée publie la mémoire toutes les 15 min depuis
     `Github Repositories/wikichat`, pendant que le dépôt évolue ailleurs.
+- **26/09, correctifs après essais de la vague 3** (branche `v3-correctifs`, huit défauts vus dans
+  Chrome, chacun avec un test qui échouait avant) :
+  - l'état d'un outil se lit dans le `is_error` du CLI, porté par `outil_fin` (champ `erreur`),
+    plus dans le texte de sa sortie : `take_snapshot` de https://example.com (« without needing
+    permission ») s'affichait « permission refusée » ;
+  - page changée pendant la main (adresse ou titre, `ecran.page_a_change`, `page_changee` dans le
+    fichier de la main) : le filtre ne transmet plus une action par `uid` retenue, l'agent reçoit
+    une erreur qui porte la note et lui dit de relire la page, jusqu'à son prochain
+    `take_snapshot` ; les actions sans `uid` repartent comme avant (`navigateur-atelier.md` §8.2) ;
+  - écran : « Aller » envoyait l'ancienne adresse, le blur du champ la remettait avant la
+    soumission (reproduit) ; l'adresse modifiée non soumise n'est plus écrasée par l'état du
+    serveur ;
+  - une conversation prend son titre du premier message dès l'envoi, Assistant et Code
+    (« wikichat-memory-a5827138 » pendant tout le premier tour) ;
+  - fil de l'Assistant : résultats d'outils repliés, cartes d'action visibles ; même composant que
+    Code, replié partout au-delà de 1 500 caractères ou 25 lignes ; le libellé de la colonne suit
+    la vue ;
+  - carte : un `meme_connecteur` ne compte que les connecteurs choisis par les deux projets,
+    jamais l'héritage du pool (contrat du §1.3 révisé ; 181 liens sur le pod, presque tous nés
+    du pool) ;
+  - vérificateur : « [wikichat-memory] profil code » était `~/work/projects/wikichat-memory`,
+    reste de l'ancienne reprise dans VS Code, pas le dossier de l'Assistant (profil `assistant`
+    sur toutes les surfaces, constaté sur le pod). Le reste recevait pourtant un `.mcp.json` de
+    profil `code` annonçant le slug de l'Assistant, accepté comme projet d'un agent `code` :
+    corrigé à la source (`settings.masque_par_l_assistant`) ; le dossier reste à ranger (Nicolas).
