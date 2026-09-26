@@ -9,7 +9,7 @@
 //     remplace « Prendre la main » ;
 //   - aucun port, aucun chemin DevTools dans ce que la page fabrique.
 
-import { EvenementSimule, installerDom, saisir } from "./dom-minimal.mjs";
+import { EvenementSimule, cliquer, installerDom, saisir } from "./dom-minimal.mjs";
 import { bilan, egal, nePorte, verifier } from "./verifier.mjs";
 
 import {
@@ -20,6 +20,7 @@ import {
   messageDeTouche,
   modificateurs,
   presentation,
+  tailleAjustee,
 } from "../../mcp_gateway/atelier/apps/page_ecran/ecran.js";
 
 // ── Le flux ────────────────────────────────────────────────────────────
@@ -178,6 +179,37 @@ function monterLEcran() {
   e.etat({ main: false, url: "https://c.test/" });
   egal(e.champ.value, "https://c.test/", "main rendue : le brouillon part, la barre suit la page");
   egal(e.allers(), [], "et rien n'a été envoyé");
+}
+
+// ── Sans bandes noires, et un bouton qui répond ──────────────────────────
+//
+// L'image remplissait toute la scène en `contain` : une page plus large que
+// haute laissait deux bandes noires (essais du 26/09). Elle prend désormais
+// la taille exacte qui tient dans la scène ; et « Prendre la main » dit qu'il
+// attend l'accord du serveur au lieu de rester muet.
+
+{
+  egal(tailleAjustee({ width: 800, height: 900 }, { largeur: 1600, hauteur: 900 }), { largeur: 800, hauteur: 450 },
+    "une page large se cale sur la largeur, sans bande au-dessus");
+  egal(tailleAjustee({ width: 800, height: 300 }, { largeur: 1600, hauteur: 900 }), { largeur: 533, hauteur: 300 },
+    "une scène basse cale la hauteur");
+  egal(tailleAjustee({ width: 4000, height: 4000 }, { largeur: 400, hauteur: 300 }), { largeur: 800, hauteur: 600 },
+    "jamais plus du double de la taille réelle");
+  egal(tailleAjustee({ width: 800, height: 600 }, { largeur: 0, hauteur: 0 }), null, "sans image, rien à ajuster");
+  const f = fractionDansImage(400, 225, { left: 0, top: 0, width: 800, height: 450 }, { largeur: 1600, hauteur: 900 });
+  egal(f, { x: 0.5, y: 0.5 }, "une boîte aux proportions de l'image : le centre reste le centre");
+}
+
+{
+  const e = monterLEcran();
+  e.etat({ main: false, url: "https://a.test/" });
+  const bouton = document.getElementById("main");
+  cliquer(bouton);
+  egal(bouton.textContent, "Prise de la main…", "le bouton dit qu'il attend l'accord");
+  verifier(bouton.disabled, "et ne se reclique pas entre-temps");
+  e.etat({ main: true, url: "https://a.test/" });
+  egal(bouton.textContent, "Rendre la main", "l'état suivant le remet d'aplomb");
+  verifier(!bouton.disabled, "réactivé");
 }
 
 bilan("ecran");
