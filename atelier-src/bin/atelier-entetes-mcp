@@ -1,0 +1,43 @@
+#!/bin/sh
+# atelier-entetes-mcp — `headersHelper` de l'entrée `atelier` : dit au serveur
+# de l'Atelier quelle conversation l'appelle, sur toutes les surfaces.
+#
+# Claude Code lance ce script par le shell avant de se connecter au serveur, et
+# fusionne l'objet JSON qu'il écrit dans les en-têtes de la requête.
+#
+# Pourquoi un script : Claude Code (2.1.282) développe `${VAR}` et
+# `${VAR:-repli}` dans les en-têtes en un seul passage, avec un repli qui ne
+# peut pas contenir `}` — `${ATELIER_SESSION:-${CLAUDE_CODE_SESSION_ID}}`
+# donnerait le texte `${CLAUDE_CODE_SESSION_ID}`. Et `CLAUDE_CODE_SESSION_ID`
+# n'est pas dans l'environnement du CLI : il ne le donne qu'aux serveurs stdio
+# et aux hooks. Dans VS Code et au terminal, l'en-tête statique retombait donc
+# sur « poste ».
+#
+# Ce que le script écrit :
+#   - `ATELIER_SESSION` s'il est posé (un tour de l'Atelier) ;
+#   - sinon, l'identifiant de la conversation du `claude` qui l'a lancé, lu
+#     dans `<config>/sessions/<pid>.json`, que Claude Code tient pour chaque
+#     processus (`sessionId`), en remontant les processus parents ;
+#   - sinon, rien (`{}`) : l'en-tête statique de la déclaration reste.
+# Il n'écrit jamais rien d'autre, et rien sur la sortie d'erreur.
+
+conversation="${ATELIER_SESSION:-}"
+if [ -z "$conversation" ]; then
+  config="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  pid=$PPID
+  n=0
+  while [ -n "$pid" ] && [ "$pid" -gt 1 ] 2>/dev/null && [ "$n" -lt 8 ]; do
+    fichier="$config/sessions/$pid.json"
+    if [ -r "$fichier" ]; then
+      conversation=$(sed -n 's/.*"sessionId" *: *"\([A-Za-z0-9._-]*\)".*/\1/p' "$fichier" 2>/dev/null | head -n 1)
+      [ -n "$conversation" ] && break
+    fi
+    pid=$(awk '/^PPid:/ { print $2 }' "/proc/$pid/status" 2>/dev/null)
+    n=$((n + 1))
+  done
+fi
+
+case $conversation in
+  ''|*[!A-Za-z0-9._-]*) printf '{}\n' ;;
+  *) printf '{"X-Atelier-Conversation":"%s"}\n' "$conversation" ;;
+esac

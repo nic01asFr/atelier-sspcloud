@@ -266,3 +266,106 @@ def test_aucune_surface_ne_joint_plus_onyxia_en_direct(reglages: AtelierSettings
         assert ONYXIA["url"] not in fichier.read_text(encoding="utf-8"), fichier
     # L'Assistant garde Onyxia, par le mandataire.
     assert _lire(reglages.assistant_root / ".mcp.json")["Onyxia"]["url"].endswith("/mcp/onyxia")
+
+
+# --- En-têtes de l'entrée `atelier`, par surface et par profil ----------------
+
+
+def _entetes_par_surface(reglages: AtelierSettings, dossier: Path, kind: str) -> dict[str, dict]:
+    lier_le_projet(reglages, dossier, kind=kind)
+    effectif = _lire(materialize_session_mcp(reglages, "conv-e", kind=kind, cwd=dossier))
+    return {
+        "app": effectif[SERVICE_ATELIER],
+        "vscode-terminal": _lire(dossier / ".mcp.json")[SERVICE_ATELIER],
+    }
+
+
+def test_en_tetes_du_profil_code_sur_chaque_surface(reglages: AtelierSettings) -> None:
+    """Profil `code`, conversation, projet : ce que le serveur `atelier` filtre (équipe A)."""
+    _pool_complet(reglages)
+    projet = reglages.projects_dir / "lecteur-grist"
+    surfaces = _entetes_par_surface(reglages, projet, "code")
+    for surface, entree in surfaces.items():
+        entetes = entree["headers"]
+        assert entetes["X-Atelier-Profil"] == "code", surface
+        assert entetes["X-Atelier-Projet"] == "lecteur-grist", surface
+        assert entetes["Authorization"] == "Bearer ${ATELIER_MCP_KEY}", surface
+        assert entree["headersHelper"].endswith("atelier-entetes-mcp'") or entree["headersHelper"].endswith("atelier-entetes-mcp"), surface
+    assert surfaces["app"]["headers"]["X-Atelier-Conversation"] == "conv-e"
+    # Hors de l'Atelier : la référence, que le helper complète par l'identifiant de la conversation.
+    assert surfaces["vscode-terminal"]["headers"]["X-Atelier-Conversation"] == "${ATELIER_SESSION:-poste}"
+
+
+def test_en_tetes_du_profil_assistant_sur_chaque_surface(reglages: AtelierSettings) -> None:
+    _pool_complet(reglages)
+    surfaces = _entetes_par_surface(reglages, reglages.assistant_root, "assistant")
+    for surface, entree in surfaces.items():
+        assert entree["headers"]["X-Atelier-Profil"] == "assistant", surface
+        assert "X-Atelier-Projet" not in entree["headers"], surface
+    assert surfaces["app"]["headers"]["X-Atelier-Conversation"] == "conv-e"
+
+
+def test_le_fichier_du_pool_et_la_portee_utilisateur_portent_le_profil_code(reglages: AtelierSettings) -> None:
+    _pool_complet(reglages)
+    materialize_mcp_config(reglages)
+    for fichier in (reglages.mcp_config_path, Path.home() / ".claude.json"):
+        entetes = _lire(fichier)[SERVICE_ATELIER]["headers"]
+        assert entetes["X-Atelier-Profil"] == "code", fichier
+        assert "X-Atelier-Projet" not in entetes, fichier
+    assert (reglages.work_dir / "bin" / "atelier-entetes-mcp").is_file()
+
+
+def test_la_forme_imbriquee_ne_se_developperait_pas() -> None:
+    """Pourquoi un helper : l'expression de Claude Code (2.1.282) ne connaît pas l'imbrication.
+
+    Même expression que dans le binaire : un seul passage, repli sans `}`.
+    """
+    import re
+
+    motif = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*(?::-[^}]*)?)\}")
+
+    def developper(texte: str, env: dict) -> str:
+        def remplacer(m: re.Match[str]) -> str:
+            nom, _, repli = m.group(1).partition(":-")
+            return env.get(nom) or repli
+
+        return motif.sub(remplacer, texte)
+
+    assert developper("${ATELIER_SESSION:-${CLAUDE_CODE_SESSION_ID}}", {"CLAUDE_CODE_SESSION_ID": "abc"}) == "${CLAUDE_CODE_SESSION_ID}"
+
+
+def _aide(tmp_path: Path, env_sup: dict) -> str:
+    import os
+    import shutil
+    import subprocess
+
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("pas de bash")
+    script = Path(__file__).resolve().parents[1] / "bin" / "atelier-entetes-mcp"
+    env = {k: v for k, v in os.environ.items() if k not in ("ATELIER_SESSION", "CLAUDE_CONFIG_DIR")}
+    env.update(env_sup)
+    fini = subprocess.run([bash, str(script).replace("\\", "/")], capture_output=True, text=True, env=env, timeout=20)
+    assert fini.returncode == 0 and fini.stderr == ""
+    return fini.stdout.strip()
+
+
+def test_l_aide_aux_en_tetes_donne_la_conversation_de_l_atelier(tmp_path: Path) -> None:
+    assert json.loads(_aide(tmp_path, {"ATELIER_SESSION": "conv-42"})) == {"X-Atelier-Conversation": "conv-42"}
+    assert json.loads(_aide(tmp_path, {"ATELIER_SESSION": "a b\"c"})) == {}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="/proc et PPID du pod")
+def test_l_aide_aux_en_tetes_retrouve_la_conversation_du_claude_parent(tmp_path: Path) -> None:
+    import os
+
+    config = tmp_path / "config"
+    (config / "sessions").mkdir(parents=True)
+    (config / "sessions" / f"{os.getpid()}.json").write_text(
+        json.dumps({"pid": os.getpid(), "sessionId": "4629a2a3-6fa8-43dd-999a-a6487bead4ed"}), encoding="utf-8"
+    )
+    sortie = _aide(tmp_path, {"CLAUDE_CONFIG_DIR": str(config)})
+    assert json.loads(sortie) == {"X-Atelier-Conversation": "4629a2a3-6fa8-43dd-999a-a6487bead4ed"}
+    vide = tmp_path / "vide"
+    vide.mkdir()
+    assert json.loads(_aide(tmp_path, {"CLAUDE_CONFIG_DIR": str(vide)})) == {}

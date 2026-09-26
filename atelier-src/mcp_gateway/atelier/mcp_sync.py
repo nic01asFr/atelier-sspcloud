@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shlex
 from pathlib import Path
 from urllib.parse import quote
 from typing import Any, Literal
@@ -482,7 +483,7 @@ def compute_binding_merged(
     if onyxia is not None:
         merged[SERVICE_ONYXIA] = onyxia
     merged = integrer_wikichat(integrer_le_navigateur(merged, settings), settings)
-    sortie: dict[str, dict[str, Any]] = {SERVICE_ATELIER: declaration_atelier(settings, profil)}
+    sortie: dict[str, dict[str, Any]] = {SERVICE_ATELIER: declaration_atelier(settings, profil, slug)}
     for nom, cfg in merged.items():
         if nom == SERVICE_ATELIER:
             continue
@@ -633,7 +634,36 @@ def merge_session_mcp_servers(
     return sans_amonts_gateway(merged)
 
 
-def declaration_atelier(settings: AtelierSettings, profil: str = "code") -> dict[str, Any]:
+ENTETE_PROJET = "X-Atelier-Projet"
+AIDE_AUX_ENTETES = "atelier-entetes-mcp"
+_SOURCE_AIDE = Path(__file__).resolve().parents[2] / "bin" / AIDE_AUX_ENTETES
+
+
+def aide_aux_entetes(settings: AtelierSettings) -> Path:
+    """Le `headersHelper` de l'entrée `atelier`, là où l'init le pose : `~/work/bin`."""
+    return settings.work_dir / "bin" / AIDE_AUX_ENTETES
+
+
+def assurer_l_aide_aux_entetes(settings: AtelierSettings) -> Path | None:
+    """Pose (ou met à jour) le script dans `~/work/bin` : un déploiement peut se limiter au code."""
+    cible = aide_aux_entetes(settings)
+    try:
+        if _SOURCE_AIDE.is_file():
+            contenu = _SOURCE_AIDE.read_bytes()
+            if not cible.is_file() or cible.read_bytes() != contenu:
+                cible.parent.mkdir(parents=True, exist_ok=True)
+                provisoire = cible.with_name(cible.name + ".nouveau")
+                provisoire.write_bytes(contenu)
+                provisoire.chmod(0o755)
+                provisoire.replace(cible)
+    except OSError as exc:
+        log.warning("aide aux en-têtes non posée : %s", exc)
+    return cible if cible.is_file() else None
+
+
+def declaration_atelier(
+    settings: AtelierSettings, profil: str = "code", slug: str | None = None
+) -> dict[str, Any]:
     """Comment un agent joint la passerelle de l'Atelier.
 
     Elle n'est pas dans le pool : l'y mettre ferait sonder l'Atelier par
@@ -649,17 +679,29 @@ def declaration_atelier(settings: AtelierSettings, profil: str = "code") -> dict
     (`resoudre_les_variables`), et un client hors conversation — VS Code, qui
     lit le `.mcp.json` du projet — tombe sur le repli « poste ».
 
+    Hors d'un tour de l'Atelier, `ATELIER_SESSION` manque : le `headersHelper`
+    (`bin/atelier-entetes-mcp`) donne alors l'identifiant de la conversation
+    du `claude` qui se connecte. La forme `${ATELIER_SESSION:-${…}}` ne
+    marche pas : Claude Code développe les en-têtes en un seul passage, et son
+    repli ne peut pas contenir `}` (relevé dans le binaire 2.1.282).
+
     Et le profil (contrat a) : `code` pour un agent de projet, `assistant` pour
-    l'Assistant. Le serveur `atelier` filtre ses outils sur cet en-tête.
+    l'Assistant. Le serveur `atelier` déduit le profil de la fiche de la
+    conversation ; pour une conversation qu'il ne connaît pas, en `code`, il
+    borne ses outils au projet que dit `X-Atelier-Projet`.
     """
+    entetes = {
+        "Authorization": "Bearer ${ATELIER_MCP_KEY}",
+        ENTETE_CONVERSATION: _CONVERSATION_PAR_REFERENCE,
+        ENTETE_PROFIL: "assistant" if profil == "assistant" else "code",
+    }
+    if profil != "assistant" and slug:
+        entetes[ENTETE_PROJET] = slug
     return {
         "type": "http",
         "url": f"http://127.0.0.1:{settings.port}/mcp",
-        "headers": {
-            "Authorization": "Bearer ${ATELIER_MCP_KEY}",
-            ENTETE_CONVERSATION: _CONVERSATION_PAR_REFERENCE,
-            ENTETE_PROFIL: "assistant" if profil == "assistant" else "code",
-        },
+        "headers": entetes,
+        "headersHelper": f"sh {shlex.quote(aide_aux_entetes(settings).as_posix())}",
     }
 
 
@@ -1290,7 +1332,10 @@ def materialize_mcp_config(settings: AtelierSettings) -> Path:
     finally:
         conn.close()
 
-    payload = {"mcpServers": pour_le_home(servers)}
+    assurer_l_aide_aux_entetes(settings)
+    # Le fichier du pool porte aussi l'entrée `atelier` (profil `code`, sans
+    # projet) : c'est celui d'un tour lancé sans fichier effectif.
+    payload = {"mcpServers": {SERVICE_ATELIER: declaration_atelier(settings, "code"), **pour_le_home(servers)}}
     cfg_path = settings.mcp_config_path
     _atomic_write_json(cfg_path, payload)
 
