@@ -132,7 +132,11 @@ def test_l_entree_wikichat_d_un_projet_devient_le_pont(reglages: AtelierSettings
     Contrat wikichat (`docs/hooks-et-dialogue.md` §8) : la connexion porte la
     conversation (`CLAUDE_CODE_SESSION_ID`), et `atelier` n'est plus un nom.
     """
-    from mcp_gateway.atelier.wikichat_mcp import declaration_wikichat
+    from mcp_gateway.atelier.mcp_sync import declaration_wikichat_du_profil
+
+    def declaration_wikichat(r: AtelierSettings) -> dict:
+        # Le pont, avec le profil et le projet dans son environnement (contrat b).
+        return declaration_wikichat_du_profil(r, "code", "p")
 
     projet = reglages.projects_dir / "p"
     projet.mkdir(parents=True)

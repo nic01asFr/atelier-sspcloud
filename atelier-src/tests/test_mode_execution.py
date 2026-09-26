@@ -34,15 +34,24 @@ def test_le_mode_qui_refuse_tout_n_est_pas_propose() -> None:
     assert mode_permission_valide("dontAsk") == MODE_PERMISSION_DEFAUT
 
 
-def test_manual_est_propose_depuis_que_la_question_atteint_quelqu_un() -> None:
-    """Il refusait tout faute d'interlocuteur ; le harnais en est un désormais."""
-    assert "manual" in MODES_PERMISSION
-    assert mode_permission_valide("manual") == "manual"
+def test_default_est_propose_et_manual_en_est_l_autre_nom() -> None:
+    """Il refusait tout faute d'interlocuteur ; le harnais en est un désormais.
+
+    Une seule liste pour toutes les surfaces (profils-acces.md) : `default`,
+    que l'extension affiche « Manual » et nomme aussi `manual`.
+    """
+    assert MODES_PERMISSION == ("default", "acceptEdits", "plan", "bypassPermissions")
+    assert mode_permission_valide("manual") == "default"
 
 
 def test_les_modes_utiles_sont_acceptes() -> None:
-    for mode in ("plan", "acceptEdits", "auto", "bypassPermissions", "manual"):
+    for mode in ("plan", "acceptEdits", "bypassPermissions", "default"):
         assert mode_permission_valide(mode) == mode
+
+
+def test_auto_devient_default_qui_n_accorde_rien_de_plus() -> None:
+    """`auto` demandait avant d'écrire là où `acceptEdits` écrit : `default` est le seul sûr."""
+    assert mode_permission_valide("auto") == "default"
 
 
 def test_un_mode_inconnu_retombe_sur_le_defaut() -> None:

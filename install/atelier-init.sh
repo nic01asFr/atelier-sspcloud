@@ -220,7 +220,7 @@ if [ -n "$DEPOT_ATELIER" ] || ! python3 -c "import mcp_gateway.atelier" 2>/dev/n
   dire "paquet Python"
   python3 -m pip install -q -e "$SOURCE_ATELIER" 2>&1 | tail -1 || avertir "pip install a échoué"
 fi
-for script in atelier-relancer atelier-figer-le-travail.sh atelier-app atelier-verifier-coherence atelier-chrome atelier-claude-vscode; do
+for script in atelier-relancer atelier-figer-le-travail.sh atelier-app atelier-verifier-coherence atelier-chrome atelier-chrome-onglets.mjs atelier-claude-vscode atelier-bashrc atelier-entetes-mcp; do
   if [ -f "$SOURCE_ATELIER/bin/$script" ]; then
     cp -f "$SOURCE_ATELIER/bin/$script" "$BIN/$script" && chmod +x "$BIN/$script"
   fi
@@ -281,13 +281,23 @@ chmod 600 "$SECRETS"/* 2>/dev/null || true
 # Le fichier d'environnement unique : les valeurs des références ${ATELIER_MCP_…}
 # que portent les fichiers MCP. L'Atelier le régénère (env_secrets.py) ; le
 # shell le charge, pour qu'un `claude` lancé au terminal ait les mêmes
-# connecteurs que dans l'Atelier et VS Code. Une ligne, posée une fois.
+# connecteurs que dans l'Atelier et VS Code.
+#
+# La ligne va en TÊTE de ~/.bashrc, avant la garde non interactive (audit G1) :
+# ajoutée à la fin, elle n'était jamais lue par `bash -lc`, `ssh hote cmd` ni un
+# agent qui relance `claude`. `atelier-bashrc` déplace aussi une ligne déjà mal
+# placée ; un second passage ne change rien.
 ENV_SECRETS="$SECRETS/claude-env.sh"
 if [ -f "$HOME/.bashrc" ] || [ -w "$HOME" ]; then
-  if ! grep -qF "$ENV_SECRETS" "$HOME/.bashrc" 2>/dev/null; then
-    printf '\n# Atelier : valeurs des références ${ATELIER_MCP_...} (voir docs/coherence-projet.md)\n[ -r "%s" ] && . "%s"\n' \
-      "$ENV_SECRETS" "$ENV_SECRETS" >> "$HOME/.bashrc"
-    dire "~/.bashrc charge $ENV_SECRETS"
+  if [ -f "$SOURCE_ATELIER/bin/atelier-bashrc" ]; then
+    etat_bashrc="$(sh "$SOURCE_ATELIER/bin/atelier-bashrc" "$HOME/.bashrc" "$ENV_SECRETS" "$BIN/atelier-claude-vscode" "$BIN/claude" 2>/dev/null || echo "échec")"
+    case "$etat_bashrc" in
+      posé) dire "~/.bashrc charge $ENV_SECRETS avant sa garde non interactive" ;;
+      inchangé) ;;
+      *) avertir "~/.bashrc n'a pas pu être mis à jour : un shell non interactif n'aura pas les secrets" ;;
+    esac
+  else
+    avertir "atelier-bashrc absent de $SOURCE_ATELIER/bin : ~/.bashrc non mis à jour"
   fi
 fi
 

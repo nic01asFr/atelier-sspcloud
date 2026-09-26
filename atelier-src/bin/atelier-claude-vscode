@@ -1,5 +1,6 @@
 #!/bin/sh
-# atelier-claude-vscode — enveloppeur du `claude` que lance l'extension VS Code.
+# atelier-claude-vscode — enveloppeur du `claude` que lancent l'extension VS Code
+# et le terminal.
 #
 # L'extension Claude Code le prend pour exécutable (réglage
 # `claudeCode.claudeProcessWrapper`, posé par l'Atelier dans les réglages de
@@ -7,19 +8,36 @@
 #
 #   atelier-claude-vscode <binaire claude de l'extension> <arguments…>
 #
-# Il charge les valeurs des références `${ATELIER_MCP_…}` depuis le fichier
-# d'environnement unique, `~/work/.secrets/claude-env.sh` (0600, régénéré par
-# l'Atelier), puis cède la place à la commande reçue. Les valeurs ne passent
-# donc plus par `claudeCode.environmentVariables`, qui les gardait en clair
-# dans les réglages de code-server, et un jeton renouvelé est relu à chaque
-# lancement.
+# Le terminal l'appelle de la même façon, par l'alias `claude` que pose
+# `atelier-bashrc` : `atelier-claude-vscode ~/work/bin/claude <arguments…>`.
+#
+# 1. Il charge les valeurs des références `${ATELIER_MCP_…}` depuis le fichier
+#    d'environnement unique, `~/work/.secrets/claude-env.sh` (0600, régénéré
+#    par l'Atelier). Les valeurs ne passent donc plus par
+#    `claudeCode.environmentVariables`, et un jeton renouvelé est relu à chaque
+#    lancement.
+#
+# 2. Il applique le mode de permission (docs/vision/profils-acces.md) :
+#    - une conversation reprise (`--resume <id>`, `-r <id>`, `--session-id <id>`)
+#      qui a un choix dans le magasin de l'extension
+#      (`<code-server>/User/globalStorage/anthropic.claude-code/session-permission-modes/<id>.json`,
+#      où l'Atelier écrit aussi) part dans ce mode ;
+#    - sans choix pour la conversation, un lancement de l'extension
+#      (`CLAUDE_CODE_ENTRYPOINT=claude-vscode`) perd le `--permission-mode`
+#      qu'elle a tiré de son état global : le CLI résout alors le défaut du
+#      projet (`permissions.defaultMode` de `.claude/settings.local.json`),
+#      comme au terminal. Avec un enveloppeur, l'extension passe sinon
+#      `default` d'office (`resolvePermissionModeInCli` faux, relevé en 2.1.282).
+#    Un `--permission-mode` tapé au terminal sans conversation à reprendre
+#    n'est pas touché.
 #
 # Rien n'est affiché : ni le contenu du fichier, ni les variables. La sortie
 # standard appartient au protocole entre l'extension et `claude`.
 #
-# Réglage (environnement) :
-#   ATELIER_WORK   volume de travail ; par défaut le dossier parent de celui
-#                  qui contient ce script (~/work/bin -> ~/work).
+# Réglages (environnement) :
+#   ATELIER_WORK               volume de travail ; par défaut le dossier parent
+#                              de celui qui contient ce script (~/work/bin -> ~/work).
+#   ATELIER_CODE_SERVER_DATA   données de code-server (~/.local/share/code-server).
 
 ici=$(dirname -- "$0")
 WORK="${ATELIER_WORK:-$(CDPATH= cd -- "$ici/.." 2>/dev/null && pwd)}"
@@ -39,4 +57,69 @@ if [ "$#" -eq 0 ]; then
   echo "atelier-claude-vscode : aucune commande à lancer" >&2
   exit 64
 fi
+
+# --- mode de permission ------------------------------------------------------
+
+DONNEES="${ATELIER_CODE_SERVER_DATA:-$HOME/.local/share/code-server}"
+MAGASIN="$DONNEES/User/globalStorage/anthropic.claude-code/session-permission-modes"
+
+# L'identifiant de la conversation reprise, s'il y en a une.
+conversation=""
+suivant=""
+for a do
+  if [ -n "$suivant" ]; then
+    conversation=$a
+    suivant=""
+    continue
+  fi
+  case $a in
+    --resume|-r|--session-id) suivant=1 ;;
+    --resume=*|--session-id=*) conversation=${a#*=} ;;
+  esac
+done
+
+# Le choix enregistré pour elle : un des quatre modes, de moins de 30 jours.
+choisi=""
+case $conversation in
+  ''|*/*|*..*) ;;
+  *)
+    fichier="$MAGASIN/$conversation.json"
+    if [ -r "$fichier" ]; then
+      contenu=$(cat "$fichier" 2>/dev/null)
+      mode=$(printf '%s' "$contenu" | sed -n 's/.*"mode" *: *"\([A-Za-z]*\)".*/\1/p')
+      date=$(printf '%s' "$contenu" | sed -n 's/.*"updatedAt" *: *\([0-9][0-9]*\).*/\1/p')
+      maintenant=$(( $(date +%s) * 1000 ))
+      case $mode in
+        default|acceptEdits|plan|bypassPermissions)
+          if [ -n "$date" ] && [ $(( maintenant - date )) -le 2592000000 ]; then
+            choisi=$mode
+          fi
+          ;;
+      esac
+    fi
+    ;;
+esac
+
+if [ -n "$choisi" ] || [ "${CLAUDE_CODE_ENTRYPOINT:-}" = "claude-vscode" ]; then
+  # On réécrit les arguments sans leur `--permission-mode`, puis on ajoute
+  # le choix de la conversation s'il y en a un.
+  compte=$#
+  sauter=""
+  for a do
+    if [ -n "$sauter" ]; then
+      sauter=""
+      continue
+    fi
+    case $a in
+      --permission-mode) sauter=1 ;;
+      --permission-mode=*) ;;
+      *) set -- "$@" "$a" ;;
+    esac
+  done
+  shift "$compte"
+  if [ -n "$choisi" ]; then
+    set -- "$@" --permission-mode "$choisi"
+  fi
+fi
+
 exec "$@"

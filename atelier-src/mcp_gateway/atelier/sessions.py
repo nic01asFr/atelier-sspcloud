@@ -15,7 +15,6 @@ from typing import Any, Callable, Literal
 
 from mcp_gateway.atelier.config import AtelierSettings
 from mcp_gateway.atelier.harness import (
-    MODE_SANS_INTERLOCUTEUR,
     AtelierEvent,
     Harness,
     TurnResult,
@@ -366,7 +365,20 @@ class SessionStore:
         path = self._path(session_id)
         if not path.is_file():
             return None
-        return SessionRecord.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        return self._avec_son_mode(SessionRecord.from_dict(json.loads(path.read_text(encoding="utf-8"))))
+
+    def _avec_son_mode(self, rec: SessionRecord) -> SessionRecord:
+        """Le mode de la conversation, lu à l'endroit unique que partagent les surfaces.
+
+        Le magasin de l'extension VS Code (`modes_permission`), sous
+        l'identifiant du CLI : un choix fait dans VS Code se lit ici, et
+        inversement. La fiche n'en garde qu'une copie de lecture, pour les
+        gardiens qui la lisent sans passer par nous.
+        """
+        from mcp_gateway.atelier.modes_permission import mode_de_la_conversation
+
+        rec.permission_mode = mode_de_la_conversation(self._claude_cli_id(rec))
+        return rec
 
     def list_sessions(
         self,
@@ -387,7 +399,7 @@ class SessionStore:
                 continue
             if not include_archived and rec.state == "archived":
                 continue
-            out.append(rec)
+            out.append(self._avec_son_mode(rec))
         out.sort(key=lambda r: r.updated_at or r.created_at, reverse=True)
         return out
 
@@ -454,12 +466,18 @@ class SessionStore:
                 rec.state = "archived"
             elif rec.state == "archived":
                 rec.state = "idle"
-        # Un mode inconnu n'est pas une erreur à remonter : il vaut « comme
-        # avant ». Une chaîne vide rend la conversation au réglage du service.
+        # Le choix de la conversation va à l'endroit unique que lisent l'app,
+        # VS Code et le terminal (`modes_permission`). Une chaîne vide rend la
+        # conversation au défaut du projet, puis du service ; un mode inconnu
+        # vaut celui du service, comme avant.
         if permission_mode is not None:
+            from mcp_gateway.atelier.modes_permission import ecrire_mode_de_la_conversation
+
             demande = permission_mode.strip()
-            rec.permission_mode = (
-                mode_permission_valide(demande) if demande else ""
+            rec.permission_mode = ecrire_mode_de_la_conversation(
+                self.settings,
+                self._claude_cli_id(rec),
+                mode_permission_valide(demande) if demande else "",
             )
         if effort is not None:
             rec.effort = effort_valide(effort)
@@ -976,6 +994,14 @@ class SessionStore:
         slug = (rec.slug or "").strip() or self.settings.default_slug
         return f"{slug}-{rec.session_id[:6]}"
 
+    def _mode_du_tour(self, rec: SessionRecord, claude_cli_id: str) -> str:
+        from mcp_gateway.atelier.modes_permission import mode_resolu, rafraichir_la_conversation
+
+        mode, _source = mode_resolu(self.settings, rec.cwd, claude_cli_id)
+        # Un choix qu'on applique reste en vie : l'extension l'oublierait après 30 jours.
+        rafraichir_la_conversation(claude_cli_id)
+        return mode
+
     def identifiant_claude(self, rec: SessionRecord) -> str:
         """L'identifiant sous lequel Claude Code connaît cette conversation.
 
@@ -1230,16 +1256,15 @@ class SessionStore:
                 log_path=Path(rec.log_path),
                 timeout_s=self.settings.turn_timeout_s,
                 mcp_config_path=mcp_config_path,
-                # Le mode choisi pour la conversation, sinon celui du service
-                # — mais un tour sans interlocuteur ne peut pas attendre une
-                # autorisation : faute de choix, il garde l'ancien défaut.
+                # La même règle que VS Code et le terminal : le choix de la
+                # conversation, sinon le défaut du projet, sinon celui du
+                # service (`modes_permission.mode_resolu`). Plus de bypass
+                # implicite pour un tour sans interlocuteur.
                 #
                 # `mode` : celui qu'un appelant demande pour ce seul tour
                 # (atelier_envoyer), déjà vérifié par lui — jamais un bypass que
                 # ni la conversation ni le projet n'accordaient.
-                permission_mode=mode
-                or rec.permission_mode
-                or (self.settings.permission_mode if peut_attendre else MODE_SANS_INTERLOCUTEUR),
+                permission_mode=mode or self._mode_du_tour(rec, claude_cli_id),
                 peut_attendre=peut_attendre,
                 effort=rec.effort or self.settings.effort,
                 agent_name=self._nom_wikichat(rec),

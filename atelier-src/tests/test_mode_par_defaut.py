@@ -1,11 +1,10 @@
-"""Le mode par défaut est `acceptEdits` — sauf pour un tour que personne ne regarde.
+"""Le mode par défaut est `acceptEdits`, pour tous les tours, regardés ou non.
 
-Depuis que « toujours » tient, `acceptEdits` demande une fois par commande et
-se tait : c'est le réglage d'un atelier où quelqu'un regarde. Mais un tour
-sans interlocuteur — agent piloté, script — ne peut pas attendre une
-autorisation : le harnais refuse d'office ce qui demande. Sous `acceptEdits`
-il verrait chacune de ses commandes refusée. Faute de mode choisi pour la
-conversation, il garde donc `bypassPermissions`.
+Un tour sans interlocuteur — agent piloté, script — recevait `bypassPermissions`
+faute de choix : l'app ne donnait pas le même mode que VS Code et le terminal.
+Désormais la règle est la même partout (`modes_permission.mode_resolu`) : le
+choix de la conversation, sinon le défaut du projet, sinon celui du service.
+Un bypass se choisit ; il ne se reçoit plus par défaut.
 """
 
 from __future__ import annotations

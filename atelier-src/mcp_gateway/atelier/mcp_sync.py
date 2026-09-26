@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shlex
 from pathlib import Path
 from urllib.parse import quote
 from typing import Any, Literal
@@ -68,15 +69,20 @@ def sans_amonts_gateway(servers: dict[str, Any]) -> dict[str, Any]:
 
 
 def pour_le_home(servers: dict[str, Any]) -> dict[str, Any]:
-    """Le HOME porte Onyxia : les projets sans `.mcp.json` en héritent.
+    """Les déclarations du pool pour un fichier hors profil (`claude-mcp.json`).
 
-    On n'écarte que l'alias déguisé (`Onyxia_nic01asfr`), qui n'est pas
-    le service Onyxia — c'est la porte `/mcp` de l'Atelier.
+    On écarte l'alias déguisé (`Onyxia_nic01asfr`), qui n'est pas le service
+    Onyxia — c'est la porte `/mcp` de l'Atelier — et Onyxia lui-même, que
+    personne ne joint plus en direct.
 
     Le navigateur n'y demande rien de plus : c'est un serveur stdio, dont
     chaque client lance son propre processus — le cloisonnement est là.
     """
     propre = sans_amonts_gateway(servers)
+    # Plus personne ne joint Onyxia en direct (contrat de l'équipe O) : il
+    # passe par le mandataire de la passerelle, que seul le profil distribue.
+    directes = adresses_directes_d_onyxia(propre)
+    propre = {nom: cfg for nom, cfg in propre.items() if not _est_onyxia_direct(nom, cfg, directes)}
     sortie: dict[str, Any] = {}
     for nom, cfg in propre.items():
         if isinstance(cfg, dict):
@@ -89,19 +95,193 @@ def pour_le_home(servers: dict[str, Any]) -> dict[str, Any]:
     return sortie
 
 
-def assurer_onyxia_natif(
-    merged: dict[str, dict[str, Any]],
-    pool: dict[str, dict[str, Any]],
-) -> dict[str, dict[str, Any]]:
-    """Un agent Code a Onyxia en MCP natif dès que le pool l'a.
+# --- Profils (docs/vision/profils-acces.md) ---------------------------------
+#
+# Un profil par type d'acteur, identique sur toutes les surfaces : `code` pour
+# les agents d'un projet, `assistant` pour le dossier de l'Assistant. La
+# configuration d'un dossier est calculée par une seule fonction,
+# `configuration_du_profil`, que lisent le fichier effectif d'un tour de
+# l'Atelier, le `.mcp.json` du dossier (VS Code, terminal) et
+# `enabledMcpjsonServers`.
 
-    La case Connecteurs d'un projet pouvait l'oublier ; les tools directs
-    n'en dépendaient pas.
+Profil = Literal["code", "assistant"]
+PROFILS: tuple[str, ...] = ("code", "assistant")
+# L'en-tête par lequel le serveur `atelier` sait quel profil servir (contrat a,
+# équipe A). Le pont wikichat reçoit le sien par son environnement (contrat b).
+ENTETE_PROFIL = "X-Atelier-Profil"
+ENV_WIKICHAT_PROFIL = "WIKICHAT_PROFIL"
+ENV_WIKICHAT_PROJET = "WIKICHAT_PROJET"
+# Le nom sous lequel l'Assistant se présente à wikichat comme projet.
+PROJET_ASSISTANT = "assistant"
+# Le nom de l'entrée Onyxia dans un fichier de configuration.
+SERVICE_ONYXIA = "Onyxia"
+
+
+def profil_du_type(kind: str) -> Profil:
+    """Le profil d'une conversation : `assistant` pour l'Assistant, `code` sinon."""
+    return "assistant" if kind == "assistant" else "code"
+
+
+def est_onyxia(nom: str) -> bool:
+    """L'entrée du service Onyxia, quelle que soit sa casse (pas l'alias déguisé)."""
+    return nom.lower() == "onyxia"
+
+
+def _onyxia_bouchon(
+    settings: AtelierSettings,
+    slug: str,
+    profil: str,
+    *,
+    pool: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """En attendant `onyxia_projet` (équipe O), avec sa signature et ses règles.
+
+    - `code` : rien. L'ancien `assurer_onyxia_natif` imposait Onyxia à tout
+      projet dès que le pool l'avait (audit G3) : chaque tour attendait 30 s
+      une poignée de main qui ne venait pas. Un agent code n'a plus Onyxia que
+      par le déploiement de son projet (bloc `deploiement` de `projet.json`),
+      ce que dit le module de l'équipe O ;
+    - `assistant` : l'entrée du mandataire de la passerelle, `/mcp/onyxia`.
+      Plus personne ne joint Onyxia en direct.
+
+    Rien si le pool n'a pas d'Onyxia.
     """
-    if "Onyxia" in pool and "Onyxia" not in merged:
-        merged = dict(merged)
-        merged["Onyxia"] = pool["Onyxia"]
-    return sans_amonts_gateway(merged)
+    del slug
+    if profil != "assistant":
+        return None
+    pool = _pool_enabled(settings) if pool is None else pool
+    if not any(est_onyxia(nom) for nom in pool):
+        return None
+    return {
+        "type": "http",
+        "url": f"http://127.0.0.1:{settings.port}/mcp/onyxia",
+        "headers": {"Authorization": "Bearer ${ATELIER_MCP_KEY}"},
+    }
+
+
+def onyxia_du_profil(
+    settings: AtelierSettings,
+    slug: str,
+    profil: str,
+    *,
+    pool: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """L'entrée Onyxia que reçoit ce dossier (contrat c), sous le nom `Onyxia`.
+
+    `onyxia_pour_projet(settings, slug, profil, *, pool=None) -> dict | None`,
+    du module de l'équipe O, fait foi dès qu'il existe ; sinon, le bouchon.
+    """
+    try:
+        from mcp_gateway.atelier.onyxia_projet import onyxia_pour_projet  # type: ignore[import-not-found]
+    except ImportError:
+        onyxia_pour_projet = _onyxia_bouchon
+    entree = onyxia_pour_projet(settings, slug, profil, pool=pool)
+    return entree if isinstance(entree, dict) and entree else None
+
+
+def adresses_directes_d_onyxia(pool: dict[str, Any]) -> set[str]:
+    """Les adresses du service Onyxia lui-même (`passerelle-mcp…`), telles que le pool les déclare."""
+    return {
+        str(cfg.get("url") or "").rstrip("/")
+        for nom, cfg in pool.items()
+        if est_onyxia(nom) and isinstance(cfg, dict) and cfg.get("url")
+    }
+
+
+def _est_onyxia_direct(nom: str, cfg: Any, directes: set[str]) -> bool:
+    """Une entrée qui joint Onyxia sans passer par le mandataire de l'Atelier."""
+    if not isinstance(cfg, dict):
+        return est_onyxia(nom)
+    url = str(cfg.get("url") or "").rstrip("/")
+    if url and url in directes:
+        return True
+    return est_onyxia(nom) and "/mcp/onyxia" not in url
+
+
+# --- Connecteurs en échec d'authentification --------------------------------
+#
+# Mesuré le 25/09 (audit M5) : n8n répond 401 avec le jeton du pool, il est en
+# échec sur toutes les surfaces, et il restait écrit dans tous les projets. La
+# dernière sonde du pool est notée ici ; un connecteur dont elle a échoué en
+# authentification n'est plus distribué, et il est signalé (journal, état des
+# connecteurs d'un projet, vérificateur de cohérence).
+
+FICHIER_SONDES = "sondes-authentification.json"
+_ECHEC_AUTH = re.compile(r"\b(?:401|403)\b|unauthori[sz]ed|forbidden", re.IGNORECASE)
+
+
+def _chemin_des_sondes(settings: AtelierSettings) -> Path:
+    return settings.mcp_dir / FICHIER_SONDES
+
+
+def connecteurs_en_echec_d_authentification(settings: AtelierSettings) -> dict[str, dict[str, Any]]:
+    """Nom du connecteur → `{code, depuis}` ; vide si aucune sonde n'a échoué ainsi."""
+    lu = _load_json_object(_chemin_des_sondes(settings)) or {}
+    echecs = lu.get("echecs")
+    return {str(k): v for k, v in echecs.items() if isinstance(v, dict)} if isinstance(echecs, dict) else {}
+
+
+def noter_les_sondes(settings: AtelierSettings, statut: dict[str, Any] | None) -> bool:
+    """Retient, de la dernière sonde du pool, les connecteurs refusés en authentification.
+
+    `statut` est celui du pool (`pool.startup()`) : clé `registry:<nom>` ou
+    `<nom>`, valeur `connected`, `error: …`, `disabled`… Une sonde réussie
+    efface l'échec. Rien du message d'erreur n'est gardé : seulement le code.
+    Si l'ensemble change, les projets sont reliés, pour que le connecteur
+    disparaisse (ou revienne) partout. Rend vrai si l'ensemble a changé.
+    """
+    if not isinstance(statut, dict):
+        return False
+    from datetime import datetime, timezone
+
+    avant = connecteurs_en_echec_d_authentification(settings)
+    apres = dict(avant)
+    for cle, valeur in statut.items():
+        nom = str(cle).split(":", 1)[1] if str(cle).startswith("registry:") else str(cle)
+        texte = str(valeur or "")
+        if texte.startswith("error") and _ECHEC_AUTH.search(texte):
+            code = 403 if "403" in texte or "forbidden" in texte.lower() else 401
+            if nom not in apres:
+                apres[nom] = {"code": code, "depuis": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+        elif texte and texte != "probing":
+            apres.pop(nom, None)
+    if set(apres) == set(avant):
+        return False
+    for nom in sorted(set(apres) - set(avant)):
+        log.warning(
+            "connecteur %s refusé en authentification (%s) : il n'est plus distribué aux agents",
+            nom,
+            apres[nom]["code"],
+        )
+    _atomic_write_json(_chemin_des_sondes(settings), {"echecs": apres})
+    try:
+        lier_tous_les_projets(settings)
+    except OSError as exc:
+        log.warning("liaison après sonde impossible : %s", exc)
+    return True
+
+
+def _sans_echecs_d_authentification(
+    settings: AtelierSettings, servers: dict[str, Any]
+) -> dict[str, Any]:
+    echecs = connecteurs_en_echec_d_authentification(settings)
+    if not echecs:
+        return servers
+    return {nom: cfg for nom, cfg in servers.items() if nom not in echecs}
+
+
+def _vise_la_passerelle(cfg: Any, settings: AtelierSettings) -> bool:
+    """Vrai pour une entrée qui pointe vers la porte `/mcp` de l'Atelier.
+
+    Sous un autre nom que `atelier`, c'est une porte déguisée : elle donnerait
+    à un agent code les méta-outils de la passerelle, sans en-tête de profil.
+    """
+    if not isinstance(cfg, dict):
+        return False
+    url = str(cfg.get("url") or "")
+    if not url:
+        return False
+    return _hote_normalise(url) == f"local:{settings.port}"
 
 
 def _load_json_object(path: Path) -> dict[str, Any] | None:
@@ -126,11 +306,67 @@ def herite_du_pool(cwd: Path) -> bool:
     return (cwd / MARQUE_HERITAGE).is_file() or not (cwd / ".mcp.json").is_file()
 
 
+# Le choix des connecteurs, gardé hors du `.mcp.json` (audit M3) : ce fichier
+# est désormais la *sortie* du profil, au format Claude Code, et un connecteur
+# qu'on n'y distribue plus (échec d'authentification, Onyxia) ne doit pas sortir
+# du choix de la personne pour autant. Format : celui des anciens « bindings »,
+# `{"mcpServers": {nom: {"enabled": bool}}}`.
+SELECTION = Path(".atelier") / "connecteurs-choisis.json"
+
+
+def _est_au_format_interne(donnees: dict[str, Any] | None) -> bool:
+    """Un ancien « binding » à drapeaux, pas une déclaration Claude Code.
+
+    Relevé sur le pod (audit M3) : `{"mcpServers": {"filesystem": {"enabled": false}}}`
+    dans le dossier de l'Assistant. Claude Code n'y lit aucun serveur.
+    """
+    serveurs = (donnees or {}).get("mcpServers")
+    if not isinstance(serveurs, dict) or not serveurs:
+        return False
+    for cfg in serveurs.values():
+        if not isinstance(cfg, dict):
+            return False
+        if set(cfg) - {"enabled"}:
+            return False
+    return True
+
+
+def _selection_du_dossier(cwd: Path) -> dict[str, Any] | None:
+    lue = _load_json_object(cwd / SELECTION)
+    return lue if isinstance(lue, dict) and isinstance(lue.get("mcpServers"), dict) else None
+
+
+def _ecrire_la_selection(cwd: Path, noms_actifs: dict[str, bool]) -> None:
+    _atomic_write_json(
+        cwd / SELECTION,
+        {"mcpServers": {nom: {"enabled": bool(actif)} for nom, actif in sorted(noms_actifs.items())}},
+    )
+
+
 def _binding_du_dossier(cwd: Path) -> dict[str, Any] | None:
-    """Le choix du projet, ou None s'il hérite du pool."""
+    """Le choix du projet, ou None s'il hérite du pool.
+
+    Le choix vient de la sélection (`.atelier/connecteurs-choisis.json`), et
+    les déclarations propres au projet de son `.mcp.json`. Sans sélection (un
+    dossier d'avant), le `.mcp.json` sert des deux.
+    """
     if (cwd / MARQUE_HERITAGE).is_file():
         return None
-    return _load_json_object(cwd / ".mcp.json")
+    fichier = _load_json_object(cwd / ".mcp.json")
+    selection = _selection_du_dossier(cwd)
+    if selection is None:
+        return fichier
+    declarations = (fichier or {}).get("mcpServers")
+    declarations = declarations if isinstance(declarations, dict) else {}
+    binding: dict[str, Any] = {}
+    for nom, drapeau in selection["mcpServers"].items():
+        actif = bool(drapeau.get("enabled", True)) if isinstance(drapeau, dict) else bool(drapeau)
+        propre = declarations.get(nom)
+        if actif and isinstance(propre, dict) and set(propre) - {"enabled"}:
+            binding[nom] = propre
+        else:
+            binding[nom] = {"enabled": actif}
+    return {"mcpServers": binding}
 
 
 def _binding_selection(binding: dict[str, Any]) -> dict[str, bool]:
@@ -169,36 +405,132 @@ def apply_mcp_overlay(
     return out
 
 
+def slug_du_dossier(settings: AtelierSettings, cwd: Path, profil: str) -> str:
+    """Le projet que wikichat et Onyxia associent à ce dossier.
+
+    `assistant` pour le dossier de l'Assistant ; pour un projet, le nom de son
+    dossier sous `projects_dir` (ou celui du dossier lui-même s'il est ailleurs).
+    """
+    if profil == "assistant":
+        return PROJET_ASSISTANT
+    try:
+        relatif = Path(cwd).resolve().relative_to(settings.projects_dir.resolve())
+        if relatif.parts:
+            return relatif.parts[0]
+    except (ValueError, OSError):
+        pass
+    return Path(cwd).name
+
+
+def declaration_wikichat_du_profil(
+    settings: AtelierSettings, profil: str, slug: str
+) -> dict[str, Any]:
+    """Le pont wikichat, avec le profil et le projet dans son environnement (contrat b).
+
+    Le serveur wikichat filtre ses outils sur ces deux valeurs (équipe W) :
+    un agent code n'y voit que son projet.
+    """
+    declaration = declaration_wikichat(settings)
+    env = dict(declaration.get("env") or {})
+    env[ENV_WIKICHAT_PROFIL] = profil
+    env[ENV_WIKICHAT_PROJET] = slug
+    return {**declaration, "env": env}
+
+
 def compute_binding_merged(
     settings: AtelierSettings,
     *,
     kind: WorkspaceKind,
     cwd: Path,
 ) -> dict[str, dict[str, Any]]:
-    """Niveau 2 seul — pool ∩ bindings fichier, sans overlay conversation."""
+    """Ce que le profil donne à ce dossier, avant toute écriture (sans overlay de conversation).
+
+    - `code` : le pool, restreint au choix du projet s'il en a fait un ;
+    - `assistant` : les seuls connecteurs choisis pour l'Assistant (les autres
+      passent par les méta-outils de la passerelle) ;
+    - dans les deux cas : jamais un connecteur refusé en authentification à
+      la dernière sonde, jamais une porte déguisée vers `/mcp`, Onyxia tel que
+      le dit `onyxia_pour_projet`, et le serveur `atelier` avec l'en-tête du
+      profil.
+
+    Les valeurs sont celles du pool (secrets compris) : `configuration_du_profil`
+    en fait des références.
+    """
+    profil = profil_du_type(kind)
+    slug = slug_du_dossier(settings, cwd, profil)
+    pool_entier = _pool_enabled(settings)
+    directes = adresses_directes_d_onyxia(pool_entier)
+    pool = _sans_echecs_d_authentification(settings, pool_entier)
+    if profil == "code":
+        merged = merge_session_mcp_servers(pool, _binding_du_dossier(cwd))
+    else:
+        global_binding = _binding_du_dossier(settings.assistant_root) or {"mcpServers": {}}
+        session_binding = (
+            None
+            if Path(cwd).resolve() == settings.assistant_root.resolve()
+            else _binding_du_dossier(cwd)
+        )
+        merged = merge_assistant_bindings(pool, global_binding, session_binding)
+    merged = _sans_echecs_d_authentification(settings, merged)
+    merged = {
+        nom: cfg
+        for nom, cfg in merged.items()
+        if not _est_onyxia_direct(nom, cfg, directes)
+        and not est_onyxia(nom)
+        and not (nom != SERVICE_ATELIER and _vise_la_passerelle(cfg, settings))
+    }
+    onyxia = onyxia_du_profil(settings, slug, profil, pool=pool_entier)
+    if onyxia is not None:
+        merged[SERVICE_ONYXIA] = onyxia
+    merged = integrer_wikichat(integrer_le_navigateur(merged, settings), settings)
+    sortie: dict[str, dict[str, Any]] = {SERVICE_ATELIER: declaration_atelier(settings, profil, slug)}
+    for nom, cfg in merged.items():
+        if nom == SERVICE_ATELIER:
+            continue
+        if est_wikichat(nom, cfg, settings):
+            sortie[nom] = declaration_wikichat_du_profil(settings, profil, slug)
+        else:
+            sortie[nom] = cfg
+    return sortie
+
+
+def configuration_du_profil(
+    settings: AtelierSettings,
+    *,
+    profil: str,
+    cwd: Path,
+) -> dict[str, dict[str, Any]]:
+    """LA configuration d'un dossier, la même pour l'app, VS Code et le terminal.
+
+    Ce qu'écrit le `.mcp.json` du dossier (lu par VS Code et le terminal) et ce
+    que reprend le fichier effectif d'un tour de l'Atelier, qui n'y ajoute que
+    la résolution des variables de la conversation (`${ATELIER_SESSION}`).
+    Jamais un secret en clair : chaque valeur du pool devient sa référence
+    `${ATELIER_MCP_…}`, qu'on trouve dans `claude-env.sh`.
+    """
+    kind: WorkspaceKind = "assistant" if profil == "assistant" else "code"
+    merged = compute_binding_merged(settings, kind=kind, cwd=cwd)
     pool = _pool_enabled(settings)
-    if kind == "code":
-        binding = _binding_du_dossier(cwd)
-        merged = assurer_onyxia_natif(merge_session_mcp_servers(pool, binding), pool)
-        return integrer_l_atelier(
-            assurer_l_atelier(
-                integrer_wikichat(integrer_le_navigateur(merged, settings), settings), settings
-            )
-        )
-    global_binding = _load_json_object(settings.assistant_root / ".mcp.json")
-    session_binding = _binding_du_dossier(cwd)
-    return integrer_l_atelier(
-        assurer_l_atelier(
-            integrer_wikichat(
-                integrer_le_navigateur(
-                    merge_assistant_bindings(pool, global_binding, session_binding),
-                    settings,
-                ),
-                settings,
-            ),
-            settings,
-        )
-    )
+    herite = herite_du_pool(cwd) and profil == "code"
+    chemin = cwd / ".mcp.json"
+    existant = _load_json_object(chemin) or {}
+    deja = existant.get("mcpServers")
+    deja = deja if isinstance(deja, dict) and not _est_au_format_interne(existant) else {}
+    sortie: dict[str, dict[str, Any]] = {}
+    for nom, cfg in merged.items():
+        if not isinstance(cfg, dict):
+            continue
+        if nom == SERVICE_ATELIER or est_wikichat(nom, cfg, settings) or (
+            est_le_navigateur(nom) and navigateur_configure(settings)
+        ):
+            sortie[nom] = cfg
+        elif not herite and isinstance(deja.get(nom), dict) and set(deja[nom]) - {"enabled"} and not est_onyxia(nom):
+            config = dict(deja[nom])
+            config.pop("enabled", None)
+            sortie[nom] = _migrer_les_secrets(nom, config, pool.get(nom), chemin)
+        else:
+            sortie[nom], _ = en_references(nom, cfg)
+    return sortie
 
 
 def assurer_l_atelier(servers: dict[str, Any], settings: AtelierSettings) -> dict[str, Any]:
@@ -220,7 +552,7 @@ def portee_utilisateur(settings: AtelierSettings) -> dict[str, Any]:
     la portée utilisateur ne porte que ce qui est commun à tous, sans quoi
     VS Code et le terminal verraient des connecteurs que le projet n'a pas.
     """
-    return {SERVICE_ATELIER: declaration_atelier(settings)}
+    return {SERVICE_ATELIER: declaration_atelier(settings, "code")}
 
 
 def merge_assistant_bindings(
@@ -272,7 +604,8 @@ def merge_session_mcp_servers(
         for name, enabled in _binding_selection(binding).items():
             if not enabled:
                 continue
-            if isinstance(declarations.get(name), dict) and declarations[name]:
+            propre = declarations.get(name)
+            if isinstance(propre, dict) and set(propre) - {"enabled"}:
                 # Le projet a sa propre déclaration : elle prime. Elle porte
                 # ce que le pool ignore — l'identité de la session dans
                 # l'adresse, un helper d'en-têtes — et le pool, lui, ne sert
@@ -301,7 +634,36 @@ def merge_session_mcp_servers(
     return sans_amonts_gateway(merged)
 
 
-def declaration_atelier(settings: AtelierSettings) -> dict[str, Any]:
+ENTETE_PROJET = "X-Atelier-Projet"
+AIDE_AUX_ENTETES = "atelier-entetes-mcp"
+_SOURCE_AIDE = Path(__file__).resolve().parents[2] / "bin" / AIDE_AUX_ENTETES
+
+
+def aide_aux_entetes(settings: AtelierSettings) -> Path:
+    """Le `headersHelper` de l'entrée `atelier`, là où l'init le pose : `~/work/bin`."""
+    return settings.work_dir / "bin" / AIDE_AUX_ENTETES
+
+
+def assurer_l_aide_aux_entetes(settings: AtelierSettings) -> Path | None:
+    """Pose (ou met à jour) le script dans `~/work/bin` : un déploiement peut se limiter au code."""
+    cible = aide_aux_entetes(settings)
+    try:
+        if _SOURCE_AIDE.is_file():
+            contenu = _SOURCE_AIDE.read_bytes()
+            if not cible.is_file() or cible.read_bytes() != contenu:
+                cible.parent.mkdir(parents=True, exist_ok=True)
+                provisoire = cible.with_name(cible.name + ".nouveau")
+                provisoire.write_bytes(contenu)
+                provisoire.chmod(0o755)
+                provisoire.replace(cible)
+    except OSError as exc:
+        log.warning("aide aux en-têtes non posée : %s", exc)
+    return cible if cible.is_file() else None
+
+
+def declaration_atelier(
+    settings: AtelierSettings, profil: str = "code", slug: str | None = None
+) -> dict[str, Any]:
     """Comment un agent joint la passerelle de l'Atelier.
 
     Elle n'est pas dans le pool : l'y mettre ferait sonder l'Atelier par
@@ -316,14 +678,30 @@ def declaration_atelier(settings: AtelierSettings) -> dict[str, Any]:
     répéter en argument. Le fichier effectif d'un tour la résout
     (`resoudre_les_variables`), et un client hors conversation — VS Code, qui
     lit le `.mcp.json` du projet — tombe sur le repli « poste ».
+
+    Hors d'un tour de l'Atelier, `ATELIER_SESSION` manque : le `headersHelper`
+    (`bin/atelier-entetes-mcp`) donne alors l'identifiant de la conversation
+    du `claude` qui se connecte. La forme `${ATELIER_SESSION:-${…}}` ne
+    marche pas : Claude Code développe les en-têtes en un seul passage, et son
+    repli ne peut pas contenir `}` (relevé dans le binaire 2.1.282).
+
+    Et le profil (contrat a) : `code` pour un agent de projet, `assistant` pour
+    l'Assistant. Le serveur `atelier` déduit le profil de la fiche de la
+    conversation ; pour une conversation qu'il ne connaît pas, en `code`, il
+    borne ses outils au projet que dit `X-Atelier-Projet`.
     """
+    entetes = {
+        "Authorization": "Bearer ${ATELIER_MCP_KEY}",
+        ENTETE_CONVERSATION: _CONVERSATION_PAR_REFERENCE,
+        ENTETE_PROFIL: "assistant" if profil == "assistant" else "code",
+    }
+    if profil != "assistant" and slug:
+        entetes[ENTETE_PROJET] = slug
     return {
         "type": "http",
         "url": f"http://127.0.0.1:{settings.port}/mcp",
-        "headers": {
-            "Authorization": "Bearer ${ATELIER_MCP_KEY}",
-            ENTETE_CONVERSATION: _CONVERSATION_PAR_REFERENCE,
-        },
+        "headers": entetes,
+        "headersHelper": f"sh {shlex.quote(aide_aux_entetes(settings).as_posix())}",
     }
 
 
@@ -495,30 +873,34 @@ def project_binding_state(
 ) -> list[dict[str, Any]]:
     """Ce que le pool propose au projet, et ce que le projet en retient.
 
-    Sans fichier de binding, un projet hérite du pool entier : c'est
-    l'absence de choix, pas un choix vide. On l'expose tel quel plutôt que
-    d'écrire un fichier que personne n'a demandé.
+    Sans choix, un projet hérite du pool entier : c'est l'absence de choix,
+    pas un choix vide. Un connecteur refusé en authentification à la dernière
+    sonde est signalé (`echec_authentification`) : choisi ou non, il n'est
+    pas distribué.
     """
     pool = _pool_enabled(settings)
     binding = _binding_du_dossier(cwd)
     selection = _binding_selection(binding) if binding is not None else {}
     herite = binding is None
+    echecs = connecteurs_en_echec_d_authentification(settings)
     from mcp_gateway.atelier.gateway_tools import nature_service
 
     etat: list[dict[str, Any]] = []
     for name in sorted(pool.keys()):
         nature = nature_service(pool[name], settings.wikichat_url, nom=name)
-        etat.append(
-            {
-                "id": name,
-                "name": nature["group"] if nature["system"] else name,
-                "id_technique": name,
-                "active": True if herite else selection.get(name, False),
-                "group": nature["group"],
-                "system": nature["system"],
-                "scope": nature["scope"],
-            }
-        )
+        ligne: dict[str, Any] = {
+            "id": name,
+            "name": nature["group"] if nature["system"] else name,
+            "id_technique": name,
+            "active": True if herite else selection.get(name, False),
+            "group": nature["group"],
+            "system": nature["system"],
+            "scope": nature["scope"],
+        }
+        if name in echecs:
+            ligne["echec_authentification"] = echecs[name].get("code", 401)
+            ligne["distribue"] = False
+        etat.append(ligne)
     # La passerelle de l'Atelier n'est pas dans le pool. Elle est dans tout
     # projet, sans case à cocher ; ce qu'on affiche est ce que l'agent reçoit
     # — lu au même endroit que le fichier effectif, pas supposé.
@@ -547,55 +929,41 @@ def write_project_binding(
     cwd: Path,
     actifs: list[str],
 ) -> list[dict[str, Any]]:
-    """Fixe les services d'un projet, en conservant leur déclaration du pool.
+    """Fixe les connecteurs choisis pour un projet, puis écrit sa configuration.
 
-    On recopie la config plutôt qu'un simple nom : le fichier reste lisible
-    par Claude Code seul, sans l'Atelier pour l'interpréter.
-
-    Mais jamais ses secrets : le fichier vit dans le dossier du projet, qui
-    se commite et se pousse — un jeton de la passerelle est parti ainsi sur
-    GitHub. Chaque en-tête secret devient une référence `${ATELIER_MCP_…}`
-    que Claude Code développe, et dont l'Atelier fournit la valeur à
-    l'environnement des sessions qu'il lance (voir `mcp_secrets`).
+    Le choix va dans `.atelier/connecteurs-choisis.json` ; le `.mcp.json` en est
+    la sortie, calculée par le profil (`lier_le_projet`). Une déclaration
+    propre au projet (un helper d'en-têtes, une variable d'environnement) y
+    reste : elle prime sur celle du pool, dont elle porte souvent ce qu'il
+    ignore. Ses secrets en clair sont migrés en références quand le pool les
+    connaît — le fichier vit dans le dossier du projet, qui se commite.
     """
     pool = _pool_enabled(settings)
     chemin = cwd / ".mcp.json"
     existant = _load_json_object(chemin) or {}
     deja = existant.get("mcpServers")
-    deja = deja if isinstance(deja, dict) else {}
-    # La déclaration du projet prime sur celle du pool : elle porte souvent
-    # ce que le pool ignore — un helper d'en-têtes, une variable
-    # d'environnement. La reprendre du pool reviendrait à la casser. Ses
-    # secrets en clair, eux, sont migrés quand le pool les connaît.
-    retenus: dict[str, Any] = {}
-    # L'Atelier n'est pas un choix : il est dans tout projet.
-    actifs = [SERVICE_ATELIER, *[n for n in actifs if n != SERVICE_ATELIER]]
-    for nom in actifs:
-        if est_alias_onyxia_deguise(nom):
-            # Porte Atelier collée sous un nom Onyxia_* : pas le service.
+    deja = deja if isinstance(deja, dict) and not _est_au_format_interne(existant) else {}
+    choisis = [
+        n for n in dict.fromkeys(actifs) if n != SERVICE_ATELIER and not est_alias_onyxia_deguise(n)
+    ]
+    # Les déclarations propres au projet des connecteurs choisis restent dans
+    # `.mcp.json` : c'est là que `configuration_du_profil` les reprend.
+    propres: dict[str, Any] = {}
+    for nom in choisis:
+        cfg = deja.get(nom)
+        if not isinstance(cfg, dict) or not set(cfg) - {"enabled"}:
             continue
-        if nom == SERVICE_ATELIER:
-            # Toujours reconstruite : son adresse suit le port du service.
-            retenus[nom] = declaration_atelier(settings)
-        elif est_le_navigateur(nom) and navigateur_configure(settings):
-            # Le lanceur stdio, le même sur toutes les surfaces.
-            retenus[nom] = declaration_chrome(settings)
-        elif est_wikichat(nom, deja.get(nom) or pool.get(nom), settings):
-            # Le pont stdio : plus de `?agent=atelier`, la conversation porte
-            # le nom (contrat wikichat, `wikichat_mcp`).
-            retenus[nom] = declaration_wikichat(settings)
-        elif nom in deja and isinstance(deja[nom], dict):
-            config = dict(deja[nom])
-            config.pop("enabled", None)
-            retenus[nom] = _migrer_les_secrets(nom, config, pool.get(nom), chemin)
-        elif nom in pool:
-            retenus[nom], _ = en_references(nom, pool[nom])
-    existant["mcpServers"] = retenus
+        if est_wikichat(nom, cfg, settings) or est_le_navigateur(nom):
+            continue
+        config = dict(cfg)
+        config.pop("enabled", None)
+        propres[nom] = _migrer_les_secrets(nom, config, pool.get(nom), chemin)
+    existant["mcpServers"] = propres
     _atomic_write_json(chemin, existant)
-    _proteger_du_depot(cwd)
+    _ecrire_la_selection(cwd, {nom: True for nom in choisis})
     # Un choix explicite : le projet cesse de suivre le pool.
     (cwd / MARQUE_HERITAGE).unlink(missing_ok=True)
-    approuver_les_serveurs_du_projet(cwd, sorted(retenus))
+    lier_le_projet(settings, cwd, kind="code")
     return project_binding_state(settings, cwd)
 
 
@@ -607,41 +975,46 @@ def lier_le_projet(
 ) -> list[str]:
     """Écrit dans le `.mcp.json` du dossier ce que l'agent y recevra, partout.
 
-    Le fichier effectif d'un tour de l'Atelier se calcule (pool, choix du
-    projet, Onyxia natif, navigateur, Atelier) ; VS Code et le terminal, eux,
-    ne lisent que `~/.claude.json` et ce `.mcp.json`. On y écrit donc le même
-    ensemble — en références, jamais en clair — et on l'approuve dans
-    `~/.claude.json` (`enabledMcpjsonServers`). Plus de `disabledMcpServers`
-    figé par la dernière ouverture dans VS Code : la sélection vit ici.
+    Le contenu est `configuration_du_profil` : la même chose que le fichier
+    effectif d'un tour de l'Atelier. VS Code et le terminal ne lisent que
+    `~/.claude.json` et ce `.mcp.json` ; on y écrit donc cet ensemble — en
+    références, jamais en clair — et on l'approuve dans `~/.claude.json`
+    (`enabledMcpjsonServers`).
 
-    Un projet qui hérite du pool garde sa marque et suit le pool à chaque
-    liaison. Rend les noms des serveurs du projet.
+    Un ancien « binding » au format interne (drapeaux `enabled`, le dossier
+    de l'Assistant) est d'abord rangé comme sélection, puis remplacé par une
+    vraie déclaration Claude Code (audit M3).
+
+    Un projet de code qui hérite du pool garde sa marque et suit le pool à
+    chaque liaison. Rend les noms des serveurs du dossier.
     """
     cwd.mkdir(parents=True, exist_ok=True)
-    herite = herite_du_pool(cwd)
-    merged = compute_binding_merged(settings, kind=kind, cwd=cwd)
-    pool = _pool_enabled(settings)
+    profil = profil_du_type(kind)
     chemin = cwd / ".mcp.json"
     existant = _load_json_object(chemin) or {}
-    deja = existant.get("mcpServers")
-    deja = deja if isinstance(deja, dict) else {}
-    ecrits: dict[str, Any] = {}
-    for nom, cfg in merged.items():
-        if not isinstance(cfg, dict):
-            continue
-        if nom == SERVICE_ATELIER:
-            ecrits[nom] = declaration_atelier(settings)
-        elif est_le_navigateur(nom) and navigateur_configure(settings):
-            ecrits[nom] = declaration_chrome(settings)
-        elif est_wikichat(nom, cfg, settings):
-            ecrits[nom] = declaration_wikichat(settings)
-        elif not herite and isinstance(deja.get(nom), dict):
-            config = dict(deja[nom])
-            config.pop("enabled", None)
-            ecrits[nom] = _migrer_les_secrets(nom, config, pool.get(nom), chemin)
-        else:
-            ecrits[nom], _ = en_references(nom, cfg)
-    if ecrits != deja or "mcpServers" not in existant:
+    serveurs_lus = existant.get("mcpServers")
+    if _selection_du_dossier(cwd) is None and isinstance(serveurs_lus, dict):
+        if _est_au_format_interne(existant):
+            _ecrire_la_selection(
+                cwd,
+                {nom: bool(cfg.get("enabled", True)) for nom, cfg in serveurs_lus.items() if isinstance(cfg, dict)},
+            )
+        elif profil == "code" and not herite_du_pool(cwd):
+            # Un projet d'avant la sélection : son choix est ce que son
+            # `.mcp.json` déclare. On le range, pour qu'un connecteur retiré
+            # de la sortie (échec d'authentification) ne sorte pas du choix.
+            _ecrire_la_selection(
+                cwd,
+                {
+                    nom: bool(cfg.get("enabled", True)) if isinstance(cfg, dict) else True
+                    for nom, cfg in serveurs_lus.items()
+                    if nom != SERVICE_ATELIER
+                },
+            )
+    herite = profil == "code" and herite_du_pool(cwd)
+    ecrits = configuration_du_profil(settings, profil=profil, cwd=cwd)
+    existant = _load_json_object(chemin) or {}
+    if ecrits != existant.get("mcpServers") or _est_au_format_interne(existant):
         existant["mcpServers"] = ecrits
         _atomic_write_json(chemin, existant)
         _proteger_du_depot(cwd)
@@ -655,34 +1028,102 @@ def lier_le_projet(
                 " cette marque.\n",
                 encoding="utf-8",
             )
-    approuver_les_serveurs_du_projet(cwd, sorted(ecrits))
+    approuver_les_serveurs_du_projet(cwd, sorted(ecrits), adresses_directes_d_onyxia(_pool_enabled(settings)))
+    # Le mode aussi, le même sur toutes les surfaces : sans défaut de projet,
+    # le CLI partirait en `default` dans VS Code et au terminal.
+    from mcp_gateway.atelier.modes_permission import assurer_le_defaut_du_projet
+
+    assurer_le_defaut_du_projet(settings, cwd)
     return sorted(ecrits)
 
 
+def dossiers_de_l_assistant(settings: AtelierSettings) -> list[Path]:
+    """Le dossier de l'Assistant et ceux de ses conversations (audit M3)."""
+    dossiers: list[Path] = []
+    racine = settings.assistant_root
+    if racine.is_dir():
+        dossiers.append(racine)
+    sessions = settings.assistant_sessions_dir
+    if sessions.is_dir():
+        dossiers.extend(
+            d
+            for d in sorted(sessions.iterdir())
+            if d.is_dir() and not d.is_symlink() and not d.name.startswith(".")
+        )
+    return dossiers
+
+
 def lier_tous_les_projets(settings: AtelierSettings) -> int:
-    """Relie chaque dossier de projet (démarrage, pool modifié). Rend le nombre relié."""
-    racine = settings.projects_dir
-    if not racine.is_dir():
-        return 0
+    """Relie chaque dossier de projet, et ceux de l'Assistant (démarrage, pool modifié).
+
+    L'Assistant n'était relié qu'à son tour suivant : ses dossiers gardaient un
+    « binding » que Claude Code ne lit pas, et VS Code comme le terminal y
+    perdaient wikichat (audit M3). Rend le nombre de dossiers reliés.
+    """
     n = 0
-    for dossier in sorted(racine.iterdir()):
-        if not dossier.is_dir() or dossier.is_symlink() or dossier.name.startswith("."):
-            continue
+    racine = settings.projects_dir
+    if racine.is_dir():
+        for dossier in sorted(racine.iterdir()):
+            if not dossier.is_dir() or dossier.is_symlink() or dossier.name.startswith("."):
+                continue
+            try:
+                lier_le_projet(settings, dossier)
+                n += 1
+            except OSError as exc:
+                log.warning("liaison de %s impossible : %s", dossier.name, exc)
+    for dossier in dossiers_de_l_assistant(settings):
         try:
-            lier_le_projet(settings, dossier)
+            lier_le_projet(settings, dossier, kind="assistant")
             n += 1
         except OSError as exc:
-            log.warning("liaison de %s impossible : %s", dossier.name, exc)
+            log.warning("liaison de l'Assistant (%s) impossible : %s", dossier, exc)
     return n
 
 
-def approuver_les_serveurs_du_projet(dossier: Path, noms: list[str]) -> bool:
+# Les serveurs d'une époque révolue, que `~/.claude.json` garde dans la portée
+# locale d'un projet et que l'Atelier ne gère pas. Mesuré le 25/09 (audit M4) :
+# `chrome-devtools` visait l'ancien service `http://127.0.0.1:3000/mcp`, en
+# échec dans VS Code et au terminal, à côté du vrai `chrome-devtools-mcp`.
+SERVEURS_OBSOLETES = frozenset({"chrome-devtools"})
+
+
+def retirer_les_serveurs_obsoletes(data: dict[str, Any], directes: set[str] | None = None) -> list[str]:
+    """Retire des portées de projet de `~/.claude.json` les serveurs obsolètes.
+
+    Les anciens serveurs (`SERVEURS_OBSOLETES`), et toute entrée qui joint
+    Onyxia en direct (`directes` : ses adresses dans le pool) : plus personne
+    ne le joint sans le mandataire. Rend `dossier:nom` pour chaque retrait. Le
+    reste du fichier n'est pas touché.
+    """
+    directes = directes or set()
+    retires: list[str] = []
+    projets = data.get("projects")
+    if not isinstance(projets, dict):
+        return retires
+    for dossier, entree in projets.items():
+        if not isinstance(entree, dict):
+            continue
+        serveurs = entree.get("mcpServers")
+        if not isinstance(serveurs, dict):
+            continue
+        for nom in [
+            n for n, c in serveurs.items() if n in SERVEURS_OBSOLETES or _est_onyxia_direct(n, c, directes)
+        ]:
+            del serveurs[nom]
+            retires.append(f"{dossier}:{nom}")
+        if not serveurs:
+            entree.pop("mcpServers", None)
+    return retires
+
+
+def approuver_les_serveurs_du_projet(dossier: Path, noms: list[str], directes: set[str] | None = None) -> bool:
     """Approuve dans `~/.claude.json` les serveurs du `.mcp.json` du dossier.
 
     Sans approbation, Claude Code demande à l'ouverture (ou ignore en `-p`)
     les serveurs d'un `.mcp.json`. On retire aussi de `disabledMcpServers` —
     que l'Atelier y figeait à chaque ouverture dans VS Code — les serveurs que
-    le projet a choisis : ils doivent être actifs partout.
+    le projet a choisis : ils doivent être actifs partout. Et les serveurs
+    obsolètes de la portée locale du dossier (`SERVEURS_OBSOLETES`).
 
     Un fichier illisible n'est pas écrasé : il porte l'identité de la machine
     et l'historique des projets. Rend vrai si le fichier a changé.
@@ -713,8 +1154,14 @@ def approuver_les_serveurs_du_projet(dossier: Path, noms: list[str]) -> bool:
                 entree[cle] = reste
             else:
                 entree.pop(cle, None)
+    retirer_les_serveurs_obsoletes({"projects": {str(dossier): entree}}, directes)
     if json.dumps(entree, sort_keys=True) == avant:
         return False
+    _ecrire_claude_json(chemin, data)
+    return True
+
+
+def _ecrire_claude_json(chemin: Path, data: dict[str, Any]) -> None:
     tmp = chemin.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     tmp.replace(chemin)
@@ -722,7 +1169,6 @@ def approuver_les_serveurs_du_projet(dossier: Path, noms: list[str]) -> bool:
         chemin.chmod(0o600)
     except OSError:
         pass
-    return True
 
 
 def _migrer_les_secrets(
@@ -834,8 +1280,14 @@ def materialize_session_mcp(
     mcp_overlay: dict[str, Any] | None = None,
     agent_name: str = "",
 ) -> Path:
-    """Merge binding + overlay → `effective/<session_id>.json`."""
-    binding_merged = compute_binding_merged(settings, kind=kind, cwd=cwd)
+    """Le fichier effectif d'un tour : `configuration_du_profil`, plus la conversation.
+
+    Même source que le `.mcp.json` du dossier (VS Code, terminal) ; s'y
+    ajoutent seulement les désactivations propres à la conversation
+    (`mcp_overlay`, jamais celle de l'Atelier) et la résolution des variables
+    qu'on connaît ici (`${ATELIER_SESSION}`).
+    """
+    binding_merged = configuration_du_profil(settings, profil=profil_du_type(kind), cwd=cwd)
     merged = apply_mcp_overlay(binding_merged, mcp_overlay)
     if agent_name:
         merged = {
@@ -885,7 +1337,10 @@ def materialize_mcp_config(settings: AtelierSettings) -> Path:
     finally:
         conn.close()
 
-    payload = {"mcpServers": pour_le_home(servers)}
+    assurer_l_aide_aux_entetes(settings)
+    # Le fichier du pool porte aussi l'entrée `atelier` (profil `code`, sans
+    # projet) : c'est celui d'un tour lancé sans fichier effectif.
+    payload = {"mcpServers": {SERVICE_ATELIER: declaration_atelier(settings, "code"), **pour_le_home(servers)}}
     cfg_path = settings.mcp_config_path
     _atomic_write_json(cfg_path, payload)
 
@@ -893,10 +1348,11 @@ def materialize_mcp_config(settings: AtelierSettings) -> Path:
     # `.mcp.json` de chaque projet (liaison), pour que VS Code et le terminal
     # voient les mêmes connecteurs que le tour de l'Atelier.
     commun = portee_utilisateur(settings)
-    _merge_user_claude_json(settings.work_dir / ".claude.json", commun)
+    directes = adresses_directes_d_onyxia(servers)
+    _merge_user_claude_json(settings.work_dir / ".claude.json", commun, directes)
     home_claude = Path.home() / ".claude.json"
     try:
-        _merge_user_claude_json(home_claude, commun)
+        _merge_user_claude_json(home_claude, commun, directes)
     except OSError:
         pass
 
@@ -922,7 +1378,9 @@ def materialize_mcp_config(settings: AtelierSettings) -> Path:
     return cfg_path
 
 
-def _merge_user_claude_json(path: Path, servers: dict[str, dict[str, Any]]) -> None:
+def _merge_user_claude_json(
+    path: Path, servers: dict[str, dict[str, Any]], directes: set[str] | None = None
+) -> None:
     data: dict[str, Any] = {}
     if path.is_file():
         try:
@@ -932,6 +1390,10 @@ def _merge_user_claude_json(path: Path, servers: dict[str, dict[str, Any]]) -> N
         except json.JSONDecodeError:
             data = {}
     data["mcpServers"] = pour_le_home(servers)
+    # Les serveurs obsolètes des portées de projet (audit M4) partent à chaque
+    # matérialisation, pas seulement quand on ouvre le projet.
+    for retrait in retirer_les_serveurs_obsoletes(data, directes):
+        log.info("serveur obsolète retiré de %s : %s", path, retrait)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

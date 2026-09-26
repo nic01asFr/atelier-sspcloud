@@ -150,8 +150,25 @@ def main_hook(entree: str) -> int:
 # --- pose -------------------------------------------------------------------
 
 
-def commande_du_hook(python: str | None = None) -> str:
-    return f"{shlex.quote(python or sys.executable)} -m {MODULE}"
+# La racine du code (`atelier-src`), qui contient le paquet `mcp_gateway`.
+RACINE_DU_CODE = Path(__file__).resolve().parents[2]
+
+
+def commande_du_hook(python: str | None = None, racine: Path | str | None = None) -> str:
+    """La commande que Claude Code lance, quel que soit le dossier du projet.
+
+    Mesuré sur le pod le 25/09 (audit G2) : `python -m mcp_gateway…` lancé
+    depuis un dossier de projet rendait `ModuleNotFoundError` et le code 1,
+    une erreur non bloquante, et la commande passait. Le paquet n'est pas
+    installé dans le Python du pod : c'est `PYTHONPATH`, écrit dans la
+    commande elle-même, qui le fait trouver depuis n'importe quel dossier.
+    Claude Code lance un hook par le shell, qui comprend l'affectation en tête.
+    """
+    chemin = Path(racine) if racine is not None else RACINE_DU_CODE
+    return (
+        f"PYTHONPATH={shlex.quote(chemin.as_posix())} "
+        f"{shlex.quote(python or sys.executable)} -m {MODULE}"
+    )
 
 
 def poser(chemin: Path, python: str | None = None) -> str:

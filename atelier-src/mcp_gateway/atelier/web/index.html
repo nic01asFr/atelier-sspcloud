@@ -73,18 +73,17 @@
                     <span id="composer-mcp-badge" class="composer-mcp-badge" hidden></span>
                   </button>
                 </div>
-                <select id="composer-mode" class="composer-mode" disabled title="Comment l’agent travaille dans ce fil" aria-label="Mode de travail">
-                  <option value="">Réglage du service</option>
+                <select id="composer-mode" class="composer-mode" disabled title="Comment l’agent travaille dans ce fil — le même mode dans VS Code et au terminal" aria-label="Mode de travail">
+                  <option value="">Défaut du projet</option>
                   <option value="plan">Plan — réfléchit, ne modifie rien</option>
-                  <option value="manual">Demande — chaque geste soumis</option>
+                  <option value="default">Demande — chaque geste soumis</option>
                   <option value="acceptEdits">Édite — demande pour le reste</option>
-                  <!-- Pas de mode « auto » ici : il repose sur un classifieur que la
-                       passerelle LLM du pod ne sert pas. Mesuré : « Auto mode could not
-                       evaluate this action and is blocking it for safety », trois fois de
-                       suite, puis tout est bloqué. Le service l'accepte toujours pour
-                       rester aligné sur le CLI ; l'interface ne le propose pas. -->
-                  <option value="bypassPermissions">Sans garde-fou</option>
+                  <!-- Quatre modes, les mêmes partout (docs/vision/profils-acces.md).
+                       Plus de mode « auto » : il repose sur un classifieur que la
+                       passerelle LLM du pod ne sert pas. -->
+                  <option value="bypassPermissions">Sans garde-fou — rien n’est demandé</option>
                 </select>
+                <button type="button" id="btn-mode-projet" class="composer-mode-projet" hidden title="Faire de ce mode le défaut du projet, pour ses conversations sans choix propre">Défaut du projet</button>
                 <div class="composer-actions">
                   <button type="submit" id="btn-send" disabled>Envoyer</button>
                   <button type="button" id="btn-stop" class="composer-stop" hidden>Arrêter</button>

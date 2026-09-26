@@ -132,18 +132,12 @@ def test_sans_binding_l_heritage_du_pool_emporte_onyxia() -> None:
     assert "filesystem" in merged
 
 
-def test_un_agent_code_a_onyxia_meme_si_le_projet_ne_l_a_pas_coche() -> None:
-    """Les tools Onyxia des agents Code ne dépendent pas de la case Connecteurs."""
-    from mcp_gateway.atelier.mcp_sync import assurer_onyxia_natif
+def test_un_fichier_de_configuration_ecarte_l_alias_et_onyxia_direct(tmp_path: Path) -> None:
+    """Un fichier qui porte le pool (le pont `claude-mcp.json`) n'a ni l'alias ni Onyxia direct.
 
-    pool = {"Onyxia": {"type": "http", "url": "https://passerelle/mcp"}}
-    merged = assurer_onyxia_natif({"atelier": {"url": "http://127.0.0.1:8787/mcp"}}, pool)
-    assert merged["Onyxia"]["url"] == "https://passerelle/mcp"
-    assert "atelier" in merged
-
-
-def test_un_fichier_de_configuration_ecarte_l_alias_pas_onyxia(tmp_path: Path) -> None:
-    """Quand un fichier porte le pool (le pont `claude-mcp.json`), Onyxia y est, l'alias non."""
+    Plus personne ne joint Onyxia en direct : il passe par le mandataire de la
+    passerelle, que distribue le profil (contrat de l'équipe O).
+    """
     from mcp_gateway.atelier.mcp_sync import _merge_user_claude_json
 
     chemin = tmp_path / ".claude.json"
@@ -156,7 +150,7 @@ def test_un_fichier_de_configuration_ecarte_l_alias_pas_onyxia(tmp_path: Path) -
         },
     )
     data = json.loads(chemin.read_text(encoding="utf-8"))
-    assert "Onyxia" in data["mcpServers"]
+    assert "Onyxia" not in data["mcpServers"]
     assert "Onyxia_nic01asfr" not in data["mcpServers"]
     assert "wikichat" in data["mcpServers"]
 

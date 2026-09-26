@@ -1,24 +1,29 @@
 #!/usr/bin/env python3
-"""Vérifie, avec le vrai binaire `claude`, que toutes les surfaces donnent à l'agent
-les mêmes connecteurs et les mêmes identifiants.
+"""Vérifie, avec le vrai binaire `claude`, que chaque surface donne à l'agent ce que dit son profil.
 
-Tout se passe dans un dossier temporaire : un Atelier de test (volume, pool,
-clés factices), un HOME et des CLAUDE_CONFIG_DIR de test, et un serveur MCP
-sonde en boucle locale qui note l'en-tête d'identification reçu. Rien du pod
-en service n'est lu ni écrit : ni ~/.claude*, ni ~/work/.secrets, ni l'Atelier.
+Mode réel (par défaut) — docs/vision/profils-acces.md, « Vérification » :
+pour chaque vrai projet (ou l'échantillon demandé) et le dossier de
+l'Assistant, et pour chaque surface (app, VS Code, terminal interactif,
+`bash -lc`), il lance `claude -p --output-format stream-json --verbose`, hooks
+désactivés, sans transcrit, avec une copie du dossier de configuration et une
+adresse de modèle morte ; il lit `system/init` et tue ce seul processus (par
+PID, descendants compris). Il compare :
+  - les surfaces entre elles : serveurs, outils, version, mode, modèle, effort ;
+  - chaque surface au profil : serveurs de `configuration_du_profil`, version
+    de l'extension, mode résolu (conversation, projet, service), outils
+    interdits au profil `code`, méta-outils de l'Assistant, WebSearch refusé ;
+  - les hooks : le hook de garde lancé à blanc depuis le projet doit rendre 2,
+    et chaque programme de hook doit exister.
+Aucune valeur secrète n'est affichée : des noms, des états, des versions.
 
-Trois lancements du même projet :
-  atelier   claude -p --mcp-config <fichier effectif> --strict-mcp-config,
-            environnement du harnais ;
-  vscode    CLAUDE_CONFIG_DIR portant ~/.claude.json, `.mcp.json` du projet,
-            environnement de claudeCode.environmentVariables complété par
-            l'enveloppeur atelier-claude-vscode (claude-env.sh) ;
-  terminal  idem, environnement obtenu en sourçant ~/work/.secrets/claude-env.sh.
+  --rapide            un projet par profil (pour les gardiens)
+  --projets a,b       l'échantillon de projets (slugs ; `assistant` pour l'Assistant)
+  --json              le rapport en JSON
+  --avec-wikichat     laisse le pont wikichat se connecter (sinon neutralisé :
+                      chaque mesure fixerait une identité)
+  --auto-test         l'ancien essai : un Atelier jetable, deux faux serveurs,
+                      trois surfaces sur des projets d'essai
 
-Le modèle n'est jamais appelé (adresse morte) : seule compte l'initialisation
-des serveurs MCP, qui précède tout appel au modèle.
-
-Usage : atelier-verifier-coherence [--claude CHEMIN] [--garder]
 Sortie 0 si aucun écart, 1 sinon.
 """
 
@@ -161,12 +166,9 @@ def trouver_la_source(script: Path, environ: dict[str, str], maison: Path) -> Pa
     )
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--claude", default=str(Path.home() / "work" / "bin" / "claude"))
-    parser.add_argument("--garder", action="store_true", help="garder le dossier de test")
-    args = parser.parse_args()
-    claude = str(Path(args.claude).resolve())
+def auto_test(args: argparse.Namespace) -> int:
+    """L'ancien essai, sur un Atelier jetable : le mécanisme des références et de la liaison."""
+    claude = str(Path(args.claude or Path.home() / "work" / "bin" / "claude").resolve())
 
     source = trouver_la_source(Path(__file__), dict(os.environ), Path.home())
     racine = Path(tempfile.mkdtemp(prefix="atelier-coherence-"))
@@ -266,6 +268,47 @@ def main() -> int:
     else:
         shutil.rmtree(racine, ignore_errors=True)
     return 1 if ecarts else 0
+
+
+def mode_reel(args: argparse.Namespace) -> int:
+    """Les vrais projets, les vraies surfaces : rien n'est écrit hors d'un dossier temporaire."""
+    source = trouver_la_source(Path(__file__), dict(os.environ), Path.home())
+    if source is not None:
+        sys.path.insert(0, str(source))
+    from mcp_gateway.atelier.coherence import SURFACES, rapport_en_texte, verifier_reel
+    from mcp_gateway.atelier.config import get_settings
+
+    projets = [p.strip() for p in (args.projets or "").split(",") if p.strip()] or None
+    surfaces = tuple(s.strip() for s in (args.surfaces or ",".join(SURFACES)).split(",") if s.strip())
+    rapport = verifier_reel(
+        get_settings(),
+        projets=projets,
+        rapide=args.rapide,
+        avec_wikichat=args.avec_wikichat,
+        claude=Path(args.claude) if args.claude else None,
+        surfaces=surfaces,
+        delai=args.delai,
+    )
+    if args.json:
+        print(json.dumps(rapport, ensure_ascii=False, indent=1))
+    else:
+        print(rapport_en_texte(rapport))
+    return 1 if rapport.get("ecarts") else 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split(chr(10) * 2)[0])
+    parser.add_argument("--claude", default="", help="binaire claude (défaut : celui de l'extension)")
+    parser.add_argument("--rapide", action="store_true", help="un projet par profil")
+    parser.add_argument("--projets", default="", help="slugs séparés par des virgules")
+    parser.add_argument("--surfaces", default="", help="app,vscode,terminal,bash-lc (défaut : toutes)")
+    parser.add_argument("--json", action="store_true", help="rapport JSON")
+    parser.add_argument("--avec-wikichat", action="store_true", help="ne pas neutraliser le pont wikichat")
+    parser.add_argument("--delai", type=float, default=60.0, help="attente de system/init, en secondes")
+    parser.add_argument("--auto-test", action="store_true", help="l'ancien essai sur un Atelier jetable")
+    parser.add_argument("--garder", action="store_true", help="(--auto-test) garder le dossier de test")
+    args = parser.parse_args()
+    return auto_test(args) if args.auto_test else mode_reel(args)
 
 
 if __name__ == "__main__":

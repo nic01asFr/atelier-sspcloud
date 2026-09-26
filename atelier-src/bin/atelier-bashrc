@@ -1,0 +1,63 @@
+#!/bin/sh
+# atelier-bashrc — fait charger le fichier d'environnement unique par ~/.bashrc,
+# AVANT la garde non interactive.
+#
+#   atelier-bashrc <bashrc> <claude-env.sh> [<enveloppeur> <claude>]
+#
+# Audit G1 (25/09) : la ligne était ajoutée à la fin de ~/.bashrc, après
+# `case $- in *i*) ;; *) return;; esac`. Un shell non interactif (`bash -lc`,
+# `ssh hote cmd`, un agent qui relance `claude` par Bash) sortait avant de
+# l'atteindre : aucun secret, et `atelier`, github, llm, qgis, Onyxia en échec.
+#
+# Le script retire toute ligne existante qui charge ce fichier (où qu'elle
+# soit, y compris celle mal placée d'une installation précédente), puis pose
+# le bloc en tête du fichier, donc avant toute garde. Idempotent : un second
+# passage ne change rien, et le fichier n'est réécrit que s'il change.
+#
+# Avec un enveloppeur, il pose aussi l'alias `claude` du terminal interactif :
+# `atelier-claude-vscode <claude> …`, qui applique le mode choisi pour une
+# conversation reprise (docs/vision/profils-acces.md, « Mode de permission »).
+#
+# Rien n'est affiché du contenu : ni du fichier d'environnement, ni du bashrc.
+
+set -eu
+
+if [ "$#" -ne 2 ] && [ "$#" -ne 4 ]; then
+  echo "usage : atelier-bashrc <bashrc> <claude-env.sh> [<enveloppeur> <claude>]" >&2
+  exit 64
+fi
+BASHRC=$1
+ENV_SECRETS=$2
+ENVELOPPEUR=${3:-}
+CLAUDE=${4:-}
+MARQUE="# Atelier : valeurs des références \${ATELIER_MCP_...}, avant la garde non interactive (voir docs/coherence-projet.md)"
+LIGNE="[ -r \"$ENV_SECRETS\" ] && . \"$ENV_SECRETS\""
+
+[ -e "$BASHRC" ] || : > "$BASHRC"
+
+provisoire="$BASHRC.atelier-tmp"
+{
+  printf '%s\n%s\n' "$MARQUE" "$LIGNE"
+  if [ -n "$ENVELOPPEUR" ]; then
+    printf '%s\n' "alias claude='\"$ENVELOPPEUR\" \"$CLAUDE\"'  # Atelier : mode de la conversation reprise"
+  fi
+  # Tout le reste, moins nos anciennes lignes : le commentaire (ancienne et
+  # nouvelle formulation) et toute ligne qui charge ce fichier.
+  grep -vF -e "$ENV_SECRETS" -e "# Atelier : valeurs des références" -e "# Atelier : mode de la conversation reprise" "$BASHRC" || true
+} > "$provisoire"
+
+# L'ancienne pose ajoutait une ligne vide avant son commentaire : on retire les
+# lignes vides laissées en fin de fichier par le retrait, sans toucher au reste.
+awk '{ lignes[NR] = $0 } END { n = NR; while (n > 0 && lignes[n] == "") n--; for (i = 1; i <= n; i++) print lignes[i] }' \
+  "$provisoire" > "$provisoire.2"
+mv "$provisoire.2" "$provisoire"
+
+if cmp -s "$provisoire" "$BASHRC"; then
+  rm -f "$provisoire"
+  echo "inchangé"
+else
+  # Mêmes droits que l'original.
+  chmod --reference="$BASHRC" "$provisoire" 2>/dev/null || true
+  mv "$provisoire" "$BASHRC"
+  echo "posé"
+fi

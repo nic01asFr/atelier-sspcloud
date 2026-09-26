@@ -168,6 +168,8 @@ async def gateway_startup(app: FastAPI, atelier_settings: AtelierSettings) -> No
 
     async def _probe() -> None:
         app.state.upstream_status = await app.state.pool.startup()
+        from mcp_gateway.atelier.mcp_sync import noter_les_sondes
+        await asyncio.to_thread(noter_les_sondes, atelier_settings, app.state.upstream_status)
 
     asyncio.create_task(_probe())
 

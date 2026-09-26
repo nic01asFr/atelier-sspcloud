@@ -105,11 +105,56 @@ def test_pose_sans_toucher_aux_hooks_de_wikichat_et_idempotente(tmp_path: Path) 
     assert donnees["hooks"]["SessionStart"] == REGLAGES_WIKICHAT["hooks"]["SessionStart"]
     pre = donnees["hooks"]["PreToolUse"]
     assert pre[0] == REGLAGES_WIKICHAT["hooks"]["PreToolUse"][0]
-    assert pre[1] == {"matcher": "Bash", "hooks": [{"type": "command", "command": "/usr/bin/python3 -m " + MODULE, "timeout": 10}]}
+    assert pre[1] == {"matcher": "Bash", "hooks": [{"type": "command", "command": commande_du_hook("/usr/bin/python3"), "timeout": 10}]}
+    assert pre[1]["hooks"][0]["command"].startswith("PYTHONPATH=")
     assert "wikichat" not in pre[1]["hooks"][0]["command"]
     assert poser(chemin, "/usr/bin/python3") == "déjà posé"
     assert poser(chemin, "/opt/python/bin/python3") == "mis à jour"
     assert sum(MODULE in json.dumps(g) for g in json.loads(chemin.read_text())["hooks"]["PreToolUse"]) == 1
+
+
+def _bash() -> str | None:
+    """Un shell POSIX pour lancer la commande telle que Claude Code la lance."""
+    import shutil
+
+    return shutil.which("bash") or shutil.which("sh")
+
+
+@pytest.mark.skipif(_bash() is None, reason="pas de shell POSIX")
+def test_la_commande_posee_bloque_depuis_un_dossier_quelconque(tmp_path: Path) -> None:
+    """Audit G2 : la commande posée, lancée depuis un dossier de projet, rend le code 2.
+
+    Pas de PYTHONPATH hérité : c'est la commande seule qui doit trouver le paquet.
+    """
+    projet = tmp_path / "un-projet"
+    projet.mkdir()
+    # Ni PYTHONPATH hérité, ni paquet homonyme installé chez l'utilisateur :
+    # comme sur le pod, rien d'autre que la commande ne dit où est le code.
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env["PYTHONNOUSERSITE"] = "1"
+    appel = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "killall node"}}
+    fini = subprocess.run(
+        [_bash(), "-c", commande_du_hook(sys.executable)],
+        input=json.dumps(appel),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=str(projet),
+        env=env,
+    )
+    assert fini.returncode == 2, fini.stderr
+    assert "Tue par PID" in fini.stderr
+    # La même commande sans son PYTHONPATH : l'échec non bloquant d'avant.
+    nu = subprocess.run(
+        [sys.executable, "-m", MODULE],
+        input=json.dumps(appel),
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=str(projet),
+        env=env,
+    )
+    assert nu.returncode == 1 and "ModuleNotFoundError" in nu.stderr
 
 
 def test_pose_ne_cree_ni_n_ecrase_un_fichier_absent_ou_illisible(tmp_path: Path) -> None:

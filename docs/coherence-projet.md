@@ -109,9 +109,8 @@ information n'est injectée par une surface et pas par les autres.
 - Les règles accordées dans l'Atelier sont écrites dans
   `.claude/settings.local.json` du projet : elles suivent la conversation dans
   VS Code et au terminal.
-- Mode par défaut du projet dans le même fichier ; le réglage machine de
-  VS Code en est dérivé à l'ouverture ; `allowDangerouslySkipPermissions`
-  retiré.
+- Mode : voir « Profils et surfaces » ci-dessous (un défaut par projet, un
+  choix par conversation, plus aucun réglage machine qui l'impose).
 - Plus de copie de `.claude/settings.json` de projet sur le réglage global.
 
 ### 7. Mémoire et état
@@ -617,3 +616,214 @@ Dans l'ordre inverse, en gardant la rotation des jetons (étape 7) :
 - **Enveloppeur** : lu par l'extension en portée machine ; qu'il soit pris
   depuis les réglages utilisateur de code-server n'est pas mesuré (il est
   écrit dans les deux).
+
+## Profils et surfaces (lot « profils », équipe S, branche `lot-surfaces`)
+
+Contrat : `docs/vision/profils-acces.md`. Écarts traités : `docs/coherence-outils-audit.md`
+G1, G2, G3 (côté Atelier), M1, M2, M3, M4, M5.
+
+### Ce qui existe
+
+**Une configuration par profil, générée par une seule fonction.**
+`mcp_sync.configuration_du_profil(settings, profil=…, cwd=…)` calcule ce que reçoit
+un dossier. Trois fichiers en sortent, et rien d'autre :
+
+| Surface | Ce qu'elle lit | Écrit par |
+|---|---|---|
+| App (tour de l'Atelier) | `effective/<conversation>.json` (`--mcp-config --strict-mcp-config`) | `materialize_session_mcp` : la configuration du profil, plus les désactivations de la conversation et `${ATELIER_SESSION}` résolu |
+| VS Code, terminal | `<dossier>/.mcp.json`, approuvé dans `~/.claude.json` (`enabledMcpjsonServers`) | `lier_le_projet` |
+| Tout dossier (portée utilisateur), `claude-mcp.json` | l'entrée `atelier` seule (profil `code`) | `materialize_mcp_config` |
+
+- Profil `code` (un projet) : les connecteurs choisis pour le projet (ou le pool, s'il
+  n'a pas choisi) ; `atelier` ; le pont wikichat ; le navigateur s'il est choisi.
+- Profil `assistant` (`assistant_root` et ses conversations) : `atelier`, wikichat,
+  Onyxia, et les seuls connecteurs choisis pour l'Assistant. Le reste passe par
+  les méta-outils de la passerelle. Son `.mcp.json`, jusqu'ici au format interne
+  (`{"filesystem": {"enabled": false}}`), est converti au format Claude Code. Il
+  est relié au démarrage avec les projets (M3).
+- Le choix des connecteurs vit dans `.atelier/connecteurs-choisis.json`, hors du
+  `.mcp.json` qui est désormais une sortie. Un connecteur retiré de la sortie
+  (échec d'authentification, Onyxia) reste dans le choix.
+
+**Contrats avec les autres équipes.**
+
+- (a) L'entrée `atelier` porte `X-Atelier-Profil: code|assistant`. Elle porte aussi
+  `X-Atelier-Conversation` (`${ATELIER_SESSION:-poste}`, résolu dans l'app) et, pour
+  un projet, `X-Atelier-Projet: <slug>`. Elle a en plus un `headersHelper`,
+  `~/work/bin/atelier-entetes-mcp`, qui donne hors de l'Atelier l'identifiant de la
+  conversation du `claude` parent, lu dans `<config>/sessions/<pid>.json`.
+  La forme `${ATELIER_SESSION:-${CLAUDE_CODE_SESSION_ID}}` ne marche pas. Relevé
+  dans le binaire 2.1.282 : l'expression
+  `/\$\{([A-Za-z_][A-Za-z0-9_]*(?::-[^}]*)?)\}/g` développe en un seul passage, et
+  son repli ne peut pas contenir `}`. De plus, `CLAUDE_CODE_SESSION_ID` n'est pas
+  dans l'environnement du CLI : seuls les serveurs stdio et les hooks le reçoivent.
+- (b) Le pont wikichat reçoit `WIKICHAT_PROFIL=code|assistant` et
+  `WIKICHAT_PROJET=<slug>` (`assistant` pour l'Assistant) dans son `env`.
+- (c) L'entrée `Onyxia` vient de
+  `onyxia_pour_projet(settings, slug, profil, *, pool=None)` (équipe O,
+  `onyxia_projet.py`). Tant que ce module manque, un bouchon de même signature
+  répond `None` pour `code` et le mandataire `/mcp/onyxia` pour `assistant`.
+  `assurer_onyxia_natif` est retiré (G3). Plus aucune surface ne joint Onyxia en
+  direct : ni les `.mcp.json`, ni le fichier effectif, ni `claude-mcp.json`, ni
+  `~/.claude.json` (racine et portées de projet).
+
+**Filtrage à la source, côté configuration.** Une entrée autre que `atelier` qui
+vise la porte `/mcp` de l'Atelier est une porte déguisée : elle donnerait les
+méta-outils sans en-tête de profil. Elle est retirée, comme l'alias
+`Onyxia_nic01asfr`.
+
+**Connecteurs refusés en authentification (M5).** `noter_les_sondes` est appelé
+après chaque sonde du pool (démarrage, `/mcp/reprobe`). Il retient, dans
+`mcp/sondes-authentification.json`, les connecteurs en 401 ou 403 (le code
+seulement, pas le message). Ces connecteurs ne sont plus distribués et ils sont
+signalés (`echec_authentification` dans l'état des connecteurs d'un projet). Une
+sonde réussie les rend.
+
+**Serveurs obsolètes (M4).** `chrome-devtools` est retiré des portées de projet de
+`~/.claude.json` à chaque matérialisation et à chaque liaison.
+
+**Mode de permission (M1).** Module `modes_permission`.
+
+- Quatre modes : `default`, `acceptEdits`, `plan`, `bypassPermissions`. `manual`
+  est lu comme `default`. `auto` aussi : il demandait avant d'écrire, là où
+  `acceptEdits` écrit.
+- Défaut du projet : `permissions.defaultMode` de `.claude/settings.local.json`,
+  que le CLI résout de lui-même. Le défaut du service (`acceptEdits`, jamais
+  `bypassPermissions`) y est posé à la liaison d'un projet qui n'en a pas. Sans
+  cela, VS Code et le terminal partaient en `default` quand l'app partait en
+  `acceptEdits`.
+- Choix d'une conversation : le magasin où l'extension VS Code tient déjà le mode
+  de chaque conversation,
+  `<code-server>/User/globalStorage/anthropic.claude-code/session-permission-modes/<id-cli>.json`
+  (`{"mode", "updatedAt"}`, ignoré après 30 jours). Relevé dans `extension.js`
+  2.1.282. Ce choix d'emplacement se justifie ainsi :
+  - c'est l'endroit que l'extension écrit quand on change de mode dans une
+    conversation, et qu'elle relit pour la rouvrir ;
+  - l'app y écrit (`PATCH /v1/sessions/{id}`) et y lit à chaque tour, sous
+    l'identifiant du CLI. Un choix fait d'un côté vaut donc de l'autre ;
+  - la fiche de la conversation n'en garde qu'une copie de lecture ;
+  - au terminal, l'alias `claude` (posé par `atelier-bashrc`) passe par
+    `atelier-claude-vscode`, qui applique ce choix à `claude --resume <id>`.
+- Résolution, la même partout (`mode_resolu`) : la conversation, puis le projet,
+  puis le service. Un tour sans interlocuteur ne reçoit plus `bypassPermissions`
+  par défaut.
+- Enveloppeur `atelier-claude-vscode`. Avec un enveloppeur, l'extension passe
+  `--permission-mode default` d'office (`resolvePermissionModeInCli` faux).
+  - Sans choix pour la conversation, l'enveloppeur retire ce drapeau d'un lancement
+    de l'extension (`CLAUDE_CODE_ENTRYPOINT=claude-vscode`). Le CLI résout alors le
+    défaut du projet.
+  - Avec un choix, l'enveloppeur impose ce choix.
+- Résidus retirés :
+  - `claudeCode.initialPermissionMode` (réglage machine) ;
+  - `claudeCode.allowDangerouslySkipPermissions`, posé seulement tant qu'un projet
+    ou une conversation a choisi `bypassPermissions`. Sinon l'extension rabat ce
+    mode sur `default`. Le drapeau *permet* le mode sans l'imposer ;
+  - l'ancien `ecrire_mode_du_dossier`, qui recopiait le mode de la conversation
+    ouverte dans VS Code en défaut du projet (d'où les `bypassPermissions` de
+    `projet-sans-nom` et `…webtools-ce`).
+
+  Un rangement unique au démarrage (`nettoyer_les_residus`, marque
+  `mcp/.modes-permission-v1`) fait deux choses. Il réécrit les défauts de projet
+  dans la liste et y remplace `bypassPermissions` par le défaut du service. Il
+  passe dans le magasin les modes des fiches.
+- Interface : le sélecteur propose le défaut du projet et les quatre modes. Le
+  mode sans garde-fou demande une confirmation et se signale. Le bouton « Défaut
+  du projet » écrit le mode affiché (`PUT /v1/projets/{slug}/mode`).
+
+**Version (M2).** Le lien `~/work/bin/claude` est réaligné sur le binaire de
+l'extension la plus récente à chaque tour (`_resolve_claude_bin`), plus seulement au
+démarrage. Le terminal, wikichat et l'Atelier lancent donc la même version, au
+plus tard depuis le dernier tour.
+
+**G1.** `bin/atelier-bashrc` pose le chargement de `claude-env.sh` en tête de
+`~/.bashrc`, avant la garde non interactive. Il déplace une ligne déjà mal placée
+et pose l'alias `claude`. Il est idempotent. `install/atelier-init.sh` passe par lui.
+
+**G2.** La commande du hook `garde_bash` porte
+`PYTHONPATH=<atelier-src> python -m mcp_gateway.gardiens.garde_bash`. Un test la
+lance depuis un dossier quelconque, sans paquet installé, et obtient le code 2.
+
+**Vérificateur (`bin/atelier-verifier-coherence`, `coherence.verifier_reel`).**
+- Pour chaque vrai projet et le dossier de l'Assistant, et pour chaque surface
+  (app, VS Code par l'enveloppeur, `bash -ic`, `bash -lc`), il lance
+  `claude -p --output-format stream-json --verbose` dans ces conditions :
+  - hooks désactivés ;
+  - `--no-session-persistence` ;
+  - copie du dossier de configuration ;
+  - adresse de modèle morte ;
+  - pont wikichat neutralisé, sauf `--avec-wikichat`.
+- Il lit `system/init` et tue ce processus et ses descendants, par PID.
+- Il compare les surfaces entre elles : serveurs, outils, version, mode, modèle,
+  effort.
+- Il les compare au profil :
+  - serveurs de `configuration_du_profil` ;
+  - version de l'extension ;
+  - mode résolu ;
+  - outils interdits au profil `code` (`gateway_*`, `composition_*`, outils
+    globaux de wikichat) ;
+  - méta-outils de l'Assistant ;
+  - WebSearch.
+- Il lance le hook de garde à blanc depuis le projet (code 2 attendu) et vérifie
+  que chaque programme de hook existe.
+- Options : `--rapide` (un projet par profil, pour les gardiens), `--projets a,b`,
+  `--surfaces`, `--json`. L'ancien essai reste en `--auto-test`.
+- Code de retour 1 en cas d'écart. Aucune valeur secrète n'est affichée.
+- L'effort n'est pas annoncé par `system/init` : il est déduit des réglages.
+
+### Ce qui reste
+
+- **Vérifié en tests seulement** (Windows, suite complète). Rien n'a été lancé
+  sur le pod : ni le vérificateur réel, ni l'enveloppeur, ni l'aide aux
+  en-têtes. Les tests POSIX (enveloppeur, shells, `/proc`) sont sautés sous
+  Windows et tourneront en CI Linux.
+- `atelier-entetes-mcp` n'est pas éprouvé sur le pod. Deux points sont à
+  constater :
+  - le fichier `sessions/<pid>.json` existe-t-il au moment où le CLI connecte ses
+    serveurs ?
+  - le `headersHelper` d'un `.mcp.json` de projet ne tourne qu'avec la confiance
+    du dossier (`hasTrustDialogAccepted`) ; sans elle, l'en-tête reste « poste ».
+- Écarts attendus du vérificateur tant que les autres équipes ne sont pas
+  déployées :
+  - outils `gateway_*` pour le profil `code` (équipe A) ;
+  - outils globaux de wikichat (équipe W) ;
+  - Onyxia de l'Assistant par `/mcp/onyxia` (équipe O).
+- Le lien `~/work/bin/claude` n'est réaligné qu'au tour suivant une mise à jour de
+  l'extension. Les gardiens pourraient le réaligner aussi ; le vérificateur le
+  signale en attendant.
+- Un choix de mode fait dans VS Code *avant* le premier message d'une conversation
+  neuve est remplacé par le défaut du projet (l'enveloppeur ne distingue pas ce
+  choix de l'état global de l'extension) ; il vaut dès qu'il est fait en cours de
+  conversation.
+
+### Déploiement sur le pod (dans l'ordre, avec le go de Nicolas pour le redémarrage)
+
+1. Mettre à jour le code : `git -C ~/work/repos/atelier-sspcloud pull --ff-only`
+   (ou la procédure habituelle vers `~/work/atelier-src`).
+2. Poser les scripts dans `~/work/bin` :
+   `for s in atelier-bashrc atelier-entetes-mcp atelier-claude-vscode atelier-verifier-coherence atelier-chrome-onglets.mjs; do [ -f ~/work/atelier-src/bin/$s ] && cp -f ~/work/atelier-src/bin/$s ~/work/bin/$s && chmod +x ~/work/bin/$s; done`.
+   L'Atelier repose aussi l'enveloppeur et l'aide aux en-têtes à son démarrage.
+3. Corriger `~/.bashrc` (G1) :
+   `sh ~/work/bin/atelier-bashrc ~/.bashrc ~/work/.secrets/claude-env.sh ~/work/bin/atelier-claude-vscode ~/work/bin/claude`,
+   puis `bash -lc 'env | grep -c ^ATELIER_MCP_'`. Le nombre de variables doit
+   être supérieur à 0 ; seuls les noms sont comptés, aucune valeur n'est affichée.
+4. Reposer le hook (G2) :
+   `cd ~/work/atelier-src && /opt/python/bin/python3.13 -m mcp_gateway.gardiens.garde_bash --poser`
+   (les gardiens le font aussi à leur démarrage). Puis, depuis un projet,
+   `echo '{"tool_name":"Bash","tool_input":{"command":"killall node"}}' | sh -c "$(jq -r '.hooks.PreToolUse[]|.hooks[]|select(.command|contains("garde_bash")).command' ~/.claude/settings.json)"; echo $?`
+   doit afficher `2`.
+5. Redémarrer l'Atelier (`~/work/bin/atelier-relancer`). Au démarrage, il fait
+   dans l'ordre :
+   - relier tous les projets et l'Assistant : profils, conversion du `.mcp.json`
+     de l'Assistant, défaut de mode, purge de `chrome-devtools` et d'Onyxia
+     direct ;
+   - ranger les modes une fois ;
+   - noter les sondes : n8n en 401 cesse d'être distribué.
+6. Recharger la fenêtre VS Code : l'extension relit les réglages machine.
+7. Vérifier : `~/work/bin/atelier-verifier-coherence --rapide`, puis sans option.
+   Relever les écarts qui restent et les rapprocher des lots A, W et O.
+8. Retour arrière :
+   - revenir au commit précédent et redémarrer ;
+   - `~/.bashrc` garde une ligne en tête, sans effet sur l'ancien code ;
+   - les fichiers `.atelier/connecteurs-choisis.json` et
+     `mcp/sondes-authentification.json` sont ignorés par l'ancien code ;
+   - les défauts de mode réécrits restent valides pour le CLI.

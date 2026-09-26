@@ -483,7 +483,16 @@ const BAS_DU_FIL = 1e9;
       if (mode.value !== valeur) mode.value = valeur;
       mode.title = valeur === "plan"
         ? "Plan — l’agent réfléchit et propose, sans rien modifier. S’applique aux tours à venir."
-        : "Comment l’agent travaille dans ce fil. S’applique aux tours à venir.";
+        : valeur === "bypassPermissions"
+          ? "Sans garde-fou — l’agent agit sans rien demander, y compris hors du projet. Vaut aussi dans VS Code et au terminal."
+          : "Comment l’agent travaille dans ce fil — le même mode dans VS Code et au terminal. S’applique aux tours à venir.";
+      mode.classList.toggle("composer-mode-danger", valeur === "bypassPermissions");
+    }
+    const modeProjet = $("btn-mode-projet");
+    if (modeProjet) {
+      const valeurMode = $("composer-mode")?.value || "";
+      modeProjet.hidden = !sessionReady || !valeurMode;
+      modeProjet.disabled = state.busy;
     }
     composerInput?.syncGrow?.();
     composerInput?.renderAttachments?.();

@@ -3284,6 +3284,24 @@ button:disabled {
   opacity: 0.5;
 }
 
+/* Sans garde-fou : le sélecteur le dit, en plus de l'avertissement à la sélection. */
+.composer-mode.composer-mode-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.composer-mode-projet {
+  margin-left: 0.35rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
 /* --- La question qu'un tour attend ---------------------------------------
    Une carte, pas une bannière : elle appartient au tour et se lit dans son
    fil. Assez marquée pour qu'on ne la manque pas, assez sobre pour ne pas

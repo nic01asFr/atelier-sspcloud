@@ -336,81 +336,27 @@ def _titre_du_projet(settings: AtelierSettings, slug: str) -> str:
     return slug
 
 
-# Ce que l'extension VS Code sait faire des modes de l'Atelier. Son propre
-# réglage n'accepte que ces valeurs — relevé dans son manifeste, qui connaît en
-# plus `default` — et `auto` n'y figure pas.
-#
-# On a failli le traduire en `acceptEdits`, que la matrice du harnais donnait
-# pour équivalent. Une sonde directe les sépare : à qui lui demande d'écrire un
-# fichier, `auto` demande l'autorisation quand `acceptEdits` écrit sans rien
-# demander. Les traduire l'un par l'autre aurait donc accordé une écriture que
-# personne n'avait accordée. Le mode passe par l'autre chemin — voir
-# `ecrire_mode_du_dossier`, que le CLI, lui, comprend.
+# Ce que l'extension VS Code sait des modes : les quatre de l'Atelier, plus
+# `manual`, qu'elle tient pour l'autre nom de `default` (relevé dans son
+# manifeste, 2.1.282). Gardé pour les appelants d'avant.
 MODES_VERS_EXTENSION = {
     "plan": "plan",
-    "manual": "manual",
+    "default": "default",
+    "manual": "default",
     "acceptEdits": "acceptEdits",
     "bypassPermissions": "bypassPermissions",
 }
 
 
 def mode_pour_extension(mode: str | None) -> str:
-    """Le mode que VS Code comprendra, ou rien.
-
-    Deux limites, qu'il vaut mieux connaître que découvrir. Ce réglage vaut
-    pour le dossier, non pour la conversation : deux fils du même projet réglés
-    différemment ne peuvent pas l'être des deux côtés. Et l'extension le décrit
-    comme le mode des conversations *neuves* — une conversation reprise garde
-    sans doute le sien. On l'écrit quand même : c'est mieux que rien, et cela
-    couvre le cas courant, où l'on ouvre le projet pour continuer ce fil-là.
-    """
+    """Le nom que l'extension comprend pour ce mode, ou rien."""
     return MODES_VERS_EXTENSION.get((mode or "").strip(), "")
-
-
-# Le vocabulaire du CLI, relevé dans son binaire : c'est ce que `defaultMode`
-# accepte. Il connaît `auto`, que l'extension ignore, et `default`, dont
-# `manual` n'est qu'un autre nom — leur documentation le dit toutes les deux.
-MODES_CLI = ("acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan")
-
-
-def ecrire_mode_du_dossier(dossier: Path, mode: str) -> None:
-    """Pose le mode là où le CLI le résout, pour ceux que l'extension ignore.
-
-    Le réglage de l'extension ne couvre pas `auto` — or c'est le mode de la
-    plupart des conversations. Sans ce second chemin, elles repartaient toutes
-    dans VS Code sous un autre mode que celui affiché sur leur onglet.
-
-    L'extension dit elle-même s'en remettre au « défaut résolu par le CLI »
-    quand son propre réglage est vide : ce fichier est ce défaut. Il vaut pour
-    le dossier, comme le réglage d'atelier — deux conversations du même projet
-    réglées différemment ne peuvent donc pas l'être des deux côtés.
-
-    On écrit dans `settings.local.json`, le fichier personnel : `settings.json`
-    appartient au dépôt, et le mode de travail de quelqu'un n'a rien à y faire.
-    """
-    voulu = (mode or "").strip()
-    voulu = "default" if voulu == "manual" else voulu
-    if voulu not in MODES_CLI:
-        return
-    chemin = dossier / ".claude" / "settings.local.json"
-    chemin.parent.mkdir(parents=True, exist_ok=True)
-    data: dict[str, object] = {}
-    if chemin.is_file():
-        try:
-            data = json.loads(chemin.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            data = {}
-    permissions = data.setdefault("permissions", {})
-    if not isinstance(permissions, dict):
-        permissions = {}
-        data["permissions"] = permissions
-    permissions["defaultMode"] = voulu
-    chemin.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def write_vscode_workspace_config(
     settings: AtelierSettings, slug: str, cwd: Path | None = None, mode_permission: str = ""
 ) -> None:
+    del mode_permission  # le mode vit ailleurs : voir `modes_permission`
     vscode_dir = (cwd or settings.projects_dir / slug) / ".vscode"
     vscode_dir.mkdir(parents=True, exist_ok=True)
     cfg = {
@@ -427,10 +373,6 @@ def write_vscode_workspace_config(
         # tiennent — leur nom se lit sur leur onglet, pas au-dessus.
         "window.title": _titre_du_projet(settings, slug),
     }
-    # Le mode de travail ne s'écrit pas ici : l'extension déclare
-    # `claudeCode.initialPermissionMode` au niveau machine et ignore la valeur
-    # d'un dossier — mesuré, VS Code affichait « Manual » avec `acceptEdits`
-    # écrit dans ce fichier. Voir `ecrire_mode_machine`.
     (vscode_dir / "settings.json").write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
     (vscode_dir / "extensions.json").write_text(
         json.dumps({"recommendations": [CLAUDE_CODE_EXTENSION_ID]}, indent=2) + "\n",
@@ -442,37 +384,28 @@ CLE_MODE_EXTENSION = "claudeCode.initialPermissionMode"
 
 
 def ecrire_mode_machine(settings: AtelierSettings, mode_permission: str = "") -> str:
-    """Dit à l'extension VS Code dans quel mode ouvrir, là où elle le lit.
+    """Range les modes au démarrage : plus de mode imposé par un réglage machine.
 
-    Mesuré le 16 septembre 2026, extension 2.1.273 : le réglage est de portée
-    machine. Écrit dans `.vscode/settings.json`, il était ignoré, et
-    `permissions.defaultMode` de `.claude/settings.local.json` l'est aussi par
-    le CLI lancé en flux — seul `--permission-mode` compte, et l'extension ne le
-    passe que d'après ce réglage. Écrit dans les réglages machine de
-    code-server, VS Code lance aussitôt `--permission-mode acceptEdits` et
-    affiche « Edit automatically ».
+    Avant, le mode de la dernière conversation ouverte dans VS Code était
+    écrit dans `claudeCode.initialPermissionMode`, de portée machine, avec
+    `claudeCode.allowDangerouslySkipPermissions` : toutes les conversations
+    neuves partaient ainsi, et `--allow-dangerously-skip-permissions` était
+    passé à chaque lancement (audit M1). Désormais :
 
-    Portée machine veut dire : pour toute conversation ouverte ensuite dans
-    VS Code. On écrit le mode de la conversation qu'on ouvre, sinon celui du
-    service. Un mode que l'extension ne connaît pas (`auto`) retire la clé —
-    une valeur hors de son énumération ferait rejeter le fichier entier.
+    - le choix d'une conversation vit dans le magasin de l'extension, le
+      défaut d'un projet dans son `.claude/settings.local.json`
+      (`modes_permission`) ;
+    - `initialPermissionMode` est retiré, et `allowDangerouslySkipPermissions`
+      n'est posé que tant qu'un choix demande `bypassPermissions` ;
+    - les anciens choix sont rangés une fois (`nettoyer_les_residus`).
+
+    Rend `""` : aucun mode n'est plus écrit au niveau machine.
     """
-    fichier = donnees_code_server() / "Machine" / "settings.json"
-    donnees: dict[str, object] = {}
-    if fichier.is_file():
-        try:
-            lu = json.loads(fichier.read_text(encoding="utf-8"))
-            donnees = lu if isinstance(lu, dict) else {}
-        except (json.JSONDecodeError, OSError):
-            donnees = {}
-    voulu = mode_pour_extension(mode_permission or settings.permission_mode)
-    if voulu:
-        donnees[CLE_MODE_EXTENSION] = voulu
-    else:
-        donnees.pop(CLE_MODE_EXTENSION, None)
-    fichier.parent.mkdir(parents=True, exist_ok=True)
-    fichier.write_text(json.dumps(donnees, indent=2) + chr(10), encoding="utf-8")
-    return voulu
+    del mode_permission
+    from mcp_gateway.atelier.modes_permission import nettoyer_les_residus
+
+    nettoyer_les_residus(settings)
+    return ""
 
 
 def write_user_code_server_settings(settings: AtelierSettings) -> None:
@@ -514,7 +447,8 @@ def write_user_code_server_settings(settings: AtelierSettings) -> None:
 def ecrire_enveloppeur_machine(settings: AtelierSettings, enveloppeur: Path | None) -> None:
     """Pose l'enveloppeur dans les réglages machine, et en retire les secrets.
 
-    Le reste du fichier (le mode de travail, `ecrire_mode_machine`) est gardé.
+    Le reste du fichier est gardé ; les réglages de mode sont remis à ce que
+    demandent les choix (`modes_permission.ecrire_les_reglages_machine`).
     Une liste `environmentVariables` qui y porterait des valeurs du fichier
     unique en est purgée.
     """
@@ -534,10 +468,14 @@ def ecrire_enveloppeur_machine(settings: AtelierSettings, enveloppeur: Path | No
     purge = _sans_valeurs_secretes(donnees.get(CLE_ENVIRONNEMENT), settings)
     if purge is not None:
         donnees[CLE_ENVIRONNEMENT] = purge
-    if fichier.is_file() and json.dumps(donnees, sort_keys=True) == avant:
-        return
-    fichier.parent.mkdir(parents=True, exist_ok=True)
-    fichier.write_text(json.dumps(donnees, indent=2) + chr(10), encoding="utf-8")
+    if not (fichier.is_file() and json.dumps(donnees, sort_keys=True) == avant):
+        fichier.parent.mkdir(parents=True, exist_ok=True)
+        fichier.write_text(json.dumps(donnees, indent=2) + chr(10), encoding="utf-8")
+    # Et les réglages de mode : ni mode initial imposé, ni bypass permis sans
+    # qu'un choix le demande (`modes_permission`).
+    from mcp_gateway.atelier.modes_permission import ecrire_les_reglages_machine
+
+    ecrire_les_reglages_machine(settings)
 
 
 PROGRAMMATIQUE = frozenset({"sdk-cli", "sdk-ts", "sdk-py"})
@@ -783,9 +721,16 @@ def prepare_vscode_handoff(
     dossier.mkdir(parents=True, exist_ok=True)
     sync_claude_home(settings, slug_v)
     write_claude_settings_env(settings)
-    write_vscode_workspace_config(settings, slug_v, dossier, mode_permission)
-    ecrire_mode_du_dossier(dossier, mode_permission)
-    ecrire_mode_machine(settings, mode_permission)
+    write_vscode_workspace_config(settings, slug_v, dossier)
+    # Le mode n'est plus recopié ici : le choix de la conversation est déjà
+    # dans le magasin que l'extension lit (`modes_permission`), le défaut du
+    # projet dans son `.claude/settings.local.json`. L'ancien
+    # `ecrire_mode_du_dossier` recopiait le mode de la conversation ouverte
+    # en défaut du projet : d'où les `bypassPermissions` « codés en dur ».
+    del mode_permission
+    from mcp_gateway.atelier.modes_permission import rafraichir_la_conversation
+
+    rafraichir_la_conversation(session_id)
     # Les connecteurs du dossier : son `.mcp.json`, écrit et approuvé comme
     # avant un tour de l'Atelier. Plus de `disabledMcpServers` : c'était la
     # dernière conversation ouverte qui décidait pour toutes.

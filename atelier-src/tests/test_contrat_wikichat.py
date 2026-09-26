@@ -108,10 +108,16 @@ def test_toutes_les_surfaces_recoivent_le_pont(reglages: AtelierSettings) -> Non
     effectif = materialize_session_mcp(
         reglages, "conv-1", kind="code", cwd=projet, agent_name="lecteur-grist-conv-1"
     )
+    from mcp_gateway.atelier.mcp_sync import declaration_wikichat_du_profil
+
+    # Le tour de l'Atelier, VS Code et le terminal : le pont du profil `code`,
+    # avec le projet (contrat b). Le fichier du pool : le pont nu.
+    du_profil = declaration_wikichat_du_profil(reglages, "code", projet.name)
+    assert du_profil["env"]["WIKICHAT_PROFIL"] == "code"
+    for chemin in (effectif, projet / ".mcp.json"):
+        assert _mcp(chemin)["wikichat"] == du_profil, chemin
     attendu = declaration_wikichat(reglages)
     for chemin in (
-        effectif,  # tour de l'Atelier
-        projet / ".mcp.json",  # VS Code et terminal
         reglages.mcp_config_path,  # claude-mcp.json
         reglages.work_dir / ".claude" / "mcp-config.json",
     ):
