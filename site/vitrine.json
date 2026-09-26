@@ -1,359 +1,1209 @@
 {
   "nom": "Atelier",
-  "pitch": {
-    "fr": "Claude Code sur ton pod SSPCloud, avec une page pour travailler avec lui : des conversations rangées par projet, les connecteurs MCP que tu branches, et VS Code qui rouvre la même conversation. Un service Onyxia, un pod par personne, ta propre clé de modèle.",
-    "en": "Claude Code on your SSPCloud pod, with a page to work alongside it: conversations filed by project, the MCP connectors you plug in, and VS Code reopening the same conversation. One Onyxia service, one pod per person, your own model key."
-  },
-  "couleur": "#D6B27A",
   "depot": "https://github.com/nic01asFr/atelier-sspcloud",
+  "pitch": {
+    "fr": "L'Atelier fait travailler Claude Code sur votre pod SSPCloud, avec une interface pour le suivre : des conversations rangées par projet, un Assistant qui connaît l'Atelier, des agents planifiés et des gardiens qui surveillent. Ce qu'un agent fabrique s'ouvre à côté du fil, et rien d'engageant ne se fait sans votre accord.",
+    "en": "Atelier puts Claude Code to work on your SSPCloud pod, with an interface to follow it: conversations filed by project, an Assistant that knows the Atelier, scheduled agents and guardians that keep watch. What an agent builds opens next to the thread, and nothing binding happens without your approval."
+  },
+  "pourQui": {
+    "fr": "Pour les agents publics et les chercheurs qui ont un compte SSPCloud et veulent confier du vrai travail à un agent (données, cartes, petites applications, veille) sans le perdre de vue.",
+    "en": "For public servants and researchers with an SSPCloud account who want to hand real work to an agent (data, maps, small applications, monitoring) without losing sight of it."
+  },
   "tags": [
     "Claude Code",
     "MCP",
     "VS Code",
     "Onyxia",
     "SSPCloud",
-    "Helm"
+    "Helm",
+    "Apache-2.0"
   ],
   "interface": {
-    "eyebrow": { "fr": "Service Onyxia", "en": "Onyxia service" },
-    "boutonInstaller": { "fr": "Installer", "en": "Install" },
-    "boutonCode": { "fr": "Code source", "en": "Source code" },
-    "choixLangue": { "fr": "Langue", "en": "Language" },
-    "labelPromesse": { "fr": "Promesse", "en": "Promise" },
-    "titrePromesse": { "fr": "Ce que ça change", "en": "What changes" },
-    "labelCapacites": { "fr": "Capacités", "en": "Features" },
-    "labelParcours": { "fr": "Parcours", "en": "Walkthrough" },
-    "labelInstaller": { "fr": "Installer", "en": "Install" },
-    "labelApercu": { "fr": "Aperçu", "en": "Preview" },
-    "labelUsages": { "fr": "Usages", "en": "Uses" },
-    "labelAVenir": { "fr": "À venir", "en": "Coming next" },
-    "labelStack": { "fr": "Stack", "en": "Stack" },
-    "labelJournal": { "fr": "Journal", "en": "Changelog" },
-    "titreJournal": { "fr": "Versions", "en": "Versions" },
-    "chart": { "fr": "chart", "en": "chart" },
+    "eyebrow": {
+      "fr": "Service Onyxia, open source",
+      "en": "Onyxia service, open source"
+    },
+    "evitement": {
+      "fr": "Aller au contenu",
+      "en": "Skip to content"
+    },
+    "boutonInstaller": {
+      "fr": "Installer",
+      "en": "Install"
+    },
+    "boutonCode": {
+      "fr": "Code source",
+      "en": "Source code"
+    },
+    "boutonGuide": {
+      "fr": "Guide des fonctionnalités",
+      "en": "Feature guide (in French)"
+    },
+    "choixLangue": {
+      "fr": "Langue",
+      "en": "Language"
+    },
+    "theme": {
+      "fr": "Thème :",
+      "en": "Theme:"
+    },
+    "themeSysteme": {
+      "fr": "Système",
+      "en": "System"
+    },
+    "themeClair": {
+      "fr": "Clair",
+      "en": "Light"
+    },
+    "themeSombre": {
+      "fr": "Sombre",
+      "en": "Dark"
+    },
+    "navigation": {
+      "fr": "Sections de la page",
+      "en": "Page sections"
+    },
+    "chart": {
+      "fr": "chart",
+      "en": "chart"
+    },
+    "agrandir": {
+      "fr": "Ouvrir la capture en grand",
+      "en": "Open the full-size screenshot"
+    },
+    "enService": {
+      "fr": "en service",
+      "en": "in service"
+    },
+    "integre": {
+      "fr": "intégré",
+      "en": "integrated"
+    },
+    "enPartie": {
+      "fr": "en partie",
+      "en": "partly"
+    },
+    "pasFait": {
+      "fr": "pas encore",
+      "en": "not yet"
+    },
+    "legendeStatuts": {
+      "fr": "En service : déployé et vérifié en réel. Intégré : dans le code et testé, avec des points encore à vérifier en réel. Pas encore : prévu, absent du code.",
+      "en": "In service: deployed and checked for real. Integrated: in the code and tested, with points still to check for real. Not yet: planned, not in the code."
+    },
+    "enSavoirPlus": {
+      "fr": "Dans le guide",
+      "en": "In the guide"
+    },
+    "etapes": {
+      "fr": "Pas à pas",
+      "en": "Step by step"
+    },
+    "briques": {
+      "fr": "Briques mobilisées",
+      "en": "Building blocks involved"
+    },
+    "limite": {
+      "fr": "Limite",
+      "en": "Limit"
+    },
+    "sourceCaptures": {
+      "fr": "Captures prises sur une instance locale de l'Atelier, avec des données de démonstration inventées. Même interface que sur un pod, dans ses deux thèmes.",
+      "en": "Screenshots taken on a local Atelier instance with made-up demo data. Same interface as on a pod, in both of its themes."
+    },
     "piedLicence": {
-      "fr": "Atelier sous licence Apache-2.0. Claude Code s'installe à part et reste soumis aux conditions d'Anthropic.",
-      "en": "Atelier is licensed under Apache-2.0. Claude Code is installed separately and remains subject to Anthropic's terms."
+      "fr": "Atelier est publié sous licence Apache-2.0. Ce dépôt ne contient pas Claude Code : l'image l'installe à sa construction, et son usage reste soumis aux conditions d'Anthropic.",
+      "en": "Atelier is released under the Apache-2.0 licence. This repository does not contain Claude Code: the image installs it when it is built, and its use remains subject to Anthropic's terms."
     },
     "piedProjet": {
-      "fr": "Documentation technique dans le dépôt. Projet indépendant, non affilié à Anthropic.",
-      "en": "Technical documentation lives in the repository. Independent project, not affiliated with Anthropic."
+      "fr": "Projet indépendant, non affilié à Anthropic ni à l'Insee. La documentation technique est dans le dépôt.",
+      "en": "Independent project, not affiliated with Anthropic or Insee. Technical documentation lives in the repository."
+    },
+    "menu": {
+      "capacites": {
+        "fr": "Capacités",
+        "en": "Features"
+      },
+      "visite": {
+        "fr": "Visite",
+        "en": "Tour"
+      },
+      "cas": {
+        "fr": "Cas d'usage",
+        "en": "Use cases"
+      },
+      "associations": {
+        "fr": "Associations",
+        "en": "Combinations"
+      },
+      "architecture": {
+        "fr": "Architecture",
+        "en": "Architecture"
+      },
+      "installer": {
+        "fr": "Installer",
+        "en": "Install"
+      },
+      "limites": {
+        "fr": "Limites",
+        "en": "Limits"
+      }
+    },
+    "retour": {
+      "fr": "Retour en haut",
+      "en": "Back to top"
     }
   },
   "chiffres": [
-    { "valeur": "{{version}}", "libelle": { "fr": "version du chart", "en": "chart version" } },
-    { "valeur": "4", "libelle": { "fr": "onglets : Code, Assistant, Connecteurs, Agents", "en": "tabs: Code, Assistant, Connectors, Agents" } },
-    { "valeur": "1", "libelle": { "fr": "pod par personne", "en": "pod per person" } },
-    { "valeur": "0", "libelle": { "fr": "champ à remplir dans le formulaire", "en": "form field to fill in" } }
-  ],
-  "produit": {
-    "accroche": {
-      "fr": "L'Atelier lance Claude Code dans ton espace SSPCloud et te donne une page pour le suivre. Chaque conversation appartient à un projet, et chaque projet de code est un dépôt git sur ton volume. L'inférence passe par la passerelle de modèles du SSPCloud avec la clé de ton profil Onyxia, pas par un compte partagé. Le même fil s'ouvre dans l'onglet Code ou dans VS Code, et ce qui se dit d'un côté apparaît de l'autre.",
-      "en": "Atelier runs Claude Code in your SSPCloud space and gives you a page to follow it. Every conversation belongs to a project, and every code project is a git repository on your volume. Inference goes through the SSPCloud model gateway with the key from your Onyxia profile, not through a shared account. The same thread opens in the Code tab or in VS Code, and what is said on one side shows up on the other."
+    {
+      "valeur": "{{version}}",
+      "libelle": {
+        "fr": "version du chart Helm",
+        "en": "Helm chart version"
+      }
     },
-    "titreSequence": { "fr": "Le parcours", "en": "How it goes" },
-    "sequence": [
+    {
+      "valeur": "{{vues}}",
+      "libelle": {
+        "fr": "vues : {{listeVues}}",
+        "en": "views: {{listeVues}}"
+      }
+    },
+    {
+      "valeur": "{{controles}}",
+      "libelle": {
+        "fr": "contrôles de gardiens, écrits en code, sans modèle",
+        "en": "guardian checks, written in code, no model involved"
+      }
+    },
+    {
+      "valeur": "1",
+      "libelle": {
+        "fr": "pod par personne, avec sa propre clé de modèle",
+        "en": "pod per person, with its own model key"
+      }
+    }
+  ],
+  "promesse": {
+    "titre": {
+      "fr": "Ce que l'Atelier change",
+      "en": "What Atelier changes"
+    },
+    "points": [
       {
-        "titre": { "fr": "Tu remplis ton profil", "en": "You fill in your profile" },
+        "titre": {
+          "fr": "Un agent qui travaille, et que vous voyez travailler",
+          "en": "An agent that works, and that you can watch"
+        },
         "texte": {
-          "fr": "Dans Onyxia, « Mon compte › Assistant IA » : la clé d'API de llm.lab.sspcloud.fr. « Mon compte › Git » : ton nom et ton courriel, qui signeront les commits de tes projets.",
-          "en": "In Onyxia, “My account › AI assistant”: your API key for llm.lab.sspcloud.fr. “My account › Git”: your name and email, which will sign your projects' commits."
+          "fr": "Chaque étape d'un tour se lit en français : lecture d'un fichier, ouverture d'une page, création montrée. Le détail technique reste à un clic.",
+          "en": "Every step of a turn reads in plain words: reading a file, opening a page, showing a creation. The technical detail stays one click away."
         }
       },
       {
-        "titre": { "fr": "Tu lances « Atelier »", "en": "You launch “Atelier”" },
+        "titre": {
+          "fr": "Rien d'engageant sans vous",
+          "en": "Nothing binding without you"
+        },
         "texte": {
-          "fr": "Depuis le catalogue Onyxia. Le formulaire est déjà rempli ; 10 Go de volume et 2 à 8 Go de mémoire suffisent d'ordinaire.",
-          "en": "From the Onyxia catalog. The form is already filled in; 10 GB of volume and 2 to 8 GB of memory are usually enough."
+          "fr": "Chaque action porte une classe : lecture, réversible (avec « Annuler »), engageante (un aperçu, puis votre « Oui ») ou réservée à vous. Ce qui attend votre accord arrive dans une seule file, « À valider ».",
+          "en": "Every action has a class: read, reversible (with “Undo”), binding (a preview, then your “Yes”) or reserved to you. Whatever awaits your approval lands in one queue, “To approve”."
         }
       },
       {
-        "titre": { "fr": "Tu ouvres le service", "en": "You open the service" },
+        "titre": {
+          "fr": "Votre pod, vos données",
+          "en": "Your pod, your data"
+        },
         "texte": {
-          "fr": "L'adresse est user-<idep>-atelier.user.lab.sspcloud.fr. La page demande la clé owner, que tu lis dans les notes du service.",
-          "en": "The address is user-<idep>-atelier.user.lab.sspcloud.fr. The page asks for the owner key, which you read in the service notes."
+          "fr": "Projets, conversations, connecteurs et mémoire vivent sur le volume ~/work de votre namespace. L'inférence passe par la passerelle de modèles du SSPCloud avec votre clé, jamais par un compte partagé.",
+          "en": "Projects, conversations, connectors and memory live on the ~/work volume of your namespace. Inference goes through the SSPCloud model gateway with your key, never through a shared account."
+        }
+      }
+    ]
+  },
+  "capacites": {
+    "titre": {
+      "fr": "Ce que fait l'Atelier",
+      "en": "What Atelier does"
+    },
+    "intro": {
+      "fr": "Quinze briques, regroupées selon ce que vous en faites. Chacune renvoie à sa section du guide de référence, vérifié contre le code.",
+      "en": "Fifteen building blocks, grouped by what you do with them. Each one links to its section of the reference guide (in French), checked against the code."
+    },
+    "familles": [
+      {
+        "titre": {
+          "fr": "Travailler avec un agent",
+          "en": "Work with an agent"
+        },
+        "items": [
+          {
+            "titre": {
+              "fr": "Projets et conversations",
+              "en": "Projects and conversations"
+            },
+            "statut": "service",
+            "texte": {
+              "fr": "Un projet est un dépôt git sur votre volume ; une conversation y fait travailler Claude Code. La même conversation s'ouvre dans l'interface, dans VS Code et au terminal, avec les mêmes outils et le même mode (Plan, Demande, Édite, Sans garde-fou).",
+              "en": "A project is a git repository on your volume; a conversation puts Claude Code to work in it. The same conversation opens in the interface, in VS Code and in the terminal, with the same tools and the same mode (Plan, Ask, Edit, No guard rails)."
+            },
+            "ancre": "2-projets-et-conversations"
+          },
+          {
+            "titre": {
+              "fr": "Créations et panneau",
+              "en": "Creations and side panel"
+            },
+            "statut": "service",
+            "texte": {
+              "fr": "Ce qu'un agent fabrique (page autonome ou petite application serveur) est servi derrière votre connexion, sur une origine à part, et s'ouvre dans le panneau à côté du fil. Aucun port à ouvrir.",
+              "en": "What an agent builds (a standalone page or a small server application) is served behind your login, on a separate origin, and opens in the panel next to the thread. No port to open."
+            },
+            "ancre": "7-créations-panneau-bureaux"
+          },
+          {
+            "titre": {
+              "fr": "Navigateur de l'agent",
+              "en": "The agent's browser"
+            },
+            "statut": "integre",
+            "texte": {
+              "fr": "Chaque conversation a son Chrome, pour chercher sur le web et tester ce que l'agent construit. Vous le regardez en direct et pouvez « Prendre la main », par exemple pour une connexion.",
+              "en": "Each conversation has its own Chrome, to search the web and test what the agent builds. You watch it live and can “Take over”, for instance to log in somewhere."
+            },
+            "ancre": "8-le-navigateur-de-lagent"
+          },
+          {
+            "titre": {
+              "fr": "Bureaux relayés",
+              "en": "Relayed desktops"
+            },
+            "statut": "service",
+            "texte": {
+              "fr": "Les bureaux de votre namespace (QGIS, Blender, n8n) s'ouvrent dans le panneau : vous corrigez à la main, l'agent agit par les outils du connecteur, sur le même objet.",
+              "en": "Desktops from your namespace (QGIS, Blender, n8n) open in the panel: you fix things by hand, the agent acts through the connector's tools, on the same object."
+            },
+            "ancre": "73-bureaux-relayés-qgis-blender-n8n"
+          },
+          {
+            "titre": {
+              "fr": "Onyxia et GPU pour un projet",
+              "en": "Onyxia and GPU for a project"
+            },
+            "statut": "integre",
+            "texte": {
+              "fr": "Un projet peut déclarer son pod ou son service Onyxia, et le GPU : ses agents y exécutent et y déploient, sans recevoir tout Onyxia.",
+              "en": "A project can declare its Onyxia pod or service, and the GPU: its agents run and deploy there without being handed all of Onyxia."
+            },
+            "ancre": "13-onyxia-et-déploiement-dun-projet"
+          }
+        ]
+      },
+      {
+        "titre": {
+          "fr": "Déléguer et garder la main",
+          "en": "Delegate and stay in control"
+        },
+        "items": [
+          {
+            "titre": {
+              "fr": "L'Assistant",
+              "en": "The Assistant"
+            },
+            "statut": "integre",
+            "texte": {
+              "fr": "La porte d'entrée : il lit la carte de l'Atelier, règle ses objets par les commandes et confie le travail des projets à des agents code. Chaque action laisse une carte avec sa preuve et « Annuler ».",
+              "en": "The front door: it reads the map of the Atelier, adjusts its objects through commands and hands project work to code agents. Every action leaves a card with its proof and “Undo”."
+            },
+            "ancre": "4-lassistant"
+          },
+          {
+            "titre": {
+              "fr": "Commandes à classes",
+              "en": "Commands with classes"
+            },
+            "statut": "service",
+            "texte": {
+              "fr": "L'interface, l'Assistant et les agents agissent par le même catalogue de commandes, chacune avec sa classe et son inverse, vérifiées par le serveur à chaque appel.",
+              "en": "The interface, the Assistant and the agents act through the same command catalogue, each command with its class and its inverse, checked by the server on every call."
+            },
+            "ancre": "5-commandes-de-latelier"
+          },
+          {
+            "titre": {
+              "fr": "« À valider » et journal",
+              "en": "“To approve” and the log"
+            },
+            "statut": "service",
+            "texte": {
+              "fr": "Une seule file pour ce qui attend votre accord (réparations, fins de travail sur branche, souvenirs proposés) ; un seul journal de qui a fait quoi, en phrases, sans aucune valeur secrète.",
+              "en": "One queue for whatever awaits your approval (repairs, work finished on a branch, proposed memories); one log of who did what, in sentences, without any secret value."
+            },
+            "ancre": "6--à-valider--journal-annulation"
+          },
+          {
+            "titre": {
+              "fr": "Agents planifiés",
+              "en": "Scheduled agents"
+            },
+            "statut": "service",
+            "texte": {
+              "fr": "Un agent planifié naît désactivé, avec un budget obligatoire ; vous seul l'activez. Ses lancements passent par l'Atelier, qui tient les plafonds et en montre l'état.",
+              "en": "A scheduled agent is born disabled, with a mandatory budget; only you turn it on. Its runs go through the Atelier, which enforces the caps and shows their status."
+            },
+            "ancre": "10-wikichat"
+          },
+          {
+            "titre": {
+              "fr": "Gardiens et réparateurs",
+              "en": "Guardians and repairers"
+            },
+            "statut": "service",
+            "texte": {
+              "fr": "Des contrôles écrits en code, sans modèle ni jeton : santé des services, ports et secrets, cohérence entre surfaces. Une alerte peut déclencher un réparateur sur une branche, que vous fusionnez.",
+              "en": "Checks written in code, with no model and no tokens: service health, ports and secrets, consistency across surfaces. An alert can trigger a repairer on a branch, which you merge."
+            },
+            "ancre": "12-gardiens-et-réparateurs"
+          }
+        ]
+      },
+      {
+        "titre": {
+          "fr": "Relier et se souvenir",
+          "en": "Connect and remember"
+        },
+        "items": [
+          {
+            "titre": {
+              "fr": "Connecteurs MCP et compositions",
+              "en": "MCP connectors and compositions"
+            },
+            "statut": "service",
+            "texte": {
+              "fr": "Un seul registre de serveurs MCP, choisis projet par projet, secrets par référence. Une composition enchaîne plusieurs outils en un seul, appelable par vos agents.",
+              "en": "One registry of MCP servers, chosen project by project, secrets by reference. A composition chains several tools into one, callable by your agents."
+            },
+            "ancre": "9-connecteurs-et-passerelle-mcp"
+          },
+          {
+            "titre": {
+              "fr": "L'Atelier comme connecteur",
+              "en": "The Atelier as a connector"
+            },
+            "statut": "service",
+            "texte": {
+              "fr": "L'Atelier se branche lui-même comme connecteur MCP dans un client distant comme claude.ai, par OAuth, avec une page de consentement qui demande votre clé.",
+              "en": "The Atelier plugs itself in as an MCP connector in a remote client such as claude.ai, through OAuth, with a consent page that asks for your key."
+            },
+            "ancre": "9-connecteurs-et-passerelle-mcp"
+          },
+          {
+            "titre": {
+              "fr": "Coordination par wikichat",
+              "en": "Coordination through wikichat"
+            },
+            "statut": "service",
+            "texte": {
+              "fr": "Les agents se parlent entre projets, partagent une connaissance commune et une cartographie des projets ; l'Assistant la lit comme une carte de l'Atelier.",
+              "en": "Agents talk across projects and share common knowledge and a map of the projects; the Assistant reads it as a map of the Atelier."
+            },
+            "ancre": "10-wikichat"
+          },
+          {
+            "titre": {
+              "fr": "Mémoire",
+              "en": "Memory"
+            },
+            "statut": "integre",
+            "texte": {
+              "fr": "Une fiche par conversation, retrouvée par le sens ou par mots-clés ; « Ma mémoire » pour ce que l'Atelier retient de vous, qui n'y entre qu'avec votre accord et s'oublie d'un clic.",
+              "en": "One record per conversation, found by meaning or by keywords; “My memory” for what the Atelier retains about you, which only gets in with your approval and is forgotten in one click."
+            },
+            "ancre": "11-mémoire"
+          },
+          {
+            "titre": {
+              "fr": "Voix",
+              "en": "Voice"
+            },
+            "statut": "pasFait",
+            "texte": {
+              "fr": "Pas encore dans l'interface. Un projet du pod sert déjà une transcription et une synthèse vocale auto-hébergées, avec leurs outils MCP ; leur intégration est à l'étude.",
+              "en": "Not in the interface yet. A project on the pod already serves self-hosted speech-to-text and text-to-speech, with their MCP tools; integrating them is under study."
+            },
+            "ancre": "15-voix"
+          }
+        ]
+      }
+    ]
+  },
+  "visite": {
+    "titre": {
+      "fr": "L'interface, vue par vue",
+      "en": "The interface, view by view"
+    },
+    "intro": {
+      "fr": "Sept vues, un en-tête commun, un thème clair et un thème sombre qui suivent votre système ou votre choix.",
+      "en": "Seven views, a shared header, a light and a dark theme that follow your system or your choice."
+    },
+    "captures": [
+      {
+        "fichier": "code-creation",
+        "titre": {
+          "fr": "Code, avec le panneau",
+          "en": "Code, with the side panel"
+        },
+        "legende": {
+          "fr": "Les conversations rangées par projet, le fil au centre, et la création de l'agent ouverte dans le panneau.",
+          "en": "Conversations filed by project, the thread in the middle, and the agent's creation open in the panel."
+        },
+        "alt": {
+          "fr": "Vue Code : à gauche les projets et leurs conversations, au centre la demande « Fais-moi une carte des parcelles » et la réponse de l'agent, à droite une carte des parcelles avec une bascule 2019 / 2021.",
+          "en": "Code view: projects and their conversations on the left, the request “Make me a map of the plots” and the agent's reply in the middle, a map of the plots with a 2019 / 2021 toggle on the right."
         }
       },
       {
-        "titre": { "fr": "Tu écris un premier message", "en": "You write a first message" },
-        "texte": {
-          "fr": "Le projet naît avec la conversation, déjà en dépôt git. Les suivantes s'y rangent, chacune avec son historique.",
-          "en": "The project is born with the conversation, already a git repository. Later conversations are filed there, each with its own history."
+        "fichier": "code-etapes",
+        "titre": {
+          "fr": "Les étapes d'un tour",
+          "en": "The steps of a turn"
+        },
+        "legende": {
+          "fr": "Dépliées : lecture des données, création posée, ouverture dans le navigateur de l'agent, lecture de la console, création montrée.",
+          "en": "Expanded: reading the data, creation set up, opening in the agent's browser, reading the console, creation shown."
+        },
+        "alt": {
+          "fr": "Fil de conversation avec « Voir les étapes (9) » déplié : chaque appel d'outil décrit par une phrase courte, et une carte « Création posée ».",
+          "en": "Conversation thread with “See the steps (9)” expanded: each tool call described by a short sentence, and a “Creation set up” card."
+        }
+      },
+      {
+        "fichier": "assistant",
+        "titre": {
+          "fr": "L'Assistant",
+          "en": "The Assistant"
+        },
+        "legende": {
+          "fr": "Une carte « Projet créé » avec « Annuler », et l'aperçu d'un agent à lancer, qui attend votre « Oui ».",
+          "en": "A “Project created” card with “Undo”, and the preview of an agent to launch, waiting for your “Yes”."
+        },
+        "alt": {
+          "fr": "Vue Assistant : deux cartes d'action dans le fil, « Projet créé » et « Confier ce travail à un agent » avec projet, durée maximale, mode, consigne et un bouton « Oui ».",
+          "en": "Assistant view: two action cards in the thread, “Project created” and “Hand this work to an agent” with project, maximum duration, mode, instructions and a “Yes” button."
+        }
+      },
+      {
+        "fichier": "a-valider",
+        "titre": {
+          "fr": "À valider",
+          "en": "To approve"
+        },
+        "legende": {
+          "fr": "Une préférence à retenir, un export à fusionner, une réparation proposée par un gardien : accepter est réservé à vous.",
+          "en": "A preference to retain, an export to merge, a repair proposed by a guardian: accepting is reserved to you."
+        },
+        "alt": {
+          "fr": "Vue À valider : trois propositions en attente, chacune avec sa source (mémoire, agent, gardien), un résumé, « Accepter », un motif facultatif et « Refuser ».",
+          "en": "To approve view: three pending proposals, each with its source (memory, agent, guardian), a summary, “Accept”, an optional reason and “Refuse”."
+        }
+      },
+      {
+        "fichier": "agents",
+        "titre": {
+          "fr": "Agents et gardiens",
+          "en": "Agents and guardians"
+        },
+        "legende": {
+          "fr": "Les gardiens Santé, Sécurité, Cohérence et Entretien, leur dernière et leur prochaine vérification, sans IA ni dépense.",
+          "en": "The Health, Security, Consistency and Upkeep guardians, their last and next check, with no AI and no spending."
+        },
+        "alt": {
+          "fr": "Vue Agents : la liste des gardiens à gauche, et au centre les propositions à valider, les agents en cours et les tâches automatiques avec « Voir » et « Lancer maintenant ».",
+          "en": "Agents view: the list of guardians on the left, and in the middle the proposals to approve, running agents and automatic tasks with “View” and “Run now”."
+        }
+      },
+      {
+        "fichier": "journal",
+        "titre": {
+          "fr": "Journal",
+          "en": "Log"
+        },
+        "legende": {
+          "fr": "Qui a fait quoi, en phrases, filtrable par projet, par acteur et par source.",
+          "en": "Who did what, in sentences, filterable by project, actor and source."
+        },
+        "alt": {
+          "fr": "Vue Journal : une liste datée d'événements, projets créés, création fabriquée, propositions déposées, avec leur source.",
+          "en": "Log view: a dated list of events, projects created, creation built, proposals filed, with their source."
         }
       }
     ],
-    "titreContextes": { "fr": "Quand ça sert", "en": "When it helps" },
-    "contextes": [
-      {
-        "titre": { "fr": "Modifier une couche de données", "en": "Edit a data layer" },
-        "texte": {
-          "fr": "Tu demandes d'ajouter l'entité qui manque à un GeoJSON ; Claude dit quel fichier il a modifié et ce qu'il n'a pas touché, puis vous discutez de la suite.",
-          "en": "You ask for the missing feature to be added to a GeoJSON file; Claude says which file it changed and what it left alone, then you discuss what comes next."
-        },
-        "pourquoi": {
-          "fr": "Le travail se fait dans le dépôt du projet, sur ton volume.",
-          "en": "The work happens in the project repository, on your volume."
-        }
+    "mobile": {
+      "fichier": "mobile-conversation",
+      "titre": {
+        "fr": "Sur un téléphone",
+        "en": "On a phone"
       },
-      {
-        "titre": { "fr": "Comparer deux millésimes", "en": "Compare two vintages" },
-        "texte": {
-          "fr": "Deux versions d'un même jeu de données, l'OCS GE 2019 et 2021 par exemple : tu fais écrire l'analyse dans le projet, et tu la relis dans le fil.",
-          "en": "Two versions of the same dataset, say OCS GE 2019 and 2021: you have the analysis written into the project, and you review it in the thread."
-        },
-        "pourquoi": {
-          "fr": "Le calcul tourne sur ton pod, près de tes données.",
-          "en": "The computation runs on your pod, next to your data."
-        }
+      "legende": {
+        "fr": "Le tour tourne sur le pod, pas dans le navigateur : vous relisez, répondez à une autorisation et relancez depuis un petit écran.",
+        "en": "The turn runs on the pod, not in the browser: you read, answer a permission request and send the next message from a small screen."
       },
-      {
-        "titre": { "fr": "Suivre depuis un téléphone", "en": "Follow along from a phone" },
-        "texte": {
-          "fr": "L'interface tient sur un petit écran : tu relis une réponse, tu réponds à une demande d'autorisation, tu relances.",
-          "en": "The interface fits a small screen: you read a reply, answer a permission request, send the next message."
-        },
-        "pourquoi": {
-          "fr": "Le tour tourne sur le pod, pas dans ton navigateur.",
-          "en": "The turn runs on the pod, not in your browser."
-        }
-      },
-      {
-        "titre": { "fr": "Reprendre dans l'éditeur", "en": "Pick it up in the editor" },
-        "texte": {
-          "fr": "Un changement à relire de près : tu passes dans VS Code sur la même conversation, tu corriges, tu reviens.",
-          "en": "A change to review closely: you switch to VS Code on the same conversation, fix things, come back."
-        },
-        "pourquoi": {
-          "fr": "code-server tourne dans le même pod, sur le même volume.",
-          "en": "code-server runs in the same pod, on the same volume."
-        }
-      }
-    ]
-  },
-  "captures": {
-    "titre": { "fr": "Les onglets, tels qu'ils sont", "en": "The tabs, as they are" },
-    "hero": {
-      "fichier": "01-code.png",
       "alt": {
-        "fr": "Onglet Code : conversations rangées par projet à gauche, fil de la conversation au centre, lien VS Code en haut à droite.",
-        "en": "Code tab: conversations filed by project on the left, the conversation thread in the middle, the VS Code link at the top right."
+        "fr": "Une conversation sur un écran de téléphone : la demande d'export CSV et la réponse de l'agent.",
+        "en": "A conversation on a phone screen: the CSV export request and the agent's reply."
       }
+    }
+  },
+  "cas": {
+    "titre": {
+      "fr": "Cas d'usage, pas à pas",
+      "en": "Use cases, step by step"
+    },
+    "intro": {
+      "fr": "Ce que donnent les briques une fois assemblées. Chaque cas dit ce que vous faites, ce que fait l'agent, et ce qui n'est pas encore là.",
+      "en": "What the building blocks give once combined. Each case says what you do, what the agent does, and what is not there yet."
     },
     "liste": [
       {
-        "fichier": "03-connecteurs.png",
-        "alt": {
-          "fr": "Onglet Connecteurs : services de l'Atelier, compositions et connecteurs personnels, avec leur état et leur nombre d'outils.",
-          "en": "Connectors tab: Atelier services, compositions and personal connectors, with their status and tool count."
+        "id": "carte",
+        "titre": {
+          "fr": "Une carte servie, vérifiée par l'agent, montrée à côté du fil",
+          "en": "A map served, checked by the agent, shown next to the thread"
         },
-        "legende": {
-          "fr": "Connecteurs : ce que l'Atelier fournit, ce que tu as branché, ce que tu as composé.",
-          "en": "Connectors: what Atelier provides, what you plugged in, what you composed."
+        "statut": "service",
+        "briques": [
+          {
+            "fr": "Conversation",
+            "en": "Conversation"
+          },
+          {
+            "fr": "Création",
+            "en": "Creation"
+          },
+          {
+            "fr": "Navigateur de l'agent",
+            "en": "Agent's browser"
+          },
+          {
+            "fr": "Panneau",
+            "en": "Side panel"
+          }
+        ],
+        "etapes": [
+          {
+            "fr": "Vous demandez : « Fais-moi une carte des parcelles, avec leur usage en 2019 et 2021, et montre-la moi. »",
+            "en": "You ask: “Make me a map of the plots, with their use in 2019 and 2021, and show it to me.”"
+          },
+          {
+            "fr": "L'agent lit les données du projet, pose une création et écrit la page.",
+            "en": "The agent reads the project's data, sets up a creation and writes the page."
+          },
+          {
+            "fr": "Il l'ouvre dans son propre navigateur, lit la page et la console, corrige s'il le faut.",
+            "en": "It opens it in its own browser, reads the page and the console, and fixes things if needed."
+          },
+          {
+            "fr": "Il la montre : elle s'ouvre dans le panneau, sur une origine à part, derrière votre connexion.",
+            "en": "It shows it: it opens in the panel, on a separate origin, behind your login."
+          },
+          {
+            "fr": "Vous l'épinglez au projet pour la retrouver dans toutes ses conversations.",
+            "en": "You pin it to the project to find it again in all of its conversations."
+          }
+        ],
+        "capture": "code-etapes",
+        "limite": {
+          "fr": "Une création ne se partage pas encore avec d'autres personnes : son accès est réservé au propriétaire du pod.",
+          "en": "A creation cannot be shared with other people yet: access is reserved to the pod owner."
         }
       },
       {
-        "fichier": "04-agents.png",
-        "alt": {
-          "fr": "Onglet Agents : agents personnels et agents d'entretien, avec leur planning, et la file des actions à valider.",
-          "en": "Agents tab: personal and maintenance agents with their schedule, and the queue of actions to approve."
+        "id": "deleguer",
+        "titre": {
+          "fr": "Déléguer depuis l'Assistant, garder le dernier mot",
+          "en": "Delegate from the Assistant, keep the last word"
         },
-        "legende": {
-          "fr": "Agents : leur planning, et les actions qu'ils te proposent.",
-          "en": "Agents: their schedule, and the actions they propose to you."
+        "statut": "integre",
+        "briques": [
+          {
+            "fr": "Assistant",
+            "en": "Assistant"
+          },
+          {
+            "fr": "Commandes engageantes",
+            "en": "Binding commands"
+          },
+          {
+            "fr": "Agent lancé",
+            "en": "Launched agent"
+          },
+          {
+            "fr": "À valider",
+            "en": "To approve"
+          }
+        ],
+        "etapes": [
+          {
+            "fr": "Vous demandez à l'Assistant d'ajouter l'export de toutes les tables au Lecteur Grist.",
+            "en": "You ask the Assistant to add an export of all tables to the Grist Reader."
+          },
+          {
+            "fr": "Il prépare le lancement d'un agent : projet, durée maximale, mode, consigne. Rien ne part avant votre « Oui ».",
+            "en": "It prepares an agent launch: project, maximum duration, mode, instructions. Nothing starts before your “Yes”."
+          },
+          {
+            "fr": "L'agent travaille sur une branche, dans une copie du projet, sans pouvoir pousser ni toucher main.",
+            "en": "The agent works on a branch, in a copy of the project, unable to push or touch main."
+          },
+          {
+            "fr": "À la fin, la proposition arrive dans « À valider » avec ses commits et son écart ; vous acceptez, la branche est fusionnée.",
+            "en": "When it is done, the proposal lands in “To approve” with its commits and diff; you accept, the branch is merged."
+          }
+        ],
+        "capture": "assistant",
+        "limite": {
+          "fr": "L'aperçu ne chiffre pas encore le coût d'un lancement en jetons.",
+          "en": "The preview does not yet estimate the cost of a launch in tokens."
         }
       },
       {
-        "fichier": "05-code-mobile.png",
-        "alt": {
-          "fr": "Onglet Code sur un écran de téléphone.",
-          "en": "Code tab on a phone screen."
+        "id": "gardien",
+        "titre": {
+          "fr": "Une alerte de gardien, jusqu'à la preuve dans le journal",
+          "en": "A guardian alert, all the way to the proof in the log"
         },
-        "legende": {
-          "fr": "La même conversation, sur un téléphone.",
-          "en": "The same conversation, on a phone."
+        "statut": "service",
+        "briques": [
+          {
+            "fr": "Gardiens",
+            "en": "Guardians"
+          },
+          {
+            "fr": "Réparateur sur branche",
+            "en": "Repairer on a branch"
+          },
+          {
+            "fr": "À valider",
+            "en": "To approve"
+          },
+          {
+            "fr": "Journal",
+            "en": "Log"
+          }
+        ],
+        "etapes": [
+          {
+            "fr": "Le gardien Santé constate que la CI de main est rouge : une alerte s'ouvre, visible dans la vue Agents et sur la carte que lit l'Assistant.",
+            "en": "The Health guardian sees that the main CI is red: an alert opens, visible in the Agents view and on the map the Assistant reads."
+          },
+          {
+            "fr": "Si le contrôle le déclare, un réparateur part sur une branche gardien/…, reproduit, corrige, vérifie et commite.",
+            "en": "If the check declares it, a repairer starts on a guardian/… branch, reproduces, fixes, verifies and commits."
+          },
+          {
+            "fr": "La proposition arrive dans « À valider » : constat, commits, écart.",
+            "en": "The proposal lands in “To approve”: finding, commits, diff."
+          },
+          {
+            "fr": "Vous acceptez : la branche est fusionnée sans être poussée. Le journal garde la chaîne complète, et l'alerte se ferme au passage suivant.",
+            "en": "You accept: the branch is merged without being pushed. The log keeps the whole chain, and the alert closes on the next pass."
+          }
+        ],
+        "capture": "a-valider",
+        "limite": {
+          "fr": "Dans la déclaration livrée, un seul contrôle peut proposer une réparation, et seulement une fois un projet nommé : sinon la chaîne s'arrête au signalement.",
+          "en": "In the shipped declaration, only one check may propose a repair, and only once a project is named: otherwise the chain stops at the report."
+        }
+      },
+      {
+        "id": "main",
+        "titre": {
+          "fr": "Une connexion que l'agent ne peut pas faire seul",
+          "en": "A login the agent cannot do alone"
+        },
+        "statut": "integre",
+        "briques": [
+          {
+            "fr": "Navigateur de l'agent",
+            "en": "Agent's browser"
+          },
+          {
+            "fr": "Écran en direct",
+            "en": "Live screen"
+          },
+          {
+            "fr": "Prendre la main",
+            "en": "Take over"
+          }
+        ],
+        "etapes": [
+          {
+            "fr": "L'agent arrive sur un site qui demande une connexion ou un CAPTCHA, et vous le dit.",
+            "en": "The agent reaches a site that asks for a login or a CAPTCHA, and tells you."
+          },
+          {
+            "fr": "Dans le panneau, l'onglet « Navigateur de l'agent » montre sa page en direct ; vous cliquez « Prendre la main » et vous vous connectez.",
+            "en": "In the panel, the “Agent's browser” tab shows its page live; you click “Take over” and log in."
+          },
+          {
+            "fr": "Pendant ce temps, ses actions sur le navigateur attendent ; ses autres outils continuent.",
+            "en": "Meanwhile its browser actions wait; its other tools keep going."
+          },
+          {
+            "fr": "Vous rendez la main : l'action en attente repart, l'agent relit la page et continue. La connexion dure le temps de la conversation.",
+            "en": "You hand back control: the pending action resumes, the agent re-reads the page and carries on. The login lasts as long as the conversation."
+          }
+        ],
+        "limite": {
+          "fr": "Pas de boîtes de dialogue ni de choix de fichier à l'écran ; le profil du navigateur ne survit pas au redémarrage du pod.",
+          "en": "No dialog boxes or file pickers on the screen; the browser profile does not survive a pod restart."
+        }
+      },
+      {
+        "id": "grist-voix",
+        "titre": {
+          "fr": "Un lecteur de données, testé dans Chrome, bientôt à la voix",
+          "en": "A data reader, tested in Chrome, soon by voice"
+        },
+        "statut": "enPartie",
+        "briques": [
+          {
+            "fr": "Création serveur",
+            "en": "Server creation"
+          },
+          {
+            "fr": "Connecteur Grist",
+            "en": "Grist connector"
+          },
+          {
+            "fr": "Navigateur de l'agent",
+            "en": "Agent's browser"
+          },
+          {
+            "fr": "Voix (projet)",
+            "en": "Voice (project)"
+          }
+        ],
+        "etapes": [
+          {
+            "fr": "Le Lecteur Grist est une création du pod : il ouvre un document .grist dans le navigateur, sans serveur Grist.",
+            "en": "The Grist Reader is a creation on the pod: it opens a .grist document in the browser, without a Grist server."
+          },
+          {
+            "fr": "L'agent y ajoute un export CSV, le teste dans son Chrome sur le document d'exemple, puis vous le montre dans le panneau.",
+            "en": "The agent adds a CSV export to it, tests it in its Chrome on the sample document, then shows it to you in the panel."
+          },
+          {
+            "fr": "Avec un connecteur Grist dans le pool, le même agent lit ou complète les tables d'un vrai document, par ses outils.",
+            "en": "With a Grist connector in the pool, the same agent reads or fills in the tables of a real document, through its tools."
+          },
+          {
+            "fr": "La voix existe comme projet du pod (transcription et synthèse auto-hébergées, outils dire et écouter) : elle se branche comme connecteur, pas encore dans l'interface.",
+            "en": "Voice exists as a project on the pod (self-hosted speech-to-text and text-to-speech, speak and listen tools): it plugs in as a connector, not yet in the interface."
+          }
+        ],
+        "capture": "mobile-conversation",
+        "limite": {
+          "fr": "L'interface n'a ni micro ni lecture à voix haute ; décisions déjà prises : aucun audio conservé, aucun accord donné à l'oral.",
+          "en": "The interface has no microphone and no read-aloud; decisions already made: no audio kept, no approval given by voice."
         }
       }
     ]
   },
-  "points": [
-    {
-      "titre": { "fr": "Ton pod, tes données", "en": "Your pod, your data" },
-      "texte": {
-        "fr": "Projets, conversations et connecteurs vivent sur le volume ~/work de ton namespace, qui survit au service. Relancer le service met l'image à jour sans toucher au volume.",
-        "en": "Projects, conversations and connectors live on the ~/work volume in your namespace, which outlives the service. Restarting the service updates the image without touching the volume."
-      }
+  "associations": {
+    "titre": {
+      "fr": "Les briques se combinent",
+      "en": "The building blocks combine"
     },
-    {
-      "titre": { "fr": "Rien à recopier", "en": "Nothing to copy by hand" },
-      "texte": {
-        "fr": "Onyxia remplit le formulaire depuis ton profil : adresse, clé du modèle, identité git. Il te reste à ouvrir.",
-        "en": "Onyxia fills in the form from your profile: address, model key, git identity. All that is left is to open it."
-      }
+    "intro": {
+      "fr": "Aucune brique n'est un îlot : elles partagent les mêmes commandes, le même journal et la même file « À valider ». Quelques combinaisons, et ce qu'elles permettent.",
+      "en": "No block is an island: they share the same commands, the same log and the same “To approve” queue. A few combinations, and what they enable."
     },
-    {
-      "titre": { "fr": "Pas de compte partagé", "en": "No shared account" },
-      "texte": {
-        "fr": "Claude Code appelle la passerelle de modèles du SSPCloud avec ta clé. La clé owner et celle du modèle restent dans ~/work/.secrets, jamais dans un dossier de projet.",
-        "en": "Claude Code calls the SSPCloud model gateway with your key. The owner key and the model key stay in ~/work/.secrets, never in a project folder."
+    "liste": [
+      {
+        "briques": [
+          {
+            "fr": "Création serveur",
+            "en": "Server creation"
+          },
+          {
+            "fr": "Navigateur de l'agent",
+            "en": "Agent's browser"
+          },
+          {
+            "fr": "Panneau",
+            "en": "Panel"
+          }
+        ],
+        "texte": {
+          "fr": "L'agent fabrique, vérifie lui-même son travail, puis vous le montre à côté du fil.",
+          "en": "The agent builds, checks its own work, then shows it to you next to the thread."
+        }
+      },
+      {
+        "briques": [
+          {
+            "fr": "Connecteur",
+            "en": "Connector"
+          },
+          {
+            "fr": "Composition",
+            "en": "Composition"
+          },
+          {
+            "fr": "Agent planifié",
+            "en": "Scheduled agent"
+          }
+        ],
+        "texte": {
+          "fr": "Une veille qui tourne seule, dans un budget fixé, et dont les propositions attendent votre accord.",
+          "en": "A watch that runs on its own, within a set budget, whose proposals wait for your approval."
+        }
+      },
+      {
+        "briques": [
+          {
+            "fr": "Gardien",
+            "en": "Guardian"
+          },
+          {
+            "fr": "Agent sur branche",
+            "en": "Agent on a branch"
+          },
+          {
+            "fr": "À valider",
+            "en": "To approve"
+          },
+          {
+            "fr": "Journal",
+            "en": "Log"
+          }
+        ],
+        "texte": {
+          "fr": "Une panne signalée, une réparation proposée, fusionnée par vous, et la trace de chaque geste.",
+          "en": "A failure reported, a repair proposed, merged by you, and a trace of every step."
+        }
+      },
+      {
+        "briques": [
+          {
+            "fr": "Assistant",
+            "en": "Assistant"
+          },
+          {
+            "fr": "Carte de l'Atelier",
+            "en": "Atelier map"
+          },
+          {
+            "fr": "Commandes",
+            "en": "Commands"
+          }
+        ],
+        "texte": {
+          "fr": "Demander où en sont vos projets, puis agir dans la même conversation, avec « Annuler » sur chaque carte.",
+          "en": "Ask where your projects stand, then act in the same conversation, with “Undo” on every card."
+        }
+      },
+      {
+        "briques": [
+          {
+            "fr": "Mémoire",
+            "en": "Memory"
+          },
+          {
+            "fr": "Coordination",
+            "en": "Coordination"
+          },
+          {
+            "fr": "Agent code",
+            "en": "Code agent"
+          }
+        ],
+        "texte": {
+          "fr": "Retrouver une décision passée sans relire les conversations, et demander l'avis de l'agent d'un autre projet.",
+          "en": "Find a past decision without re-reading conversations, and ask the agent of another project for its view."
+        }
+      },
+      {
+        "briques": [
+          {
+            "fr": "Projet",
+            "en": "Project"
+          },
+          {
+            "fr": "Pod Onyxia",
+            "en": "Onyxia pod"
+          },
+          {
+            "fr": "GPU",
+            "en": "GPU"
+          }
+        ],
+        "texte": {
+          "fr": "Un projet qui calcule sur son propre pod, sans que ses agents reçoivent tout Onyxia.",
+          "en": "A project that computes on its own pod, without its agents being handed all of Onyxia."
+        }
+      },
+      {
+        "briques": [
+          {
+            "fr": "Bureau QGIS",
+            "en": "QGIS desktop"
+          },
+          {
+            "fr": "Connecteur QGIS",
+            "en": "QGIS connector"
+          },
+          {
+            "fr": "Panneau",
+            "en": "Panel"
+          }
+        ],
+        "texte": {
+          "fr": "Vous et l'agent sur la même carte : lui par les outils du connecteur, vous à la main dans le bureau relayé.",
+          "en": "You and the agent on the same map: it through the connector's tools, you by hand in the relayed desktop."
+        }
+      },
+      {
+        "briques": [
+          {
+            "fr": "Atelier connecteur",
+            "en": "Atelier as connector"
+          },
+          {
+            "fr": "Client Claude distant",
+            "en": "Remote Claude client"
+          }
+        ],
+        "texte": {
+          "fr": "Retrouver vos projets et vos conversations depuis un client Claude distant, après votre consentement.",
+          "en": "Reach your projects and conversations from a remote Claude client, after your consent."
+        }
+      }
+    ]
+  },
+  "architecture": {
+    "titre": {
+      "fr": "Comment c'est construit",
+      "en": "How it is built"
+    },
+    "texte": {
+      "fr": "Un pod par personne, installé par le catalogue Onyxia. L'Atelier y tient l'état opérationnel (conversations, connecteurs, créations, commandes, journal) ; wikichat tient la connaissance et la coordination. Chacun lit l'autre par API, aucun ne recopie les données de l'autre. Seuls l'Atelier et l'hôte des applications sont exposés, par l'ingress d'Onyxia ; tout le reste écoute en boucle locale.",
+      "en": "One pod per person, installed from the Onyxia catalogue. The Atelier holds the operational state there (conversations, connectors, creations, commands, log); wikichat holds knowledge and coordination. Each reads the other through an API; neither copies the other's data. Only the Atelier and the application host are exposed, through Onyxia's ingress; everything else listens on the loopback."
+    },
+    "schema": {
+      "titre": {
+        "fr": "Les processus d'un pod de l'Atelier",
+        "en": "The processes of an Atelier pod"
+      },
+      "vous": {
+        "fr": "Vous, dans le navigateur",
+        "en": "You, in the browser"
+      },
+      "distant": {
+        "fr": "Client Claude distant",
+        "en": "Remote Claude client"
+      },
+      "ingress": {
+        "fr": "Ingress Onyxia",
+        "en": "Onyxia ingress"
+      },
+      "pod": {
+        "fr": "Votre pod SSPCloud · volume ~/work",
+        "en": "Your SSPCloud pod · ~/work volume"
+      },
+      "atelier": {
+        "fr": "Atelier · interface, API, /mcp, VS Code",
+        "en": "Atelier · interface, API, /mcp, VS Code"
+      },
+      "apps": {
+        "fr": "Hôte des applications · créations, bureaux",
+        "en": "Application host · creations, desktops"
+      },
+      "claude": {
+        "fr": "Claude Code · un processus par conversation",
+        "en": "Claude Code · one process per conversation"
+      },
+      "relais": {
+        "fr": "Relais LLM",
+        "en": "LLM relay"
+      },
+      "gardiens": {
+        "fr": "Gardiens",
+        "en": "Guardians"
+      },
+      "wikichat": {
+        "fr": "wikichat",
+        "en": "wikichat"
+      },
+      "creations": {
+        "fr": "Créations serveur",
+        "en": "Server creations"
+      },
+      "modeles": {
+        "fr": "Passerelle de modèles SSPCloud",
+        "en": "SSPCloud model gateway"
+      },
+      "connecteurs": {
+        "fr": "Connecteurs MCP",
+        "en": "MCP connectors"
       }
     }
-  ],
-  "titreFonctionnalites": { "fr": "Ce que tu peux faire", "en": "What you can do" },
-  "fonctionnalites": [
-    {
-      "titre": { "fr": "Des conversations rangées par projet", "en": "Conversations filed by project" },
-      "texte": {
-        "fr": "Une conversation crée son projet au premier message, et un projet de code est un dépôt git dès sa création. Plusieurs fils partagent le même dépôt, chacun avec son historique.",
-        "en": "A conversation creates its project on the first message, and a code project is a git repository from the start. Several threads share the same repository, each with its own history."
-      },
-      "pourQui": {
-        "fr": "Pour qui : toute personne qui mène plusieurs chantiers de front.",
-        "en": "For: anyone running several pieces of work at once."
-      }
-    },
-    {
-      "titre": { "fr": "La même conversation dans VS Code", "en": "The same conversation in VS Code" },
-      "texte": {
-        "fr": "Le lien « VS Code » ouvre code-server sur le pod, avec l'extension Claude Code sur cette conversation. Celles nées dans VS Code entrent dans l'Atelier. Le mode de permission et les connecteurs choisis valent des deux côtés.",
-        "en": "The “VS Code” link opens code-server on the pod, with the Claude Code extension on that conversation. Conversations started in VS Code show up in Atelier. The permission mode and the chosen connectors apply on both sides."
-      },
-      "pourQui": {
-        "fr": "Pour qui : celles et ceux qui relisent un diff dans l'éditeur.",
-        "en": "For: people who review a diff in the editor."
-      }
-    },
-    {
-      "titre": { "fr": "Les autorisations dans le fil", "en": "Permissions in the thread" },
-      "texte": {
-        "fr": "En mode acceptEdits, le mode par défaut, Claude demande avant d'agir : une carte s'affiche et le tour attend ta réponse. Tu peux accorder pour tout le fil. Claude peut aussi te poser une question à choix, avec un champ libre.",
-        "en": "In acceptEdits mode, the default, Claude asks before acting: a card appears and the turn waits for your answer. You can grant it for the whole thread. Claude can also ask you a multiple-choice question, with a free-text field."
-      },
-      "pourQui": {
-        "fr": "Pour qui : qui veut voir passer chaque commande avant qu'elle parte.",
-        "en": "For: anyone who wants to see each command before it runs."
-      }
-    },
-    {
-      "titre": { "fr": "Écrire pendant qu'il travaille", "en": "Write while it works" },
-      "texte": {
-        "fr": "Un message écrit pendant un tour se met en file et part dès que le précédent a fini. Un second onglet ou VS Code regardent la conversation sans la relancer.",
-        "en": "A message written during a turn is queued and sent as soon as the previous one is done. A second tab or VS Code can watch the conversation without triggering it."
-      },
-      "pourQui": {
-        "fr": "Pour qui : qui pense à la suite avant la fin de la réponse.",
-        "en": "For: anyone who thinks of the next step before the reply is over."
-      }
-    },
-    {
-      "titre": { "fr": "Tes connecteurs MCP", "en": "Your MCP connectors" },
-      "texte": {
-        "fr": "Les services de l'Atelier, ceux que tu branches (stdio, SSE, HTTP) et tes compositions forment un seul registre. Chaque conversation choisit dans le menu « + » ceux qu'elle utilise ; un projet garde son choix dans son .mcp.json.",
-        "en": "Atelier's own services, the ones you plug in (stdio, SSE, HTTP) and your compositions form a single registry. Each conversation picks the ones it uses from the “+” menu; a project keeps its choice in its .mcp.json."
-      },
-      "pourQui": {
-        "fr": "Pour qui : qui relie Claude à GitHub, GitLab, n8n ou à ses propres outils.",
-        "en": "For: anyone connecting Claude to GitHub, GitLab, n8n or their own tools."
-      }
-    },
-    {
-      "titre": { "fr": "Un processus gardé entre les tours", "en": "A process kept between turns" },
-      "texte": {
-        "fr": "Le processus de chaque conversation reste en vie entre deux messages : près de quatre secondes de démarrage et de reconnexion en moins par tour, mesurées. Il s'éteint après dix minutes de silence, trois au plus restent ouverts.",
-        "en": "Each conversation's process stays alive between messages: close to four seconds of startup and reconnection saved per turn, as measured. It shuts down after ten minutes of silence, and at most three stay open."
-      },
-      "pourQui": {
-        "fr": "Pour qui : les échanges courts et nombreux.",
-        "en": "For: short, frequent exchanges."
-      }
-    },
-    {
-      "titre": { "fr": "Des agents planifiés", "en": "Scheduled agents" },
-      "texte": {
-        "fr": "L'onglet Agents liste les agents d'entretien de l'Atelier et les tiens, leur planning, et les actions qu'ils proposent en attendant ta validation. Onglet en rodage.",
-        "en": "The Agents tab lists Atelier's maintenance agents and your own, their schedule, and the actions they propose while waiting for your approval. This tab is still being broken in."
-      },
-      "pourQui": {
-        "fr": "Pour qui : les tâches qui reviennent chaque jour.",
-        "en": "For: tasks that come back every day."
-      }
-    }
-  ],
+  },
   "installer": {
-    "titre": { "fr": "Trois façons de lancer l'Atelier", "en": "Three ways to launch Atelier" },
+    "titre": {
+      "fr": "Installer",
+      "en": "Install"
+    },
+    "intro": {
+      "fr": "Il faut un compte SSPCloud et, dans « Mon compte › Assistant IA » d'Onyxia, une clé de la passerelle de modèles. La recette complète est dans docs/installer.md.",
+      "en": "You need an SSPCloud account and, in Onyxia's “My account › AI assistant”, a key for the model gateway. The full recipe is in docs/installer.md."
+    },
     "cartes": [
       {
-        "titre": { "fr": "Catalogue Onyxia", "en": "Onyxia catalog" },
-        "texte": {
-          "fr": "Le chemin normal. Ajoute une fois ce dépôt de charts à ton Onyxia, puis lance « Atelier » : le formulaire se remplit depuis ton profil.",
-          "en": "The usual path. Add this chart repository to your Onyxia once, then launch “Atelier”: the form fills itself from your profile."
+        "titre": {
+          "fr": "Par le catalogue Onyxia",
+          "en": "From the Onyxia catalogue"
         },
-        "code": "{{pages}}/",
+        "texte": {
+          "fr": "Le chemin normal. Ajoutez une fois ce dépôt de charts à votre Onyxia, lancez « Atelier » : le formulaire se remplit depuis votre profil (adresse, clé du modèle, identité git).",
+          "en": "The usual path. Add this chart repository to your Onyxia once, then launch “Atelier”: the form fills itself from your profile (address, model key, git identity)."
+        },
+        "code": "{{pages}}",
         "note": {
-          "fr": "Adresse du dépôt Helm à déclarer côté Onyxia.",
-          "en": "Helm repository address to declare in Onyxia."
+          "fr": "Puis ouvrez https://user-<idep>-atelier.user.lab.sspcloud.fr ; la clé owner est dans les notes du service.",
+          "en": "Then open https://user-<idep>-atelier.user.lab.sspcloud.fr; the owner key is in the service notes."
         }
       },
       {
-        "titre": { "fr": "Jupyter du catalogue officiel", "en": "Official catalog Jupyter" },
-        "texte": {
-          "fr": "Le chemin de secours, sur un pod déjà garni. Dans le service Jupyter python : 2 CPU et 6 Go au moins, volume persistant, port personnalisé 8787, ATELIER_LLM_API_KEY dans Vault, et ce script d'initialisation :",
-          "en": "The fallback path, on a pod you already use. In the Jupyter python service: at least 2 CPU and 6 GB, persistent volume, custom port 8787, ATELIER_LLM_API_KEY in Vault, and this init script:"
+        "titre": {
+          "fr": "Depuis un terminal",
+          "en": "From a terminal"
         },
-        "code": "https://raw.githubusercontent.com/nic01asFr/atelier-sspcloud/main/install/atelier-init.sh",
+        "texte": {
+          "fr": "Depuis un service Onyxia lancé avec l'accès Kubernetes (rôle edit) : le script pose l'adresse, reprend votre identité git et lance helm.",
+          "en": "From an Onyxia service started with Kubernetes access (edit role): the script sets the address, reuses your git identity and runs helm."
+        },
+        "code": "curl -fsSL {{pages}}/install.sh | bash",
         "note": {
-          "fr": "Rejoué à chaque démarrage, il ne refait que ce qui manque et finit par dire où lire la clé owner.",
-          "en": "It runs again at each start, only redoes what is missing, and ends by telling you where to read the owner key."
+          "fr": "Relancé, il met à jour sans perdre la clé owner ni la clé du modèle.",
+          "en": "Run again, it updates without losing the owner key or the model key."
         }
       },
       {
-        "titre": { "fr": "Helm", "en": "Helm" },
+        "titre": {
+          "fr": "Avec Helm",
+          "en": "With Helm"
+        },
         "texte": {
-          "fr": "Pour régler chaque valeur toi-même :",
+          "fr": "Pour régler chaque valeur vous-même :",
           "en": "To set every value yourself:"
         },
-        "code": "helm repo add atelier {{pages}}\nhelm install atelier atelier/atelier --version {{version}} \\\n  --set ingress.hostname=user-IDEP-atelier.user.lab.sspcloud.fr \\\n  --set llm.apiKey=$LLM_API_KEY \\\n  --set git.name=\"$GIT_USER_NAME\" --set git.email=$GIT_USER_EMAIL"
+        "code": "helm repo add atelier {{pages}}\nhelm upgrade --install atelier atelier/atelier \\\n  --set ingress.hostname=user-<idep>-atelier.user.lab.sspcloud.fr \\\n  --set-string llm.apiKey=<LLM_API_KEY>",
+        "note": {
+          "fr": "Le chemin de secours, sur un Jupyter du catalogue officiel, est décrit dans docs/installer.md.",
+          "en": "The fallback path, on a Jupyter from the official catalogue, is described in docs/installer.md."
+        }
       }
     ]
   },
-  "aVenir": {
-    "titre": { "fr": "L'Atelier comme connecteur de Claude", "en": "Atelier as a Claude connector" },
-    "texte": {
-      "fr": "Aujourd'hui l'Atelier consomme des connecteurs MCP. Le chantier en cours le rend connecteur à son tour : tu colles son adresse dans un client Claude distant, tu tapes ta clé sur une page de consentement, et tu retrouves tes projets et tes conversations. Pas encore livré.",
-      "en": "Today Atelier consumes MCP connectors. The work in progress turns it into one: you paste its address into a remote Claude client, type your key on a consent page, and find your projects and conversations there. Not shipped yet."
-    }
-  },
-  "encart": {
-    "titre": { "fr": "Un pod, une personne", "en": "One pod, one person" },
-    "texte": {
-      "fr": "Qui ouvre l'Atelier peut exécuter du code sur le pod et lire ses secrets. Il n'a donc qu'une identité, la tienne, gardée par la clé owner et par l'ingress authentifié d'Onyxia. Ne l'expose pas sans cet ingress, et ne le partage pas.",
-      "en": "Whoever opens Atelier can run code on the pod and read its secrets. So it has a single identity, yours, guarded by the owner key and by Onyxia's authenticated ingress. Do not expose it without that ingress, and do not share it."
+  "limites": {
+    "titre": {
+      "fr": "État et limites",
+      "en": "Status and limits"
     },
+    "etat": {
+      "fr": "Les vagues 1 à 3 de la vision sont intégrées dans le code ; l'essentiel est déployé et vérifié sur un pod réel, le reste est couvert par la suite de tests et en essai. Le projet est jeune : les noms de vues et certains écrans peuvent encore changer.",
+      "en": "Waves 1 to 3 of the vision are integrated into the code; most of it is deployed and checked on a real pod, the rest is covered by the test suite and on trial. The project is young: view names and some screens may still change."
+    },
+    "points": [
+      {
+        "titre": {
+          "fr": "Un pod, une personne",
+          "en": "One pod, one person"
+        },
+        "texte": {
+          "fr": "Qui ouvre l'Atelier peut exécuter du code sur le pod et lire ses secrets. Il n'a donc qu'une identité, la vôtre, gardée par la clé owner : l'ingress d'Onyxia n'ajoute pas d'authentification. Ne partagez ni la clé ni l'adresse.",
+          "en": "Whoever opens the Atelier can run code on the pod and read its secrets. So it has one identity, yours, guarded by the owner key: Onyxia's ingress adds no authentication. Share neither the key nor the address."
+        }
+      },
+      {
+        "titre": {
+          "fr": "La clé owner reste lisible par les agents du pod",
+          "en": "The owner key is readable by agents on the pod"
+        },
+        "texte": {
+          "fr": "Les profils filtrent les outils de chaque agent, mais un agent qui lit la clé et omet l'en-tête de sa conversation garde un accès complet à /mcp. Des capacités courtes par conversation fermeront ce point ; elles ne sont pas faites.",
+          "en": "Profiles filter each agent's tools, but an agent that reads the key and omits its conversation header keeps full access to /mcp. Short-lived per-conversation capabilities will close this; they are not built yet."
+        }
+      },
+      {
+        "titre": {
+          "fr": "Ce qui n'existe pas encore",
+          "en": "What does not exist yet"
+        },
+        "texte": {
+          "fr": "Partage d'une création avec d'autres personnes, connecteur fait maison publiable, vérification des créations par les gardiens, vue de la carte, coût par acteur, voix dans l'interface, bouton de publication d'un projet sur GitHub (l'API existe).",
+          "en": "Sharing a creation with other people, a publishable home-made connector, creation checks by the guardians, a map view, cost per actor, voice in the interface, a button to publish a project on GitHub (the API exists)."
+        }
+      }
+    ],
     "lien": {
-      "libelle": { "fr": "Lire le modèle de sécurité", "en": "Read the security model" },
+      "libelle": {
+        "fr": "Lire le modèle de sécurité",
+        "en": "Read the security model"
+      },
       "url": "https://github.com/nic01asFr/atelier-sspcloud/blob/main/SECURITY.md"
     }
   },
   "stack": {
-    "titre": { "fr": "Stack ouverte", "en": "Open stack" },
+    "titre": {
+      "fr": "Stack ouverte",
+      "en": "Open stack"
+    },
     "texte": {
-      "fr": "Le service, l'interface, le chart et le script d'installation sont publics, sous Apache-2.0. Claude Code n'est pas distribué avec l'Atelier.",
-      "en": "The service, the interface, the chart and the install script are public, under Apache-2.0. Claude Code is not distributed with Atelier."
+      "fr": "Service en Python (FastAPI), interface en JavaScript sans cadre applicatif, chart Helm, image fondée sur le Jupyter du catalogue Onyxia. Le code de ce dépôt est public sous Apache-2.0 ; Claude Code n'en fait pas partie.",
+      "en": "Service in Python (FastAPI), interface in framework-free JavaScript, Helm chart, image based on the Onyxia catalogue's Jupyter. The code in this repository is public under Apache-2.0; Claude Code is not part of it."
     },
     "items": [
       "Claude Code",
       "FastAPI",
       "code-server",
+      "chrome-devtools-mcp",
       "wikichat",
-      "Helm, Kubernetes, Onyxia"
+      "Helm",
+      "Kubernetes",
+      "Onyxia"
     ]
   },
-  "journal": [
-    {
-      "version": "chart 0.1.0",
-      "texte": {
-        "fr": "Premier chart publié : image ghcr.io/nic01asfr/atelier avec node, code-server, l'extension Claude Code et wikichat ; formulaire rempli depuis le profil Onyxia ; volume ~/work ; NetworkPolicy qui ne laisse entrer que l'ingress.",
-        "en": "First published chart: ghcr.io/nic01asfr/atelier image with node, code-server, the Claude Code extension and wikichat; form filled from the Onyxia profile; ~/work volume; NetworkPolicy that only lets the ingress in."
+  "journal": {
+    "titre": {
+      "fr": "Versions",
+      "en": "Versions"
+    },
+    "entrees": [
+      {
+        "version": "chart 0.2.0",
+        "texte": {
+          "fr": "Hôte des applications sur un second Ingress (créations, bureaux relayés, écran du navigateur de l'agent), clé owner affichée là où Onyxia la copie. Côté service, depuis : commandes, « À valider », journal, gardiens, Assistant, navigateur en direct et mémoire (vagues 1 à 3), interface reprise avec thèmes clair et sombre.",
+          "en": "Application host on a second Ingress (creations, relayed desktops, the agent's browser screen), owner key shown where Onyxia copies it. Service side, since then: commands, “To approve”, log, guardians, Assistant, live browser and memory (waves 1 to 3), reworked interface with light and dark themes."
+        }
+      },
+      {
+        "version": "chart 0.1.0",
+        "texte": {
+          "fr": "Premier chart publié : image avec node, code-server, l'extension Claude Code et wikichat ; formulaire rempli depuis le profil Onyxia ; volume ~/work ; NetworkPolicy qui ne laisse entrer que l'ingress.",
+          "en": "First published chart: image with node, code-server, the Claude Code extension and wikichat; form filled from the Onyxia profile; ~/work volume; NetworkPolicy that only lets the ingress in."
+        }
       }
+    ],
+    "lien": {
+      "libelle": {
+        "fr": "Journal des modifications complet",
+        "en": "Full changelog"
+      },
+      "url": "https://github.com/nic01asFr/atelier-sspcloud/blob/main/CHANGELOG.md"
     }
-  ]
+  }
 }

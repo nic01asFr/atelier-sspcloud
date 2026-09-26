@@ -11,12 +11,20 @@ on:
       - 'charts/**'
       - 'site/**'
       - 'install/install.sh'
+      # La vitrine lit ses couleurs, ses vues et ses chiffres dans le code.
+      - 'atelier-src/mcp_gateway/atelier/web/index.html'
+      - 'atelier-src/mcp_gateway/atelier/web/css/jetons.css'
+      - 'atelier-src/mcp_gateway/gardiens/gardiens.json'
       - '.github/workflows/release.yml'
   pull_request:
     paths:
       - 'charts/**'
       - 'site/**'
       - 'install/install.sh'
+      # La vitrine lit ses couleurs, ses vues et ses chiffres dans le code.
+      - 'atelier-src/mcp_gateway/atelier/web/index.html'
+      - 'atelier-src/mcp_gateway/atelier/web/css/jetons.css'
+      - 'atelier-src/mcp_gateway/gardiens/gardiens.json'
       - '.github/workflows/release.yml'
   workflow_dispatch:
 

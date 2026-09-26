@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Parcelles de la zone d'étude</title>
+<style>
+  :root { --fond:#f7f6f2; --encre:#1d232b; --doux:#56606c; --trait:#d9d5cc;
+          --prairie:#9cc98a; --vigne:#b58ac9; --foret:#4f8f5b; --artif:#d9745b; --eau:#7fb3d9; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Segoe UI", sans-serif; background:var(--fond); color:var(--encre); }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:12px 16px; border-bottom:1px solid var(--trait); background:#fff; }
+  h1 { font-size:15px; margin:0; font-weight:650; }
+  .sous { color:var(--doux); font-size:12.5px; }
+  .bascule { margin-left:auto; display:flex; border:1px solid var(--trait); border-radius:8px; overflow:hidden; }
+  .bascule button { font:inherit; font-size:13px; padding:6px 12px; border:0; background:#fff; color:var(--encre); cursor:pointer; }
+  .bascule button[aria-pressed="true"] { background:var(--encre); color:#fff; }
+  main { display:grid; grid-template-columns: 1fr 220px; gap:0; min-height: calc(100vh - 54px); }
+  svg { width:100%; height:100%; display:block; background:#eef1ea; }
+  .parcelle { stroke:#fff; stroke-width:2; transition: fill .3s; }
+  .parcelle.change { stroke:var(--encre); stroke-width:2.5; stroke-dasharray:5 3; }
+  aside { border-left:1px solid var(--trait); background:#fff; padding:14px; font-size:13px; }
+  aside h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--doux); margin:0 0 8px; }
+  .leg { display:flex; align-items:center; gap:8px; margin:6px 0; }
+  .leg i { width:14px; height:14px; border-radius:3px; display:inline-block; }
+  .chiffre { font-size:22px; font-weight:700; margin:14px 0 2px; }
+  .note { color:var(--doux); font-size:12px; line-height:1.45; }
+  .etiquette { font-size:11px; fill:#1d232b; font-weight:600; pointer-events:none; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Parcelles de la zone d'étude</h1>
+    <div class="sous">Occupation du sol par parcelle, données fictives de démonstration</div>
+  </div>
+  <div class="bascule" role="group" aria-label="Millésime">
+    <button type="button" data-annee="2019" aria-pressed="false">2019</button>
+    <button type="button" data-annee="2021" aria-pressed="true">2021</button>
+  </div>
+</header>
+<main>
+  <svg viewBox="0 0 640 440" role="img" aria-label="Carte des parcelles">
+    <path d="M0 300 C120 280 200 330 320 310 S520 270 640 290 L640 330 C520 310 420 360 320 350 S110 320 0 340 Z" fill="var(--eau)" opacity=".8"/>
+    <g id="parcelles"></g>
+  </svg>
+  <aside>
+    <h2>Légende</h2>
+    <div class="leg"><i style="background:var(--prairie)"></i>Prairie</div>
+    <div class="leg"><i style="background:var(--vigne)"></i>Vignoble</div>
+    <div class="leg"><i style="background:var(--foret)"></i>Forêt</div>
+    <div class="leg"><i style="background:var(--artif)"></i>Artificialisé</div>
+    <div class="chiffre" id="surface">1,7 ha</div>
+    <div class="note">artificialisés entre 2019 et 2021, sur trois parcelles (tracé pointillé).</div>
+  </aside>
+</main>
+<script>
+  const COULEURS = { prairie:"var(--prairie)", vignoble:"var(--vigne)", foret:"var(--foret)", artificialise:"var(--artif)" };
+  const P = [
+    { id:"P-011", d:"M30 30 L200 20 L210 130 L40 140 Z", a:"prairie", b:"prairie" },
+    { id:"P-014", d:"M210 20 L380 30 L370 150 L215 135 Z", a:"prairie", b:"artificialise" },
+    { id:"P-019", d:"M380 30 L610 40 L600 160 L372 150 Z", a:"foret", b:"foret" },
+    { id:"P-022", d:"M40 145 L215 140 L220 270 L30 280 Z", a:"vignoble", b:"vignoble" },
+    { id:"P-028", d:"M220 140 L370 155 L360 285 L225 275 Z", a:"vignoble", b:"artificialise" },
+    { id:"P-033", d:"M372 155 L600 165 L610 270 L365 285 Z", a:"prairie", b:"prairie" },
+    { id:"P-041", d:"M60 350 L260 360 L250 430 L50 425 Z", a:"foret", b:"artificialise" },
+    { id:"P-045", d:"M270 362 L600 345 L610 430 L262 432 Z", a:"prairie", b:"prairie" },
+  ];
+  const g = document.getElementById("parcelles");
+  const ns = "http://www.w3.org/2000/svg";
+  for (const p of P) {
+    const path = document.createElementNS(ns, "path");
+    path.setAttribute("d", p.d); path.setAttribute("class", "parcelle"); path.dataset.id = p.id;
+    const t = document.createElementNS(ns, "title"); t.textContent = p.id; path.appendChild(t);
+    g.appendChild(path);
+    const nums = p.d.match(/\d+/g).map(Number); let x = 0, y = 0;
+    for (let i = 0; i < nums.length; i += 2) { x += nums[i]; y += nums[i + 1]; }
+    const n = nums.length / 2, lab = document.createElementNS(ns, "text");
+    lab.setAttribute("x", x / n - 18); lab.setAttribute("y", y / n + 4); lab.setAttribute("class", "etiquette");
+    lab.textContent = p.id; g.appendChild(lab);
+  }
+  function montrer(annee) {
+    for (const path of g.querySelectorAll("path")) {
+      const p = P.find((q) => q.id === path.dataset.id);
+      const usage = annee === "2019" ? p.a : p.b;
+      path.setAttribute("fill", COULEURS[usage]);
+      path.classList.toggle("change", annee === "2021" && p.a !== p.b);
+    }
+    for (const b of document.querySelectorAll(".bascule button")) b.setAttribute("aria-pressed", String(b.dataset.annee === annee));
+  }
+  for (const b of document.querySelectorAll(".bascule button")) b.addEventListener("click", () => montrer(b.dataset.annee));
+  montrer("2021");
+</script>
+</body>
+</html>
