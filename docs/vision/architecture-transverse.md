@@ -391,7 +391,9 @@ Trois chemins, et rien ne passe à côté :
    - les bureaux noVNC et l'écran de Chrome ;
    - n8n ;
    - **la voix et la visio**, le service STT/TTS devenant une création serveur de l'Atelier et
-     cessant d'être un port nu.
+     cessant d'être un port nu. Révisé par `voix.md` (T24, décision V-3 proposée) : le son de
+     l'interface passe par le même relais WS et la même garde, mais sur l'origine de l'Atelier
+     (`/v1/voix/…`), pas par l'hôte des applications.
 2. **Modèle** : relais LLM. Il porte :
    - la compaction (existe) ;
    - le coût par acteur (à venir) ;
@@ -813,6 +815,10 @@ Trois projets appartiennent à l'Atelier lui-même. Ils suivent la structure typ
 | `atelier-gardiens` | contrôles, seuils, décisions des gardiens | Gardiens (exécuteur) |
 | `atelier` (le dépôt de l'Atelier) | le code de l'Atelier, travaillé par des agents code | Agents code |
 
+Un quatrième est proposé par `voix.md` (décision V-1, en attente) : `atelier-voix`, le service
+STT/TTS, lancé par le superviseur avec un statut système et utilisé par l'interface (dictée,
+lecture, conversation avec l'Assistant).
+
 Ils apparaissent dans la carte comme les autres projets, marqués « système ». Une personne grand
 public ne les voit que par leurs effets : l'Assistant, la page Gardiens.
 
@@ -826,7 +832,7 @@ au bon endroit.
 | T1 | `~/.claude/settings.json` a trois auteurs : refus WebSearch et passage VS Code par l'Atelier, hooks par wikichat. Le miroir `~/work/.claude` ↔ `~/.claude` recopie le fichier **entier**, et la copie la plus récente gagne : les entrées d'un auteur peuvent être effacées | `claude_home.py`, `navigateur.py`, `vscode_handoff.py`, wikichat `overlay-installer.mjs` | un seul fichier physique (lien symbolique vers le volume durable), ou une fonction de fusion unique | **réglé** sur `deploiement-26-09` (a7af330) : lien, plus une fusion sans perte si un auteur l'a remplacé par un fichier ; bug démontré par un test. Reste côté wikichat : écrire à travers le lien |
 | T2 | Le navigateur d'un agent ne peut pas ouvrir les créations de son projet (session d'applications requise) | `apps/passage.py` | code de passage d'agent (§1.4) | à ajouter au jalon J2 |
 | T3 | Chrome par processus MCP, profil jetable, sans port : incompatible avec la vue en direct et avec « même Chrome sur toutes les surfaces » | `chrome-stdio` | point de bascule déjà prévu (`ATELIER_CHROME_WS`, fichier d'attache) ; supervision par l'Atelier à J6 | décidé plus tard |
-| T4 | Le service vocal écoute sur `127.0.0.1:18920` sans authentification | `nouveau-projet-2/voice_service.py` | le déclarer en création serveur (`artefact.json`) : l'Atelier le lance et l'authentifie, et la visio passe par le chemin d'affichage | équipes Assistant et voix |
+| T4 | Le service vocal écoute sur `127.0.0.1:18920` sans authentification | `nouveau-projet-2/voice_service.py` | le déclarer en création serveur (`artefact.json`) : l'Atelier le lance et l'authentifie, et la visio passe par le chemin d'affichage | authentification **réglée** le 24/09 (jeton exigé, 401 mesuré le 26/09) ; le reste est repris par `voix.md` : brique système lancée par le superviseur (V0), chemin par l'origine de l'Atelier (T24) |
 | T5 | Les `.mcp.json` du pod appellent wikichat avec `?agent=atelier` : identité générique | `mcp_sync.py` | transmettre `session_id` (§1.2) | **réglé** sur `deploiement-26-09` (4e92eb9) : pont stdio de wikichat ; à constater sur le pod |
 | T6 | Le blocage des adresses privées du navigateur de la passerelle filtre les URL, pas les redirections | `navigateur-atelier.md` | acceptable tant que la passerelle ne sert que la personne ; mandataire filtrant avant tout tiers | noté |
 | T7 | Quatre inventaires en construction : carte de l'Assistant, G0 des gardiens, catalogue « + », briefing wikichat | visions | une seule carte (§1.3) | à dire aux équipes Assistant |
@@ -846,6 +852,10 @@ au bon endroit.
 | T21 | En mode image (`ATELIER_AVANT_PLAN=1`), le geste `relancer_atelier` des gardiens tuerait le processus principal, donc le pod | `gardiens/gestes.py` | geste désactivé en mode image ; seule la sonde reste | intégration vague 1 |
 | T22 | Le commit en service est illisible sur le pod (copie sans `.git` ni `VERSION`), et la CI d'un dépôt privé est illisible sans jeton | déploiement | écrire `VERSION` à l'extraction ; jeton GitHub en lecture seule dans `~/work/.secrets/` | déploiement suivant |
 | T23 | Sur le pod, `~/.wikichat` est un dossier de la couche éphémère, pas le lien vers le volume que prévoit l'Atelier (`ensure_wikichat_data_link` ne remplace pas un dossier non vide). Triggers, routines, registre et connaissance seraient perdus au redémarrage du pod | pod | procédure `docs/atelier-coherence.md` §11.3 de wikichat (sauvegarde, lien, puis migration W2), au déploiement de la vague 1 | intégration vague 1 |
+| T24 | Le chemin du son prévu par l'hôte des applications ne peut pas marcher pour l'interface : le mandataire retire `Authorization` et ne pose aucun jeton pour une création ; l'hôte refuse une `Origin` qui n'est pas la sienne ; le cadre du panneau n'a pas le micro. L'instance « création serveur » de la voix, déclarée, est donc inutilisable depuis le navigateur sans mettre le jeton dans la page | `apps/proxy.py`, `apps/serveur.py`, `assistant-harness.md` §4.9, §1.6 | routes `/v1/voix/…` sur l'origine de l'Atelier, garde de `relais_ws`, jeton posé côté serveur comme pour les bureaux ; l'hôte des applications reste celui des vues | `voix.md` V1 ; décision V-3 (Nicolas) |
+| T25 | Le superviseur plafonne une création à 1,5 Gio résidents et la lance en `nice 10`, au plus quatre à la fois ; la voix tient 2,18 Go chaude (mesuré). Lancée comme création, elle serait redémarrée en boucle puis mise `en_echec`, et passerait derrière les agents | `apps/superviseur.py` | plafond par manifeste (`memoire_max_mo`) ; statut système pour la création nommée par `ATELIER_VOIX` (hors `apps_max`, `nice 0`) | `voix.md` V0 |
+| T26 | L'outil MCP `dire` rend un WAV en base64 dans le résultat d'outil : environ 100 Ko de texte par phrase dans le contexte d'un modèle qui n'entend pas l'audio ; `ecouter` demande à un modèle de tenir de l'audio en base64 | `nouveau-projet-2/mcp_voix.py` | retirer `dire` et `ecouter` des agents ; famille `voix` du serveur `atelier` sur des fichiers du projet (profil `code`) ; aucun outil vocal pour l'Assistant, dont la voix est un canal | `voix.md` V5 ; décision V-4 |
+| T27 | Le code du service vocal n'a aucun remote : il n'existe que sur le volume du pod, dans un projet nommé `nouveau-projet-2`, sans `projet.json`, modifiable sur `main` par tout agent de ce projet, alors que l'interface va en dépendre | pod | projet système `atelier-voix`, dépôt privé, changements par branche et « À valider » | Nicolas (V-1, V-2), puis `voix.md` V0 |
 
 ## 5. Catalogue des briques
 
@@ -1114,3 +1124,21 @@ Le journal consigne, dans l'ordre, ce que chaque retour a changé dans la struct
     sur toutes les surfaces, constaté sur le pod). Le reste recevait pourtant un `.mcp.json` de
     profil `code` annonçant le slug de l'Assistant, accepté comme projet d'un agent `code` :
     corrigé à la source (`settings.masque_par_l_assistant`) ; le dossier reste à ranger (Nicolas).
+- **26/09, équipe voix (étude, vague 4, `voix.md`)** :
+  - mesuré sur le pod : service `start.sh` en service depuis 1 j 19 h sur `127.0.0.1:18920`,
+    401 sans jeton ; instance « création serveur » déclarée mais jamais lancée ; STT d'environ
+    1,1 s quelle que soit la longueur de l'énoncé (coût fixe de Whisper), TTS de 0,4 à 0,8 s ;
+    2,18 Go résidents ; deux transcriptions et une synthèse simultanées prennent chacune plus
+    de 2 s ; aucune transcription dans le journal du service ; aucun remote pour son code ;
+    Silero VAD déjà livrée avec faster-whisper ;
+  - la voix devient une **brique système** (projet système `atelier-voix`) lancée par le
+    superviseur existant, avec un plafond de mémoire par manifeste et un statut système (hors
+    `apps_max`, `nice 0`) ; pas de connecteur `voix` dans le pool ;
+  - le chemin du son passe par l'**origine de l'Atelier** (`/v1/voix/…`), avec le relais WS
+    commun, la garde d'`Origin` et le jeton posé côté serveur : §1.6 annoté, T4 mise à jour ;
+  - la voix est un canal de l'Assistant, pas un outil ; les agents code reçoivent une famille
+    `voix` sur les fichiers de leur projet ; `dire` et `ecouter` quittent leur surface ;
+  - la VAD Silero remplace les tranches de 3 s (réparation d'une brique, pas une dépendance de
+    plus) ; transcriptions filtrées (T10) ; journal unique sans texte ; API Web Speech du
+    navigateur interdite ;
+  - lots V0 à V6 ; décisions V-1 à V-9 soumises à Nicolas ; T24 à T27 ouvertes.
