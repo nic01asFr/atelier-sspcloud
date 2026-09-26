@@ -97,6 +97,9 @@ def test_le_chart_est_eprouve_puis_publie_depuis_main_seulement() -> None:
     assert len(publication) == 2, "un job `release` publie le chart"
     assert "needs: test" in publication[1], "on ne publie qu'après les tests"
     assert "github.ref == 'refs/heads/main'" in publication[1], "on ne publie que depuis main"
+    assert "github.event.repository.private == false" in publication[1], (
+        "un dépôt privé ne doit ni activer ni publier GitHub Pages"
+    )
 
 
 def test_le_code_du_service_ne_cite_aucun_poste() -> None:

@@ -190,7 +190,10 @@ jobs:
 
   release:
     needs: test
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    # Un dépôt privé garde les mêmes tests et construit l'image, mais ne tente
+    # pas d'activer GitHub Pages : configure-pages répondrait 404 et, surtout,
+    # la publication attend une décision explicite du mainteneur.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.event.repository.private == false
     runs-on: ubuntu-latest
     permissions:
       contents: read
