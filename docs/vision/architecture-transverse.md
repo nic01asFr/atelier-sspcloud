@@ -144,9 +144,10 @@ la proposition « l'Atelier propriétaire » de `assistant-contexte.md` §1.3).
   - Accords.
   - Tâches automatiques de l'Atelier.
 - **Assemblage.** wikichat publie le graphe des projets (`GET /api/cartographie`). L'Atelier
-  l'assemble avec sa couche opérationnelle et sert la carte complète par `GET /api/carte` et
+  l'assemble avec sa couche opérationnelle et sert la carte complète par `GET /v1/carte` et
   l'outil `atelier_carte`. Il la recalcule après chaque commande réussie (§1.8), et wikichat
-  recalcule sa couche après chaque instantané.
+  recalcule sa couche après chaque instantané. **Existe** (vague 2, équipe C) : contrat
+  ci-dessous.
 - **Lecteurs.** L'Assistant, l'interface, le panneau et l'exécuteur des gardiens lisent tous
   cette carte. Aucun ne tient d'inventaire à lui.
 
@@ -162,6 +163,151 @@ Taille mesurée pour l'Atelier de Nicolas :
 
 - une carte naïve des 26 projets fait 3 497 caractères, soit environ 1 030 jetons ;
 - plafond proposé pour la vue synthétique : environ 2 400 jetons.
+
+#### Carte : ce qui existe (vague 2, équipe C, branche `v2-carte`)
+
+**Existe.** Deux modules :
+
+| Module | Rôle |
+|---|---|
+| `atelier/carte.py` | lecteurs de la couche Atelier, assemblage avec wikichat, formes, cache (`Carte`) |
+| `atelier/commandes/carte.py` | commande `atelier_carte`, route `GET /v1/carte`, crochet d'invalidation |
+
+Branchés par une ligne dans `commandes.enregistrer` (`inscrire_la_carte(app, catalogue)`), plus
+les mots d'intention de `atelier_carte` dans `tool_search.MOTS_CLES_PAR_OUTIL`.
+
+**Sources, lues là où elles vivent, sans double saisie** :
+
+| Couche | Source | Lecteur |
+|---|---|---|
+| projets de l'Atelier | `ProjectStore.list_projects(include_archived=True)`, `.atelier/projet.json` (`structure.lire`) | `lire_projets` |
+| connecteurs choisis | `.atelier/connecteurs-choisis.json`, sinon héritage du pool (`mcp_sync.herite_du_pool`) | `connecteurs_choisis` |
+| pool | noms des connecteurs activés de `gateway.db` (jamais leurs réglages, qui portent des secrets) | `lire_pool` |
+| créations | `ServiceApps.lister_tout()` : mode et état au superviseur | `lire_creations` |
+| conversations | fiches non rangées, `Harness.tour_en_cours` | `lire_conversations` |
+| « À valider » | commande `atelier_a_valider` (file et pilote wikichat) | par le catalogue |
+| tâches automatiques | gardiens `GET 127.0.0.1:8791/automates` (inventaire G0) | HTTP |
+| alertes ouvertes | gardiens `GET 127.0.0.1:8791/alertes` | HTTP |
+| projets, liens, santé, `ETAT.md` | wikichat `GET 127.0.0.1:3777/api/cartographie` (contrat `version: 1`) | HTTP |
+
+Adresse des gardiens : `ATELIER_GARDIENS_URL`, sinon `http://127.0.0.1:${ATELIER_GARDIENS_PORT:-8791}`.
+Délai HTTP : 5 s. Les textes venus de wikichat, des gardiens et des fiches passent par le filtre
+du journal unique (`FiltreDesSecrets` : valeurs de `claude-env.sh`, clés au nom de secret).
+
+**Accès.**
+
+- `GET /v1/carte?forme=synthetique|complete|projet&projet=<slug>&rafraichir=true` : `projet`
+  seul vaut `forme=projet` ; sans rien, la forme synthétique. 200 avec la forme ; 403 hors
+  profil ; 422 pour une forme ou un projet inconnus. Même authentification que `/v1/commandes`.
+- `atelier_carte {forme?, projet?, rafraichir?}` : classe `lecture`, objet `carte`. La route
+  passe par cette commande, donc par les mêmes gardes. Elle n'est pas dans
+  `OUTILS_DU_PROFIL_CODE` : un agent code ne la voit ni ne l'appelle, par `/mcp`,
+  `/v1/commandes` ou `/v1/carte`, même en annonçant `assistant`. L'Assistant la reçoit. Sans
+  conversation, le comportement de compatibilité des profils s'applique (tout).
+
+**Cache.** Un calcul est gardé 20 s (`DELAI_CACHE_S`). Toute commande réussie qui agit (classe
+autre que `lecture`) l'invalide par `Catalogue.apres_commande` ; `rafraichir=true` force le
+calcul. Mesuré sur le pod : 0,3 s par calcul.
+
+**Forme complète** : le graphe de wikichat, étendu.
+
+```json
+{"forme": "complete", "version": 1, "calcule_le": "…", "duree_s": 0.3,
+ "sources": {"atelier": {"etat": "ok", "notes": {}},
+             "wikichat": {"etat": "ok|absent|erreur", "calcule_le": "…", "noeuds": 39, "aretes": 281, "detail": "…"},
+             "gardiens": {"etat": "ok|absent|erreur"}, "a_valider": {"etat": "ok", "note": "…"}},
+ "resume": {"projets": 10, "projets_actifs": 8, "projets_ranges": 13, "hors_atelier": 16,
+            "connecteurs": 10, "creations": 7, "creations_en_marche": 0, "conversations": 54,
+            "conversations_en_cours": 0, "automates": {"actif": 17, "…": 0},
+            "alertes": {"alerte": 2, "attention": 16}, "a_valider": 0},
+ "noeuds": ["…"], "aretes": ["…"], "groupes": ["… de wikichat"], "alertes": ["…"],
+ "a_valider": ["…"], "limites": {"… de wikichat": 0}}
+```
+
+Un compte à `null` dans `resume` veut dire « inconnu » (source absente), pas zéro.
+
+Nœuds (`type`) :
+
+| `type` | `id` | Champs |
+|---|---|---|
+| `projet` | slug (celui de wikichat) | tous les champs du contrat wikichat (`null` si wikichat ne le connaît pas, `origine: ["atelier"]`, `statut: "atelier"`), plus `atelier` |
+| `creation` | `creation:<slug>/<nom>` | `projet`, `nom`, `titre`, `mode` (`autonome`, `serveur`, `invalide`), `etat` (superviseur, `statique`, `invalide`) |
+| `conversation` | `conversation:<session_id>` | `session_id`, `projet`, `kind`, `titre`, `etat`, `en_cours`, `maj`, `tours` |
+| `connecteur` | `connecteur:<nom>` | `nom`, `au_pool`, `projets` (nombre) |
+| `automate` | `automate:<id G0>` | `genre`, `etat`, `titre`, `proprietaire`, `budget` (booléen), `plafond_par_jour`, `lancements`, `derniere`, `prochaine` |
+
+Le champ `atelier` d'un nœud projet (réservé par wikichat) : `null` pour un dossier que wikichat
+connaît mais qui n'est pas un projet de l'Atelier ; sinon
+
+```json
+{"type": "code|assistant", "titre": "…", "systeme": false, "range": false,
+ "projet_json": "valide|absent|invalide", "gabarit": "vide", "deploiement": {"pod": "…", "service": null, "gpu": false},
+ "vues_epinglees": 0, "connecteurs": {"herite_du_pool": false, "choisis": ["grist"]},
+ "creations": {"total": 1, "en_marche": 0, "en_echec": 0},
+ "conversations": {"total": 1, "en_cours": 0, "derniere": "…"},
+ "a_valider": 1, "alertes": 1, "derniere_activite": "…", "actif": true}
+```
+
+`actif` : non rangé, et touché depuis 14 jours (conversations, dernier commit, `ETAT.md`,
+fiche du projet), ou une conversation en cours, une création en marche, une alerte ou une
+proposition. `systeme` : `atelier`, `atelier-gardiens` et le dossier de l'Assistant.
+
+Arêtes : celles de wikichat (`relation`, `proximite`, `meme_connecteur`) restent telles quelles.
+L'Atelier ajoute, au même format (`id`, `type`, `de`, `vers`, `oriente`, `source`) :
+
+| `type` | De → vers | `source` |
+|---|---|---|
+| `sert` | création → projet | `artifacts` |
+| `travaille_sur` | conversation → projet | `fiches` |
+| `utilise` | projet → connecteur | `connecteurs-choisis`, ou `pool` quand le projet hérite |
+| `meme_connecteur` | projet ~ projet, s'il manque chez wikichat | `atelier` (connecteurs effectifs, mêmes connecteurs communs que wikichat) |
+
+`de` et `vers` sont toujours des `id` de `noeuds`.
+
+`alertes[]` : `{empreinte, gardien, controle, niveau, objet, resume, depuis, compte, vise}` ; la
+preuve reste chez les gardiens. `vise` est l'objet de la carte visé quand on sait le dire
+(`automate:<id>`, ou le slug d'un projet trouvé dans l'objet ou dans un chemin
+`/projects/<slug>` de la preuve), sinon `null`. `a_valider[]` : `{id, source, titre, projet, creee_le}`.
+
+**Forme projet** : `{forme, projet, calcule_le, sources, noeud, creations, conversations (5 plus
+récentes), conversations_non_montrees, liens (12 au plus : relation, puis proximité par poids,
+puis connecteur partagé ; `{projet, type, poids?, sous_type?, sens?, connecteurs?}`), alertes,
+a_valider}`.
+
+**Forme synthétique** : `{forme, calcule_le, sources, texte, taille: {caracteres,
+unites_estimees, plafond_unites: 2400}}`. Le texte fait au plus 8 000 caractères (moins de
+2 400 unités à 3,4 caractères) : en-tête chiffré, état des sources, une ligne par projet actif
+(âge, conversations, créations, connecteurs, `ETAT.md`, déploiement, alertes, à valider, santé
+sous 50, trois liens), puis dormants, dossiers hors Atelier, tâches wikichat sans budget, alertes
+graves, décompte des autres, « À valider ». Au-delà du budget, les actifs les moins récents se
+replient en dormants, puis les listes de noms raccourcissent. Sans wikichat, le texte le dit et ne
+prétend rien sur `ETAT.md`.
+
+**Mesuré sur le pod** (26/09, lecture seule : le module chargé en mémoire dans le noyau du
+connecteur Onyxia, contre les vraies API de wikichat et des gardiens ; aucune écriture ; le
+pilote de wikichat non lu, faute de clé ; états des créations serveur lus dans `apps.json`) :
+
+- 26 dossiers sous `projects/` : 3 dossiers d'agent (`.atelier-agent`), 13 projets rangés,
+  10 projets affichés (8 actifs), dossier de l'Assistant compris ; 39 nœuds wikichat dont 16
+  hors Atelier ; 54 conversations ; 10 connecteurs ; 38 tâches automatiques ; 18 alertes ;
+- forme synthétique : **2 369 caractères, 697 unités** ; pire cas sur les mêmes données, les
+  23 projets affichés et actifs : 4 704 caractères, 1 384 unités ;
+- forme projet (`projet-sans-nom-5`) : 4 415 caractères ; forme complète : 190 967
+  caractères (149 nœuds, 521 arêtes) ;
+- calcul : 0,3 s.
+
+**Ce qui reste** :
+
+- le fichier `atelier/carte.md` importé par le `CLAUDE.md` de l'Assistant (C1, vague 3) : il
+  s'écrit à partir de la forme synthétique ;
+- `wikichat` peut lire `GET /v1/carte?projet=<slug>` pour son briefing (clé du propriétaire
+  requise aujourd'hui) ;
+- invalidation sur événement hors commande (fin de tour, résultat de gardien) : le délai de
+  20 s la couvre ;
+- les accords (§1.4) et les vues ne sont pas encore sur la carte ;
+- les liens `a_delegue` et `lance` (`assistant-contexte.md` §3.2) attendent le lot D ;
+- l'exécuteur des gardiens ne lit pas encore la carte pour son inventaire (il a le sien, G0,
+  que la carte reprend).
 
 ### 1.4 Les accès
 
@@ -696,5 +842,15 @@ Le journal consigne, dans l'ordre, ce que chaque retour a changé dans la struct
   - le jeton `ghp_` est retiré de l'adresse du remote de `nouveau-projet` ;
   - les sauvegardes `.avant-26-09` sont supprimées ;
   - reste ouvert : `ipykernel` sur `0.0.0.0:8000` (noyau du connecteur Onyxia) ; CI et `main` illisibles depuis le pod faute de jeton GitHub en lecture (T22) ; rotation des jetons n8n et GitHub (Nicolas).
+- **26/09, équipe C (carte, vague 2)** :
+  - la carte existe : couche Atelier lue à ses sources, assemblée avec `GET /api/cartographie`
+    par le slug, servie par `GET /v1/carte` et `atelier_carte` (profil `assistant`), gardée 20 s
+    et invalidée par `apres_commande` ; contrat au §1.3 (« Carte : ce qui existe ») ;
+  - la route est `/v1/carte`, comme `/v1/commandes`, et non `/api/carte` ;
+  - mesurée sur le pod : 697 unités pour la forme synthétique (1 384 au pire cas), sous le
+    plafond de 2 400 ;
+  - constaté : aucun projet du pod n'a encore d'`ETAT.md` (T14) ; la couche wikichat compte
+    16 dossiers qui ne sont pas des projets (dossier parent, dossiers de session, dossiers
+    d'agent), que la vue courte relègue en décompte.
 - **Explication de T12** : sur le poste, une tâche planifiée publie la mémoire toutes les 15 min depuis
     `Github Repositories/wikichat`, pendant que le dépôt évolue ailleurs.
