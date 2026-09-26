@@ -1647,6 +1647,11 @@ def build_app(
             def travail() -> None:
                 try:
                     def relayer(ev: AtelierEvent) -> None:
+                        # Le même événement part par deux flux : celui-ci et
+                        # le flux en direct. L'onglet qui a envoyé reconnaît
+                        # le sien à cet identifiant, pas à son texte.
+                        if envoi and not ev.envoi:
+                            ev.envoi = envoi
                         file.put(ev)
                         diffusion.publier(session_id, ev)
 

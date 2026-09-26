@@ -32,6 +32,68 @@ const LIBELLES = {
   invalide: "manifeste invalide",
 };
 
+// Les états qu'une application ne fait que traverser. Tant qu'une fiche en
+// porte un, le panneau relit l'état : sans cela il restait figé sur
+// « démarre… » plus de 90 s après une application prête en 1 s (essai du
+// 26/09), puisque la route de démarrage rend la main aussitôt, en
+// `demarrage`, et que rien ne relisait ensuite.
+const TRANSITOIRES = new Set(["demarrage", "redemarrage", "arret"]);
+
+/**
+ * Le rythme de la relecture : serré au début, où la plupart des
+ * applications deviennent prêtes, plus lâche ensuite ; abandonnée au-delà du
+ * plus long démarrage qu'un manifeste peut déclarer (600 s).
+ */
+export const SUIVI_DES_ETATS = {
+  pasCourtMs: 1000,
+  pasLongMs: 3000,
+  bascule: 15000,
+  dureeMaxMs: 610000,
+};
+
+/**
+ * Relit l'état tant qu'une fiche est en transition, et s'arrête dès que
+ * toutes sont stables.
+ *
+ * Une seule relecture en attente par conteneur : un rendu annule la
+ * précédente avant d'en poser une. Rien n'est relu si le conteneur n'est plus
+ * affiché. `actions.planifier`, `actions.annuler` et `actions.maintenant`
+ * remplacent l'horloge dans les tests.
+ */
+function suivreLesTransitions(conteneur, fiches, actions) {
+  const suivi = conteneur.suiviDesEtats || (conteneur.suiviDesEtats = { minuterie: null, debut: 0 });
+  const planifier = actions.planifier || ((f, ms) => setTimeout(f, ms));
+  const annuler = actions.annuler || ((m) => clearTimeout(m));
+  const maintenant = actions.maintenant || (() => Date.now());
+  if (suivi.minuterie !== null) {
+    annuler(suivi.minuterie);
+    suivi.minuterie = null;
+  }
+  const enTransition = fiches.some((f) => TRANSITOIRES.has(f.etat));
+  if (!enTransition || !actions.recharger) {
+    suivi.debut = 0;
+    return;
+  }
+  const t = maintenant();
+  if (!suivi.debut) suivi.debut = t;
+  const ecoule = t - suivi.debut;
+  if (ecoule > SUIVI_DES_ETATS.dureeMaxMs) {
+    // Au-delà, l'état n'est plus transitoire, il est bloqué : le superviseur
+    // l'aurait déclaré en échec. On cesse de relire ; « Journal » dira pourquoi.
+    suivi.debut = 0;
+    return;
+  }
+  const pas = ecoule < SUIVI_DES_ETATS.bascule ? SUIVI_DES_ETATS.pasCourtMs : SUIVI_DES_ETATS.pasLongMs;
+  suivi.minuterie = planifier(() => {
+    suivi.minuterie = null;
+    if (conteneur.hidden || conteneur.isConnected === false) {
+      suivi.debut = 0;
+      return;
+    }
+    actions.recharger();
+  }, pas);
+}
+
 function el(balise, classe, texte) {
   const n = document.createElement(balise);
   if (classe) n.className = classe;
@@ -58,7 +120,8 @@ function bouton(libelle, action, { desactive = false, titre = "" } = {}) {
  * `GET /v1/apps?slug=` le rend (plus l'adresse des artefacts).
  * `actions` : `{ demarrer(nom), arreter(nom), journal(nom), copier(texte),
  * recharger() }`, des promesses ; injectées pour que le panneau se teste
- * sans réseau.
+ * sans réseau. Tant qu'une fiche est en transition, `recharger` est rappelé
+ * à intervalle court (voir `suivreLesTransitions`).
  */
 export function rendrePanneauApplications(conteneur, etat, actions) {
   const liste = el("div", "apps-liste");
@@ -160,6 +223,7 @@ export function rendrePanneauApplications(conteneur, etat, actions) {
 
   liste.appendChild(zoneJournal);
   conteneur.replaceChildren(liste);
+  suivreLesTransitions(conteneur, fiches, actions);
   return liste;
 }
 

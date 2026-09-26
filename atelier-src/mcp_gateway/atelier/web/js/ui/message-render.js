@@ -615,28 +615,27 @@ function carteDeDecision(block) {
   }
   carte.appendChild(barre);
 
-  // Refuser sans rien dire laisse l'agent deviner, et il devine mal : mesuré,
-  // il en tire une théorie et repart ailleurs. On offre donc la phrase, sans
-  // l'imposer.
-  refuser.addEventListener("click", () => {
-    if (carte.querySelector(".msg-decision-motif")) return;
-    const zone = document.createElement("div");
-    zone.className = "msg-decision-motif";
-    const champ = document.createElement("input");
-    champ.type = "text";
-    champ.placeholder = "Pourquoi ? (facultatif, l’agent le lira)";
-    const valider = document.createElement("button");
-    valider.type = "button";
-    valider.className = "msg-decision-btn msg-decision-non";
-    valider.textContent = "Confirmer le refus";
-    valider.addEventListener("click", () => annoncer("deny", champ.value.trim()));
-    champ.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") valider.click();
-    });
-    zone.append(champ, valider);
-    carte.appendChild(zone);
-    champ.focus();
+  // Refuser se fait d'un clic. Un refus se rattrape — l'agent lit le refus,
+  // essaie autre chose, et peut redemander : il n'y a rien à protéger par une
+  // confirmation, qui ne faisait que doubler le geste (essai du 26/09).
+  //
+  // Refuser sans rien dire laisse pourtant l'agent deviner, et il devine
+  // mal : mesuré, il en tire une théorie et repart ailleurs. La phrase reste
+  // donc offerte, déjà là sous les boutons, sans être imposée : ce qui y est
+  // écrit part avec le refus, et Entrée y vaut « Refuser ».
+  const zone = document.createElement("div");
+  zone.className = "msg-decision-motif";
+  const champ = document.createElement("input");
+  champ.type = "text";
+  champ.placeholder = "Pourquoi refuser ? (facultatif, l’agent le lira)";
+  champ.setAttribute("aria-label", "Motif du refus");
+  champ.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") refuser.click();
   });
+  zone.appendChild(champ);
+  carte.appendChild(zone);
+
+  refuser.addEventListener("click", () => annoncer("deny", (champ.value || "").trim()));
 
   return carte;
 }

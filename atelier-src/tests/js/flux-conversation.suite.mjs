@@ -19,10 +19,13 @@ import { bilan, egal, nePorte, porte, verifier } from "./verifier.mjs";
 import {
   blocCourant,
   buildStreamBlocks,
+  creerMemoireDuFil,
   fusionnerReflexion,
+  recevoirDeLEnvoi,
+  recevoirDuDirect,
   texteAssemble,
 } from "../../mcp_gateway/atelier/web/js/controllers/chat.js";
-import { mergeAssistantText } from "../../mcp_gateway/atelier/web/js/api.js";
+import { mergeAssistantText, messagesFromTranscript } from "../../mcp_gateway/atelier/web/js/api.js";
 import {
   appendBlock,
   empreinteDuBloc,
@@ -364,6 +367,176 @@ function outil(id, nom, extra = {}) {
   const annonce = recus[0]?.detail || {};
   egal(annonce.requestId, "req_9", "la réponse porte l’identifiant de la demande");
   egal(annonce.reponses, [["La seconde"]], "et le libellé choisi, pas son rang");
+}
+
+// ── 5. Un tour lancé d'ici, reçu par deux flux : une seule réponse ─────────
+//
+// Essai du 26/09 (Lecteur Grist, conversation neuve) : après un tour où la
+// personne avait refusé un outil, la réponse s'affichait deux fois — deux
+// blocs « ASSISTANT » identiques, même raisonnement, même outil refusé, même
+// texte. Le flux de l'envoi et le flux en direct livrent les mêmes
+// événements ; le second n'était écarté que quatre secondes après la fin du
+// tour, et seulement s'il commençait par une fin. Arrivé plus tard, il
+// ouvrait sa bulle et rejouait tout le tour.
+//
+// La mise en scène : l'envoi rend le tour, la main est rendue, puis le flux en
+// direct livre le même tour. Aucune horloge n'est consultée : c'est
+// l'identité des événements qui décide.
+
+// Les décisions font relire la liste des conversations : pas de réseau dans
+// une suite, on rend une liste vide.
+globalThis.fetch = async () => ({ ok: true, json: async () => ({ sessions: [] }) });
+
+/** Le tour du 26/09, tel que les deux flux le livrent : mêmes identifiants. */
+function tourAvecRefus(envoi) {
+  const m = "msg_01Refus";
+  const commun = { session_id: "s1", envoi };
+  return [
+    { ...commun, kind: "texte", raw_type: "thinking_delta", text: "Je lis la table.", uuid: "u1" },
+    { ...commun, kind: "texte", raw_type: "thinking", text: "Je lis la table.", uuid: "u2", message_id: m },
+    {
+      ...commun, kind: "outil_debut", raw_type: "assistant", tool: "Bash", tool_id: "toolu_1",
+      text: JSON.stringify({ command: "curl grist" }), uuid: "u3", message_id: m,
+    },
+    {
+      ...commun, kind: "decision_attendue", tool: "Bash", tool_id: "req_1",
+      text: JSON.stringify({ request_id: "req_1", outil: "Bash", tool_use_id: "toolu_1" }),
+    },
+    { ...commun, kind: "decision_rendue", tool: "Bash", tool_id: "req_1", cause: "deny" },
+    { ...commun, kind: "outil_fin", raw_type: "tool_result", tool_id: "toolu_1", text: "Refusé par l'utilisateur.", uuid: "u4" },
+    { ...commun, kind: "texte", raw_type: "assistant", text: "Je n'ai pas lancé la commande.", uuid: "u5", message_id: "msg_02Fin" },
+    { ...commun, kind: "texte", raw_type: "result_text", text: "Je n'ai pas lancé la commande.", uuid: "u6" },
+    { ...commun, kind: "fin", raw_type: "result", cause: "success", uuid: "u6" },
+  ];
+}
+
+function scene() {
+  const state = { messages: [], busy: false, sessionId: "s1" };
+  const ctx = {
+    state,
+    render: () => {},
+    views: { codeChat: { renderThread: () => {} }, fils: { renderFils: () => {} } },
+  };
+  return { state, ctx };
+}
+
+function bullesAssistant(state) {
+  return state.messages.filter((m) => m.role === "assistant");
+}
+
+{
+  const { state, ctx } = scene();
+  const memoire = creerMemoireDuFil();
+  const envoi = "envoi-26-09";
+  memoire.envois.add(envoi);
+
+  // Le flux de l'envoi : la bulle ouverte par l'envoi, remplie par lui.
+  state.busy = true;
+  state.messages.push({ role: "user", text: "Lis la table Grist." });
+  state.messages.push({ role: "assistant", text: "", blocks: [], streaming: true });
+  const stream = { blocs: [], tools: [], decisions: [], phase: "attente" };
+  for (const ev of tourAvecRefus(envoi)) recevoirDeLEnvoi(ctx, stream, memoire, ev);
+  state.messages = state.messages.map((m) => ({ ...m, streaming: false }));
+  state.busy = false;
+
+  egal(bullesAssistant(state).length, 1, "l’envoi rend une seule réponse");
+  egal(
+    bullesAssistant(state)[0].blocks.map((b) => b.type),
+    ["thinking", "tool", "decision", "text"],
+    "le raisonnement, l’outil refusé, la décision puis la réponse",
+  );
+
+  // Le flux en direct, en retard : le même tour, les mêmes identifiants.
+  const suivi = { flux: null, memoire };
+  for (const ev of tourAvecRefus(envoi)) recevoirDuDirect(ctx, suivi, ev);
+
+  egal(
+    bullesAssistant(state).length,
+    1,
+    "le même tour reçu par le flux en direct n’ouvre pas de seconde bulle",
+  );
+  verifier(suivi.flux === null, "et aucun tour observé ne reste ouvert");
+  egal(
+    bullesAssistant(state)[0].blocks.map((b) => b.type),
+    ["thinking", "tool", "decision", "text"],
+    "la bulle de l’envoi n’a rien reçu en double",
+  );
+}
+
+{
+  // Le même message, reconnu à son seul `message_id` ou à son seul `uuid` :
+  // un événement qui ne porterait pas l'envoi ne rouvre pas la réponse.
+  const { state, ctx } = scene();
+  const memoire = creerMemoireDuFil();
+  state.messages.push({ role: "assistant", text: "", blocks: [], streaming: true });
+  const stream = { blocs: [], tools: [], decisions: [], phase: "attente" };
+  const dit = { kind: "texte", raw_type: "assistant", text: "Voilà.", uuid: "u9", message_id: "msg_9" };
+  recevoirDeLEnvoi(ctx, stream, memoire, dit);
+  state.messages = state.messages.map((m) => ({ ...m, streaming: false }));
+
+  const suivi = { flux: null, memoire };
+  recevoirDuDirect(ctx, suivi, { ...dit, uuid: "" });
+  recevoirDuDirect(ctx, suivi, { ...dit, message_id: "" });
+  egal(bullesAssistant(state).length, 1, "reconnu par message_id comme par uuid");
+}
+
+{
+  // Ce n'est pas le texte qui décide : un autre tour qui dit la même chose
+  // (lancé d'ailleurs, autres identifiants) s'affiche bien.
+  const { state, ctx } = scene();
+  const memoire = creerMemoireDuFil();
+  memoire.envois.add("envoi-a");
+  memoire.messages.add("msg_a");
+  const suivi = { flux: null, memoire };
+  const autre = { session_id: "s1", envoi: "envoi-b" };
+  recevoirDuDirect(ctx, suivi, { ...autre, kind: "texte", raw_type: "assistant", text: "Voilà.", message_id: "msg_b", uuid: "ub1" });
+  recevoirDuDirect(ctx, suivi, { ...autre, kind: "fin", raw_type: "result", uuid: "ub2" });
+  egal(bullesAssistant(state).length, 1, "un tour d’ailleurs ouvre sa bulle, même s’il dit la même chose");
+  porte(bullesAssistant(state)[0].text, "Voilà.", "et il s’y écrit");
+}
+
+{
+  // Relu du journal : une même ligne présente deux fois (les deux registres
+  // fondus) ne fait ni deux raisonnements ni deux outils. Même règle : par
+  // identifiant (`uuid`, `message.id`, `id` de l'appel), pas par texte.
+  const ligne = (o) => JSON.stringify(o);
+  const pense = { type: "thinking", thinking: "Je lis la table." };
+  const appel = { type: "tool_use", id: "toolu_1", name: "Bash", input: { command: "curl grist" } };
+  const transcript = [
+    ligne({ type: "user", message: { content: [{ type: "text", text: "Lis la table Grist." }] } }),
+    ligne({ type: "assistant", uuid: "a1", message: { id: "msg_01", content: [pense] } }),
+    ligne({ type: "assistant", uuid: "a2", message: { id: "msg_01", content: [appel] } }),
+    ligne({
+      type: "user", uuid: "r1",
+      message: { content: [{ type: "tool_result", tool_use_id: "toolu_1", is_error: true, content: "Refusé." }] },
+    }),
+    // La même chose, sous d'autres uuid (l'autre registre) :
+    ligne({ type: "assistant", uuid: "b1", message: { id: "msg_01", content: [pense] } }),
+    ligne({ type: "assistant", uuid: "b2", message: { id: "msg_01", content: [appel] } }),
+    // Et une ligne strictement rejouée :
+    ligne({ type: "assistant", uuid: "a2", message: { id: "msg_01", content: [appel] } }),
+    ligne({ type: "assistant", uuid: "a3", message: { id: "msg_02", content: [{ type: "text", text: "Je n'ai pas lancé la commande." }] } }),
+    ligne({ type: "result", subtype: "success", result: "Je n'ai pas lancé la commande." }),
+  ].join(String.fromCharCode(10));
+  const assistants = messagesFromTranscript(transcript).filter((m) => m.role === "assistant");
+  egal(assistants.length, 1, "une seule réponse relue");
+  egal(
+    (assistants[0]?.blocks || []).map((b) => b.type),
+    ["thinking", "tool", "text"],
+    "un raisonnement, un outil, une réponse",
+  );
+  egal(assistants[0]?.blocks?.[1]?.status, "denied", "l’outil reste refusé");
+
+  // Deux messages distincts qui disent la même chose restent deux paroles.
+  const redit = [
+    ligne({ type: "assistant", uuid: "c1", message: { id: "msg_x", content: [{ type: "text", text: "D’accord." }] } }),
+    ligne({ type: "assistant", uuid: "c2", message: { id: "msg_y", content: [{ type: "text", text: "D’accord." }] } }),
+  ].join(String.fromCharCode(10));
+  egal(
+    messagesFromTranscript(redit)[0].blocks.filter((b) => b.type === "text").length,
+    2,
+    "le même texte dans deux messages n’est pas un doublon",
+  );
 }
 
 bilan("flux-conversation");

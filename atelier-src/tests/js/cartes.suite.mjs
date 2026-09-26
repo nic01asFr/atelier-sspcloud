@@ -323,56 +323,48 @@ function demandeQuestion(questions, extra = {}) {
 }
 
 {
-  // Refuser sans rien dire laisse l'agent deviner, et il devine mal. Le
-  // premier clic ouvre donc la phrase au lieu de refuser tout de suite.
+  // Refuser se fait d'un clic (essai du 26/09 : « Confirmer le refus »
+  // demandait un second geste). Un refus se rattrape — l'agent peut
+  // redemander — : aucune confirmation n'y protège quoi que ce soit.
   const { carte, recus } = rendre({ type: "decision", etat: "en_attente", demande: demandeOutil() });
 
   cliquer(exige(carte.querySelector(".msg-decision-non"), "« Refuser » est offert"));
-  egal(recus.length, 0, "le premier clic sur « Refuser » n’envoie rien : il ouvre le motif");
-  const zone = carte.querySelector(".msg-decision-motif");
-  verifier(zone !== null, "un champ de motif apparaît");
-  verifier(
-    document.actif === zone?.querySelector("input"),
-    "et il prend le curseur : sinon on ouvre un champ que personne ne remplit",
-  );
-
-  cliquer(exige(carte.querySelector(".msg-decision-non"), "« Refuser » est offert"));
-  egal(carte.querySelectorAll(".msg-decision-motif").length, 1, "un second clic ne double pas le champ");
-
-  const champ = zone.querySelector("input");
-  saisir(champ, "  Ce chemin est monté en lecture seule.  ");
-  cliquer(zone.querySelector("button"));
-  egal(recus.length, 1, "confirmer le refus l’annonce enfin");
+  egal(recus.length, 1, "un seul clic sur « Refuser » refuse");
   egal(recus[0]?.detail?.decision, "deny", "on refuse");
+  egal(recus[0]?.detail?.motif, "", "sans motif écrit, le motif est vide, et non absent");
+  egal(recus[0]?.detail?.portee, "une_fois", "un refus ne se retient pas pour toujours");
+  nePorte(texte(carte), "Confirmer", "aucun bouton de confirmation sur la carte");
+}
+
+{
+  // Refuser sans rien dire laisse l'agent deviner, et il devine mal. La
+  // phrase reste offerte, déjà là sous les boutons : ce qui y est écrit part
+  // avec le refus, toujours en un clic.
+  const { carte, recus } = rendre({ type: "decision", etat: "en_attente", demande: demandeOutil() });
+  const zone = exige(carte.querySelector(".msg-decision-motif"), "le champ de motif est offert d’emblée");
+  egal(zone.querySelectorAll("button").length, 0, "et il n’apporte pas de second bouton");
+  verifier(document.actif !== zone.querySelector("input"), "il ne vole pas le curseur au composeur");
+
+  saisir(zone.querySelector("input"), "  Ce chemin est monté en lecture seule.  ");
+  cliquer(exige(carte.querySelector(".msg-decision-non"), "« Refuser » est offert"));
+  egal(recus.length, 1, "le refus part au premier clic");
   egal(
     recus[0]?.detail?.motif,
     "Ce chemin est monté en lecture seule.",
     "et le motif part avec, débarrassé de ses espaces — sans lui l’agent repart sur une théorie à lui",
   );
-  egal(recus[0]?.detail?.portee, "une_fois", "un refus ne se retient pas pour toujours");
 }
 
 {
-  // Entrée dans le champ vaut le bouton : personne ne va à la souris pour
+  // Entrée dans le champ vaut « Refuser » : personne ne va à la souris pour
   // valider une phrase qu'il vient de taper.
   const { carte, recus } = rendre({ type: "decision", etat: "en_attente", demande: demandeOutil() });
-  cliquer(exige(carte.querySelector(".msg-decision-non"), "« Refuser » est offert"));
-  const champ = exige(carte.querySelector(".msg-decision-motif"), "le motif s’ouvre").querySelector("input");
+  const champ = exige(carte.querySelector(".msg-decision-motif"), "le motif est là").querySelector("input");
   saisir(champ, "Trop large.");
   frapper(champ, "Enter");
-  egal(recus.length, 1, "Entrée confirme le refus");
+  egal(recus.length, 1, "Entrée refuse");
+  egal(recus[0]?.detail?.decision, "deny", "c’est bien un refus");
   egal(recus[0]?.detail?.motif, "Trop large.", "avec le motif saisi");
-}
-
-{
-  // Un refus sans phrase reste un refus : le champ est offert, pas imposé.
-  const { carte, recus } = rendre({ type: "decision", etat: "en_attente", demande: demandeOutil() });
-  cliquer(exige(carte.querySelector(".msg-decision-non"), "« Refuser » est offert"));
-  const zone = carte.querySelector(".msg-decision-motif");
-  laisseVide(zone.querySelector("input"));
-  cliquer(zone.querySelector("button"));
-  egal(recus.length, 1, "on peut refuser sans se justifier");
-  egal(recus[0]?.detail?.motif, "", "le motif est alors vide, et non absent");
 }
 
 {

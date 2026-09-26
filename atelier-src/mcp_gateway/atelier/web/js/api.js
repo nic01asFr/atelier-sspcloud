@@ -315,13 +315,15 @@ export function suivreSession(sessionId, { onEvent } = {}) {
   return () => es.close();
 }
 
-export function streamEvents(sessionId, message, { onEvent, attachmentIds = [] } = {}) {
+export function streamEvents(sessionId, message, { onEvent, attachmentIds = [], envoi = "" } = {}) {
   // Pas de clé dans l'adresse : le cookie de session part de lui-même en
   // même origine, et une URL se journalise partout où elle passe.
   const params = new URLSearchParams({ message: message || "" });
   // Identifiant de cet envoi : une reconnexion d'EventSource reprend la même
   // adresse, et le serveur refuse de rejouer un envoi déjà reçu.
-  params.set("envoi", (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`));
+  // L'appelant le fournit pour reconnaître son tour quand il revient aussi
+  // par le flux en direct.
+  params.set("envoi", envoi || globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`);
   if (attachmentIds.length) {
     params.set("attachments", attachmentIds.join(","));
   }
@@ -459,6 +461,26 @@ export function messagesFromTranscript(transcriptText) {
   // que l'interface et le serveur désignent le même message quand on demande
   // de reprendre la conversation à cet endroit.
   let rangUser = 0;
+  // Ce qui a déjà été lu, par identifiant. Une conversation s'écrit dans deux
+  // registres fondus par le service ; si une même ligne y figure sous deux
+  // formes, elle garde son `message.id`, et un appel d'outil son `id`. On ne
+  // compare pas les textes d'un message à l'autre : deux paroles identiques
+  // de deux messages restent deux paroles.
+  const lignesVues = new Set();
+  const blocsVus = new Set();
+  const outilsVus = new Set();
+  const dejaLu = (messageId, block) => {
+    if (block.type === "tool_use" && block.id) {
+      if (outilsVus.has(block.id)) return true;
+      outilsVus.add(block.id);
+      return false;
+    }
+    if (!messageId || (block.type !== "thinking" && block.type !== "text")) return false;
+    const cle = [messageId, block.type, block.thinking || block.text || ""].join("|");
+    if (blocsVus.has(cle)) return true;
+    blocsVus.add(cle);
+    return false;
+  };
 
   const flushText = () => {
     const t = textAcc.trim();
@@ -498,14 +520,20 @@ export function messagesFromTranscript(transcriptText) {
       continue;
     }
     const type = obj.type;
+    if (obj.uuid) {
+      if (lignesVues.has(obj.uuid)) continue;
+      lignesVues.add(obj.uuid);
+    }
 
     // Ne pas rejouer stream_event : le fichier transcript contient déjà les lignes
     // assistant/result finales ; les deltas doublonnent texte et thinking au reload.
     if (type === "assistant") {
       const content = obj.message?.content;
       if (Array.isArray(content)) {
+        const messageId = obj.message?.id || "";
         for (const block of content) {
           if (!block || typeof block !== "object") continue;
+          if (dejaLu(messageId, block)) continue;
           if (block.type === "thinking" && block.thinking) {
             flushText();
             blocks.push({ type: "thinking", text: block.thinking });

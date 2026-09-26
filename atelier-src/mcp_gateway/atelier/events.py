@@ -98,6 +98,14 @@ class AtelierEvent:
     cause: str = ""
     raw_type: str = ""
     tool_id: str = ""
+    # Ce qui identifie ce que l'événement rapporte, pour qu'un onglet qui le
+    # reçoit par deux flux (celui de l'envoi et le flux en direct) le
+    # reconnaisse sans comparer des textes : `message_id` est l'identifiant du
+    # message du modèle (`message.id`), `uuid` celui de la ligne du CLI, et
+    # `envoi` celui de l'envoi qui a lancé le tour (posé par la route).
+    message_id: str = ""
+    uuid: str = ""
+    envoi: str = ""
 
     def as_sse(self) -> str:
         payload = sans_substituts(asdict(self))
@@ -332,4 +340,26 @@ def parse_stream_json_line(session_id: str, line: str) -> list[AtelierEvent]:
     else:
         events.append(AtelierEvent(kind="systeme", session_id=session_id, text=t, raw_type=t))
 
+    return _identifier(obj, events)
+
+
+def _identifier(obj: dict[str, Any], events: list[AtelierEvent]) -> list[AtelierEvent]:
+    """Pose sur les événements d'une ligne l'identité de ce qu'ils rapportent.
+
+    Le `uuid` de la ligne, et pour un message du modèle son `message.id`. Un
+    fragment de flux partiel ne nomme pas son message, sauf `message_start`
+    qui l'ouvre ; un bloc complet (`assistant`) porte les deux.
+    """
+    uid = str(obj.get("uuid") or "")
+    message_id = ""
+    message = obj.get("message")
+    if obj.get("type") == "assistant" and isinstance(message, dict):
+        message_id = str(message.get("id") or "")
+    else:
+        ev_flux = obj.get("event")
+        if isinstance(ev_flux, dict) and isinstance(ev_flux.get("message"), dict):
+            message_id = str(ev_flux["message"].get("id") or "")
+    for ev in events:
+        ev.uuid = uid
+        ev.message_id = message_id
     return events

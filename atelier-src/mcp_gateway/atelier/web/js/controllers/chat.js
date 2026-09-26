@@ -110,6 +110,41 @@ export function ouvreUnTour(ev) {
 }
 
 /**
+ * Ce que cet onglet a déjà rendu, reconnu à ses identifiants.
+ *
+ * Un tour lancé d'ici arrive par deux flux : celui de l'envoi, et le flux en
+ * direct que l'onglet écoute aussi. Le lot H écartait le second pendant
+ * quatre secondes après la fin du tour, et seulement s'il commençait par une
+ * fin. Rien ne borne pourtant le retard d'un flux sur l'autre : une copie en
+ * direct arrivée après ce délai ouvrait une bulle, et tout le tour —
+ * raisonnement, outil refusé, réponse — s'affichait deux fois (essai du
+ * 26/09, Lecteur Grist). On ne compte plus le temps, on ne compare pas les
+ * textes : on reconnaît l'envoi (`envoi`), le message du modèle
+ * (`message_id`) et la ligne du CLI (`uuid`).
+ */
+export function creerMemoireDuFil() {
+  return { envois: new Set(), messages: new Set(), lignes: new Set() };
+}
+
+/** Retient ce qu'apporte un événement rendu par le flux de l'envoi. */
+export function retenirEvenement(memoire, ev) {
+  if (!memoire || !ev) return;
+  if (ev.envoi) memoire.envois.add(ev.envoi);
+  if (ev.message_id) memoire.messages.add(ev.message_id);
+  if (ev.uuid) memoire.lignes.add(ev.uuid);
+}
+
+/** Cet événement du flux en direct a-t-il déjà été rendu par l'envoi ? */
+export function dejaRendu(memoire, ev) {
+  if (!memoire || !ev) return false;
+  return (
+    (!!ev.envoi && memoire.envois.has(ev.envoi)) ||
+    (!!ev.message_id && memoire.messages.has(ev.message_id)) ||
+    (!!ev.uuid && memoire.lignes.has(ev.uuid))
+  );
+}
+
+/**
  * Rend le tour dans son ordre, et non par catégories.
  *
  * Les blocs étaient assemblés par nature : tout le raisonnement, puis tous
@@ -413,6 +448,44 @@ function appliquerEvenement(ctx, stream, ev) {
     }
 }
 
+/** Un événement du flux de l'envoi : retenu, puis rendu. */
+export function recevoirDeLEnvoi(ctx, stream, memoire, ev) {
+  retenirEvenement(memoire, ev);
+  appliquerEvenement(ctx, stream, ev);
+}
+
+/**
+ * Un événement du flux en direct, pour un tour que cet onglet n'a pas lancé.
+ *
+ * `suivi` : `{ flux, memoire }`, où `flux` est le tour observé en cours (ou
+ * null) et `memoire` ce que le flux de l'envoi a déjà rendu. Rend vrai quand
+ * l'événement a clos un tour observé.
+ */
+export function recevoirDuDirect(ctx, suivi, ev) {
+  const { state } = ctx;
+  // Déjà rendu par le flux de l'envoi : c'est le même tour, vu une seconde
+  // fois. Ni bulle, ni ajout à la bulle en cours.
+  if (dejaRendu(suivi.memoire, ev)) return false;
+  if (!suivi.flux) {
+    // Une fin sans début : rien à ouvrir.
+    if (!ouvreUnTour(ev)) return false;
+    suivi.flux = { blocs: [], tools: [], decisions: [], phase: "attente" };
+    S.appendMessage(state, {
+      role: "assistant",
+      text: "",
+      blocks: [],
+      streaming: true,
+    });
+  }
+  appliquerEvenement(ctx, suivi.flux, ev);
+  if (ev.kind === "fin" || ev.kind === "erreur") {
+    suivi.flux = null;
+    S.finalizeAssistant(state);
+    return true;
+  }
+  return false;
+}
+
 /**
  * @param {object} ctx
  */
@@ -531,9 +604,16 @@ export function createChatController(ctx) {
       phase: "attente",
     };
 
+    // L'identifiant de cet envoi, retenu avant le premier octet : le flux en
+    // direct porte le même, et peut devancer celui-ci.
+    const envoi =
+      globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+    memoire.envois.add(envoi);
+
     try {
       await api.streamEvents(state.sessionId, text, {
         attachmentIds,
+        envoi,
         onEvent: (ev) => {
           // Dès le premier signe de vie, la liste latérale doit passer
           // « en réponse » : elle restait « jamais lancée » tout le tour.
@@ -541,7 +621,7 @@ export function createChatController(ctx) {
             stream.listeRafraichie = true;
             refreshSessions(state).then(render);
           }
-          appliquerEvenement({ state, render, views }, stream, ev);
+          recevoirDeLEnvoi({ state, render, views }, stream, memoire, ev);
         },
       });
       S.finalizeAssistant(state);
@@ -564,8 +644,7 @@ export function createChatController(ctx) {
       if (!repris) S.setError(state, err.message || String(err));
     } finally {
       // La fin du tour arrive aussi par le flux en direct, parfois après
-      // celui-ci : on la laisse passer sans en faire une nouvelle bulle.
-      finDuTourPropre = Date.now();
+      // celui-ci : `memoire` la fait reconnaître (voir `dejaRendu`).
       S.setBusy(state, false);
       render();
       views.fils?.renderFils({ relire: true });
@@ -576,14 +655,13 @@ export function createChatController(ctx) {
   // tourner. Un seul canal à la fois : on referme en changeant de fil.
   let fermerLObservation = null;
   let sessionObservee = null;
-  // Vrai tant qu'un tour lancé ailleurs remplit le fil observé.
-  let tourObserve = false;
-  // Quand le dernier tour lancé d'ici s'est fini (voir `ouvreUnTour`).
-  let finDuTourPropre = 0;
-  const TRAINE_DU_TOUR_MS = 4000;
+  // Le tour observé en cours, et ce que les envois d'ici ont déjà rendu.
+  // La mémoire survit aux changements de fil : un envoi reste le nôtre.
+  const memoire = creerMemoireDuFil();
+  let suivi = { flux: null, memoire };
 
   function tourEnCoursAilleurs() {
-    if (tourObserve) return true;
+    if (suivi.flux) return true;
     const fiche = (state.sessions || []).find((s) => s.session_id === state.sessionId);
     return fiche?.state === "running";
   }
@@ -592,7 +670,7 @@ export function createChatController(ctx) {
     if (fermerLObservation) fermerLObservation();
     fermerLObservation = null;
     sessionObservee = null;
-    tourObserve = false;
+    suivi = { flux: null, memoire };
   }
 
   /**
@@ -608,7 +686,6 @@ export function createChatController(ctx) {
     if (!sessionId) return;
     sessionObservee = sessionId;
 
-    let flux = null;
     fermerLObservation = api.suivreSession(sessionId, {
       onEvent: (ev) => {
         if (state.sessionId !== sessionId || ev.kind === "heartbeat") return;
@@ -628,24 +705,9 @@ export function createChatController(ctx) {
           relireLeJournal(state, render);
           return;
         }
-        if (!flux) {
-          // La traîne d'un tour lancé d'ici, ou une fin sans début : rien à
-          // ouvrir (sinon la réponse s'affichait deux fois).
-          if (!ouvreUnTour(ev) || Date.now() - finDuTourPropre < TRAINE_DU_TOUR_MS) return;
-          flux = { blocs: [], tools: [], decisions: [], phase: "attente" };
-          tourObserve = true;
-          S.appendMessage(state, {
-            role: "assistant",
-            text: "",
-            blocks: [],
-            streaming: true,
-          });
-        }
-        appliquerEvenement({ state, render, views }, flux, ev);
-        if (ev.kind === "fin" || ev.kind === "erreur") {
-          flux = null;
-          tourObserve = false;
-          S.finalizeAssistant(state);
+        // La traîne d'un tour lancé d'ici est reconnue à ses identifiants,
+        // quel que soit son retard : elle n'ouvre pas de seconde bulle.
+        if (recevoirDuDirect({ state, render, views }, suivi, ev)) {
           refreshSessions(state).then(render);
         }
       },
