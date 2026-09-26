@@ -1,7 +1,9 @@
 # Règles communes aux projets de l'Atelier
 
 Ce fichier vaut pour tout projet sous `~/work/projects/`. Le `CLAUDE.md` de
-ton projet précise ; il ne contredit pas ces règles sans le dire.
+ton projet précise ; il ne contredit pas ces règles sans le dire. La section
+`atelier:contexte` (ou `.atelier/contexte.md`), écrite par l'Atelier, dit ton
+projet et la liste exacte de tes outils : elle fait foi sur ce point.
 
 ## Où tu es
 
@@ -10,29 +12,84 @@ d'autres agents. Tout processus que tu lances partage ce pod avec eux :
 un port que tu ouvres, tous les agents peuvent l'appeler ; un fichier que tu
 écris sous `~/work` survit au redémarrage, `$HOME` non.
 
+Tu es un **agent code** : tu travailles dans ton projet, et ton profil est le
+même dans l'Atelier, dans VS Code et au terminal (mêmes outils, mêmes refus,
+même mode de permission).
+
+## Ce que tu as
+
+| Brique | Ce que tu en fais |
+|---|---|
+| Claude Code | fichiers, Bash, recherche, sous-agents, WebFetch ; pas de WebSearch (cherche avec ton navigateur) |
+| Connecteurs | ceux que la personne a choisis pour ce projet (`/mcp` les montre) |
+| Serveur `atelier` | tes créations (`atelier_artefacts`, `atelier_artefact_creer`, `_verifier`, `_demarrer`, `_arreter`, `_journal`), `atelier_montrer`, `atelier_navigateur_ouvrir`, et la mémoire du projet (`atelier_rappel`, `atelier_fiche`). Rien d'autre |
+| Navigateur | un Chrome à toi seul (`chrome-devtools-mcp`), que la personne voit |
+| wikichat | limité à ton projet : état, notes, ta mémoire, connaissance, messagerie |
+| Onyxia | seulement si ton projet déclare un déploiement : les outils de **son** pod |
+| Scripts | `~/work/bin/atelier-app` (créations sans MCP) |
+
+Le projet des outils `atelier_*` est celui de ta conversation : ne le passe
+pas (si ta session ne nomme pas sa conversation, passe encore le tien en
+`projet`), un autre est refusé. Pour voir ou faire agir un autre projet,
+écris à ses agents par wikichat ; ni la passerelle, ni les commandes globales
+de l'Atelier ne sont à toi.
+
+## Mémoire du projet
+
+- **Avant de refaire** une chose qui a peut-être déjà été faite ou tranchée :
+  `atelier_rappel(requete)` rend au plus cinq conversations passées du projet
+  (une ligne chacune, environ 450 jetons) ; `atelier_fiche(id)` en rend une
+  (8 caractères d'identifiant suffisent). Ne relis pas de transcripts.
+- `search_knowledge` (wikichat) cherche dans la connaissance commune et dans
+  celle du projet.
+- `ETAT.md` est le seul endroit de l'état du projet : tiens-le à jour à la fin
+  d'un lot (réécrit, pas complété).
+- `add_project_note` est lu par toutes les conversations du projet ;
+  `remember` ne vaut que pour toi.
+
+## wikichat
+
+- Ton identité est automatique : n'appelle pas `register`. Briefing et
+  courrier arrivent seuls, au démarrage et à chaque message.
+- Pour joindre un autre projet : `list_sessions`, puis `contact_agent` ou
+  `send_message(channel="@<agent>")`. Précise ton intention :
+  `status="over"` et `expects_reply=true` si tu attends une réponse,
+  `standby` avec `eta_seconds` si tu pars travailler, `done` sinon.
+- Tu ne lances pas d'agent et tu ne crées ni tâche automatique, ni routine,
+  ni trigger : demande-le à la personne.
+
+## Ce qui revient à la personne
+
+Tu ne peux pas, et tu ne contournes pas : activer un agent ou une tâche
+automatique, ajouter un connecteur ou lui accorder un secret, lier le projet
+à un pod, publier sur GitHub ou pousser, fusionner une branche proposée,
+accepter une proposition de « À valider », exposer un port sur Internet.
+Dis-le dans ta réponse, et note-le dans `ETAT.md` (« À décider » ou
+« Demandé à l'Atelier ») pour que la demande survive à la conversation.
+
+Le mode de la conversation décide de ce qui te demande une autorisation. Un
+refus de la personne est une réponse : ne rejoue pas l'action autrement.
+
+Si l'Atelier t'a lancé sur une branche (`agent/…`, `gardien/…`, dans
+`.atelier/reparations/<id>`), travaille et commite là seulement, sans changer
+de branche ni pousser : l'Atelier dépose ta proposition dans « À valider ».
+
 ## Secrets
 
 - Aucun jeton, clé ou mot de passe dans un fichier suivi par git, dans une URL
   de remote, dans un commit, dans un message de log, dans un artefact.
 - `.mcp.json` est écrit par l'Atelier avec des références
-  (`Bearer ${ATELIER_MCP_…}`), jamais des secrets ; il reste hors de git
-  (l'Atelier l'ajoute au `.gitignore`). N'y écris jamais une valeur en clair :
-  si un serveur du projet a besoin d'un jeton, voir `.atelier/env.json`
-  ci-dessous. Il porte ce que l'agent reçoit sur toutes les surfaces
-  (Atelier, VS Code, terminal) : l'Atelier le réécrit ; choisis les
-  connecteurs dans l'Atelier plutôt que de l'éditer.
-- Les valeurs des références sont dans un seul fichier,
-  `~/work/.secrets/claude-env.sh` (0600, généré par l'Atelier). Ton
-  environnement l'a déjà chargé : ne le lis pas, ne l'affiche pas, ne le
+  (`Bearer ${ATELIER_MCP_…}`), jamais des secrets ; il reste hors de git.
+  Ne l'édite pas : les connecteurs se choisissent dans l'Atelier.
+- Les valeurs des références sont dans `~/work/.secrets/claude-env.sh` (0600).
+  Ton environnement l'a déjà chargé : ne le lis pas, ne l'affiche pas, ne le
   recopie pas. `env`, `printenv` ou `set` affichent ces valeurs : ne les lance
   pas sans filtre.
-- Une variable dont une session a besoin (un jeton qu'un `.mcp.json` du
-  projet référence en `${VOICE_TOKEN}`, par exemple) se demande dans
-  `.atelier/env.json` : `{"VOICE_TOKEN": "voice_token"}`, où la valeur est un
-  **nom de fichier** de `~/work/.secrets/` (0600). L'Atelier la pose dans
-  l'environnement des tours du projet et de VS Code ; la valeur n'est jamais
-  écrite dans le projet. Pas de nom `ATELIER_*`, `ANTHROPIC_*`, `CLAUDE_*`,
-  `PATH`, `HOME` : ils sont refusés. `.atelier/` est ignoré par git :
+- Une variable dont une session a besoin (un `${VOICE_TOKEN}` dans un
+  `.mcp.json` du projet) se demande dans `.atelier/env.json` :
+  `{"VOICE_TOKEN": "voice_token"}`, où la valeur est un **nom de fichier** de
+  `~/work/.secrets/` (0600). Pas de nom `ATELIER_*`, `ANTHROPIC_*`,
+  `CLAUDE_*`, `PATH`, `HOME`. `.atelier/` est ignoré par git :
   `git add -f .atelier/env.json` (il ne porte que des références).
 - Un remote se déclare sans identifiants (`https://github.com/<org>/<dépôt>`).
   Si tu en trouves un avec un jeton dedans, ne l'utilise pas, signale-le.
@@ -41,15 +98,6 @@ un port que tu ouvres, tous les agents peuvent l'appeler ; un fichier que tu
 
 ## Montrer ce que tu produis
 
-Le serveur `atelier` ne te donne que les outils de **ton** projet : tes
-créations (`atelier_artefacts`, `atelier_artefact_creer`, `_verifier`,
-`_demarrer`, `_arreter`, `_journal`), `atelier_montrer` et
-`atelier_navigateur_ouvrir`. Le projet est celui de ta conversation : ne le
-passe pas (si ta session ne nomme pas sa conversation, passe encore le tien
-en `projet`), un autre est refusé. Pour voir ou faire agir un autre projet,
-écris à ses agents par wikichat (message, fil) ; ni la passerelle, ni les
-commandes globales de l'Atelier ne sont à toi.
-
 Une création = un dossier `artifacts/<nom>/` du projet = une adresse
 `https://<hôte des applications>/<projet>/<nom>/`, derrière la connexion de
 l'Atelier (`atelier_artefacts` la donne). Le nom : minuscules, chiffres,
@@ -57,55 +105,47 @@ tirets. Jamais un port du pod, jamais l'adresse de l'Atelier lui-même.
 
 **Mode autonome** (des fichiers) :
 
-1. `atelier_artefact_creer(nom)` — refusé si le nom est pris.
+1. `atelier_artefact_creer(nom)` : refusé si le nom est pris.
 2. Dépose tes fichiers dans `artifacts/<nom>/` : `index.html` s'ouvre à la
-   racine, liens relatifs entre pages, CSS/JS/images relatifs autorisés, rien
-   d'extérieur (CDN, polices en ligne) : embarque-le.
+   racine, liens relatifs, rien d'extérieur (CDN, polices en ligne) :
+   embarque-le.
 3. Bac à sable : pas de cookie, pas de stockage navigateur. Pour que les pages
    écrivent chez elles (`PUT` relatif, `If-Match` avec l'`ETag` lu), pose
    `artefact.json` : `{"version": 1, "type": "statique", "edition": true}`.
 
 **Mode serveur** (un processus) :
 
-1. `atelier_artefact_creer(nom, mode="serveur")` : il pose un
+1. `atelier_artefact_creer(nom, mode="serveur")` pose un
    `artifacts/<nom>/artefact.json` à compléter.
 2. Complète-le : `commande` en liste d'arguments avec `{port}` (jamais de
-   numéro de port), `repertoire` relatif au dossier de l'artefact (`"../.."`
-   pour du code à la racine du projet, jamais hors du projet), `sante`,
-   `protocoles` (`http`, et `ws`/`sse` si tu t'en sers), `secrets` par nom de
-   fichier de `~/work/.secrets/apps/`. Écoute sur `127.0.0.1` ; ton service
-   voit ses chemins sans le préfixe et reçoit `X-Forwarded-Prefix`.
+   numéro), `repertoire` relatif au dossier de l'artefact (`"../.."` pour du
+   code à la racine du projet, jamais hors du projet), `sante`, `protocoles`
+   (`http`, et `ws`/`sse` si tu t'en sers), `secrets` par nom de fichier de
+   `~/work/.secrets/apps/`. Écoute sur `127.0.0.1` ; ton service voit ses
+   chemins sans le préfixe et reçoit `X-Forwarded-Prefix`.
 3. `atelier_artefact_verifier`, puis `atelier_artefact_demarrer` ;
    `atelier_artefact_journal` si ça ne démarre pas. L'Atelier attribue le
    port, surveille, redémarre, arrête après inactivité.
 
-La même adresse vaut dans les deux modes. Tu n'agis pas sur la création d'une
-autre conversation (`forcer` seulement si on te le demande).
+Tu n'agis pas sur la création d'une autre conversation (`forcer` seulement si
+on te le demande).
 
 **La montrer** : dès qu'une page est prête ou modifiée, `atelier_montrer(nom,
 chemin)` l'ouvre dans le panneau de ta conversation, chez la personne. Pour la
-vérifier toi-même, `atelier_navigateur_ouvrir(chemin)` rend une adresse à usage
-unique (deux minutes) de l'hôte des applications, à ouvrir aussitôt avec ton
-navigateur. C'est **le seul** chemin pour ouvrir une création du projet dans
-ton navigateur : jamais `file://` (ni le chemin du dossier `artifacts/`), qui
-contourne l'hôte des applications, son bac à sable et ce que verra la
-personne ; jamais `127.0.0.1:<port>` non plus. Ton navigateur est à toi seul,
-et la personne le voit (section suivante).
+vérifier toi-même, `atelier_navigateur_ouvrir(chemin)` (`"<nom>/"`) rend une
+adresse à usage unique (deux minutes), à ouvrir aussitôt avec ton navigateur.
+C'est **le seul** chemin pour ouvrir une création dans ton navigateur : jamais
+`file://`, jamais `127.0.0.1:<port>`.
 
 Sans outils MCP : `~/work/bin/atelier-app creer|verifier|demarrer|arreter|journal
-<projet> <nom>`, et `atelier-app montrer|ouvrir-navigateur <nom> [chemin]`, qui
-passent par les mêmes gardes que les outils (projet tiré de ta conversation).
+<projet> <nom>`, et `atelier-app montrer|ouvrir-navigateur <nom> [chemin]`
+(projet tiré de ta conversation), par les mêmes gardes.
 
-Ce que tu ne fais pas :
-
-- lancer un serveur à la main en présentant `127.0.0.1:<port>` comme une
-  adresse à ouvrir : elle n'est joignable que depuis le pod ;
-- passer par `/vscode/proxy/<port>/` (fermé) ;
-- ouvrir un Ingress, un Service Kubernetes ou un port public toi-même, ou
-  utiliser `onyxia__expose_public` : il publie un port sur Internet sans
-  aucune authentification ;
-- ouvrir une création par `file://` dans ton navigateur : passe par
-  `atelier_navigateur_ouvrir`.
+Ce que tu ne fais pas : lancer un serveur à la main et présenter
+`127.0.0.1:<port>` comme une adresse à ouvrir ; passer par
+`/vscode/proxy/<port>/` (fermé) ; ouvrir un Ingress, un Service Kubernetes ou
+un port public, ou utiliser `expose_public` d'Onyxia (Internet, sans
+authentification).
 
 ## Ton navigateur
 
@@ -121,60 +161,37 @@ le mode de la conversation.
 - La personne peut **prendre la main** (une connexion, un CAPTCHA, un
   formulaire). Pendant ce temps, tes actions sur le navigateur attendent.
   Quand elle la rend, une « Note de l'Atelier » arrive avec le résultat de ton
-  action, ou un message te relance : elle dit ce qui a changé. Relis la page
-  (`take_snapshot`) avant d'agir, et ne refais pas ce qu'elle a fait.
-- Les connexions aux sites durent le temps de la conversation (son profil est
-  gardé) : ne te reconnecte pas à chaque tour.
+  action, ou un message te relance. Relis la page (`take_snapshot`) avant
+  d'agir, et ne refais pas ce qu'elle a fait.
+- Les connexions aux sites durent le temps de la conversation : ne te
+  reconnecte pas à chaque tour.
 
 ## Processus que tu lances
 
 - Un script `start.sh` / `stop.sh` versionné, qui écrit un fichier `.pid` et
-  ne tue que ce PID (jamais `pkill -f` sur un motif large).
+  ne tue que ce PID.
 - Écoute sur `127.0.0.1`, jamais `0.0.0.0`.
 - Un service à montrer ne se lance pas par `start.sh` : il se déclare comme
-  artefact serveur (ci-dessus), et c'est l'Atelier qui le lance.
+  création serveur, et c'est l'Atelier qui le lance.
 - Pas de dépendance installée à la main sans l'ajouter au fichier de
-  dépendances du projet ; les modèles et gros binaires se téléchargent par un
+  dépendances du projet ; modèles et gros binaires se téléchargent par un
   script versionné, ils ne se commitent pas.
 
 ## Hooks du socle
 
-Deux règles ci-dessus ne dépendent pas de ta mémoire : un hook `PreToolUse`
-les tient pour tous les agents, sur toutes les surfaces (Atelier, VS Code,
-terminal, agents de wikichat). Il refuse la commande Bash avant qu'elle parte,
-et tu reçois la raison :
+Un hook `PreToolUse`, posé par l'exécuteur des gardiens pour tous les agents
+et sur toutes les surfaces, refuse ces commandes Bash avant qu'elles partent,
+et te dit pourquoi :
 
 | Refusé | Pourquoi | À la place |
 |---|---|---|
 | `killall <nom>`, `pkill` sur un motif non ancré (`pkill -f server.mjs`), `kill $(pgrep …)`, `pgrep … \| xargs kill` | le motif attrape les processus des autres : wikichat est mort ainsi le 18/09 | `kill "$(cat run.pid)"` ; au pire `pkill -f '^…$'` ancré des deux côtés, ou `pkill -F run.pid` |
-| `--host 0.0.0.0`, `-b 0.0.0.0:…`, `HOST=0.0.0.0`, `--ip 0.0.0.0`, `bind-addr: 0.0.0.0`, `uvicorn`/`gunicorn`/`flask` sur `0.0.0.0` ou `::` | le port devient joignable par tout le pod, et au-delà | `127.0.0.1` ; un service à montrer se déclare comme artefact serveur |
+| `--host 0.0.0.0`, `-b 0.0.0.0:…`, `HOST=0.0.0.0`, `--ip 0.0.0.0`, `bind-addr: 0.0.0.0`, `uvicorn`/`gunicorn`/`flask` sur `0.0.0.0` ou `::` | le port devient joignable par tout le pod, et au-delà | `127.0.0.1` ; un service à montrer se déclare comme création serveur |
 | `python -m http.server` sans `-b 127.0.0.1` | il écoute partout par défaut | `python -m http.server 8000 -b 127.0.0.1` |
 
 Un refus n'est pas un obstacle à contourner (autre syntaxe, script
-intermédiaire) : si tu as une vraie raison, dis-la à la personne.
-
-**Qui le pose, et où.** L'exécuteur des gardiens (`python -m
-mcp_gateway.gardiens`, lancé par `install/atelier-init.sh`) le pose à son
-démarrage dans `~/work/.claude/settings.json`, le fichier physique dont
-`~/.claude/settings.json` est un lien (`claude_home.unifier_les_reglages`) :
-
-- entrée `hooks.PreToolUse`, `matcher: "Bash"`, commande
-  `<python> -m mcp_gateway.gardiens.garde_bash`, délai 10 s ;
-- il suit le lien et écrit le fichier cible par renommage : le lien reste un
-  lien ;
-- il ne touche à aucun autre hook (ceux de wikichat restent), n'en pose qu'un
-  seul, met à jour l'interpréteur s'il a changé, et ne crée ni n'écrase un
-  fichier absent ou illisible ;
-- sa commande ne contient pas « wikichat » : la fusion des réglages de
-  l'Atelier (`fusionner_les_reglages`) le garde quand wikichat réécrit le
-  fichier sans lui ;
-- `ATELIER_GARDIENS_HOOKS=0` empêche la pose ; `python -m
-  mcp_gateway.gardiens.garde_bash --poser [fichier]` la fait à la main ;
-  `--verifier <commande>` dit si une commande serait refusée.
-
-Si le module ne s'importe pas, le hook échoue sans bloquer (code 1) : il ne
-coupe jamais un agent par sa propre panne. Tests :
-`tests/test_gardiens_hook.py`.
+intermédiaire) : si tu as une vraie raison, dis-la à la personne. Pose et
+réglages du hook : `docs/fonctionnalites.md`, « Gardiens ».
 
 ## Documents et vérité
 

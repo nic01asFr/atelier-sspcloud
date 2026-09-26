@@ -20,6 +20,20 @@ Ce dossier tient ces consignes sous git. Elles se posent sur le pod ainsi :
 | `transcripts-youtube.md` | `~/work/projects/projet-sans-nom-4/CLAUDE.md` |
 | `lecteur-grist.md` | `~/work/projects/projet-sans-nom-5/CLAUDE.md` |
 
+`socle.md` est aussi le guide opérationnel des agents code : ce qu'ils ont à
+leur disposition (outils `atelier_*` de leur projet, navigateur, mémoire du
+projet, wikichat limité à leur projet), ce qui revient à la personne, ce qui
+leur est interdit. Il vit là, et pas dans un fichier importé, parce que
+Claude Code lit le `CLAUDE.md` du dossier parent sur toutes les surfaces sans
+rien demander, alors qu'un import `@` hors du dossier du projet exige une
+approbation que l'Atelier ne pose que pour l'Assistant. Le guide complet,
+pour les lecteurs du dépôt, est [`../fonctionnalites.md`](../fonctionnalites.md).
+
+**Rien ne pose ces fichiers automatiquement** : ni `install/atelier-init.sh`,
+ni l'image. Ils se recopient à la main sur le pod après chaque changement
+(le 26/09, le socle du pod datait du 25/09 et n'avait ni « Ton navigateur »
+ni « Hooks du socle »).
+
 Dans les `CLAUDE.md` de projet, le texte se place **hors** de la section
 `<!-- atelier:contexte -->`, que l'Atelier réécrit. Le reste du fichier lui
 appartient au projet.
