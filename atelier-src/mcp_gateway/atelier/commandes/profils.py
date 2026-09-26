@@ -53,6 +53,15 @@ PROFILS = (PROFIL_CODE, PROFIL_ASSISTANT)
 # aucun (compatibilité : le comportement d'avant les profils).
 PROFIL_APPELANT: contextvars.ContextVar[str] = contextvars.ContextVar("profil_appelant", default="")
 
+# Le projet que la déclaration annonce (`X-Atelier-Projet`, écrit par
+# l'Atelier dans le `.mcp.json` du projet). Il ne sert qu'à une conversation
+# que l'Atelier ne connaît pas (ouverte dans VS Code ou au terminal), et
+# seulement en profil `code` : il ne donne jamais `assistant`, et la fiche
+# d'une conversation connue l'emporte toujours.
+ENTETE_PROJET = "X-Atelier-Projet"
+PROJET_ANNONCE: contextvars.ContextVar[str] = contextvars.ContextVar("projet_annonce", default="")
+_SLUG_VALIDE = re.compile(r"^[a-z0-9][a-z0-9-]{0,99}$")
+
 # Les créations du projet, puis ce qui les montre. Rien d'autre.
 OUTILS_CREATIONS = (
     "atelier_artefacts",
@@ -242,27 +251,62 @@ def fiche_de_la_conversation(store: Any, conversation: str | None) -> Any | None
     return None
 
 
-def projet_de_la_conversation(store: Any, conversation: str | None) -> str:
-    """Le slug du projet de la conversation ; `HorsProfil` si on ne le sait pas."""
-    if not (conversation or "").strip() or (conversation or "").strip() == "poste":
+def projet_annonce_valide(store: Any, projet: str | None) -> str:
+    """Le slug annoncé s'il nomme un dossier existant sous `projects_dir`, sinon vide."""
+    slug = (projet or "").strip()
+    racine = getattr(getattr(store, "settings", None), "projects_dir", None)
+    if not slug or racine is None or not _SLUG_VALIDE.match(slug):
+        return ""
+    return slug if (racine / slug).is_dir() else ""
+
+
+def projet_de_la_conversation(store: Any, conversation: str | None, projet_annonce: str | None = None) -> str:
+    """Le slug du projet de la conversation ; `HorsProfil` si on ne le sait pas.
+
+    Une conversation connue : le projet de sa fiche, l'en-tête `X-Atelier-Projet`
+    ignoré (et un désaccord journalisé). Une conversation inconnue (VS Code, terminal) :
+    le projet annoncé, s'il existe. Réservé au profil `code` : seul
+    `cadrer_les_arguments` l'appelle, en profil restreint.
+    """
+    c = (conversation or "").strip()
+    if not c:
         raise HorsProfil(
             "profil code : ta session MCP ne nomme pas sa conversation (en-tête "
             "X-Atelier-Conversation), le projet ne peut pas être établi"
         )
-    rec = fiche_de_la_conversation(store, conversation)
+    annonce = (projet_annonce or "").strip()
+    rec = fiche_de_la_conversation(store, c) if c != "poste" else None
     if rec is None:
+        slug = projet_annonce_valide(store, annonce)
+        if slug:
+            return slug
+        if annonce:
+            raise HorsProfil(
+                f"profil code : projet annoncé inconnu ({annonce[:60]}), le projet ne peut pas être établi"
+            )
         raise HorsProfil(
-            f"profil code : conversation inconnue de l'Atelier ({str(conversation)[:60]}), "
+            f"profil code : conversation inconnue de l'Atelier ({c[:60]}), "
             "le projet ne peut pas être établi"
         )
     slug = str(getattr(rec, "slug", "") or "")
     if not slug:
         raise HorsProfil("profil code : cette conversation n'appartient à aucun projet")
+    if annonce and annonce != slug:
+        log.warning(
+            "conversation %s : projet annoncé %s, projet de la fiche %s retenu",
+            c[:60], annonce[:60], slug,
+        )
     return slug
 
 
 def cadrer_les_arguments(
-    nom: str, arguments: dict[str, Any], *, store: Any, conversation: str | None, profil: str | None = None
+    nom: str,
+    arguments: dict[str, Any],
+    *,
+    store: Any,
+    conversation: str | None,
+    profil: str | None = None,
+    projet_annonce: str | None = None,
 ) -> dict[str, Any]:
     """Les arguments tels que le profil les permet ; `HorsProfil` sinon.
 
@@ -275,7 +319,9 @@ def cadrer_les_arguments(
         return arguments
     if nom not in OUTILS_DU_PROFIL_CODE:
         raise HorsProfil(message_hors_profil(nom))
-    slug = projet_de_la_conversation(store, conversation)
+    slug = projet_de_la_conversation(
+        store, conversation, projet_annonce if projet_annonce is not None else PROJET_ANNONCE.get()
+    )
     cadres = dict(arguments or {})
     demande = str(cadres.get("projet") or "").strip()
     if demande and demande != slug:

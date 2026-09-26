@@ -20,7 +20,14 @@ from mcp_gateway.atelier.auth import ENTETE_INTERFACE
 from mcp_gateway.atelier.commandes.a_valider import ErreurAValider
 from mcp_gateway.atelier.commandes.catalogue import APERCU, ERREUR, FAIT, REFUSE, Catalogue, Reponse
 from mcp_gateway.atelier.commandes.modele import ORIGINE_CLE, ORIGINE_INTERFACE, Contexte
-from mcp_gateway.atelier.commandes.profils import ENTETE_PROFIL, PROFIL_APPELANT, outil_permis, profil_effectif
+from mcp_gateway.atelier.commandes.profils import (
+    ENTETE_PROFIL,
+    ENTETE_PROJET,
+    PROFIL_APPELANT,
+    PROJET_ANNONCE,
+    outil_permis,
+    profil_effectif,
+)
 from mcp_gateway.atelier.vscode_bridge import COOKIE_NAME
 from mcp_gateway.auth import bearer_from_header
 
@@ -74,11 +81,13 @@ def _appel_de(request: Request, ctx: Contexte) -> Iterator[None]:
     jeton = CONVERSATION_APPELANTE.set(conversation)
     store = getattr(request.app.state, "store", None)
     jeton_profil = PROFIL_APPELANT.set(profil_effectif(request.headers.get(ENTETE_PROFIL), conversation, store))
+    jeton_projet = PROJET_ANNONCE.set((request.headers.get(ENTETE_PROJET) or "").strip()[:100])
     try:
         yield
     finally:
         CONVERSATION_APPELANTE.reset(jeton)
         PROFIL_APPELANT.reset(jeton_profil)
+        PROJET_ANNONCE.reset(jeton_projet)
 
 
 def construire_le_routeur(app: Any) -> APIRouter:

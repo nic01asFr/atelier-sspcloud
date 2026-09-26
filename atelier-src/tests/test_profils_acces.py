@@ -129,8 +129,10 @@ class Porte:
         self.client = TestClient(app, base_url=ATELIER)
 
     def rpc(self, methode: str, params: dict[str, Any] | None = None, *, profil: str | None = None,
-            conv: str | None = None) -> dict[str, Any]:
+            conv: str | None = None, projet: str | None = None) -> dict[str, Any]:
         entetes = porteur(self.atelier)
+        if projet is not None:
+            entetes["X-Atelier-Projet"] = projet
         if profil is not None:
             entetes["X-Atelier-Profil"] = profil
         if conv is not None:
@@ -450,3 +452,45 @@ def test_v1_commandes_sans_profil_reste_comme_avant(atelier: TestClient) -> None
     assert "atelier_journal" in {c["nom"] for c in liste}
     r = atelier.post("/v1/commandes/atelier_journal", json={"arguments": {}}, headers=porteur(atelier))
     assert r.status_code == 200
+
+
+# ── Conversation inconnue : le projet annoncé (`X-Atelier-Projet`) ─────
+
+
+def test_une_conversation_inconnue_cree_dans_le_projet_annonce(porte: Porte) -> None:
+    """VS Code ou terminal : l'Atelier ne connaît pas la conversation, le `.mcp.json` nomme le projet."""
+    charge, erreur = porte.appeler(
+        "atelier_artefact_creer", {"nom": "depuis-vscode"}, profil="code", conv="cli-inconnue-1", projet="demo"
+    )
+    assert not erreur, charge
+    racine = porte.atelier.app.state.settings.projects_dir
+    assert (racine / "demo" / "artifacts" / "depuis-vscode").is_dir()
+    charge, erreur = porte.appeler("atelier_artefacts", {}, conv="cli-inconnue-1", projet="demo")
+    assert not erreur and "depuis-vscode" in {a["nom"] for a in charge["artefacts"]}
+    charge, erreur = porte.appeler(
+        "atelier_artefacts", {"projet": "autre"}, conv="cli-inconnue-1", projet="demo"
+    )
+    assert erreur and "projet refusé" in charge["erreur"]
+
+
+@pytest.mark.parametrize("projet", ["inexistant", "../demo", "Demo", ""])
+def test_un_projet_annonce_inexistant_est_refuse(porte: Porte, projet: str) -> None:
+    charge, erreur = porte.appeler(
+        "atelier_artefact_creer", {"nom": "x"}, profil="code", conv="cli-inconnue-2", projet=projet
+    )
+    assert erreur and "le projet ne peut pas être établi" in charge["erreur"]
+
+
+def test_une_conversation_connue_ignore_le_projet_annonce(
+    porte: Porte, caplog: pytest.LogCaptureFixture
+) -> None:
+    conv = conversation(porte.atelier, "autre")
+    with caplog.at_level(logging.WARNING, logger="atelier.profils"):
+        charge, erreur = porte.appeler("atelier_artefacts", {}, profil="code", conv=conv, projet="demo")
+    assert not erreur, charge
+    assert {a["nom"] for a in charge["artefacts"]} == {"secret"}, "la fiche gagne"
+    assert any("projet de la fiche autre retenu" in r.getMessage() for r in caplog.records)
+
+
+def test_le_projet_annonce_ne_donne_jamais_assistant(porte: Porte) -> None:
+    assert porte.noms(profil="assistant", conv="cli-inconnue-3", projet="demo") == OUTILS_CODE

@@ -107,6 +107,16 @@ catalogue (`commandes/catalogue.py`).
 | sans conversation (passerelle, claude.ai, ancien client) | comportement d'avant (tout), sauf en-tête `code` ; journalisé |
 | en-tête de valeur inconnue | `code` |
 
+**Projet d'une conversation inconnue** (VS Code, terminal) : en profil `code`
+seulement, le projet vient de `X-Atelier-Projet` (écrit par S dans le
+`.mcp.json` du projet), s'il nomme un dossier existant sous `projects_dir` ;
+sinon refus. Pour une conversation connue, la fiche décide et un désaccord
+avec l'en-tête est journalisé. L'en-tête ne donne jamais `assistant`.
+**Vérifié** : création écrite dans le projet annoncé, projet inexistant ou
+forgé refusé, en-tête ignoré par une conversation connue, jamais `assistant`.
+Limite : `atelier_montrer` et `atelier_navigateur_ouvrir` demandent encore une
+conversation connue de l'Atelier (le panneau est celui d'une conversation).
+
 `X-Atelier-Profil` ne peut que restreindre. Une conversation sans en-tête ou
 sans conversation est notée dans le journal `atelier.profils` (une ligne par
 conversation, rappelée au plus toutes les dix minutes). L'équipe O peut

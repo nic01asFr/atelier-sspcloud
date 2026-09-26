@@ -141,7 +141,9 @@ def register_mcp_endpoint(app: FastAPI, auth: Any) -> None:
 
         from mcp_gateway.atelier.commandes.profils import (
             ENTETE_PROFIL,
+            ENTETE_PROJET,
             PROFIL_APPELANT,
+            PROJET_ANNONCE,
             noter_un_appel_sans_profil,
             profil_effectif,
         )
@@ -159,6 +161,8 @@ def register_mcp_endpoint(app: FastAPI, auth: Any) -> None:
             if actives:
                 noter_un_appel_sans_profil(conversation, actives[0], profil=profil)
         jeton_profil = PROFIL_APPELANT.set(profil)
+        # Le projet annoncé : pour une conversation inconnue, en profil code seulement.
+        jeton_projet = PROJET_ANNONCE.set((request.headers.get(ENTETE_PROJET) or "").strip()[:100])
         # La clé du propriétaire est celle des agents du pod et de wikichat :
         # des automates. Un jeton OAuth vient d'un client distant où une
         # personne lit (claude.ai). Voir `atelier_envoyer`, `peut_attendre`.
@@ -173,6 +177,7 @@ def register_mcp_endpoint(app: FastAPI, auth: Any) -> None:
             CONVERSATION_APPELANTE.reset(jeton)
             APPEL_INTERACTIF.reset(interactif)
             PROFIL_APPELANT.reset(jeton_profil)
+            PROJET_ANNONCE.reset(jeton_projet)
         _renommer(resultat)
         entetes = {"Mcp-Session-Id": assigne} if assigne else None
         return JSONResponse(content=resultat or {}, headers=entetes)
