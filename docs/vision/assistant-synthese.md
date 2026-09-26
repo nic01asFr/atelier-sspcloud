@@ -214,3 +214,168 @@ recommandation.
 | **Souhaitable** | Oui. Aujourd'hui il faut connaître l'Atelier pour s'en servir ; l'Assistant renverse cela. |
 | **Désirable** | Oui, si les cartes d'action, « Annuler », les preuves et la sobriété sont tenues. La voix et les vues montrées en visio le rendent vivant. |
 | **Possible** | Pour Nicolas, dès A4. Pour des personnes qui ne codent pas, une fois A3 (commandes cadrées) et le lexique en place. |
+
+## 8. État (vague 3, équipe A, branche `v3-assistant`, 26/09/2026)
+
+Lot A4 : l'Assistant écrit. « Vérifié » veut dire exécuté et vu fonctionner (tests de
+comportement, ou essai réel nommé) ; « non vérifié », écrit seulement.
+
+### 8.1 Ce qui est fait
+
+**Le dossier de l'Assistant** (`mcp_gateway/atelier/assistant.py`). Il reste celui que l'Atelier
+utilise déjà, `settings.assistant_root` : `~/work/wikichat-memory` (constaté sur le pod, 7
+conversations dans `assistant/sessions/`). Le dossier `~/work/projects/wikichat-memory` du pod
+est un reste de l'ancienne reprise dans VS Code : à ranger. Le dossier n'est **pas un dépôt**
+(S6). Tout y est généré par l'Atelier, au démarrage et avant chaque tour :
+
+| Fichier | Contenu |
+|---|---|
+| `CLAUDE.md` | imports `@atelier/consignes.md`, `@atelier/outils.md`, `@atelier/carte.md`, `@atelier/a-valider.md`, puis `# Compact instructions` propres à l'Assistant. Un `CLAUDE.md` étranger est mis de côté (`CLAUDE.md.avant-atelier`), jamais écrasé |
+| `atelier/consignes.md` | le rôle, court : les cinq conditions (§3.2 d'`assistant-role.md`), les trois classes, ce qu'il ne fait jamais, le ton, le lexique S2 |
+| `atelier/outils.md` | la **consigne forte** (« Ne conclus JAMAIS qu'une capacité manque sans avoir cherché… deux formulations, dont une en anglais »), le mode d'emploi de `gateway_find_tools` puis `gateway_call_tool`, une table demande → commande, la délégation |
+| `atelier/carte.md` | la forme synthétique d'`atelier_carte`, datée, recalculée avant chaque tour de l'Atelier (8 s au plus ; sinon la carte d'avant reste, avec son heure) |
+| `atelier/a-valider.md` | la file « À valider », bornée à 2 000 caractères, avec « tu peux refuser, jamais accepter » |
+| `notes/` | le seul endroit où il écrit (A-6) |
+| `.claude/settings.json` (racine et chaque conversation) | refus : `Bash`, `NotebookEdit`, `WebSearch`, 16 natifs qui ne lui servent pas, l'écriture dans `projects/`, `bin/`, `mcp/`, les secrets et ses propres consignes ; permis : `Read`, `Glob`, `Grep`, `mcp__atelier`, `mcp__wikichat`, l'écriture dans `notes/` |
+
+Les conversations vivent dans `assistant/sessions/<id>/` (création et reprise, `sessions.py`) ;
+chacune reçoit ses réglages dès sa naissance, pour VS Code et le terminal. Le `.mcp.json` reste
+celui de `configuration_du_profil` (profil `assistant`). L'ancienne section de contexte écrite
+dans le dossier d'une conversation est retirée : une seule consigne, celle de la racine.
+
+**Deux réglages natifs, trouvés par la mesure**, posés dans `~/.claude.json` pour chaque dossier
+de l'Assistant (`assistant.APPROBATIONS`) :
+
+- `hasClaudeMdExternalIncludes*` : le `CLAUDE.md` de la racine est lu depuis le dossier d'une
+  conversation (Claude Code remonte les parents), mais ses imports sont **hors** de ce dossier.
+  Sans approbation, Claude Code les ignore en silence : l'Assistant ne voyait ni sa carte ni ses
+  consignes (mesure m00) ;
+- `hasTrustDialogAccepted` : sans lui, Claude Code **ignore les `allow`** du
+  `.claude/settings.json` d'un dossier (« this workspace has not been trusted ») ; les refus, eux,
+  s'appliquent. La clé est lue au dossier exact, sans remonter aux parents (lu dans le binaire
+  2.1.282).
+
+**Budget C1.** Calculé par le code : environ 2 500 unités avec la carte réelle du pod
+(`GET /v1/assistant` le rend), 6 000 au pire (carte au plafond, file pleine), testé. Mesuré au
+relais : §8.2.
+
+**Délégation.** Par `atelier_lancer_agent` (lot D, classe engageante) : un premier appel rend un
+aperçu ; la personne dit « Oui » (bouton de la carte, ou réponse écrite) ; le suivi passe par
+`atelier_lancements` ; le compte rendu, par la carte d'action. Le bon de commande en sept lignes
+est dans `outils.md`. Écart avec A-4 (« sans accord ») : le lot D a fait la commande engageante ;
+on suit le code.
+
+**Interface (A-3).** `?view=assistant` ouvre le fil de l'Assistant dans l'écran des
+conversations : même fil, même composeur, même panneau (`views/assistant.js`, `state.espace`). La
+colonne de gauche montre ses conversations et le réglage « Ouvrir l'Atelier sur l'Assistant »,
+**désactivé par défaut**, réservé à la personne (`PUT /v1/assistant/reglages`, 403 à la clé).
+Activé, l'Atelier s'ouvre sur l'Assistant quand l'adresse ne dit rien, l'onglet passe en tête et
+« Code » devient « Projets ». Les cartes d'action du fil (`views/assistant-cartes.js`) offrent
+« Voir » et « Annuler » (par `atelier_annuler`, au nom de la personne) ; l'aperçu d'une commande
+engageante offre « Oui » (`POST /v1/commandes/confirmer`) et dit « Rien n'est fait », sans jeton
+ni nom de commande à l'écran. La carte garde l'issue quand le fil se redessine.
+
+**Vérificateur.** `coherence.ecarts_du_dossier` signale un Assistant qui a `Bash`, `NotebookEdit`
+ou `WebSearch`.
+
+### 8.2 Mesures sur le pod (26/09, CLI 2.1.282, `qwen3-6-35b-moe`, effort `medium`)
+
+Protocole : 20 `claude -p` dans un dossier jetable (`/var/tmp/am/`, supprimé depuis), avec un
+`CLAUDE_CONFIG_DIR` jetable et les hooks désactivés. Le dossier de l'Assistant y est celui que
+génère la branche, avec la **vraie carte du pod** (2 213 caractères, 651 unités, calculée en
+lecture seule par `carte.py`). Les outils sont **exactement ceux du profil `assistant`** : 41
+commandes du vrai catalogue et 7 méta-outils, soit 48 outils. Ils sont servis par un serveur de
+mesure qui n'exécute rien, car la clé du propriétaire, nécessaire pour joindre la vraie porte
+`/mcp`, n'a pas été utilisée. « À valider » (1 proposition) et les lancements (1 en cours, 1 fini)
+sont simulés. Les jetons sont ceux que rend le relais, qui les estime quand le flux n'en donne pas.
+
+**Coût d'entrée** (« Réponds en une ligne, sans outil : l'heure de ta carte, le nombre de
+projets »)
+
+| Essai | Réglages | Outils annoncés | Entrée (relais) | Premier mot | Réponse |
+|---|---|---|---|---|---|
+| m00 | refus de `Bash`, `NotebookEdit`, `WebSearch` ; imports non approuvés | 67 (19 natifs, 48) | 26 655 | 2,6 s | fausse : ne voit pas sa carte |
+| m01 | et imports approuvés | 67 | 29 006 | 2,2 s | juste, sans outil |
+| m02 | et 13 natifs refusés (Task, Skill, Cron…, Workflow…) | 54 (6 natifs, 48) | **16 015** | 1,7 s | juste, sans outil |
+
+- C1 mesurée : 29 006 − 26 655 = **2 351**.
+- Les 13 natifs retirés pesaient **12 991**.
+- C0 + C1 tient sous 20 000 **sans le pont wikichat natif**. Avec lui (51 outils, environ 10 000
+  calculés, `assistant-harness.md` §2.2), on arrive vers 26 000 : voir §8.4.
+
+**Six demandes types, 17 essais.** Pendant ces essais, les `allow` du dossier étaient ignorés : la
+confiance n'était posée que sur la racine, alors que la clé est lue au dossier exact. Chaque
+commande a donc été **tentée, puis refusée par le CLI**. On mesure le choix de la commande et de
+ses arguments, les jetons et la latence, mais pas le parcours de bout en bout. Le correctif
+(`hasTrustDialogAccepted` sur chaque dossier) est dans le code et testé ; il n'a pas pu être
+rejoué, les 20 essais étaient consommés.
+
+| Demande | Bonne commande, bons arguments | Appels tentés | Entrée, 1re requête | Entrée cumulée | Premier mot | Remarques |
+|---|---|---|---|---|---|---|
+| « Où en est le projet Lecteur Grist ? » | 3/3 : `atelier_carte(forme=projet, projet=projet-sans-nom-5)` | 1, 2, 2 | 15 989 | 32 000 à 49 000 | 2,8 à 3,7 s | après le refus, répond juste depuis la carte (2/3) |
+| « Crée un projet cadré Budget 2027 » | 3/3 : `atelier_projet_creer(titre, objectif, gabarit)` | 1 | 16 006 | 32 300 | 2,6 à 3,8 s | après le refus, **invente un aperçu** (la commande est réversible) |
+| « Quels agents tournent ? » | 3/3 : `atelier_lancements(etat=en_cours)` | 2 à 4 | 15 990 | 49 000 à 98 000 | 2,2 s ; 2,4 s ; **47,8 s** | l'essai b dérive : 10 397 unités de sortie |
+| « Relie Lecteur Grist et BigStarter » | 3/3 : `atelier_projets_lier(projet-sans-nom-5 → projet-sans-nom-2)` | 1 ou 2 | 15 990 | 32 300 à 49 000 | 3,0 à 3,5 s | essai a : « Lien créé… vérifié » **malgré le refus** |
+| « Délègue la correction du bouton Exporter CSV » | 3/3 : `atelier_lancer_agent(projet-sans-nom-5, bon de commande de 554 à 662 caractères, 15 min)` | 3 ou 4 : il regarde d'abord (carte, créations, conversations) | 16 010 | 66 000 | 2,8 à 3,7 s | bon de commande en sept lignes 3/3 ; **aucune confirmation tentée** (0/3) ; demande « Oui » 3/3 ; une fois `Glob` sur son propre dossier |
+| « Qu'est-ce qui attend mon accord ? » | 2/2 | 0 ; 2 | 15 989 | 16 000 ; 48 600 | 1,7 s ; 4,0 s | sans outil, depuis C1 (a) ; n'accepte jamais, propose de refuser |
+
+- **Choix de la commande : 17 sur 17**, arguments justes, slugs retrouvés depuis la carte, aucun
+  nom inventé. Les commandes sont déclarées : aucun passage par `gateway_call_tool`.
+- **Premier mot** : médiane d'environ 3,0 s depuis le lancement du processus (dont 0,4 s
+  d'init), avec un pic à 47,8 s.
+- **Aperçu de la délégation** : pas rendu sur le pod, puisque le CLI a refusé l'appel avant le
+  serveur. Le rendu et « rien n'est fait » sont vérifiés par les tests.
+- **Risque constaté** : après un refus, le modèle invente parfois un résultat (aperçu fictif,
+  « lien créé »). Avec les `allow` actifs, la commande rend sa carte ; la consigne « vérifié
+  seulement avec une preuve » ne suffit pas seule.
+
+### 8.3 Vérifié, non vérifié
+
+- **Vérifié par les tests** (`tests/test_assistant.py`, 21 tests ; `tests/js/assistant.suite.mjs`,
+  54 vérifications) :
+  - fichiers générés et idempotents, imports qui désignent des fichiers existants,
+    `# Compact instructions`, `CLAUDE.md` étranger mis de côté ;
+  - consigne forte ; chaque commande citée existe et est permise au profil `assistant` ;
+  - réglages sur la racine et sur chaque conversation, approbations dans `~/.claude.json` ;
+  - carte et « À valider » rafraîchies avant un tour ; une carte en panne ne bloque pas le tour ;
+  - budget C1 au pire cas ;
+  - création et reprise d'une conversation ;
+  - délégation : aperçu, « Oui » de la personne, suivi, jeton à usage unique ;
+  - réglage d'accueil : désactivé par défaut, réservé à la personne ;
+  - vue : espace, arrivée, liste, gestes, cartes « Voir », « Annuler », « Oui », lexique S2 ;
+  - écart du vérificateur.
+- **Vérifié sur le pod** (lecture seule, CLI 2.1.282) : les refus retirent les outils de la liste ;
+  les imports du `CLAUDE.md` parent ne sont lus qu'approuvés ; la carte réelle et C1 tiennent dans
+  le budget ; le choix des commandes (§8.2).
+- **Non vérifié** :
+  - un tour réel de bout en bout avec `hasTrustDialogAccepted` sur le dossier de la conversation ;
+  - l'interface dans un vrai navigateur ;
+  - VS Code (mêmes approbations dans `~/.claude.json` : supposé) ;
+  - la relecture des imports après une compaction avec `qwen3` ;
+  - la réécriture de `~/.claude.json` par un `claude` en cours, qui peut effacer une approbation
+    (déjà vu pour `enabledMcpjsonServers`) : elle est reposée avant chaque tour.
+
+### 8.4 Pour Nicolas
+
+1. **Le pont wikichat natif** coûte environ 10 000 unités par requête à l'Assistant (51 outils) :
+   C0 + C1 passerait vers 26 000. Faut-il le garder, le filtrer côté wikichat
+   (`WIKICHAT_PROFIL=assistant`, équipe M), ou passer wikichat par les méta-outils ?
+   *Recommandation* : le filtrer à une dizaine d'outils.
+2. **Délégation sans accord (A-4)** : la commande du lot D est engageante. Faut-il la garder ainsi
+   (un « Oui » par délégation), ou l'alléger en réversible pour l'Assistant quand la personne l'a
+   demandé ?
+3. **Les commandes anciennes** (`atelier_envoyer`, `_transcript`, `_suivre`, `_ouvrir`) restent au
+   profil, pour environ 4 000 unités (estimation). Faut-il les retirer du profil `assistant` ?
+
+### 8.5 Déploiement sur le pod
+
+1. Fusionner `v3-assistant`, déployer le code de l'Atelier et redémarrer le service.
+2. Au démarrage, l'Atelier écrit le dossier `~/work/wikichat-memory` (gabarit, réglages, carte) et
+   pose les approbations dans `~/.claude.json`. Rien d'autre n'est touché.
+3. Vérifier `GET /v1/assistant` (C1 dans le plafond). Ouvrir `/?view=assistant` et écrire « quoi de
+   neuf ? » : la réponse vient sans outil, depuis la carte. Demander une délégation : une carte
+   d'aperçu s'affiche, avec « Oui ».
+4. Lancer `atelier-verifier-coherence` sur le dossier `assistant` : pas de `Bash`, les méta-outils
+   présents.
+5. Ranger `~/work/projects/wikichat-memory`, reste de l'ancienne reprise dans VS Code.
+6. Activer « Ouvrir l'Atelier sur l'Assistant » quand la transition est jugée faite.
