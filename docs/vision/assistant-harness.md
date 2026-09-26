@@ -251,12 +251,23 @@ ce qui a été posé, **Voir**, **Annuler**, et une preuve.
 |---|---|---|---|---|
 | `atelier_projet_creer` | `titre`, `objectif` (1 phrase), `gabarit` (`application`, `donnees`, `service-mcp`, `document`, `vide`), `connecteurs[]` du catalogue | slug unique ; dépôt git sur `main` avec commit d'ouverture ; `projet.json` ; `ETAT.md` au gabarit ; `CLAUDE.md` qui importe `@.atelier/contexte.md` ; `.mcp.json` en références seulement ; « créé par l'Assistant, le … » | `atelier_projet_ranger` | réversible |
 | `atelier_projet_modifier` | `projet`, `titre?`, `objectif?`, `connecteurs+/-` | ne touche que `projet.json` et `.mcp.json` | valeur d'avant | réversible |
-| `atelier_agent_creer` | `nom`, `consigne`, `projets[]` (0 à n), `declencheur` (manuel, horaire, événement), `plafonds` (jetons, durée), `outils` (liste fermée) | fiche d'agent **désactivée** ; profil « agent lancé » ; branche seulement | `atelier_agent_supprimer` | réversible |
-| `atelier_agent_activer` | `agent` | vérifie les plafonds ; montre le coût en part du forfait | `_desactiver` | **engageante** |
-| `atelier_connecteur_ajouter` | `service` du catalogue du pool, `projets[]` | références `${ATELIER_MCP_…}` seulement ; test de santé | `_retirer` | réversible (accorder un jeton : **réservée**) |
+| `atelier_agent_creer` | `nom`, `consigne`, `projet?` (un seul, ou aucun), `horaire?` (cron ; absent : à la demande), `budget` (`tours`, `par_jour` ≤ 24, `pause_s`), `outils` (liste fermée) | agent du Pilote de wikichat **désactivé** (J-b) ; budget obligatoire ; jamais WebSearch | `atelier_agent_supprimer` | réversible |
+| `atelier_agent_modifier` | `agent`, les champs à changer | une modification par un modèle désactive l'agent | valeurs d'avant | réversible |
+| `atelier_agent_supprimer` | `agent` | un modèle ne supprime pas un agent actif ; dossier gardé | `atelier_agent_creer` (désactivé) | réversible |
+| `atelier_agent_activer` | `agent` | la personne seule (J-b2) ; refusée sans budget ; non exposée aux modèles | `_desactiver` | **réservée** |
+| `atelier_agent_desactiver` | `agent` | permise à tous | `_activer` | réversible |
+| `atelier_connecteur_ajouter` | `nom`, `url` ou `commande`, `projets[]?` | au pool de la passerelle ; aucun secret en argument ; sonde | `_retirer` | **engageante** |
+| `atelier_connecteur_retirer` | `nom` | hors service, déclaration gardée | `_ajouter` avec `reprendre` | réversible |
+| `atelier_connecteur_choisir` | `projet`, `connecteurs[]` ou `heriter` | par la fonction de profil de `mcp_sync` | choix d'avant | réversible |
+| `atelier_connecteur_accorder` | `nom`, `champ`, `secret` (un **nom** de fichier du dossier des secrets) | la valeur ne passe jamais par un argument ; non exposée aux modèles | — | **réservée** |
+| `atelier_projets_lier` | `projet`, `vers`, `type`, `retirer?` | relations de wikichat (`set_project_meta`), reprises par la carte | relations d'avant | réversible |
+| `atelier_projet_structurer` | `projet`, `titre?`, `description?`, `a_blanc?` | migration vers la structure type sans rien écraser ; un commit ; `a_blanc` en lecture | `atelier_projet_destructurer` | **engageante** |
 | `atelier_app_demarrer` / `_arreter` | `projet`, `nom` | existent (`atelier_artefact_*`) | l'autre | réversible |
 
-Elles s'appuient sur les routes existantes (`POST /v1/projects`, `/mcp/import`, `POST /agent`).
+Classes réelles au 26/09 (vague 2, équipe K) : le détail est au transverse §1.8, « Commandes de
+création ». Elles s'appuient sur l'existant : le Pilote de wikichat (comme `POST /v1/agent`), le
+pool de la passerelle (comme `PUT /v1/mcp/servers/<nom>`), `mcp_sync`, `set_project_meta`. Annuler
+une action engageante applique son inverse sans nouvel accord quand son auteur l'annule.
 Les commandes réservées (installer, partager, pousser, accorder, supprimer) **n'existent pas comme
 outils** de l'Assistant : il ouvre l'écran d'accord.
 
