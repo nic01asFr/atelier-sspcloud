@@ -31,7 +31,7 @@ Références :
    un test contre lui.
 6. **Pod** : lecture seule, sauf pour l'équipe Mesures, dans un dossier jetable. Aucun
    redémarrage de service. Aucun secret lu ni affiché.
-7. **Règles du socle** (`docs/consignes/socle.md`) :
+7. **Règles du socle** (`atelier-src/mcp_gateway/atelier/consignes/socle.md`) :
    - commits en français, à l'infinitif ;
    - pas d'emojis dans le code ;
    - pas de `pkill -f`, pas d'écoute sur `0.0.0.0`.
@@ -99,7 +99,7 @@ réparations sont proposées par des agents dédiés, lancés par l'Atelier.
 | W | wikichat, `C:/Users/Omen/Desktop/LAVAL/wikichat-lot-w`, `lot-w` (depuis `atelier-coherence`) | tout le dépôt wikichat | — |
 | F | Atelier, `…/atelier-fondations`, `fondations` | `mcp_gateway/atelier/commandes/` (nouveau), `journal.py`, `decisions.py`, `projects.py`, `project_context.py`, `git_repos.py`, `bin/atelier-relancer`, `bin/atelier-verifier-coherence`, `install/`, `mcp_gateway/mcp/gateway.py` (vérification de classe) | une ligne dans `api.py` et `config.py` |
 | P | Atelier, `…/atelier-panneau`, `panneau` | `mcp_gateway/atelier/web/`, `artifacts.py`, `artefacts_servis.py`, `apps/` (dont `passage.py`, `proxy.py`), `outils_conversation.py` | une ligne dans `api.py` |
-| G | Atelier, `…/atelier-gardiens`, `gardiens` | `mcp_gateway/gardiens/` (nouveau), `docs/consignes/socle.md` (section hooks), hooks du socle | une ligne dans `install/atelier-init.sh`, coordonnée avec F |
+| G | Atelier, `…/atelier-gardiens`, `gardiens` | `mcp_gateway/gardiens/` (nouveau), `atelier-src/mcp_gateway/atelier/consignes/socle.md` (section hooks), hooks du socle | une ligne dans `install/atelier-init.sh`, coordonnée avec F |
 | M | aucun code ; documents `docs/vision/mesures-*.md` | — | — |
 
 Base commune : `main` + les documents de vision (commit local `vision-et-plan`). Les worktrees de l'Atelier sont **dans** le dossier du dépôt principal (`Claude Code sspcloud/atelier-*`), exclus du suivi par `.git/info/exclude`.
@@ -124,5 +124,5 @@ aux équipes concernées.
 |---|---|
 | 1 | **déployée le 25/09 au soir** : `main` = `776fb73`, wikichat `atelier-coherence` = `82a06ce`. Atelier, wikichat (lot W, `~/.wikichat` sur le volume) et exécuteur des gardiens en service. Vérifié en réel : cohérence sans écart, 29 commandes, journal, « À valider », hook du socle qui bloque, carte wikichat (35 projets, 46 liens), migration W2 sans conflit |
 | 2 | **déployée le 26/09** : `main` = `91e3e13`, wikichat `098460c`. Vérifié en réel : vérificateur 0 écart (27 dossiers × 4 surfaces) ; vue Agents avec gardiens, « À valider », journal ; bureau QGIS en direct dans le panneau ; route de lancement (clé 0600, 401 sans clé). Correctif après déploiement : dossiers d'agent acceptés comme cible de lancement |
-| 3 | **intégrée le 26/09** sur `integration-v3` : A (Assistant), M (mémoire, T10, W8), N (navigateur en direct, J-f2, J-f3), plus wikichat `v3-memoire`. J8 reporté |
+| 3 | **déployée le 26/09** : `main` = `a98e2cf`, puis correctifs et résumé direct de la mémoire `20e6235` ; wikichat `43f029d`, puis `2c3e017`. Lots A (Assistant), M (mémoire, T10, W8), N (navigateur en direct, J-f2, J-f3). Vérifié en réel : vérificateur 0 écart ; Assistant de bout en bout ; navigateur en direct, prise de main et refus d'une action obsolète ; Ma mémoire ; essai de nuit sur 3 conversations. J8 reporté |
 | 4 | — |

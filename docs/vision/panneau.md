@@ -21,7 +21,7 @@ Détail, mesures et limites : `docs/navigateur-atelier.md` § 8.
 | **Panneau (J-f2)** | Un outil `new_page`, `navigate_page` ou `select_page` dans le flux ajoute l'onglet « Navigateur de l'agent » : panneau fermé, il s'ouvre dessus ; autre onglet regardé, un signal ; replié par la personne, le signal passe sur le bouton du panneau. Flux vivant (cadre retiré masqué), jamais épinglé ; retrouvé au chargement d'une conversation dont le navigateur est ouvert | `web/js/views/panneau.js` |
 | **Routes de l'Atelier** | `GET /v1/ecran/<id>` (état, sans port), `GET /v1/ecran/<id>/ouvrir` (code de portée `conversation:<id>`), `POST /v1/ecran/<id>/main` | `navigateur_routes.py` ; `app.state.diffusion` (une ligne dans `api.py`) |
 | **J-f3** | Lectures du navigateur autorisées d'office (`permissions.allow`) dans les réglages de chaque tour, de VS Code, du terminal et de wikichat | `navigateur.py` (`OUTILS_EN_LECTURE`, `regles_de_lecture_du_navigateur`) |
-| **Consignes** | `atelier_navigateur_ouvrir`, jamais `file://` ; lectures libres ; main de la personne et note de reprise | `docs/consignes/socle.md`, `docs/consignes/chrome-devtools-atelier.md` |
+| **Consignes** | `atelier_navigateur_ouvrir`, jamais `file://` ; lectures libres ; main de la personne et note de reprise | `atelier-src/mcp_gateway/atelier/consignes/socle.md`, `docs/consignes/chrome-devtools-atelier.md` |
 
 ### Vérifié
 

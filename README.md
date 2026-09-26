@@ -32,19 +32,49 @@ d'anciennes sessions de déploiement.
 
 ---
 
-## Les quatre onglets
+## Ce qu'on y fait
 
-**Code** — les conversations, rangées par projet. Une conversation crée son
-projet à l'envoi du premier message. Chaque conversation peut s'ouvrir dans VS
-Code, sur elle-même.
+Le guide de référence, fonctionnalité par fonctionnalité (à quoi elle sert,
+comment s'en servir pour la personne et pour un agent, ce qu'elle ne fait
+pas, où est le code) : **[`docs/fonctionnalites.md`](docs/fonctionnalites.md)**.
+En résumé :
 
-**Assistant** — la mémoire des projets, qui travaille dans son propre dossier,
-une conversation par sous-dossier.
+- **Projets et conversations** : un projet est un dépôt git sous
+  `~/work/projects/` ; une conversation y fait travailler un agent Claude
+  Code, la même dans l'interface, dans VS Code et au terminal, avec les
+  mêmes outils et le même mode de travail (Plan, Demande, Édite, Sans
+  garde-fou).
+- **L'Assistant** : la porte d'entrée. Il lit la carte de l'Atelier, règle
+  ses objets par les commandes (cartes d'action avec « Annuler »), et confie
+  le travail dans les projets à des agents code.
+- **Commandes, « À valider », journal** : un seul catalogue de commandes,
+  chacune avec sa classe (lecture, réversible, engageante, réservée) et son
+  inverse ; une seule file de ce qui attend l'accord de la personne ; un seul
+  journal de qui a fait quoi.
+- **Créations et panneau** : ce qu'un agent fabrique (pages ou applications)
+  est servi par l'hôte des applications, derrière la connexion de l'Atelier,
+  et s'ouvre dans le panneau à côté du fil ; les bureaux du namespace (QGIS,
+  Blender, n8n) y sont relayés.
+- **Navigateur de l'agent** : un Chrome par conversation, que la personne
+  regarde en direct et dont elle peut prendre la main.
+- **Connecteurs** : un pool de serveurs MCP, choisis projet par projet, secrets
+  par référence ; l'Atelier se branche aussi comme connecteur dans claude.ai.
+- **wikichat** : coordination entre agents, connaissance, cartographie des
+  projets, agents planifiés ; leurs lancements passent par l'Atelier.
+- **Mémoire** : fiches de chaque conversation, retrouvées par
+  `atelier_rappel` ; « Ma mémoire » pour ce que l'Atelier retient de la
+  personne, qui n'y entre qu'avec son accord.
+- **Gardiens** : contrôles de santé et de sécurité en code, sans modèle, dans
+  la vue Agents ; réparations proposées sur une branche, fusionnées par la
+  personne.
+- **Profils d'accès** : un agent code ne reçoit que les outils de son projet
+  (et Onyxia seulement pour le pod que son projet déclare) ; l'Assistant
+  reçoit tout, par ses méta-outils.
 
-**Connecteurs** — les services MCP : le socle que l'Atelier fournit, ceux que
-l'on branche, et les compositions.
-
-**Agents** — les agents systèmes et personnels, leur outillage et leur activité.
+Les vues de l'interface (Code, Assistant, Connecteurs, Agents, À valider,
+Journal, Ma mémoire) sont en cours de reprise : leurs noms peuvent changer.
+Ce que les agents doivent savoir tient dans le socle de leurs consignes,
+[`atelier-src/mcp_gateway/atelier/consignes/socle.md`](atelier-src/mcp_gateway/atelier/consignes/socle.md).
 
 ---
 
@@ -90,13 +120,21 @@ JavaScript en dépendent.
 
 | Document | Contenu |
 |----------|---------|
+| [`docs/fonctionnalites.md`](docs/fonctionnalites.md) | **le guide de référence** : chaque fonctionnalité, ses usages, son code, sa doc |
 | [`docs/installer.md`](docs/installer.md) | installer l'Atelier sur son propre pod SSPCloud |
+| [`docs/consignes/`](docs/consignes/README.md) | les consignes des agents : le socle commun et celles de projets précis |
+| [`docs/vision/`](docs/vision/) | la vision, l'architecture transverse, les décisions, le plan par vagues et son suivi |
+| [`docs/structure-projet.md`](docs/structure-projet.md) | la structure type d'un projet et sa migration |
+| [`docs/atelier-applications.md`](docs/atelier-applications.md) | les créations : hôte des applications, supervision, mandataire |
+| [`docs/navigateur-atelier.md`](docs/navigateur-atelier.md) | le navigateur des agents, l'écran en direct, « Prendre la main » |
+| [`docs/onyxia-projet.md`](docs/onyxia-projet.md) | Onyxia lié au déploiement d'un projet |
 | [`docs/atelier-mcp-unified.md`](docs/atelier-mcp-unified.md) | le registre MCP unifié : vision, trois niveaux de configuration, état et phasage |
 | [`docs/atelier-mcp-implementation-plan.md`](docs/atelier-mcp-implementation-plan.md) | le détail opérationnel du phasage |
+| [`docs/atelier-mcp-distant.md`](docs/atelier-mcp-distant.md) | l'Atelier comme connecteur MCP d'un client distant |
 | [`docs/atelier-wikichat-alignment.md`](docs/atelier-wikichat-alignment.md) | l'articulation avec wikichat |
 | [`docs/atelier-vscode-passage-de-main.md`](docs/atelier-vscode-passage-de-main.md) | comment une conversation s'ouvre dans VS Code, et pourquoi c'est indirect |
-| [`docs/superpowers/specs/`](docs/superpowers/specs/) | le design du shell unifié |
-| [`docs/superpowers/plans/`](docs/superpowers/plans/) | le plan d'implémentation correspondant |
+| [`docs/coherence-projet.md`](docs/coherence-projet.md) | la cohérence entre surfaces et les déploiements |
+| [`docs/superpowers/`](docs/superpowers/) | le design du shell unifié et son plan d'implémentation |
 
 ---
 
@@ -123,9 +161,13 @@ Apache-2.0, voir [`LICENSE`](LICENSE). Elle ne couvre que le code de ce dépôt.
 
 ## État
 
-Le shell unifié, les conversations de projet, les connecteurs et les
-compositions sont en service ; les vues Assistant et Agents existent, et
-attendent un état des lieux mesuré avant qu'on les dise en service.
+Les vagues 1 et 2 de la vision sont déployées et vérifiées sur le pod
+(commandes, journal, « À valider », gardiens, vue Agents, carte, bureaux
+relayés, cohérence des surfaces sans écart) ; la vague 3 (Assistant,
+navigateur en direct, mémoire) est intégrée et en essai. Le suivi est dans
+[`docs/vision/plan-implementation.md`](docs/vision/plan-implementation.md)
+§5, le détail par fonctionnalité dans
+[`docs/fonctionnalites.md`](docs/fonctionnalites.md).
 
 **Une conversation, une histoire.** L'Atelier et le CLI n'écrivent plus deux
 cahiers : ce qui se dit dans VS Code apparaît en direct dans l'onglet, et

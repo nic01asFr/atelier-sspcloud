@@ -69,8 +69,8 @@ ignorés. Vérifie `git status` en début de session : des fichiers de
   `/v1/artifacts/nouveau-projet-4/@<jeton>/cerveau/`. Depuis le 24/09 il est
   en bac à sable comme tout artefact : la page n'a plus accès ni à la clé
   owner, ni au cookie, ni à l'API ; ses CSS, JS et pages relatifs se chargent
-  par le jeton du chemin (règles exactes dans `socle.md`, « Montrer ce que tu
-  produis »). Garde toutes les adresses du corpus relatives. Ne crée pas
+  par le jeton du chemin (règles exactes dans le socle, `~/work/projects/CLAUDE.md`,
+  « Montrer ce que tu produis »). Garde toutes les adresses du corpus relatives. Ne crée pas
   d'autre `.corpus` et n'en déplace pas sans que la personne l'ait demandé.
 - `outils/serveur.py` (127.0.0.1, port 8770 par défaut, `--port N`) et
   `findings/server.mjs` (127.0.0.1, port 8771 par défaut, `--port N`) sont des
@@ -85,7 +85,7 @@ ignorés. Vérifie `git status` en début de session : des fichiers de
 - Les résultats publiables (`artifacts/findings/`) sont des pages statiques
   autonomes : elles se lisent sans serveur.
 - L'éditeur du corpus enregistre par `PUT` relatif à l'adresse de la page
-  (voir `socle.md`) : dans `cerveau/` seulement, jamais de point-fichier, et
+  (voir le socle) : dans `cerveau/` seulement, jamais de point-fichier, et
   avec `If-Match` sur l'`ETag` lu, sinon deux onglets s'écrasent. Ce que ce
   `PUT` ne couvre pas (un traitement côté serveur, un autre dossier) attend le
   mécanisme d'applications de l'Atelier : dis-le, ne le contourne pas par un

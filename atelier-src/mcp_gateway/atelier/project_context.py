@@ -155,7 +155,7 @@ def bloc_contexte(
         " `sante`, `protocoles`, `repertoire` relatif au dossier), puis"
         " `atelier_artefact_verifier` et `atelier_artefact_demarrer`.",
         "- `atelier_montrer(nom)` l'ouvre dans le panneau de la personne ;"
-        " `atelier_navigateur_ouvrir(nom)` dans ton navigateur. Sans MCP,"
+        " `atelier_navigateur_ouvrir(chemin=\"<nom>/\")` dans ton navigateur. Sans MCP,"
         " `~/work/bin/atelier-app`.",
         "",
         "### Le web",

@@ -378,6 +378,20 @@ fi
 export ANTHROPIC_MODEL="\${ANTHROPIC_MODEL:-$MODELE}"
 EOF
 
+# --- socle des agents -----------------------------------------------------
+# ~/work/projects/CLAUDE.md, lu par tous les agents code sur toutes les
+# surfaces, posé depuis le code déployé (mcp_gateway/atelier/consignes/socle.md).
+# Écriture atomique ; un fichier modifié à la main est gardé en copie datée
+# sous ~/work/.atelier-etat/socle/ et l'événement va au journal unique. Le
+# démarrage de l'Atelier refait la même pose (atelier-relancer compris).
+
+mkdir -p "$WORK/projects"
+if etat_socle="$(cd "$SRC_ATELIER" && ATELIER_WORK="$WORK" python3 -m mcp_gateway.atelier.socle 2>/dev/null)"; then
+  dire "socle des agents : $etat_socle"
+else
+  avertir "le socle des agents n'a pas été posé : ${etat_socle:-module introuvable}"
+fi
+
 # --- démarrage ------------------------------------------------------------
 
 demarrer_relais_llm() {

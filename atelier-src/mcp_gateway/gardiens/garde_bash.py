@@ -1,6 +1,6 @@
 """Hook `PreToolUse` du socle : refuser, avant qu'elle parte, une commande qui a déjà cassé le pod.
 
-Deux familles de refus (`docs/consignes/socle.md`, « Hooks du socle ») :
+Deux familles de refus (`mcp_gateway/atelier/consignes/socle.md`, « Hooks du socle ») :
 
 1. **Tuer par motif** : `killall <nom>`, `pkill` sur un motif non ancré,
    `kill $(pgrep …)` / `pgrep … | xargs kill`. Le 18/09, `pkill -f "server.mjs"`

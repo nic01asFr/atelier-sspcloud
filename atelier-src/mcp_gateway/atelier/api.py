@@ -637,6 +637,16 @@ def build_app(
                     alignement()
                 except OSError:
                     pass
+            # Le socle des agents (`projects/CLAUDE.md`), depuis le code
+            # déployé : une relance après un déploiement le met à jour.
+            from mcp_gateway.atelier.socle import poser_le_socle
+
+            try:
+                await asyncio.to_thread(
+                    poser_le_socle, settings, journal=getattr(app.state, "journal_unique", None) or "defaut"
+                )
+            except OSError as exc:
+                log.warning("socle des agents non posé : %s", exc)
             await gateway_startup(app, settings)
         # Les groupes laissés par un Atelier mort sans rien arrêter, puis la
         # surveillance des applications.

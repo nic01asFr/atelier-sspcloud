@@ -22,7 +22,7 @@
 > lectures (`list_pages`, `take_snapshot`, `take_screenshot`, `wait_for`,
 > console, réseau) sont autorisées d'office ; quand la personne prend la main,
 > ses actions attendent, et une « Note de l'Atelier » lui dit ce qui a changé
-> quand elle la rend (`docs/consignes/socle.md`, « Ton navigateur »).
+> quand elle la rend (le socle, `~/work/projects/CLAUDE.md`, « Ton navigateur »).
 
 Ce projet est un fork de `ChromeDevTools/chrome-devtools-mcp` avec une couche
 `src/cerema/` : un navigateur Chrome piloté par MCP, **une conversation
