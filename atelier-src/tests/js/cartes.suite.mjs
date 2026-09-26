@@ -639,9 +639,12 @@ function demandeQuestion(questions, extra = {}) {
     ],
   });
 
-  const corps = message.querySelector(".msg-blocs");
-  verifier(corps !== null, "le corps du message accueille les blocs");
-  egal(corps.children.length, 2, "la parole et la carte, chacune son nœud");
+  // Une réponse de l'agent se lit en étapes : la parole d'avant la demande
+  // y devient narration, la demande ne se replie jamais.
+  const corps = message.querySelector(".tour-visibles");
+  verifier(corps !== null, "le corps du message accueille ce qui ne se replie jamais");
+  egal(corps.children.length, 1, "la carte, hors du pli des étapes");
+  porte(texte(message.querySelector(".tour-etapes-liste")), "Je dois effacer ce dossier.", "et la parole dans les étapes");
   const carte = corps.querySelector(".msg-decision");
   verifier(carte !== null, "la carte de décision est bien rendue par ce chemin");
   cliquer(exige(carte.querySelector(".msg-decision-oui"), "« Autoriser » est offert"));

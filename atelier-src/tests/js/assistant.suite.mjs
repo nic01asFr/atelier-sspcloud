@@ -294,6 +294,16 @@ const MOTS_INTERNES = ["artefact", "MCP", "jeton", "composition", "gabarit", "ex
     { role: "assistant", text: "", blocks: [outilDe("t1", '{"forme": "projet"}'), outilDe("t2", carteLongue)] },
   ]);
   const vue = createCodeChatView({ state, render: () => {}, composerInput: null, actions: {} });
+  const { poserReglagesDuFil } = await import("../../mcp_gateway/atelier/web/js/ui/etapes.js");
+  // Par défaut, le brut reste dans « Voir les étapes », construit seulement
+  // quand on déplie : rien n'est rendu, la carte d'action est là.
+  poserReglagesDuFil({ raisonnement: false, actions: false });
+  vue.renderThread();
+  egal(resultats().length, 0, "par défaut, aucun résultat brut dans le fil");
+  porte(texte(fil), "Projet créé", "la carte d'action se voit sans rien déplier");
+  // « Montrer les actions et leurs résultats bruts » : les règles de repli
+  // des résultats s'appliquent alors comme avant.
+  poserReglagesDuFil({ actions: true });
   vue.renderThread();
   egal(resultats().length, 2, "deux résultats rendus");
   verifier(resultats().every((d) => d.open === false), "dans l'Assistant, tout résultat est replié, même court");
@@ -310,6 +320,7 @@ const MOTS_INTERNES = ["artefact", "MCP", "jeton", "composition", "gabarit", "ex
   ]);
   vue.renderThread();
   egal(resultats().map((d) => d.open), [true, false], "en Code : court déplié, long replié");
+  poserReglagesDuFil({ actions: false });
   fil.remove();
 }
 

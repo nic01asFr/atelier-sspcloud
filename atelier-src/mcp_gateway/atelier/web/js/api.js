@@ -483,6 +483,9 @@ export function messagesFromTranscript(transcriptText) {
   // que l'interface et le serveur désignent le même message quand on demande
   // de reprendre la conversation à cet endroit.
   let rangUser = 0;
+  // L'heure de la dernière ligne lue : celle d'une réponse est l'heure de sa
+  // dernière ligne, pour le pied du message (« 14:05 · Copier · Relancer »).
+  let derniereHeure = "";
   // Ce qui a déjà été lu, par identifiant. Une conversation s'écrit dans deux
   // registres fondus par le service ; si une même ligne y figure sous deux
   // formes, elle garde son `message.id`, et un appel d'outil son `id`. On ne
@@ -526,6 +529,7 @@ export function messagesFromTranscript(transcriptText) {
       role: "assistant",
       text,
       blocks: [...blocks],
+      ...(derniereHeure ? { horodatage: derniereHeure } : {}),
     });
     blocks.length = 0;
     textAcc = "";
@@ -546,6 +550,7 @@ export function messagesFromTranscript(transcriptText) {
       if (lignesVues.has(obj.uuid)) continue;
       lignesVues.add(obj.uuid);
     }
+    if (typeof obj.timestamp === "string" && obj.timestamp) derniereHeure = obj.timestamp;
 
     // Ne pas rejouer stream_event : le fichier transcript contient déjà les lignes
     // assistant/result finales ; les deltas doublonnent texte et thinking au reload.
@@ -612,7 +617,12 @@ export function messagesFromTranscript(transcriptText) {
       if (dit && !obj.isMeta) {
         // Un mot de l'utilisateur clôt la réponse en cours.
         pushAssistant();
-        messages.push({ role: "user", text: dit, rang: rangUser });
+        messages.push({
+          role: "user",
+          text: dit,
+          rang: rangUser,
+          ...(derniereHeure ? { horodatage: derniereHeure } : {}),
+        });
         rangUser += 1;
       }
     } else if (type === "system") {
@@ -735,6 +745,35 @@ export function mergeAssistantText(buf, chunk, rawType = "") {
 
 export async function getMeta(token) {
   const res = await fetch("/v1/meta", { headers: jsonHeaders(token) });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/**
+ * Les réglages d'affichage du fil, retenus par le service (`ui.json`).
+ *
+ * @param {{ raisonnement?: boolean, actions?: boolean }} reglages
+ */
+export async function enregistrerReglagesFil(reglages) {
+  const corps = {};
+  if (typeof reglages?.raisonnement === "boolean") corps.fil_raisonnement = reglages.raisonnement;
+  if (typeof reglages?.actions === "boolean") corps.fil_actions = reglages.actions;
+  const res = await fetch("/v1/meta", {
+    method: "PUT",
+    headers: jsonHeaders(),
+    body: JSON.stringify(corps),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Le thème de l'interface, retenu par le service : `systeme`, `clair`, `sombre`. */
+export async function enregistrerTheme(theme) {
+  const res = await fetch("/v1/meta", {
+    method: "PUT",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ theme }),
+  });
   if (!res.ok) await parseError(res);
   return res.json();
 }

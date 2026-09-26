@@ -32,6 +32,9 @@ import { openModal } from "./ui/modal.js?v=modal2";
 import { createComposerMcpController } from "./controllers/composer-mcp.js";
 import { createComposerInputController } from "./controllers/composer-input.js";
 import { createAuthController } from "./controllers/auth.js";
+import { createReglagesFil } from "./controllers/reglages-fil.js";
+import { createTheme } from "./controllers/theme.js";
+import { installerRaccourcis } from "./ui/raccourcis.js";
 
 function createApp() {
   const state = S.createState();
@@ -215,6 +218,13 @@ function createApp() {
   const memoireActions = createMemoireActions({ state, api, render, naviguer: (v) => navigateView(v) });
   const memoire = { render: () => rendreMemoire($("memoire-corps"), state, memoireActions) };
   const assistantActions = createAssistantActions({ state, render, writeQuery, api });
+  // Une conversation neuve de l'Assistant abandonne, elle aussi, une lecture
+  // en route (voir `abandonnerLOuverture`).
+  const nouvelleDeLAssistant = assistantActions.nouvelle;
+  assistantActions.nouvelle = () => {
+    sessionActions.abandonnerLOuverture();
+    nouvelleDeLAssistant();
+  };
   const assistant = createAssistantView({
     state,
     render,
@@ -230,12 +240,35 @@ function createApp() {
   });
   ctx.views = { codeTree, codeChat, connectors, composerMcp, agent, panneau, fils, aValider, journal, assistant, memoire };
 
+  // « Détails techniques » : raisonnement et actions brutes, dans le fil.
+  const reglagesFil = createReglagesFil({
+    api,
+    rendreLeFil: () => ctx.views.codeChat?.renderThread(),
+    erreur: (msg) => {
+      S.setError(state, msg);
+      render();
+    },
+  });
+
+  // « Affichage » : le thème, suivi du système par défaut, clair ou sombre.
+  const theme = createTheme({
+    api,
+    erreur: (msg) => {
+      S.setError(state, msg);
+      render();
+    },
+  });
+
   const auth = createAuthController({
     state,
     render,
     writeQuery,
     sessionActions,
     connectorActions,
+    apresMeta: (meta) => {
+      reglagesFil.appliquerMeta(meta);
+      theme.appliquerMeta(meta);
+    },
     apresEntree: () => {
       validation.rafraichirCompte();
       validation.veiller();
@@ -345,6 +378,7 @@ function createApp() {
       agentActions.showAgentList()
     );
     $("btn-shell-back-code")?.addEventListener("click", () => {
+      sessionActions.abandonnerLOuverture();
       S.setSessionId(state, null);
       S.setMessages(state, []);
       S.setPendingProjectSlug(state, null);
@@ -404,6 +438,18 @@ function createApp() {
     }
     bindModal(state);
     bindContextMenu(state);
+    reglagesFil.bind();
+    theme.bind();
+    installerRaccourcis({
+      state,
+      naviguer: (v) => navigateView(v),
+      nouvelleConversation: () =>
+        S.estAssistant(state) ? assistantActions.nouvelle() : sessionActions.newConversation(),
+      fermerLesPanneaux: () => {
+        reglagesFil.fermer({ rendreLeFocus: true });
+        theme.fermer({ rendreLeFocus: true });
+      },
+    });
   }
 
   async function boot() {

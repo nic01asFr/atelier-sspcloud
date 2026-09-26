@@ -1,0 +1,228 @@
+/* Les couleurs de l'Atelier — le seul fichier où une couleur s'écrit.
+ *
+ * Généré depuis une table (nom, sombre, clair) : les deux thèmes ont les mêmes
+ * jetons, et `app.css` n'emploie que ces jetons (tests/js/jetons.suite.mjs y
+ * veille). Contrastes mesurés et consignés dans docs/ui/audit.md.
+ *
+ * Trois choix, retenus par personne (réglage « Thème ») :
+ *   - suivre le système : pas d'attribut, `prefers-color-scheme` décide ;
+ *   - clair : `<html data-theme="clair">` ;
+ *   - sombre : `<html data-theme="sombre">`.
+ * `js/theme-initial.js` pose l'attribut avant le premier rendu : pas de flash.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --surface-0: #0c0f13; /* barres (en-tête, colonne des conversations) */
+  --surface-1: #121519; /* la page */
+  --surface-2: #1b2029; /* cartes, champs, panneaux */
+  --surface-3: #262d38; /* bulle de la personne, menus flottants */
+  --surface-survol: rgba(255, 255, 255, 0.06); /* survol */
+  --surface-legere: rgba(255, 255, 255, 0.03); /* fond à peine marqué */
+  --surface-active: rgba(208, 176, 124, 0.14); /* élément choisi */
+  --surface-active-fort: rgba(208, 176, 124, 0.2); /* élément choisi, appuyé */
+  --code-fond: #0b0e12; /* blocs de code, résultats d'outil */
+  --code-fond-fort: #080a0d; /* code dans un bloc déjà sombre */
+
+  /* Texte */
+  --texte-1: #eceff2; /* texte courant : AAA sur la page et les cartes */
+  --texte-2: #bcc6d1; /* texte secondaire */
+  --texte-3: #9ca8b5; /* texte discret : AA partout, y compris sur la bulle */
+  --sur-accent: #1a140c; /* texte sur un bouton principal */
+  --sur-erreur: #1a0f0e; /* texte sur un fond d'erreur plein */
+
+  /* Traits */
+  --line: #333d4b; /* séparations et bordures de cartes */
+  --bordure-champ: #66748a; /* bordure d'un champ : 3:1 au moins */
+
+  /* Accent et états */
+  --accent: #d0b07c; /* action principale, liens */
+  --accent-dim: #9a8052; /* bordure d'accent */
+  --accent-clair: #dcc193; /* survol de l'accent */
+  --focus: #f0d29a; /* anneau de focus */
+  --anneau-focus: rgba(208, 176, 124, 0.25); /* halo d'un champ actif */
+  --ok: #5cc08e;
+  --attention: #ddb44e;
+  --erreur: #e0857c;
+  --info: #74aee6;
+
+  /* Badges (fond, texte) */
+  --ok-fond: #173a28;
+  --ok-texte: #9fe0b8;
+  --info-fond: #16304f;
+  --info-texte: #aed0f5;
+  --erreur-fond: #4a1c1c;
+  --erreur-texte: #f6b1ab;
+  --attention-fond: #3d3318;
+  --attention-texte: #ecce8a;
+  --bandeau-fond: #3a1f1c; /* bandeau d'erreur */
+  --bandeau-texte: #f6cdc8;
+
+  /* Coloration du code */
+  --hl-mot: #8cc2ef;
+  --hl-chaine: #a8d8a0;
+  --hl-nombre: #e0b07a;
+  --hl-variable: #eec27a;
+
+  /* Voiles, ombres, fonds */
+  --voile: rgba(6, 8, 11, 0.72); /* derrière une fenêtre */
+  --voile-leger: rgba(6, 8, 11, 0.55);
+  --ombre-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --ombre-2: 0 10px 30px rgba(0, 0, 0, 0.5);
+  --anneau-pastille: rgba(0, 0, 0, 0.25);
+  --fond-login-1: #1e2836; /* dégradés de l'écran de connexion */
+  --fond-login-2: #1a2218;
+  --fond-degrade-fil: #151920;
+  --cadre-app-fond: #ffffff; /* fond d'une création ouverte dans le panneau */
+  --masque-opaque: #000000; /* partie opaque d'un masque (seul l'alpha compte) */
+
+  /* Anciens noms */
+  --bg: var(--surface-1);
+  --bg-elev: var(--surface-2);
+  --bg-sidebar: var(--surface-0);
+  --text: var(--texte-1);
+  --muted: var(--texte-3);
+  --danger: var(--erreur);
+  --user: var(--surface-3);
+  --assistant: var(--surface-2);
+}
+
+:root[data-theme="clair"] {
+  color-scheme: light;
+
+  /* Surfaces */
+  --surface-0: #eceae5;
+  --surface-1: #f6f5f2;
+  --surface-2: #ffffff;
+  --surface-3: #efede8;
+  --surface-survol: rgba(20, 24, 30, 0.05);
+  --surface-legere: rgba(20, 24, 30, 0.03);
+  --surface-active: rgba(133, 96, 28, 0.10);
+  --surface-active-fort: rgba(133, 96, 28, 0.16);
+  --code-fond: #f1efea;
+  --code-fond-fort: #e9e6df;
+
+  /* Texte */
+  --texte-1: #1b2027;
+  --texte-2: #3f4853;
+  --texte-3: #5b6673;
+  --sur-accent: #ffffff;
+  --sur-erreur: #ffffff;
+
+  /* Traits */
+  --line: #d8d4cc;
+  --bordure-champ: #858e9b;
+
+  /* Accent et états */
+  --accent: #85601c;
+  --accent-dim: #b8975a;
+  --accent-clair: #6f4f15;
+  --focus: #85601c;
+  --anneau-focus: rgba(133, 96, 28, 0.25);
+  --ok: #1d7a4c;
+  --attention: #8a6300;
+  --erreur: #b3372d;
+  --info: #245f9e;
+
+  /* Badges (fond, texte) */
+  --ok-fond: #e3f3ea;
+  --ok-texte: #1b6a43;
+  --info-fond: #e3eefa;
+  --info-texte: #1f558f;
+  --erreur-fond: #fbe7e5;
+  --erreur-texte: #9c2f26;
+  --attention-fond: #faf0d9;
+  --attention-texte: #7a5700;
+  --bandeau-fond: #fbe7e5;
+  --bandeau-texte: #8a2a22;
+
+  /* Coloration du code */
+  --hl-mot: #1f5fa6;
+  --hl-chaine: #2d7a36;
+  --hl-nombre: #9a5a12;
+  --hl-variable: #8a4a00;
+
+  /* Voiles, ombres, fonds */
+  --voile: rgba(20, 24, 30, 0.45);
+  --voile-leger: rgba(20, 24, 30, 0.3);
+  --ombre-1: 0 1px 2px rgba(20, 24, 30, 0.08);
+  --ombre-2: 0 10px 30px rgba(20, 24, 30, 0.16);
+  --anneau-pastille: rgba(20, 24, 30, 0.08);
+  --fond-login-1: #e7ecf3;
+  --fond-login-2: #edf2e7;
+  --fond-degrade-fil: #f1f0ec;
+  --cadre-app-fond: #ffffff;
+  --masque-opaque: #000000;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="sombre"]) {
+    color-scheme: light;
+
+    /* Surfaces */
+    --surface-0: #eceae5;
+    --surface-1: #f6f5f2;
+    --surface-2: #ffffff;
+    --surface-3: #efede8;
+    --surface-survol: rgba(20, 24, 30, 0.05);
+    --surface-legere: rgba(20, 24, 30, 0.03);
+    --surface-active: rgba(133, 96, 28, 0.10);
+    --surface-active-fort: rgba(133, 96, 28, 0.16);
+    --code-fond: #f1efea;
+    --code-fond-fort: #e9e6df;
+
+    /* Texte */
+    --texte-1: #1b2027;
+    --texte-2: #3f4853;
+    --texte-3: #5b6673;
+    --sur-accent: #ffffff;
+    --sur-erreur: #ffffff;
+
+    /* Traits */
+    --line: #d8d4cc;
+    --bordure-champ: #858e9b;
+
+    /* Accent et états */
+    --accent: #85601c;
+    --accent-dim: #b8975a;
+    --accent-clair: #6f4f15;
+    --focus: #85601c;
+    --anneau-focus: rgba(133, 96, 28, 0.25);
+    --ok: #1d7a4c;
+    --attention: #8a6300;
+    --erreur: #b3372d;
+    --info: #245f9e;
+
+    /* Badges (fond, texte) */
+    --ok-fond: #e3f3ea;
+    --ok-texte: #1b6a43;
+    --info-fond: #e3eefa;
+    --info-texte: #1f558f;
+    --erreur-fond: #fbe7e5;
+    --erreur-texte: #9c2f26;
+    --attention-fond: #faf0d9;
+    --attention-texte: #7a5700;
+    --bandeau-fond: #fbe7e5;
+    --bandeau-texte: #8a2a22;
+
+    /* Coloration du code */
+    --hl-mot: #1f5fa6;
+    --hl-chaine: #2d7a36;
+    --hl-nombre: #9a5a12;
+    --hl-variable: #8a4a00;
+
+    /* Voiles, ombres, fonds */
+    --voile: rgba(20, 24, 30, 0.45);
+    --voile-leger: rgba(20, 24, 30, 0.3);
+    --ombre-1: 0 1px 2px rgba(20, 24, 30, 0.08);
+    --ombre-2: 0 10px 30px rgba(20, 24, 30, 0.16);
+    --anneau-pastille: rgba(20, 24, 30, 0.08);
+    --fond-login-1: #e7ecf3;
+    --fond-login-2: #edf2e7;
+    --fond-degrade-fil: #f1f0ec;
+    --cadre-app-fond: #ffffff;
+    --masque-opaque: #000000;
+  }
+}

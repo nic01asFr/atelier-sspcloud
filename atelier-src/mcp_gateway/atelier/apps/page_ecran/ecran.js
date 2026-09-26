@@ -38,6 +38,17 @@ export function fractionDansImage(x, y, cadre, naturelle) {
   return { x: Math.round(fx * 10000) / 10000, y: Math.round(fy * 10000) / 10000 };
 }
 
+/**
+ * La taille de l'image dans la scène : la plus grande qui y tienne sans
+ * déformer, jamais agrandie au-delà du double de sa taille réelle.
+ */
+export function tailleAjustee(cadre, naturelle) {
+  const { largeur, hauteur } = naturelle;
+  if (!largeur || !hauteur || !cadre.width || !cadre.height) return null;
+  const echelle = Math.min(cadre.width / largeur, cadre.height / hauteur, 2);
+  return { largeur: Math.floor(largeur * echelle), hauteur: Math.floor(hauteur * echelle) };
+}
+
 /** Les touches de modification, dans le codage de DevTools (Alt 1, Ctrl 2, Meta 4, Maj 8). */
 export function modificateurs(ev) {
   return (ev.altKey ? 1 : 0) | (ev.ctrlKey ? 2 : 0) | (ev.metaKey ? 4 : 0) | (ev.shiftKey ? 8 : 0);
@@ -120,6 +131,11 @@ export function demarrer(doc, fen) {
   // elle qui partait (essais du 26/09).
   let saisie = false;
   let brouillon = false;
+  // « Prendre la main » attend l'accord du serveur, qui répond par un nouvel
+  // état. Entre les deux, le bouton ne disait rien : on recliquait. Il dit
+  // désormais qu'il attend, jusqu'à l'état suivant (ou deux secondes).
+  let demandeEnCours = false;
+  let minuterieDemande = 0;
 
   const naturelle = () => ({ largeur: image.naturalWidth, hauteur: image.naturalHeight });
 
@@ -133,8 +149,9 @@ export function demarrer(doc, fen) {
     champ.readOnly = !etat.main;
     champ.title = vue.titre;
     aller.hidden = !etat.main;
-    boutonMain.textContent = vue.bouton;
-    boutonMain.disabled = !vue.boutonActif;
+    boutonMain.textContent = demandeEnCours ? (etat.main ? "Retour à l'agent…" : "Prise de la main…") : vue.bouton;
+    boutonMain.disabled = demandeEnCours || !vue.boutonActif;
+    boutonMain.setAttribute("aria-busy", demandeEnCours ? "true" : "false");
     boutonMain.classList.toggle("rendre", !!etat.main);
     bandeau.textContent = vue.bandeau;
     bandeau.hidden = !vue.bandeau;
@@ -166,6 +183,8 @@ export function demarrer(doc, fen) {
       }
       if (recu.type === "etat") {
         etat = recu;
+        demandeEnCours = false;
+        fen.clearTimeout?.(minuterieDemande);
         // Main rendue : plus rien à soumettre, la barre suit la page.
         if (!etat.main) brouillon = false;
         rendre();
@@ -190,9 +209,32 @@ export function demarrer(doc, fen) {
   }
 
   boutonMain.addEventListener("click", () => {
+    if (demandeEnCours) return;
     envoyer({ type: "main", prendre: !etat.main });
+    demandeEnCours = true;
+    rendre();
+    minuterieDemande = fen.setTimeout(() => {
+      demandeEnCours = false;
+      rendre();
+    }, 2000);
     if (!etat.main) scene.focus();
   });
+
+  // L'image se pose à sa taille exacte, en haut de la scène : sans bandes.
+  // En `object-fit: contain` sur toute la scène, une page plus large que
+  // haute laissait deux bandes noires au-dessus et au-dessous (essais du
+  // 26/09). La boîte de l'image ayant les proportions de l'image, le calcul
+  // de `fractionDansImage` reste juste.
+  function ajuster() {
+    const cadre = { width: scene.clientWidth, height: scene.clientHeight };
+    const taille = tailleAjustee(cadre, naturelle());
+    if (!taille) return;
+    image.style.width = `${taille.largeur}px`;
+    image.style.height = `${taille.hauteur}px`;
+  }
+  image.addEventListener("load", ajuster);
+  if (typeof fen.ResizeObserver === "function") new fen.ResizeObserver(ajuster).observe(scene);
+  else fen.addEventListener?.("resize", ajuster);
 
   formulaire.addEventListener("submit", (ev) => {
     ev.preventDefault();

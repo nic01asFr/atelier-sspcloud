@@ -3,6 +3,34 @@
 import * as S from "../state.js";
 import { $ } from "../core/dom.js";
 import { showContextMenu } from "../ui/context-menu.js";
+import { icone } from "../ui/icones.js";
+
+/**
+ * Ce que l'arbre montre, réduit à une chaîne : deux rendus de même empreinte
+ * donnent le même arbre, au détail près de la ligne active.
+ *
+ * L'arbre était reconstruit à chaque rendu — et un tour en cours en déclenche
+ * des centaines, la veille de la liste un toutes les quinze secondes. Un clic
+ * qui tombait entre l'appui et le relâchement d'une reconstruction était
+ * perdu : le bouton pressé n'existait plus au relâchement. Le survol et le
+ * focus clavier sautaient de même.
+ */
+export function empreinteDeLArbre(state, projets, orphelines, sessionsDe) {
+  const lignes = [
+    state.montrerArchives ? "A" : "",
+    state.editingProjectSlug || "",
+    state.editingSessionId || "",
+    [...state.expandedSlugs].sort().join(","),
+  ];
+  const session = (x) =>
+    [x.session_id, x.title || "", x.state || "", x.turns ?? "", x.attend_une_decision ? 1 : 0].join("~");
+  for (const p of projets) {
+    lignes.push(["P", p.slug, p.title || "", p.archived ? 1 : 0, p.path || ""].join("~"));
+    if (state.expandedSlugs.has(p.slug)) for (const x of sessionsDe(p.slug)) lignes.push(session(x));
+  }
+  for (const x of orphelines) lignes.push("O" + session(x));
+  return lignes.join("|");
+}
 
 /**
  * @param {object} ctx
@@ -77,7 +105,9 @@ export function createCodeTreeView(ctx) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "session-btn";
+    btn.dataset.session = s.session_id;
     btn.classList.toggle("active", s.session_id === state.sessionId);
+    if (s.session_id === state.sessionId) btn.setAttribute("aria-current", "true");
 
     const titleRow = document.createElement("span");
     titleRow.className = "session-title-row";
@@ -98,7 +128,9 @@ export function createCodeTreeView(ctx) {
 
     btn.appendChild(titleRow);
     btn.appendChild(metaSpan);
-    btn.title = `${project?.title || s.slug} · ${s.session_id}`;
+    // Le titre complet au survol : la ligne le tronque.
+    btn.title = `${S.sessionLabel(s)}
+${project?.title || s.slug} · ${S.sessionMetaLine(s)}`;
     btn.addEventListener("click", () => {
       S.setSlug(state, project?.slug || s.slug);
       actions.selectSession(s.session_id);
@@ -114,9 +146,11 @@ export function createCodeTreeView(ctx) {
 
     const menuBtn = document.createElement("button");
     menuBtn.type = "button";
-    menuBtn.className = "ghost session-menu-btn";
-    menuBtn.textContent = "⋯";
+    menuBtn.className = "ghost session-menu-btn icon-btn";
+    menuBtn.appendChild(icone("points"));
     menuBtn.title = "Actions de la conversation";
+    menuBtn.setAttribute("aria-label", `Actions de la conversation « ${S.sessionLabel(s)} »`);
+    menuBtn.setAttribute("aria-haspopup", "menu");
     menuBtn.addEventListener("click", (e) => {
       e.stopPropagation();
       const rect = menuBtn.getBoundingClientRect();
@@ -139,11 +173,20 @@ export function createCodeTreeView(ctx) {
 
     const chevron = document.createElement("button");
     chevron.type = "button";
-    chevron.className = "chevron";
-    chevron.textContent = expanded ? "▾" : "▸";
-    chevron.addEventListener("click", () => {
+    chevron.className = "chevron icon-btn";
+    chevron.appendChild(icone("chevron-droite"));
+    chevron.setAttribute("aria-expanded", expanded ? "true" : "false");
+    chevron.setAttribute("aria-label", `${expanded ? "Replier" : "Déplier"} ${project.title || project.slug}`);
+    chevron.addEventListener("click", (e) => {
       S.toggleExpanded(state, project.slug);
       renderProjectTree();
+      // Le bouton a été reconstruit : au clavier (un clic sans pointeur a
+      // `detail` à 0), le focus le suit ; à la souris, on ne l'impose pas.
+      if (e.detail === 0) {
+        for (const bloc of $("project-tree")?.querySelectorAll(".project-block") || []) {
+          if (bloc.dataset.slug === project.slug) bloc.querySelector(".chevron")?.focus();
+        }
+      }
     });
 
     // Renommage inline : un seul geste, a la creation comme plus tard.
@@ -182,8 +225,14 @@ export function createCodeTreeView(ctx) {
       titleBtn.type = "button";
       titleBtn.className = "project-title";
       const range = project.archived ? " · rangé" : "";
-      titleBtn.innerHTML = `<span>&#128193; ${project.title || project.slug}${range}</span>`;
-      titleBtn.title = project.path + " (" + project.slug + ")";
+      // Le nom passe en texte, jamais en HTML : un projet nommé « <img …> »
+      // s'interprétait dans la barre latérale.
+      const nom = document.createElement("span");
+      nom.className = "project-title-texte";
+      nom.textContent = `${project.title || project.slug}${range}`;
+      titleBtn.append(icone("dossier", "project-icone"), nom);
+      titleBtn.title = `${project.title || project.slug}
+${project.path} (${project.slug})`;
       titleBtn.classList.toggle("project-archived", !!project.archived);
       titleBtn.addEventListener("click", () => {
         S.ensureExpanded(state, project.slug);
@@ -203,8 +252,8 @@ export function createCodeTreeView(ctx) {
 
     const newSession = document.createElement("button");
     newSession.type = "button";
-    newSession.className = "ghost project-new";
-    newSession.textContent = "+";
+    newSession.className = "ghost project-new icon-btn";
+    newSession.appendChild(icone("plus"));
     newSession.title = "Nouvelle conversation";
     newSession.setAttribute("aria-label", `Nouvelle conversation dans ${project.title || project.slug}`);
     newSession.addEventListener("click", () => actions.newSessionForSlug(project.slug));
@@ -276,9 +325,32 @@ export function createCodeTreeView(ctx) {
     ]);
   }
 
-  function renderProjectTree() {
+  let empreinteRendue = "";
+
+  /** Ne touche que la ligne active : le reste de l'arbre n'a pas bougé. */
+  function marquerActive(root) {
+    for (const b of root.querySelectorAll(".session-btn")) {
+      const active = b.dataset.session === state.sessionId;
+      b.classList.toggle("active", active);
+      if (active) b.setAttribute("aria-current", "true");
+      else b.removeAttribute("aria-current");
+    }
+  }
+
+  function renderProjectTree({ forcer = false } = {}) {
     const root = $("project-tree");
     if (!root) return;
+    const projetsVus = S.codeProjects(state);
+    const orphelinesVues = S.orphanCodeSessions(state);
+    const empreinte = empreinteDeLArbre(state, projetsVus, orphelinesVues, (slug) =>
+      S.sessionsForSlug(state, slug)
+    );
+    if (!forcer && empreinte === empreinteRendue && root.dataset.arbre === "code") {
+      marquerActive(root);
+      return;
+    }
+    empreinteRendue = empreinte;
+    root.dataset.arbre = "code";
     root.innerHTML = "";
     // La colonne est la même que celle de l'Assistant, qui la renomme : sans
     // ceci, elle gardait « Conversations de l'Assistant » en revenant en Code.
@@ -289,7 +361,9 @@ export function createCodeTreeView(ctx) {
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "ghost tree-add";
-    addBtn.textContent = "+ Nouveau projet";
+    const ajout = document.createElement("span");
+    ajout.textContent = "Nouveau projet";
+    addBtn.append(icone("plus"), ajout);
     addBtn.title = "Créer un projet code";
     addBtn.addEventListener("click", () => actions.newProject());
     headerRow.appendChild(addBtn);

@@ -114,11 +114,29 @@ button:disabled {
 }
 
 .scene img {
+  /* La taille exacte est posée par le script (voir `ajuster`) : l'image
+     garde ses proportions et se cale en haut, sans bandes autour. */
   display: block;
-  width: 100%;
-  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+  margin: 0 auto;
   object-fit: contain;
   user-select: none;
+}
+
+.scene img:not([src]) {
+  display: none;
+}
+
+#main:focus-visible,
+.adresse input:focus-visible,
+.scene:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+#main[aria-busy="true"] {
+  cursor: progress;
 }
 
 .scene.main img {

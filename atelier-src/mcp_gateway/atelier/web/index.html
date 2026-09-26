@@ -4,7 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Atelier</title>
-  <link rel="stylesheet" href="/css/app.css?v=20260926-vague3a" />
+  <!-- Le thème avant le premier rendu : voir js/theme-initial.js. -->
+  <script src="/js/theme-initial.js?v=20260926-theme"></script>
+  <link rel="stylesheet" href="/css/jetons.css?v=20260926-theme" />
+  <link rel="stylesheet" href="/css/app.css?v=20260926-theme" />
 </head>
 <body>
   <div id="login" class="screen login hidden" aria-live="polite">
@@ -33,6 +36,19 @@
           <button type="button" class="nav-tab" data-view="journal">Journal</button>
           <button type="button" class="nav-tab" data-view="memoire">Ma mémoire</button>
         </nav>
+        <div id="affichage-zone" class="reglages-fil-zone entete-affichage">
+          <button type="button" id="btn-affichage" class="icon-btn" aria-expanded="false" aria-controls="affichage" aria-haspopup="dialog" aria-label="Affichage" title="Affichage : thème clair ou sombre"><span class="icone" aria-hidden="true"><svg class="icone-svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg></span></button>
+          <div id="affichage" class="popover" role="dialog" aria-labelledby="affichage-titre" hidden>
+            <p id="affichage-titre" class="popover-titre">Affichage</p>
+            <fieldset class="choix-theme">
+              <legend>Thème</legend>
+              <label class="case"><input type="radio" name="theme" value="systeme" checked /> <span>Suivre le système</span></label>
+              <label class="case"><input type="radio" name="theme" value="clair" /> <span>Clair</span></label>
+              <label class="case"><input type="radio" name="theme" value="sombre" /> <span>Sombre</span></label>
+            </fieldset>
+            <p class="popover-note">Retenu pour vous, sur chacun de vos appareils.</p>
+          </div>
+        </div>
         <button type="button" id="btn-logout" class="ghost">Quitter</button>
       </div>
     </header>
@@ -42,7 +58,7 @@
         <nav id="project-tree" class="project-tree" aria-label="Projets et conversations"></nav>
       </aside>
       <main class="main shell-main">
-        <button type="button" id="btn-shell-back-code" class="ghost shell-back" data-shell-back="code">← Liste</button>
+        <button type="button" id="btn-shell-back-code" class="ghost shell-back" data-shell-back="code"><span class="icone" aria-hidden="true"><svg class="icone-svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19 12H5"/><path d="m11 6-6 6 6 6"/></svg></span><span>Conversations</span></button>
         <div id="session-bar" class="session-bar" hidden>
           <div class="session-bar-main">
             <strong id="session-title-display" class="session-display-title"></strong>
@@ -51,6 +67,15 @@
             <select id="session-project-select" class="session-project-select" hidden></select>
           </div>
           <div class="session-bar-actions">
+            <div id="reglages-fil-zone" class="reglages-fil-zone">
+              <button type="button" id="btn-reglages-fil" class="icon-btn session-reglages" aria-expanded="false" aria-controls="reglages-fil" aria-haspopup="dialog" aria-label="Détails techniques" title="Détails techniques"><span class="icone" aria-hidden="true"><svg class="icone-svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></span></button>
+              <div id="reglages-fil" class="popover reglages-fil" role="dialog" aria-labelledby="reglages-fil-titre" hidden>
+                <p id="reglages-fil-titre" class="popover-titre">Détails techniques</p>
+                <label class="case"><input type="checkbox" id="reglage-raisonnement" /> <span>Montrer le raisonnement de l’agent</span></label>
+                <label class="case"><input type="checkbox" id="reglage-actions" /> <span>Montrer les actions et leurs résultats bruts</span></label>
+                <p class="popover-note">Masqués par défaut pour garder la conversation lisible. Ils restent dans « Voir les étapes » sous chaque réponse.</p>
+              </div>
+            </div>
             <button type="button" id="session-fils-button" class="session-face-link" hidden aria-expanded="false" aria-controls="fils-panel" title="Échanges de cette conversation avec d'autres agents">Échanges</button>
             <button type="button" id="session-panneau-button" class="session-face-link" hidden aria-expanded="false" aria-controls="panneau" title="Les créations du projet, à côté du fil">Panneau</button>
             <a id="session-vscode-link" class="session-face-link" hidden target="_blank" rel="noopener">VS Code</a>
@@ -67,28 +92,32 @@
               <textarea id="composer-input" rows="1" placeholder="Message Claude Code…" disabled></textarea>
               <div class="composer-input-footer">
                 <button type="button" id="btn-composer-attach" class="composer-tool-btn" title="Ajouter une pièce jointe" aria-label="Ajouter une pièce jointe" disabled>
-                  <span class="composer-tool-icon" aria-hidden="true">📎</span>
+                  <span class="icone" aria-hidden="true"><svg class="icone-svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m20 11.5-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8"/></svg></span>
                 </button>
                 <input type="file" id="composer-attach-input" class="composer-attach-input" hidden multiple disabled />
                 <div class="composer-mcp-anchor">
                   <button type="button" id="btn-composer-mcp" class="composer-mcp-btn" title="Connecteurs pour ce fil" aria-label="Connecteurs pour ce fil" disabled aria-expanded="false" aria-haspopup="true">
-                    <span class="composer-mcp-btn-icon" aria-hidden="true">+</span>
+                    <span class="composer-mcp-btn-icon" aria-hidden="true"><svg class="icone-svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 5v14"/><path d="M5 12h14"/></svg></span>
                     <span id="composer-mcp-badge" class="composer-mcp-badge" hidden></span>
                   </button>
                 </div>
                 <select id="composer-mode" class="composer-mode" disabled title="Comment l’agent travaille dans ce fil — le même mode dans VS Code et au terminal" aria-label="Mode de travail">
                   <option value="">Défaut du projet</option>
-                  <option value="plan">Plan — réfléchit, ne modifie rien</option>
-                  <option value="default">Demande — chaque geste soumis</option>
-                  <option value="acceptEdits">Édite — demande pour le reste</option>
+                  <option value="plan">Plan · ne modifie rien</option>
+                  <option value="default">Demande · chaque geste</option>
+                  <option value="acceptEdits">Édite · demande le reste</option>
                   <!-- Quatre modes, les mêmes partout (docs/vision/profils-acces.md).
                        Plus de mode « auto » : il repose sur un classifieur que la
                        passerelle LLM du pod ne sert pas. -->
-                  <option value="bypassPermissions">Sans garde-fou — rien n’est demandé</option>
+                  <option value="bypassPermissions">Sans garde-fou</option>
                 </select>
-                <button type="button" id="btn-mode-projet" class="composer-mode-projet" hidden title="Faire de ce mode le défaut du projet, pour ses conversations sans choix propre">Défaut du projet</button>
+                <button type="button" id="btn-mode-projet" class="composer-mode-projet" hidden title="Faire de ce mode le défaut du projet, pour ses conversations sans choix propre">Retenir pour le projet</button>
                 <div class="composer-actions">
-                  <button type="submit" id="btn-send" disabled>Envoyer</button>
+                  <!-- Emplacement réservé au futur bouton micro (dictée), à gauche
+                       d'« Envoyer » : même gabarit que la pièce jointe
+                       (`composer-tool-btn`, icône `micro` de ui/icones.js). Étude
+                       en cours : docs/vision/voix.md. Non implémenté. -->
+                  <button type="submit" id="btn-send" disabled><span class="btn-send-texte">Envoyer</span></button>
                   <button type="button" id="btn-stop" class="composer-stop" hidden>Arrêter</button>
                 </div>
               </div>
@@ -126,7 +155,7 @@
         <button type="button" id="btn-mcp-reprobe" class="ghost btn-sm">Actualiser</button>
       </aside>
       <main class="shell-main connectors-main">
-        <button type="button" id="btn-shell-back-connecteurs" class="ghost shell-back" data-shell-back="connecteurs">← Liste</button>
+        <button type="button" id="btn-shell-back-connecteurs" class="ghost shell-back" data-shell-back="connecteurs"><span class="icone" aria-hidden="true"><svg class="icone-svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19 12H5"/><path d="m11 6-6 6 6 6"/></svg></span><span>Liste</span></button>
         <div id="connectors-detail-body" class="connectors-detail-body"></div>
       </main>
     </div>
@@ -134,7 +163,7 @@
     <div id="view-agent" class="view view-shell view-agent shell-mode-detail hidden" hidden>
       <aside class="agent-sidebar shell-sidebar" aria-label="Agents, gardiens et tâches automatiques">
         <header class="agent-sidebar-head">
-          <button type="button" id="btn-agent-to-home" class="ghost shell-back shell-back-list" hidden>← Accueil</button>
+          <button type="button" id="btn-agent-to-home" class="ghost shell-back shell-back-list" hidden><span class="icone" aria-hidden="true"><svg class="icone-svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19 12H5"/><path d="m11 6-6 6 6 6"/></svg></span><span>Accueil</span></button>
           <h2 class="connectors-title" id="agent-sidebar-title" role="button" tabindex="0" title="Vue d’ensemble">Agents</h2>
           <button type="button" id="btn-agent-new" class="ghost btn-sm">+</button>
         </header>
@@ -143,8 +172,8 @@
       </aside>
       <main class="agent-main shell-main">
         <div class="shell-nav-row">
-          <button type="button" id="btn-shell-back-agent" class="ghost shell-back" data-shell-back="agent">← Liste</button>
-          <button type="button" id="btn-shell-forward-agent" class="ghost shell-forward" hidden>Liste →</button>
+          <button type="button" id="btn-shell-back-agent" class="ghost shell-back" data-shell-back="agent"><span class="icone" aria-hidden="true"><svg class="icone-svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M19 12H5"/><path d="m11 6-6 6 6 6"/></svg></span><span>Liste</span></button>
+          <button type="button" id="btn-shell-forward-agent" class="ghost shell-forward" hidden><span>Liste</span><span class="icone" aria-hidden="true"><svg class="icone-svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg></span></button>
         </div>
         <div id="agent-detail-body" class="agent-detail-body"></div>
       </main>
@@ -185,6 +214,6 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=20260926-vague3a"></script>
+  <script type="module" src="/js/app.js?v=20260926-theme"></script>
 </body>
 </html>

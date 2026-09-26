@@ -47,6 +47,7 @@ const CONTROLES = {
   "securite.droits": "Fichiers sensibles bien protégés",
   "securite.bypass": "Aucun agent sans garde-fou",
   "gardiens.homme-mort": "Un contrôle n’a pas tourné à l’heure",
+  "coherence.surfaces": "Chaque surface donne à l’agent ce que dit son profil",
 };
 
 const GESTES = {

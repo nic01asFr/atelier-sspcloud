@@ -307,10 +307,12 @@ function noeuds(conteneur) {
 }
 
 {
-  // Le conteneur des blocs.
+  // Le conteneur des blocs, pour un message rendu bloc par bloc (le système :
+  // une demande d'un tour passé). La réponse de l'agent, elle, se lit en
+  // étapes : voir le cas suivant.
   const noeud = berceau();
   const message = {
-    role: "assistant",
+    role: "system",
     text: "",
     blocks: [parole("Je regarde."), outil("call_1")],
     attachments: [],
@@ -330,6 +332,35 @@ function noeuds(conteneur) {
     corps.children[0] === dedans[0] && corps.children[1] === dedans[1],
     "rafraîchir un message ne reconstruit aucun de ses blocs",
   );
+}
+
+{
+  // Une réponse de l'agent : trois conteneurs posés une fois — le pli des
+  // étapes, ce qui ne se replie jamais, la réponse —, mis à jour en place.
+  const noeud = berceau();
+  const message = {
+    role: "assistant",
+    text: "",
+    blocks: [parole("Je regarde."), outil("call_1"), parole("C'est fait.")],
+    attachments: [],
+  };
+
+  appendMessageBody(noeud, message);
+  egal(noeud.querySelectorAll(".tour-etapes").length, 1, "un seul pli d'étapes");
+  egal(noeud.querySelectorAll(".msg-blocs").length, 0, "et plus de corps bloc par bloc");
+  const liste = noeud.querySelector(".tour-etapes-liste");
+  egal(liste.children.length, 2, "la narration et l'outil dans les étapes");
+  const avant = noeuds(liste);
+  const pli = noeud.querySelector(".tour-etapes");
+
+  appendMessageBody(noeud, message);
+  egal(noeud.querySelectorAll(".tour-etapes").length, 1, "un second appel n'ajoute pas de pli");
+  verifier(noeud.querySelector(".tour-etapes") === pli, "c'est le même pli : son état ouvert ou fermé tient");
+  verifier(
+    liste.children[0] === avant[0] && liste.children[1] === avant[1],
+    "rafraîchir la réponse ne reconstruit aucune étape",
+  );
+  porte(texte(noeud.querySelector(".tour-reponse")), "C'est fait.", "la réponse est le dernier texte");
 }
 
 {
@@ -394,12 +425,12 @@ function noeuds(conteneur) {
 // ── 6. Un message qui perd tous ses blocs perd son conteneur ─────────────
 //
 // Un `.msg-blocs` vide laissé en place garderait la mise en page d'un corps
-// qui n'existe plus.
+// qui n'existe plus. (Le corps bloc par bloc : celui des messages du système.)
 
 {
   const noeud = berceau();
   const message = {
-    role: "assistant",
+    role: "system",
     text: "",
     blocks: [parole("Je regarde."), outil("call_1")],
     attachments: [],
@@ -427,7 +458,7 @@ function noeuds(conteneur) {
   // reconstruits à chaque rafraîchissement, sans qu'aucun n'ait changé. La
   // réutilisation s'arrêtait au premier doublon.
   const noeud = berceau();
-  const message = { role: "assistant", blocks: [parole("Pareil."), parole("Pareil."), parole("Pareil.")] };
+  const message = { role: "system", blocks: [parole("Pareil."), parole("Pareil."), parole("Pareil.")] };
   appendMessageBody(noeud, message);
   const corps = noeud.querySelector(":scope > .msg-blocs");
   const avant = [...corps.children];

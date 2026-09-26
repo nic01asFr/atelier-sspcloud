@@ -15,6 +15,7 @@
 
 import * as S from "../state.js";
 import { $ } from "../core/dom.js";
+import { icone } from "../ui/icones.js";
 
 /** Ce que le fil dit quand c'est l'Assistant qui l'occupe. */
 export const LIBELLES = {
@@ -45,7 +46,11 @@ export function createAssistantView(ctx) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "session-btn";
+    btn.dataset.session = s.session_id;
+    btn.title = `${S.sessionLabel(s)}
+${S.sessionMetaLine(s)}`;
     btn.classList.toggle("active", s.session_id === state.sessionId);
+    if (s.session_id === state.sessionId) btn.setAttribute("aria-current", "true");
     const titre = document.createElement("span");
     titre.className = "session-title-row";
     const point = document.createElement("span");
@@ -82,10 +87,32 @@ export function createAssistantView(ctx) {
     return boite;
   }
 
+  let empreinteRendue = "";
+
   /** La colonne de gauche, à la place de l'arbre des projets. */
   function render() {
     const racine = $("project-tree");
     if (!racine) return;
+    // Même règle que l'arbre des projets : on ne reconstruit que ce qui a
+    // changé, sans quoi un clic tombé pendant un rendu se perdait.
+    const conversationsVues = S.assistantSessions(state);
+    const empreinte = [
+      state.meta?.ui?.accueil_assistant === true ? 1 : 0,
+      ...conversationsVues.map((x) =>
+        [x.session_id, x.title || "", x.state || "", x.turns ?? "", x.attend_une_decision ? 1 : 0].join("~")
+      ),
+    ].join("|");
+    if (empreinte === empreinteRendue && racine.dataset.arbre === "assistant") {
+      for (const b of racine.querySelectorAll(".session-btn")) {
+        const active = b.dataset.session === state.sessionId;
+        b.classList.toggle("active", active);
+        if (active) b.setAttribute("aria-current", "true");
+        else b.removeAttribute("aria-current");
+      }
+      return;
+    }
+    empreinteRendue = empreinte;
+    racine.dataset.arbre = "assistant";
     racine.innerHTML = "";
     racine.setAttribute("aria-label", "Conversations de l’Assistant");
 
@@ -95,7 +122,9 @@ export function createAssistantView(ctx) {
     nouvelle.type = "button";
     nouvelle.className = "ghost tree-add";
     nouvelle.id = "assistant-nouvelle";
-    nouvelle.textContent = `+ ${LIBELLES.nouvelle}`;
+    const ditNouvelle = document.createElement("span");
+    ditNouvelle.textContent = LIBELLES.nouvelle;
+    nouvelle.append(icone("plus"), ditNouvelle);
     nouvelle.addEventListener("click", () => actions.nouvelle());
     barre.appendChild(nouvelle);
     racine.appendChild(barre);

@@ -2,7 +2,9 @@
 
 import { $, rendreActivable } from "../core/dom.js";
 import { renderCompositionBuilder } from "./composition-builder.js";
+import { icone } from "../ui/icones.js";
 import { chromeHealth } from "../api.js";
+import { libelleEtape } from "../ui/etapes.js";
 
 // Les états que le moteur de compositions écrit, dits dans la langue de
 // l'écran. Affichés tels quels, « production » ou « failed » côtoyaient
@@ -13,6 +15,16 @@ export const STATUTS_COMPOSITION = {
   draft: "brouillon",
   temporary: "brouillon",
 };
+/** L'état d'une composition, en pastille : même famille que les autres badges. */
+export function badgeStatutComposition(statut) {
+  const b = document.createElement("span");
+  const actif = statut === "production";
+  const teste = statut === "tested";
+  b.className = `mcp-badge ${actif ? "mcp-badge-ok" : teste ? "mcp-badge-stdio" : "mcp-badge-warn"}`;
+  b.textContent = STATUTS_COMPOSITION[statut] || statut || "brouillon";
+  return b;
+}
+
 export const ETATS_EXECUTION = {
   completed: "terminée",
   running: "en cours",
@@ -91,6 +103,7 @@ function renderSidebarItem(entry, { kind, selectedId, upstream, actions, titre, 
   const badge = document.createElement("span");
   badge.className = badgeClass(entry, key, upstream);
   badge.textContent = badgeLabel(entry, key, upstream, compte);
+  badge.title = badge.textContent;
   const titleRow = document.createElement("div");
   titleRow.className = "agent-card-title-row";
   titleRow.appendChild(dot);
@@ -258,7 +271,10 @@ function renderCompositionDetail(comp, state, actions) {
     (comp.variant
       ? `Variante de ${comp.source_tool} aux paramètres figés.`
       : "Enchaînement d'outils enregistré.");
-  head.appendChild(h);
+  const titreRang = document.createElement("div");
+  titreRang.className = "composition-titre";
+  titreRang.append(h, badgeStatutComposition(comp.status));
+  head.appendChild(titreRang);
   head.appendChild(lead);
 
   const actionsRow = document.createElement("div");
@@ -266,7 +282,9 @@ function renderCompositionDetail(comp, state, actions) {
   const retour = document.createElement("button");
   retour.type = "button";
   retour.className = "ghost btn-sm";
-  retour.textContent = "← Compositions";
+  const ditRetour = document.createElement("span");
+  ditRetour.textContent = "Compositions";
+  retour.append(icone("fleche-gauche"), ditRetour);
   retour.title = "Revenir à la liste.";
   retour.addEventListener("click", () => actions.select("atelier", "compositions"));
   actionsRow.appendChild(retour);
@@ -322,15 +340,25 @@ function renderCompositionDetail(comp, state, actions) {
     ul.appendChild(li);
   };
   kv("Entrées", entrees.length ? entrees.join(", ") : "aucune");
-  kv("Appelable comme", comp.tool_name || "—");
   const ETATS = {
-    production: "active — appelable comme un outil",
+    production: "active — vos agents peuvent l’appeler",
     tested: "testée — validée, pas encore ouverte à l’appel",
-    temporary: "brouillon",
-    draft: "brouillon",
+    temporary: "brouillon — à essayer, puis à activer",
+    draft: "brouillon — à essayer, puis à activer",
   };
   kv("État", ETATS[comp.status] || comp.status || "—");
   infos.appendChild(ul);
+  // Le nom d'outil sous lequel les agents l'appellent : utile au débogage,
+  // pas à la lecture.
+  const technique = document.createElement("details");
+  technique.className = "details-techniques";
+  const resumeTech = document.createElement("summary");
+  resumeTech.textContent = "Détails techniques";
+  const code = document.createElement("p");
+  code.className = "agent-section-hint";
+  code.textContent = `Appelable comme ${comp.tool_name || "—"}`;
+  technique.append(resumeTech, code);
+  infos.appendChild(technique);
   body.appendChild(infos);
 
   const etapes = document.createElement("section");
@@ -344,10 +372,15 @@ function renderCompositionDetail(comp, state, actions) {
     const li = document.createElement("li");
     const titre = document.createElement("strong");
     titre.textContent = st.label || st.step_id || st.type;
+    // Ce que fait l'étape, en clair ; le nom technique reste à côté, discret.
+    const quoi = document.createElement("span");
+    quoi.className = "composition-step-quoi";
+    quoi.textContent = st.tool ? libelleEtape({ name: `mcp__${st.tool}`, input: st.parameters }) : st.type;
     const outil = document.createElement("span");
     outil.className = "composition-step-tool";
     outil.textContent = st.tool || st.type;
     li.appendChild(titre);
+    li.appendChild(quoi);
     li.appendChild(outil);
     const params = st.parameters || {};
     if (Object.keys(params).length) {
@@ -647,8 +680,12 @@ function renderCompositionsService(state, actions) {
   h.textContent = "Compositions";
   const lead = document.createElement("p");
   lead.className = "connectors-lead";
+  // Dire ce que c'est et quand s'en servir, sans jargon : le nom d'outil et
+  // le reste vivent dans la fiche, sous « Détails techniques ».
   lead.textContent =
-    "Des outils fabriqués ici : un appel aux paramètres figés, ou un enchaînement d’étapes. Une fois active, une composition s’appelle comme n’importe quel outil.";
+    "Une composition est un outil que vous fabriquez à partir de ceux de vos connecteurs : elle enchaîne plusieurs "
+    + "actions, le résultat de l’une nourrissant la suivante, et vos agents l’appellent d’un seul geste. "
+    + "Créez-en une quand vous refaites souvent la même suite d’actions.";
   head.appendChild(h);
   head.appendChild(lead);
 
@@ -697,8 +734,9 @@ function renderCompositionsService(state, actions) {
     ul.className = "agent-queue";
     for (const c of dedans) {
       const li = document.createElement("li");
-      li.className = "agent-queue-item";
-      li.addEventListener("click", () => actions.selectComposition(c.id));
+      li.className = "agent-queue-item composition-ligne";
+      // Au clavier autant qu'à la souris : la ligne était sourde à Tab.
+      rendreActivable(li, () => actions.selectComposition(c.id));
       const main = document.createElement("div");
       main.className = "agent-queue-main";
       const nom = document.createElement("strong");
@@ -714,6 +752,7 @@ function renderCompositionsService(state, actions) {
       main.appendChild(nom);
       main.appendChild(sub);
       li.appendChild(main);
+      li.appendChild(badgeStatutComposition(c.status));
       ul.appendChild(li);
     }
     sec.appendChild(ul);
@@ -985,7 +1024,7 @@ export function createConnectorsView(ctx) {
     const li = document.createElement("li");
     const sel = state.selectedConnectorId === "atelier:compositions";
     li.className = "agent-card" + (sel ? " agent-card-selected" : "");
-    li.addEventListener("click", () => actions.select("atelier", "compositions"));
+    rendreActivable(li, () => actions.select("atelier", "compositions"));
 
     const liste = state.compositions || [];
     const actives = liste.filter((c) => c.status === "production").length;
@@ -1031,7 +1070,7 @@ export function createConnectorsView(ctx) {
     const li = document.createElement("li");
     const sel = state.selectedConnectorId === "atelier:acces";
     li.className = "agent-card" + (sel ? " agent-card-selected" : "");
-    li.addEventListener("click", () => actions.select("atelier", "acces"));
+    rendreActivable(li, () => actions.select("atelier", "acces"));
 
     const meta = (state.toolsByService || []).find((x) => x.key === "meta:acces");
     const head = document.createElement("div");

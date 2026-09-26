@@ -103,7 +103,11 @@ export function veillerLesSessions(state, render, intervalleMs = 15000) {
     if (document.visibilityState !== "visible" || !state.token) return;
     try {
       await refreshSessions(state);
-      render();
+      // La liste des conversations ne se montre que dans l'écran des
+      // conversations. Redessiner ailleurs refaisait la fiche ouverte toutes
+      // les quinze secondes : un formulaire de composition perdait son focus
+      // et sa recherche en pleine saisie.
+      if (state.view === "code") render();
     } catch {
       /* la prochaine lecture fera foi */
     }

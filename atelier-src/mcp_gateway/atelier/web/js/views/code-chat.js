@@ -4,9 +4,49 @@ import { rendreNoteDuMode } from "../ui/mode-processus.js";
 import * as api from "../api.js";
 import * as S from "../state.js";
 import { $ } from "../core/dom.js";
-import { appendMessageBody, replierLesResultats } from "../ui/message-render.js";
+import { appendMessageBody, replierLesResultats, texteDeLaReponse } from "../ui/message-render.js";
+import { icone } from "../ui/icones.js";
 import { LIBELLES as LIBELLES_ASSISTANT } from "./assistant.js";
 import { marquerNonVerifie, nonVerifie } from "./assistant-cartes.js";
+
+/**
+ * L'heure d'un message : « 14:05 » le jour même, « 26/09 14:05 » avant.
+ *
+ * @param {string | number | undefined} quand ISO ou millisecondes
+ * @param {Date} [maintenant]
+ */
+export function heureDuMessage(quand, maintenant = new Date()) {
+  if (!quand) return "";
+  const d = new Date(quand);
+  if (Number.isNaN(d.getTime())) return "";
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const memeJour =
+    d.getFullYear() === maintenant.getFullYear()
+    && d.getMonth() === maintenant.getMonth()
+    && d.getDate() === maintenant.getDate();
+  if (memeJour) return `${hh}:${mm}`;
+  const jj = String(d.getDate()).padStart(2, "0");
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  return `${jj}/${mo} ${hh}:${mm}`;
+}
+
+/** Qui parle, pour un lecteur d'écran : le fil le montre par la mise en page. */
+export function nomDeLOrateur(role, assistant) {
+  if (role === "user") return "Vous";
+  if (role === "assistant") return assistant ? "Assistant" : "Claude";
+  if (role === "error") return "Erreur";
+  return "";
+}
+
+/** La question de la personne à laquelle répond le message de ce rang. */
+export function questionPrecedente(messages, rang) {
+  for (let i = rang - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (m?.role === "user") return typeof m.rang === "number" && (m.text || "").trim() ? m : null;
+  }
+  return null;
+}
 
 /**
  * @param {object} ctx
@@ -98,25 +138,51 @@ const BAS_DU_FIL = 1e9;
    * une session Claude ne se rembobine pas, il faudrait la forker. Offrir la
    * correction serait mentir sur ce qui se passe.
    */
-  function renderMessageActions(div, m) {
+  function boutonAction(nomIcone, libelle, titre) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "msg-action";
+    b.title = titre;
+    const dit = document.createElement("span");
+    dit.textContent = libelle;
+    b.append(icone(nomIcone), dit);
+    return b;
+  }
+
+  /**
+   * Le pied d'un message : l'heure, puis les gestes.
+   *
+   * Pour une réponse de l'agent : « Copier » (la réponse seule, sans la
+   * narration des étapes) et « Relancer » (reposer la même question dans une
+   * conversation qui reprend d'avant elle — une session Claude ne se
+   * rembobine pas, voir « Modifier »). Pour un message de la personne :
+   * « Copier » et « Modifier ».
+   */
+  function renderMessageActions(div, m, rang) {
     const role = m.role || "";
-    const texte = (m.text || "").trim();
+    const texte = role === "assistant" ? texteDeLaReponse(m) : (m.text || "").trim();
     if (m.streaming || (!texte && role !== "user")) return;
 
     const barre = document.createElement("div");
     barre.className = "msg-actions";
 
-    const copier = document.createElement("button");
-    copier.type = "button";
-    copier.className = "msg-action";
-    copier.textContent = "Copier";
-    copier.title = "Copier le texte du message";
+    const heure = heureDuMessage(m.horodatage);
+    if (heure) {
+      const t = document.createElement("time");
+      t.className = "msg-heure";
+      t.textContent = heure;
+      if (m.horodatage) t.setAttribute("datetime", new Date(m.horodatage).toISOString());
+      barre.appendChild(t);
+    }
+
+    const copier = boutonAction("copier", "Copier", role === "assistant" ? "Copier la réponse" : "Copier le texte du message");
     copier.addEventListener("click", async () => {
+      const dit = copier.querySelector("span:last-child");
       try {
         await navigator.clipboard.writeText(texte);
-        copier.textContent = "Copié";
+        if (dit) dit.textContent = "Copié";
         setTimeout(() => {
-          copier.textContent = "Copier";
+          if (dit) dit.textContent = "Copier";
         }, 1500);
       } catch {
         S.setError(state, "Copie refusée par le navigateur.");
@@ -126,35 +192,30 @@ const BAS_DU_FIL = 1e9;
     barre.appendChild(copier);
 
     if (role === "user" && texte && typeof m.rang === "number") {
-      const modifier = document.createElement("button");
-      modifier.type = "button";
-      modifier.className = "msg-action";
-      modifier.textContent = "Modifier";
-      modifier.title = "Corriger cette question et repartir d’ici";
+      const modifier = boutonAction("crayon", "Modifier", "Corriger cette question et repartir d’ici");
       modifier.disabled = !!state.busy;
       modifier.addEventListener("click", () => ouvrirEdition(div, m, texte));
       barre.appendChild(modifier);
     }
 
+    if (role === "assistant") {
+      const question = questionPrecedente(state.messages || [], rang);
+      if (question) {
+        const relancer = boutonAction(
+          "relancer",
+          "Relancer",
+          "Reposer la même question dans une nouvelle conversation qui reprend d’avant elle"
+        );
+        relancer.disabled = !!state.busy;
+        relancer.addEventListener("click", () => {
+          relancer.disabled = true;
+          actions?.reprendreIci?.(question.rang, question.text.trim());
+        });
+        barre.appendChild(relancer);
+      }
+    }
+
     div.appendChild(barre);
-  }
-
-  // Ce que la bulle dit tant qu'elle n'a rien à montrer. Uniquement des états
-  // que les événements attestent : on n'invente pas d'étapes.
-  const ATTENTE = {
-    attente: "En attente du modèle…",
-    reflexion: "Réflexion…",
-    outil: "Utilisation d’un outil…",
-    decision: "En attente de votre décision…",
-  };
-
-  function renderAttente(div, m) {
-    if (!m.streaming) return;
-    if ((m.text || "").trim() || (m.blocks || []).length) return;
-    const p = document.createElement("p");
-    p.className = "msg-attente";
-    p.textContent = ATTENTE[m.phase] || ATTENTE.attente;
-    div.appendChild(p);
   }
 
   // Une réponse en cours appelle le rendu des centaines de fois — mesuré : 269
@@ -195,6 +256,18 @@ const BAS_DU_FIL = 1e9;
    * plutôt que de laisser croire qu'on a débloqué quelque chose.
    */
   async function repondre(detail) {
+    // Le geste se voit tout de suite : la carte se referme sur ce qu'on a
+    // choisi avant même que le service ait répondu. On attendait sa réponse,
+    // et le clic sur « Autoriser » restait plusieurs secondes sans effet
+    // visible (essais du 26/09) — on recliquait. Un refus du service rouvre
+    // la carte et dit pourquoi.
+    const avant = etatDecision(detail.requestId);
+    marquerDecision(
+      detail.requestId,
+      detail.decision === "allow" ? "allow" : "deny",
+      detail.reponses
+    );
+    render();
     try {
       await api.repondreDecision(state.token, detail.requestId, {
         decision: detail.decision,
@@ -203,25 +276,27 @@ const BAS_DU_FIL = 1e9;
         reponses: detail.reponses,
       });
     } catch (e) {
+      const plusAttendue = /409/.test(e?.message || "");
+      // Plus personne n'attend : la carte reste close, c'est la vérité.
+      if (!plusAttendue && avant) marquerDecision(detail.requestId, avant);
       S.setError(
         state,
-        /409/.test(e?.message || "")
-          ? "Ce tour n’attend plus cette décision."
-          : e?.message || "Réponse refusée."
+        plusAttendue ? "Ce tour n’attend plus cette décision." : e?.message || "Réponse refusée."
       );
       render();
       return;
     }
-    // Le tour rend bien la décision par le flux — mais seulement si un flux
-    // écoute. Après un rechargement, il n'y en a plus : la carte resterait à
-    // « en attente » alors qu'on vient de répondre. On la referme ici.
-    marquerDecision(
-      detail.requestId,
-      detail.decision === "allow" ? "allow" : "deny",
-      detail.reponses
-    );
-    render();
     if (!state.busy) await reprendreLesQuestions();
+  }
+
+  /** L'état d'une carte de décision du fil, avant qu'on n'y touche. */
+  function etatDecision(requestId) {
+    for (const m of state.messages || []) {
+      for (const b of m.blocks || []) {
+        if (b.type === "decision" && b.demande?.request_id === requestId) return b.etat || "en_attente";
+      }
+    }
+    return "";
   }
 
   /**
@@ -324,10 +399,14 @@ const BAS_DU_FIL = 1e9;
       thread.replaceChildren(hint);
       return;
     }
+    if (!state.messages.length && state.chargementFil === state.sessionId) {
+      thread.replaceChildren(squeletteDuFil());
+      return;
+    }
     if (!state.messages.length) {
       const hint = document.createElement("p");
       hint.className = "empty-hint";
-      hint.textContent = "Aucun message — envoie le premier";
+      hint.textContent = "Aucun message pour l’instant : écrivez le premier.";
       thread.replaceChildren(hint);
       return;
     }
@@ -349,10 +428,10 @@ const BAS_DU_FIL = 1e9;
     state.messages.forEach((m, rang) => {
       const cle = rang + ":" + (m.role || "system");
       const garde = anciens.get(cle);
-      const noeud = garde || construireMessage(m, cle);
+      const noeud = garde || construireMessage(m, cle, rang);
       if (garde) {
         anciens.delete(cle);
-        majMessage(garde, m);
+        majMessage(garde, m, rang);
       }
       // L'Assistant qui annonce un résultat sans carte d'action dans le tour.
       marquerNonVerifie(noeud, S.estAssistant(state) && nonVerifie(state.messages, rang));
@@ -377,6 +456,29 @@ const BAS_DU_FIL = 1e9;
     return () => {
       thread.scrollTop = suivait ? BAS_DU_FIL : position;
     };
+  }
+
+  /** La forme d'un fil qui se charge : deux échanges esquissés, sans texte. */
+  function squeletteDuFil() {
+    const boite = document.createElement("div");
+    boite.className = "fil-squelette";
+    boite.setAttribute("role", "status");
+    const dit = document.createElement("span");
+    dit.className = "sr-only";
+    dit.textContent = "Chargement de la conversation…";
+    boite.appendChild(dit);
+    for (const cote of ["user", "assistant", "user", "assistant"]) {
+      const bulle = document.createElement("div");
+      bulle.className = `squelette-bulle squelette-${cote}`;
+      bulle.setAttribute("aria-hidden", "true");
+      for (let i = 0; i < (cote === "user" ? 1 : 3); i += 1) {
+        const ligne = document.createElement("span");
+        ligne.className = "squelette-ligne";
+        bulle.appendChild(ligne);
+      }
+      boite.appendChild(bulle);
+    }
+    return boite;
   }
 
   /**
@@ -422,35 +524,40 @@ const BAS_DU_FIL = 1e9;
   }
 
   /** Rafraîchit un message sans le refaire : seul ce qui bouge est redessiné. */
-  function majMessage(div, m) {
+  function majMessage(div, m, rang) {
     div.classList.toggle("msg-streaming", !!m.streaming);
     appendMessageBody(div, m);
-    div.querySelector(":scope > .msg-attente")?.remove();
-    div.querySelector(":scope > .msg-actions")?.remove();
-    renderAttente(div, m);
-    renderMessageActions(div, m);
+    // Le pied se reconstruit, sauf s'il n'a pas bougé : c'est lui qu'on
+    // survole, et un bouton remplacé sous le pointeur perdait son clic.
+    const cleDuPied = [m.streaming ? 1 : 0, state.busy ? 1 : 0, m.horodatage || "", (m.text || "").length].join(":");
+    const pied = div.querySelector(":scope > .msg-actions");
+    if (pied && pied.dataset.cle === cleDuPied) return;
+    pied?.remove();
+    renderMessageActions(div, m, rang);
+    const neuf = div.querySelector(":scope > .msg-actions");
+    if (neuf) neuf.dataset.cle = cleDuPied;
   }
 
-  function construireMessage(m, cle) {
+  function construireMessage(m, cle, rang) {
     const div = document.createElement("div");
     div.dataset.cle = cle;
     const role = m.role || "system";
     div.className = `msg ${role === "user" ? "user" : role === "assistant" ? "assistant" : role === "error" ? "error-msg" : role === "tool" ? "tool" : "system"}`;
     if (m.streaming) div.classList.add("msg-streaming");
-    if (role === "user" || role === "assistant") {
+    // Qui parle se voit à la mise en page (la personne à droite, l'agent à
+    // gauche) ; on le dit quand même, en toutes lettres, au lecteur d'écran.
+    // Une erreur, elle, s'annonce aussi à l'œil.
+    const nom = nomDeLOrateur(role, S.estAssistant(state));
+    if (nom) {
       const label = document.createElement("span");
-      label.className = "role";
-      label.textContent = role;
-      div.appendChild(label);
-    } else if (role === "error") {
-      const label = document.createElement("span");
-      label.className = "role";
-      label.textContent = "erreur";
+      label.className = role === "error" ? "role" : "role sr-only";
+      label.textContent = nom;
       div.appendChild(label);
     }
     appendMessageBody(div, m);
-    renderAttente(div, m);
-    renderMessageActions(div, m);
+    renderMessageActions(div, m, rang);
+    const pied = div.querySelector(":scope > .msg-actions");
+    if (pied) pied.dataset.cle = [m.streaming ? 1 : 0, state.busy ? 1 : 0, m.horodatage || "", (m.text || "").length].join(":");
     return div;
   }
 
@@ -488,6 +595,10 @@ const BAS_DU_FIL = 1e9;
     // tours à venir, ce que dit l'infobulle.
     const mode = $("composer-mode");
     if (mode) {
+      // L'Assistant n'a pas de projet : son défaut ne s'appelle pas ainsi.
+      const premier = mode.options?.[0];
+      const ditDefaut = S.estAssistant(state) ? "Mode par défaut" : "Défaut du projet";
+      if (premier && premier.textContent !== ditDefaut) premier.textContent = ditDefaut;
       const courante = state.sessions?.find((x) => x.session_id === state.sessionId);
       mode.disabled = !sessionReady || state.busy;
       mode.hidden = !sessionReady;
@@ -541,7 +652,9 @@ const BAS_DU_FIL = 1e9;
 
     if (S.estAssistant(state)) {
       // L'Assistant n'a pas de projet à choisir : son nom tient lieu de projet.
-      $("session-title-display").textContent = current ? S.sessionLabel(current) : LIBELLES_ASSISTANT.nouvelle;
+      const titreAssistant = current ? S.sessionLabel(current) : LIBELLES_ASSISTANT.nouvelle;
+      $("session-title-display").textContent = titreAssistant;
+      $("session-title-display").title = titreAssistant;
       const etiquette = $("session-project-label");
       if (etiquette) {
         etiquette.hidden = false;
@@ -558,6 +671,8 @@ const BAS_DU_FIL = 1e9;
       titleEl.textContent = enConversation
         ? (current ? S.sessionLabel(current) : "Conversation")
         : "Nouvelle conversation";
+      // Le titre se tronque sur une ligne : entier au survol.
+      titleEl.title = titleEl.textContent;
     }
 
     // Projet : fige en conversation, choisissable sur l'accueil.

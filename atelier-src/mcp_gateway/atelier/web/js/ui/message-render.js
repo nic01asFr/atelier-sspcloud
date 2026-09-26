@@ -2,22 +2,23 @@
 
 import { renderMarkdown } from "./markdown.js";
 import { highlightElement } from "./code-highlight.js";
-import { carteDAction } from "../views/assistant-cartes.js";
+import { icone } from "./icones.js";
+import {
+  etapeEnCours,
+  iconeEtape,
+  libelleEtape,
+  regrouperTour,
+  reglagesDuFil,
+  resumeDesEtapes,
+} from "./etapes.js";
+import { aUneCarte, carteDAction } from "../views/assistant-cartes.js";
 
-const TOOL_ICONS = {
-  Read: "📄",
-  Write: "✎",
-  Edit: "✎",
-  Bash: "⌘",
-  Grep: "🔍",
-  Task: "⚙",
-  WebFetch: "🌐",
-  WebSearch: "🔎",
+const ETATS_OUTIL = {
+  running: "en cours…",
+  denied: "refusé",
+  error: "erreur",
+  done: "terminé",
 };
-
-function toolIcon(name) {
-  return TOOL_ICONS[name] || "🔧";
-}
 
 function formatJson(value) {
   if (value == null || value === "") return "";
@@ -82,6 +83,47 @@ function truncate(text, max = 4000) {
  */
 export { carteDAction };
 
+/**
+ * La liste de tâches de `TodoWrite`, montrée comme un plan coché.
+ *
+ * @param {unknown} entree l'entrée de l'outil (`{ todos: [...] }`)
+ * @returns {HTMLElement | null}
+ */
+export function planDeTravail(entree) {
+  let donnees = entree;
+  if (typeof donnees === "string") {
+    try {
+      donnees = JSON.parse(donnees);
+    } catch {
+      return null;
+    }
+  }
+  const taches = Array.isArray(donnees?.todos) ? donnees.todos : [];
+  if (!taches.length) return null;
+  const liste = document.createElement("ul");
+  liste.className = "plan-travail";
+  for (const t of taches) {
+    const li = document.createElement("li");
+    const etat = t?.status === "completed" ? "faite" : t?.status === "in_progress" ? "en-cours" : "a-faire";
+    li.className = `plan-tache plan-tache-${etat}`;
+    const marque = document.createElement("span");
+    marque.className = "plan-case";
+    marque.setAttribute("aria-hidden", "true");
+    if (etat === "faite") marque.appendChild(icone("coche"));
+    const dit = document.createElement("span");
+    dit.className = "plan-texte";
+    // Claude Code écrit la forme en cours (« Lecture du fichier ») à côté de
+    // l'intitulé : c'est elle qu'on lit tant que la tâche avance.
+    dit.textContent = etat === "en-cours" ? t.activeForm || t.content || "" : t.content || "";
+    const lu = document.createElement("span");
+    lu.className = "sr-only";
+    lu.textContent = etat === "faite" ? "faite : " : etat === "en-cours" ? "en cours : " : "à faire : ";
+    li.append(marque, lu, dit);
+    liste.appendChild(li);
+  }
+  return liste;
+}
+
 export function appendBlock(parent, block) {
   if (block.type === "thinking" && block.text) {
     const details = document.createElement("details");
@@ -102,27 +144,32 @@ export function appendBlock(parent, block) {
     if (block.status === "error") card.classList.add("msg-tool-error");
     if (block.status === "denied") card.classList.add("msg-tool-denied");
 
+    // L'en-tête dit l'étape en clair ; le nom technique reste à côté, en
+    // petit : c'est lui qu'on cherche dans VS Code ou dans un transcrit.
     const head = document.createElement("div");
     head.className = "msg-tool-head";
-    const icon = document.createElement("span");
-    icon.className = "msg-tool-icon";
-    icon.textContent = toolIcon(block.name || "");
     const label = document.createElement("span");
     label.className = "msg-tool-label";
-    label.textContent = block.name || "outil";
+    label.textContent = libelleEtape(block);
+    const technique = document.createElement("code");
+    technique.className = "msg-tool-nom";
+    technique.textContent = block.name || "outil";
     const status = document.createElement("span");
     status.className = "msg-tool-status";
-    if (block.status === "running") status.textContent = "en cours…";
-    else if (block.status === "denied") status.textContent = "permission refusée";
-    else if (block.status === "error") status.textContent = "erreur";
-    else status.textContent = "terminé";
-    head.append(icon, label, status);
+    status.textContent = ETATS_OUTIL[block.status] || ETATS_OUTIL.done;
+    head.append(icone(iconeEtape(block), "msg-tool-icon"), label, technique, status);
     card.appendChild(head);
 
     // Une commande de l'Atelier rend une carte d'action (`carte`, format
-    // commun des commandes, transverse §1.8) : on la montre avant le détail.
-    const action = carteDAction(block.output);
+    // commun des commandes, transverse §1.8) : on la montre avant le détail,
+    // sauf quand le fil la montre déjà hors du pli des étapes.
+    const action = block.sansCarte ? null : carteDAction(block.output);
     if (action) card.appendChild(action);
+
+    if (block.name === "TodoWrite") {
+      const plan = planDeTravail(block.input);
+      if (plan) card.appendChild(plan);
+    }
 
     const inputStr = block.masquerDetails ? "" : formatJson(block.input);
     if (inputStr) {
@@ -265,10 +312,11 @@ function carteDeQuestion(block) {
 
   const tete = document.createElement("div");
   tete.className = "msg-decision-head";
-  const marque = document.createElement("span");
-  marque.className = "msg-decision-icon";
   const perdue = etat === "orpheline";
-  marque.textContent = etat === "en_attente" ? "?" : perdue ? "⊘" : "✓";
+  const marque = icone(
+    etat === "en_attente" ? "question" : perdue ? "interdit" : "coche",
+    "msg-decision-icon"
+  );
   const titre = document.createElement("span");
   titre.className = "msg-decision-title";
   titre.textContent =
@@ -469,9 +517,7 @@ function carteDeDecision(block) {
 
   const tete = document.createElement("div");
   tete.className = "msg-decision-head";
-  const marque = document.createElement("span");
-  marque.className = "msg-decision-icon";
-  const MARQUES = { en_attente: "⏳", allow: "✓", deny: "✕", orpheline: "⊘" };
+  const MARQUES = { en_attente: "horloge", allow: "coche", deny: "croix", orpheline: "interdit" };
   // Une question orpheline n'est ni accordée ni refusée : son tour n'est plus
   // là pour recevoir la réponse. Le dire, plutôt que de la faire passer pour
   // un refus.
@@ -481,13 +527,19 @@ function carteDeDecision(block) {
     deny: "Refusé",
     orpheline: "Question sans réponse possible",
   };
-  marque.textContent = MARQUES[etat] || "⏳";
+  const marque = icone(MARQUES[etat] || "horloge", "msg-decision-icon");
   const titre = document.createElement("span");
   titre.className = "msg-decision-title";
   titre.textContent = TITRES[etat] || TITRES.en_attente;
   const outil = document.createElement("span");
   outil.className = "msg-decision-tool";
-  outil.textContent = `${toolIcon(d.outil || "")} ${d.outil || "outil"}`;
+  const nomOutil = document.createElement("span");
+  // Les arguments ne se disent qu'une fois : portés par l'outil au-dessus,
+  // l'intitulé n'en garde que la description écrite par le modèle.
+  const entree = block.argumentsAilleurs ? { description: d.arguments?.description } : d.arguments;
+  nomOutil.textContent = d.outil ? libelleEtape({ name: d.outil, input: entree }) : "outil";
+  nomOutil.title = d.outil || "";
+  outil.append(icone(iconeEtape({ name: d.outil || "" })), nomOutil);
   tete.append(marque, titre, outil);
   carte.appendChild(tete);
 
@@ -677,11 +729,25 @@ export function empreinteDuBloc(b) {
  * proportionnel à ce qui change, non à ce qui est affiché.
  */
 export function synchroniserBlocs(conteneur, blocks) {
-  // Une empreinte peut désigner plusieurs nœuds : deux paragraphes au texte
-  // identique, deux outils de même statut et de même sortie. N'en garder qu'un
-  // par empreinte faisait reconstruire tous les suivants à chaque rafraîchis-
-  // sement, sans qu'aucun d'eux n'ait changé — la réutilisation s'arrêtait au
-  // premier. On les file donc dans l'ordre, et l'on sert le plus ancien.
+  synchroniserNoeuds(conteneur, blocks, empreinteDuBloc, (berceau, block) => appendBlock(berceau, block));
+}
+
+/**
+ * Le mécanisme de `synchroniserBlocs`, pour n'importe quelle liste : on garde
+ * le nœud dont l'empreinte n'a pas bougé, on construit les autres.
+ *
+ * Une empreinte peut désigner plusieurs nœuds : deux paragraphes au texte
+ * identique, deux outils de même statut et de même sortie. N'en garder qu'un
+ * par empreinte faisait reconstruire tous les suivants à chaque rafraîchis-
+ * sement, sans qu'aucun d'eux n'ait changé — la réutilisation s'arrêtait au
+ * premier. On les file donc dans l'ordre, et l'on sert le plus ancien.
+ *
+ * @param {HTMLElement} conteneur
+ * @param {unknown[]} elements
+ * @param {(e: unknown) => string} empreinteDe
+ * @param {(berceau: HTMLElement, e: unknown) => void} construire
+ */
+export function synchroniserNoeuds(conteneur, elements, empreinteDe, construire) {
   const anciens = new Map();
   for (const n of conteneur.children) {
     const emp = n.dataset?.bloc;
@@ -691,8 +757,8 @@ export function synchroniserBlocs(conteneur, blocks) {
     else anciens.set(emp, [n]);
   }
   const voulus = [];
-  for (const block of blocks) {
-    const emp = empreinteDuBloc(block);
+  for (const element of elements) {
+    const emp = empreinteDe(element);
     const file = anciens.get(emp);
     const garde = file && file.length ? file.shift() : null;
     if (garde) {
@@ -701,13 +767,230 @@ export function synchroniserBlocs(conteneur, blocks) {
       continue;
     }
     const berceau = document.createElement("div");
-    appendBlock(berceau, block);
+    construire(berceau, element);
     for (const n of [...berceau.children]) {
       if (n.dataset) n.dataset.bloc = emp;
       voulus.push(n);
     }
   }
   conteneur.replaceChildren(...voulus);
+}
+
+// ── Un tour de l'agent, présenté en étapes ───────────────────────────────
+
+function span(classe, texte) {
+  const s = document.createElement("span");
+  s.className = classe;
+  if (texte != null) s.textContent = texte;
+  return s;
+}
+
+function empreinteEtape(etape) {
+  const r = reglagesDuFil();
+  return [
+    "etape", etape.genre, empreinteDuBloc(etape.bloc), etape.echec ? "e" : "",
+    r.raisonnement ? "R" : "", r.actions ? "A" : "",
+  ].join("|");
+}
+
+/** Le détail brut d'un outil, construit à la première ouverture seulement. */
+function remplirAuDepliage(pli, corps, remplir) {
+  let fait = false;
+  const assurer = () => {
+    if (fait || !pli.open) return;
+    fait = true;
+    remplir(corps);
+  };
+  pli.addEventListener("toggle", assurer);
+  assurer();
+}
+
+/**
+ * Une étape du pli : une ligne, dépliable vers le brut.
+ *
+ * @param {{ genre: string, bloc: object, libelle?: string, echec?: boolean }} etape
+ */
+export function construireEtape(etape) {
+  const r = reglagesDuFil();
+  const li = document.createElement("li");
+  li.className = `etape etape-${etape.genre}`;
+
+  if (etape.genre === "narration") {
+    li.appendChild(renderMarkdown(etape.bloc.text || ""));
+    return li;
+  }
+
+  const pli = document.createElement("details");
+  pli.className = "etape-pli";
+  const tete = document.createElement("summary");
+  tete.className = "etape-tete";
+  const corps = document.createElement("div");
+  corps.className = "etape-corps";
+  pli.append(tete, corps);
+  li.appendChild(pli);
+
+  if (etape.genre === "raisonnement") {
+    tete.append(icone("reflexion", "etape-icone"), span("etape-libelle", "Raisonnement"));
+    pli.open = r.raisonnement;
+    const pre = document.createElement("pre");
+    pre.className = "etape-raisonnement-texte";
+    pre.textContent = etape.bloc.text || "";
+    corps.appendChild(pre);
+    return li;
+  }
+
+  const b = etape.bloc;
+  const enCours = b.status === "running";
+  li.classList.toggle("etape-echec", !!etape.echec);
+  li.classList.toggle("etape-en-cours", enCours);
+  const libelle = span("etape-libelle", etape.libelle || libelleEtape(b));
+  libelle.title = b.name || "";
+  tete.append(icone(iconeEtape(b), "etape-icone"), libelle);
+  if (enCours || etape.echec) {
+    tete.appendChild(span(`etape-etat etape-etat-${b.status}`, ETATS_OUTIL[b.status] || ""));
+  }
+  pli.open = r.actions;
+  remplirAuDepliage(pli, corps, (c) => appendBlock(c, { ...b, sansCarte: aUneCarte(b.output) }));
+
+  if (b.name === "TodoWrite") {
+    const plan = planDeTravail(b.input);
+    if (plan) li.appendChild(plan);
+  }
+  return li;
+}
+
+/** Ce qui ne se replie jamais : une étape en échec reste une étape, visible. */
+function construireToujoursVisible(berceau, b) {
+  if (b.type === "tool") {
+    if (etapeEnEchecLocal(b)) {
+      const liste = document.createElement("ol");
+      liste.className = "tour-etapes-liste tour-etapes-echec";
+      liste.appendChild(construireEtape({ genre: "outil", bloc: b, libelle: libelleEtape(b), echec: true }));
+      berceau.appendChild(liste);
+      return;
+    }
+    const carte = carteDAction(b.output);
+    if (carte) {
+      berceau.appendChild(carte);
+      return;
+    }
+  }
+  appendBlock(berceau, b);
+}
+
+function etapeEnEchecLocal(b) {
+  return b.status === "error" || b.status === "denied";
+}
+
+/**
+ * Le corps d'une réponse de l'agent : « Voir les étapes (n) », puis ce qui ne
+ * se replie jamais, puis la réponse.
+ *
+ * Trois conteneurs posés une fois, dans cet ordre, et mis à jour en place :
+ * le pli garde son état (ouvert ou non) d'un rafraîchissement à l'autre, et
+ * une étape qui ne change pas garde son nœud.
+ */
+export function synchroniserTour(parent, m) {
+  const r = reglagesDuFil();
+  const blocs = m.blocks || [];
+  const groupe = regrouperTour(blocs, { aCarte: (b) => aUneCarte(b.output) });
+
+  let pli = parent.querySelector(":scope > .tour-etapes");
+  let visibles = parent.querySelector(":scope > .tour-visibles");
+  let reponse = parent.querySelector(":scope > .tour-reponse");
+  if (!pli) {
+    pli = document.createElement("details");
+    pli.className = "tour-etapes";
+    const resume = document.createElement("summary");
+    resume.className = "tour-resume";
+    resume.append(
+      icone("chevron-droite", "tour-chevron"),
+      span("tour-resume-texte"),
+      span("tour-vivant")
+    );
+    const liste = document.createElement("ol");
+    liste.className = "tour-etapes-liste";
+    pli.append(resume, liste);
+    visibles = document.createElement("div");
+    visibles.className = "tour-visibles";
+    reponse = document.createElement("div");
+    reponse.className = "tour-reponse";
+    parent.append(pli, visibles, reponse);
+  }
+
+  const resumeTexte = resumeDesEtapes(groupe);
+  const vivant = m.streaming ? etapeEnCours(blocs, m.phase) : "";
+  pli.hidden = !resumeTexte && !vivant;
+  // L'état par défaut suit les réglages ; un pli ouvert ou fermé à la main
+  // le reste tant que les réglages ne changent pas.
+  const defaut = String(r.raisonnement || r.actions);
+  if (pli.dataset.defaut !== defaut) {
+    pli.dataset.defaut = defaut;
+    pli.open = defaut === "true";
+  }
+  pli.classList.toggle("tour-etapes-sans-liste", !groupe.etapes.length);
+  pli.classList.toggle("tour-etapes-vivant", !!vivant);
+  const resume = pli.querySelector(":scope > .tour-resume");
+  const texteResume = resume.querySelector(":scope > .tour-resume-texte");
+  if (texteResume.textContent !== resumeTexte) texteResume.textContent = resumeTexte;
+  const ligneVivante = resume.querySelector(":scope > .tour-vivant");
+  if (ligneVivante.textContent !== vivant) ligneVivante.textContent = vivant;
+  ligneVivante.hidden = !vivant;
+  synchroniserNoeuds(
+    pli.querySelector(":scope > .tour-etapes-liste"),
+    groupe.etapes,
+    empreinteEtape,
+    (berceau, etape) => berceau.appendChild(construireEtape(etape))
+  );
+
+  synchroniserNoeuds(
+    visibles,
+    groupe.toujoursVisibles,
+    (b) => `vis|${empreinteDuBloc(b)}`,
+    construireToujoursVisible
+  );
+  visibles.hidden = !groupe.toujoursVisibles.length;
+  synchroniserBlocs(reponse, groupe.reponse);
+  reponse.hidden = !groupe.reponse.length;
+  return groupe;
+}
+
+/** Le texte de la réponse seule, sans la narration des étapes : ce qu'on copie. */
+export function texteDeLaReponse(m) {
+  const { reponse } = regrouperTour(m.blocks || []);
+  const dit = reponse.map((b) => b.text).join("\n\n").trim();
+  return dit || String(m.text || "").trim();
+}
+
+// Un message de la personne au-delà de cette taille se replie : un fichier
+// collé tenait des écrans entiers (mesuré : 16 000 px pour un seul message).
+export const MESSAGE_LONG_CARACTERES = 1200;
+export const MESSAGE_LONG_LIGNES = 14;
+
+export function messageLong(texte) {
+  const s = String(texte || "");
+  return s.length > MESSAGE_LONG_CARACTERES || s.split("\n").length > MESSAGE_LONG_LIGNES;
+}
+
+function texteDeLaPersonne(texte) {
+  const bloc = document.createElement("div");
+  bloc.className = "msg-text-plain";
+  bloc.textContent = texte;
+  if (!messageLong(texte)) return bloc;
+  const enveloppe = document.createElement("div");
+  enveloppe.className = "msg-long msg-long-replie";
+  const bascule = document.createElement("button");
+  bascule.type = "button";
+  bascule.className = "msg-long-bascule";
+  bascule.textContent = "Afficher tout";
+  bascule.setAttribute("aria-expanded", "false");
+  bascule.addEventListener("click", () => {
+    const replie = enveloppe.classList.toggle("msg-long-replie");
+    bascule.textContent = replie ? "Afficher tout" : "Réduire";
+    bascule.setAttribute("aria-expanded", replie ? "false" : "true");
+  });
+  enveloppe.append(bloc, bascule);
+  return enveloppe;
 }
 
 export function appendMessageBody(parent, m) {
@@ -737,8 +1020,14 @@ export function appendMessageBody(parent, m) {
     );
   }
 
+  // Une réponse de l'agent se lit en étapes (voir `synchroniserTour`) ; les
+  // messages du système — une demande restée d'un tour passé — gardent le
+  // rendu bloc par bloc, où rien n'est replié.
+  const enEtapes = m.role === "assistant";
+  if (enEtapes) synchroniserTour(parent, m);
+
   let corps = parent.querySelector(":scope > .msg-blocs");
-  if (m.blocks?.length) {
+  if (m.blocks?.length && !enEtapes) {
     if (!corps) {
       corps = document.createElement("div");
       corps.className = "msg-blocs";
@@ -762,12 +1051,7 @@ export function appendMessageBody(parent, m) {
     if (repli.dataset.texte !== m.text) {
       repli.dataset.texte = m.text;
       repli.replaceChildren(
-        m.role === "assistant"
-          ? renderMarkdown(m.text)
-          : Object.assign(document.createElement("div"), {
-              className: "msg-text-plain",
-              textContent: m.text,
-            })
+        m.role === "assistant" ? renderMarkdown(m.text) : texteDeLaPersonne(m.text)
       );
     }
   } else if (repli) {
