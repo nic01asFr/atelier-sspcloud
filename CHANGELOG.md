@@ -22,7 +22,10 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
   `helm-repo/` : le dépôt Helm n'est plus servi que par GitHub Pages ;
 - fil : le raisonnement n'occupe plus une ligne quand son affichage est coupé,
   et les preuves des cartes d'action se lisent sans JSON brut ; celui-ci reste
-  disponible sous « Détails techniques ».
+  disponible sous « Détails techniques » ;
+- panneau : la politique CSP autorise le widget Atlas servi par
+  `https://nic01asfr.github.io` dans une iframe, tout en continuant d'interdire
+  l'encapsulation de l'Atelier par un autre site.
 
 Préparation de la publication du dépôt :
 

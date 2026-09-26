@@ -116,7 +116,9 @@ def test_se_deconnecter_efface_le_cookie_host(atelier: TestClient) -> None:
     assert efface and "secure" in efface[0].lower()
 
 
-def test_l_interface_ne_se_laisse_pas_encadrer(atelier: TestClient) -> None:
+def test_la_csp_protege_l_interface_et_autorise_le_widget_atlas(atelier: TestClient) -> None:
     r = atelier.get("/")
     if r.status_code == 200:
-        assert "frame-ancestors 'self'" in r.headers["content-security-policy"]
+        csp = r.headers["content-security-policy"]
+        assert "frame-src 'self' https://nic01asfr.github.io" in csp
+        assert "frame-ancestors 'self'" in csp

@@ -2661,15 +2661,18 @@ def build_app(
 
         @app.get("/")
         def ui_index() -> FileResponse:
-            # `frame-ancestors 'self'` : l'interface ne se laisse encadrer que
-            # par elle-même. Une page d'un voisin, ou un artefact en origine
-            # opaque, ne peut plus l'ouvrir dans un cadre pour agir en dessous.
+            # `frame-src` autorise le widget Atlas servi par GitHub Pages dans
+            # le panneau. `frame-ancestors` répond à l'autre sens de la
+            # relation : l'interface ne se laisse encadrer que par elle-même.
             return FileResponse(
                 WEB_DIR / "index.html",
                 media_type="text/html; charset=utf-8",
                 headers={
                     "Cache-Control": "no-store",
-                    "Content-Security-Policy": "frame-ancestors 'self'",
+                    "Content-Security-Policy": (
+                        "frame-src 'self' https://nic01asfr.github.io; "
+                        "frame-ancestors 'self'"
+                    ),
                 },
             )
 
