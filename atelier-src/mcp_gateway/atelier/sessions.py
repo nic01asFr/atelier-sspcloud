@@ -1058,6 +1058,27 @@ class SessionStore:
         )
         return fork
 
+    def _titrer_au_premier_message(self, rec: SessionRecord, message: str) -> None:
+        """Le premier message titre la conversation dès l'envoi, pas à la fin du tour.
+
+        Le titre se retrouvait jusque-là dans le transcript, après le tour
+        (`sync_claude_titles`). Pendant tout le premier tour, une conversation
+        de l'Assistant s'affichait donc « wikichat-memory-a5827138 » (essais du
+        26/09) ; en Code, le projet portait déjà le nom tiré du message et le
+        défaut se voyait moins. Même règle que le transcript (`titre_lisible`,
+        `titre_utilisable`), pour les deux, et seulement sur un titre par
+        défaut : un titre choisi n'est jamais remplacé.
+        """
+        if rec.turns > 0 or rec.title_source == "user":
+            return
+        if not _is_auto_title(rec.title, rec.slug, rec.session_id):
+            return
+        lisible = titre_lisible(" ".join((message or "").split()))
+        if not lisible or not titre_utilisable(lisible) or lisible == rec.title:
+            return
+        rec.title = lisible
+        self.save(rec)
+
     def _titre_du_transcript_claude(self, rec: SessionRecord) -> str:
         """Le titre qu'aurait eu cette fiche si on l'avait su dès l'adoption."""
         if not rec.cwd:
@@ -1455,6 +1476,7 @@ class SessionStore:
         if rec.turns == 0 and not rec.claude_session_id:
             self.sync_claude_titles()
             rec = self.get(session_id) or rec
+        self._titrer_au_premier_message(rec, message)
         resume = self._should_resume_claude(rec)
         # Au premier tour, la conversation s'ouvre sous notre propre
         # identifiant : c'est celui-là qu'il faudra reprendre ensuite.
