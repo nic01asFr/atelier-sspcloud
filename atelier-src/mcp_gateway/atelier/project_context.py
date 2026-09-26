@@ -283,6 +283,12 @@ def ecrire_contexte(cwd: Path, slug: str, settings: Any = None) -> bool:
         from mcp_gateway.atelier.config import get_settings
 
         settings = get_settings()
+    if slug == settings.assistant_slug:
+        # L'Assistant a son propre gabarit, à la racine de son dossier, que
+        # toutes ses conversations lisent (`assistant.py`).
+        from mcp_gateway.atelier.assistant import preparer_le_tour
+
+        return preparer_le_tour(settings, cwd)
     attendu = contexte_attendu(settings, cwd, slug)
     if attendu is None:
         log.warning("contexte de %s non écrit : %s n'est pas le dossier du projet", slug, cwd)

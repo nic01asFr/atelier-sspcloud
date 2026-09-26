@@ -260,6 +260,8 @@ WIKICHAT_INTERDITS_CODE = frozenset(
     }
 )
 META_OUTILS = ("mcp__atelier__gateway_find_tools", "mcp__atelier__gateway_call_tool")
+# Ce que le profil « Assistant » refuse (`assistant.reglages_du_profil`).
+OUTILS_REFUSES_ASSISTANT = frozenset({"Bash", "NotebookEdit", "WebSearch"})
 # Outils qui n'existent que selon l'instant (un serveur encore en attente).
 _OUTILS_CIRCONSTANCIELS = frozenset({"WaitForMcpServers"})
 # Les variables d'une conversation ou d'une surface, jamais héritées du lanceur.
@@ -772,10 +774,16 @@ def ecarts_du_dossier(
             if interdits:
                 equipe_a = " (équipe A)" if all(t.startswith("mcp__atelier__") for t in interdits) else ""
                 ecarts.append(f"{s} : outils hors du profil code {interdits[:8]}{equipe_a}")
-        elif v.serveurs.get("atelier") == "connected":
-            manquants = [t for t in META_OUTILS if t not in v.outils]
-            if manquants:
-                ecarts.append(f"{s} : l'Assistant n'a pas les méta-outils {manquants} (équipe A)")
+        else:
+            if v.serveurs.get("atelier") == "connected":
+                manquants = [t for t in META_OUTILS if t not in v.outils]
+                if manquants:
+                    ecarts.append(f"{s} : l'Assistant n'a pas les méta-outils {manquants} (équipe A)")
+            # Son `.claude/settings.json` (assistant.py) refuse ce qui écrirait
+            # hors de son dossier : un refus retire l'outil de la liste.
+            interdits = sorted(t for t in v.outils if t in OUTILS_REFUSES_ASSISTANT)
+            if interdits:
+                ecarts.append(f"{s} : l'Assistant a {interdits}, que son profil refuse")
     return ecarts
 
 
