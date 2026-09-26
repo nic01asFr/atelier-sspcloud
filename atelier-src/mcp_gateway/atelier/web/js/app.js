@@ -7,13 +7,14 @@ import { readQuery, writeQuery as writeQueryState } from "./core/router.js";
 import { bindContextMenu } from "./ui/context-menu.js";
 import { bindModal } from "./ui/modal.js?v=modal2";
 import { refreshMcpOverview, refreshPiloteOverview } from "./services/catalog.js";
-import { createShellView } from "./views/shell.js?v=vague2";
+import { createShellView } from "./views/shell.js?v=vague3";
 import { createCodeTreeView } from "./views/code-tree.js";
 import { createCodeChatView } from "./views/code-chat.js";
 import { createConnectorsView } from "./views/connectors.js?v=modal";
 import { createAgentView } from "./views/agent.js?v=vague2";
 import { rendreAValider } from "./views/a-valider.js";
 import { rendreJournal } from "./views/journal.js";
+import { createMemoireActions, rendreMemoire } from "./views/memoire.js";
 import { createComposerMcpView } from "./views/composer-mcp.js";
 import { createPanneauView } from "./views/panneau.js";
 import { createFilsView } from "./views/fils.js";
@@ -209,7 +210,9 @@ function createApp() {
   const fils = createFilsView({ state, api });
   const aValider = { render: () => rendreAValider($("a-valider-corps"), state, validation) };
   const journal = { render: () => rendreJournal($("journal-corps"), state, validation) };
-  ctx.views = { codeTree, codeChat, connectors, composerMcp, agent, panneau, fils, aValider, journal };
+  const memoireActions = createMemoireActions({ state, api, render, naviguer: (v) => navigateView(v) });
+  const memoire = { render: () => rendreMemoire($("memoire-corps"), state, memoireActions) };
+  ctx.views = { codeTree, codeChat, connectors, composerMcp, agent, panneau, fils, aValider, journal, memoire };
 
   const auth = createAuthController({
     state,
@@ -258,6 +261,8 @@ function createApp() {
       validation.charger();
     } else if (view === "journal") {
       validation.chargerJournal();
+    } else if (view === "memoire") {
+      memoireActions.charger();
     }
   }
 

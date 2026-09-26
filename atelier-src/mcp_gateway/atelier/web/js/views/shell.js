@@ -11,6 +11,7 @@ const VIEW_IDS = {
   agent: "view-agent",
   "a-valider": "view-a-valider",
   journal: "view-journal",
+  memoire: "view-memoire",
 };
 
 /**
@@ -87,6 +88,9 @@ export function createShellView(ctx) {
       showBanner(state.error);
     } else if (state.view === "journal") {
       ctx.views.journal?.render();
+      showBanner(state.error);
+    } else if (state.view === "memoire") {
+      ctx.views.memoire?.render();
       showBanner(state.error);
     } else {
       showBanner(state.error);
