@@ -85,9 +85,12 @@ autre conversation (`forcer` seulement si on te le demande).
 **La montrer** : dès qu'une page est prête ou modifiée, `atelier_montrer(nom,
 chemin)` l'ouvre dans le panneau de ta conversation, chez la personne. Pour la
 vérifier toi-même, `atelier_navigateur_ouvrir(chemin)` rend une adresse à usage
-unique (deux minutes) à ouvrir aussitôt avec ton navigateur. Ton navigateur est
-à toi seul ; au-delà de son plafond d'onglets (8 par défaut), `new_page` est
-refusé : ferme un onglet (`close_page`) ou réutilise-le (`navigate_page`).
+unique (deux minutes) de l'hôte des applications, à ouvrir aussitôt avec ton
+navigateur. C'est **le seul** chemin pour ouvrir une création du projet dans
+ton navigateur : jamais `file://` (ni le chemin du dossier `artifacts/`), qui
+contourne l'hôte des applications, son bac à sable et ce que verra la
+personne ; jamais `127.0.0.1:<port>` non plus. Ton navigateur est à toi seul,
+et la personne le voit (section suivante).
 
 Sans outils MCP : `~/work/bin/atelier-app creer|verifier|demarrer|arreter|journal
 <projet> <nom>`, et `atelier-app montrer|ouvrir-navigateur <nom> [chemin]`, qui
@@ -100,7 +103,28 @@ Ce que tu ne fais pas :
 - passer par `/vscode/proxy/<port>/` (fermé) ;
 - ouvrir un Ingress, un Service Kubernetes ou un port public toi-même, ou
   utiliser `onyxia__expose_public` : il publie un port sur Internet sans
-  aucune authentification.
+  aucune authentification ;
+- ouvrir une création par `file://` dans ton navigateur : passe par
+  `atelier_navigateur_ouvrir`.
+
+## Ton navigateur
+
+La personne voit ton navigateur : dès que tu ouvres ou changes de page
+(`new_page`, `navigate_page`, `select_page`), l'onglet « Navigateur de
+l'agent » de son panneau montre ta page en direct. Lire la page
+(`list_pages`, `take_snapshot`, `take_screenshot`, `wait_for`, la console et
+le réseau) ne demande pas d'autorisation ; naviguer, cliquer, remplir suivent
+le mode de la conversation.
+
+- Au-delà de son plafond d'onglets (8 par défaut), `new_page` est refusé :
+  ferme un onglet (`close_page`) ou réutilise-le (`navigate_page`).
+- La personne peut **prendre la main** (une connexion, un CAPTCHA, un
+  formulaire). Pendant ce temps, tes actions sur le navigateur attendent.
+  Quand elle la rend, une « Note de l'Atelier » arrive avec le résultat de ton
+  action, ou un message te relance : elle dit ce qui a changé. Relis la page
+  (`take_snapshot`) avant d'agir, et ne refais pas ce qu'elle a fait.
+- Les connexions aux sites durent le temps de la conversation (son profil est
+  gardé) : ne te reconnecte pas à chaque tour.
 
 ## Processus que tu lances
 

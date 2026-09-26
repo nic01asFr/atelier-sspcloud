@@ -6,11 +6,23 @@
 > agent : un Chrome sans écran par conversation, sans service, sans jeton,
 > sans en-tête de conversation, sans bureau (`docs/navigateur-atelier.md` du
 > dépôt de l'Atelier). Le contrat HTTP ci-dessous (`X-Atelier-Conversation`,
-> `CDM_API_KEY`, `/view`, `/vnc`) n'a plus de client côté Atelier. Ce projet
-> garde son intérêt pour une vue en direct pilotée par l'Atelier (screencast
-> DevTools sur un Chrome qu'il possède, auquel le serveur officiel se
-> rattache par `--wsEndpoint`) : c'est ce rattachement que le lanceur prévoit
-> (`ATELIER_CHROME_WS`), pas ce serveur-ci.
+> `CDM_API_KEY`, `/view`, `/vnc`) n'a plus de client côté Atelier.
+>
+> **26/09/2026 — la vue en direct existe sans ce fork** (vague 3, équipe N) :
+> le lanceur fait ouvrir au Chrome de chaque conversation, en plus de son
+> tube, un port de débogage en boucle locale ; l'Atelier s'y rattache en
+> DevTools, diffuse le screencast dans l'onglet « Navigateur de l'agent » du
+> panneau et porte « Prendre la main » (`docs/navigateur-atelier.md`,
+> « Écran en direct »). Le bureau noVNC de ce fork n'a donc plus d'usage
+> prévu.
+>
+> **Pour un agent qui navigue** : pour ouvrir une création de son projet, il
+> appelle `atelier_navigateur_ouvrir` (par l'hôte des applications, code
+> d'agent à usage unique), **jamais `file://`** ni `127.0.0.1:<port>`. Ses
+> lectures (`list_pages`, `take_snapshot`, `take_screenshot`, `wait_for`,
+> console, réseau) sont autorisées d'office ; quand la personne prend la main,
+> ses actions attendent, et une « Note de l'Atelier » lui dit ce qui a changé
+> quand elle la rend (`docs/consignes/socle.md`, « Ton navigateur »).
 
 Ce projet est un fork de `ChromeDevTools/chrome-devtools-mcp` avec une couche
 `src/cerema/` : un navigateur Chrome piloté par MCP, **une conversation
@@ -99,9 +111,12 @@ Le découpage en lots est dans `ROADMAP.md` ; un lot à la fois.
 
 Ce qui se corrige dans `atelier-src/mcp_gateway/atelier/` ne se corrige pas
 ici. Le navigateur y vit dans `navigateur.py` (déclaration stdio, portée de la
-passerelle, état local, refus de WebSearch), `chrome_ensure.py` (crée le
-connecteur une fois, migre l'ancienne entrée HTTP, respecte une désactivation
-ou une suppression), `navigateur_routes.py` (`/chrome/health`),
-`mcp_gateway/upstream/stdio_client.py` (la passerelle lance le serveur pour
-ses propres clients) et `atelier-src/bin/atelier-chrome` (le lanceur). Les
-routes `/chrome/view`, `/chrome/novnc/…` et `/chrome/vnc` n'existent plus.
+passerelle, état local, refus de WebSearch, lectures autorisées d'office),
+`chrome_ensure.py` (crée le connecteur une fois, migre l'ancienne entrée HTTP,
+respecte une désactivation ou une suppression), `navigateur_routes.py`
+(`/chrome/health`, `/v1/ecran/…`), `ecran.py` (l'écran en direct et la main
+de la personne), `mcp_gateway/upstream/stdio_client.py` (la passerelle lance
+le serveur pour ses propres clients), `atelier-src/bin/atelier-chrome` (le
+lanceur) et `atelier-src/bin/atelier-chrome-onglets.mjs` (le filtre : plafond
+d'onglets, fiche de l'écran, pause pendant la main de la personne). Les routes
+`/chrome/view`, `/chrome/novnc/…` et `/chrome/vnc` n'existent plus.

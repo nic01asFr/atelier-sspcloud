@@ -174,7 +174,10 @@ Le lanceur `~/work/bin/atelier-chrome` (source `atelier-src/bin/`, posé par
 - crée un profil jetable `/tmp/atelier-chrome-<uid>/profil.<pid>` (0700) —
   jamais le profil de la personne, jamais `~/.cache` —, le range en sortant,
   relaie SIGTERM/SIGINT/SIGHUP, balaie les profils qu'aucun processus ne
-  nomme plus ;
+  nomme plus. **Depuis la vague 3**, un processus qui appartient à une
+  conversation (`ATELIER_SESSION`, sinon `CLAUDE_CODE_SESSION_ID`) garde
+  plutôt le profil de la conversation, `conversation.<id>`, et fait publier
+  son écran (§ 8, « Écran en direct ») ;
 - pose `--headless --viewport 1280x720 --no-usage-statistics
   --no-performance-crux --redact-network-headers`, captures JPEG ≤ 1280 px,
   le jeu d'outils courant, `--workspace` = dossier temporaire + dossier du
@@ -245,8 +248,14 @@ navigateur sur DuckDuckGo, consigne donnée à chaque agent dans la section
 
 ## 7. Sécurité
 
-- **Aucun port** : stdio entre client et serveur, tube entre serveur et
-  Chrome. (Le mode partagé en aurait ouvert un.)
+- **Aucun port hors de la boucle locale** : stdio entre client et serveur,
+  tube entre serveur et Chrome. Depuis la vague 3, le Chrome d'une
+  conversation ouvre en plus un port de débogage **sur 127.0.0.1 seulement**
+  (mesuré : `127.0.0.1:<port>` sous Windows, `0100007F` dans
+  `/proc/net/tcp` sous Linux), pour l'écran en direct (§ 8). Limite (U1) :
+  tout processus du pod, sous le même compte, peut piloter ce Chrome par ce
+  port, comme il peut déjà lire `~/work`. Le port n'est jamais dit au
+  navigateur de la personne. La passerelle n'en ouvre pas.
 - **Profil jetable** par processus, 0700, effacé ; jamais le profil de la
   personne ; aucun cookie de l'Atelier (Chrome part vide).
 - **Télémétrie coupée** (statistiques d'usage, CrUX, vérification de mise à
@@ -272,31 +281,274 @@ navigateur sur DuckDuckGo, consigne donnée à chaque agent dans la section
 - **Données** : `--redact-network-headers` masque les en-têtes sensibles dans
   ce que l'agent lit du réseau.
 
-## 8. Reprise de main et vue en direct
+## 8. Écran en direct et « Prendre la main » (vague 3, équipe N, 26/09/2026)
 
-En headless il n'y a plus de bureau : les routes `/chrome/view`,
-`/chrome/novnc/…`, `/chrome/vnc` et le lien « Bureau » sont retirés.
-`/chrome/health` dit désormais l'état local (lanceur prêt, Chrome ouverts,
-plafond), et la fiche du connecteur l'affiche.
+Décisions J-f2 et J-f3 (`docs/vision/decisions.md`), U1
+(`docs/vision/coherence-croisee.md` §5.1). Branche `v3-navigateur`.
 
-- **Voir** : l'agent prend une capture (`take_screenshot`, avec `filePath`
-  dans le projet pour la garder) — suffisant pour presque tout.
-- **Reprendre la main** (connexion, CAPTCHA) : pas en headless. Xvfb + x11vnc
-  partagé rendrait un bureau, mais pour un Chrome par conversation il faudrait
-  un écran par conversation ; ce n'est pas recommandé.
-- **Vue en direct** (contrainte de l'équipe « panneau », `docs/vision/panneau.md`
-  §7) : elle passera par le screencast DevTools (`Page.startScreencast`) et
-  l'injection d'entrées, ce qui suppose un **Chrome lancé et possédé par
-  l'Atelier**, auquel `chrome-devtools-mcp` se **rattache** au lieu de lancer
-  le sien. Le lanceur garde ce point d'entrée : `ATELIER_CHROME_WS` /
-  `ATELIER_CHROME_URL`, ou un fichier
-  `/tmp/atelier-chrome-<uid>/attache/<ATELIER_SESSION>` écrit par le
-  superviseur, font passer `--wsEndpoint` / `--browserUrl` au lieu de
-  `--headless --executablePath`. Conséquences à assumer alors : le
-  superviseur ouvre un port de débogage (en boucle locale, un Chrome par
-  conversation pour garder le cloisonnement mesuré en §3), gère lui-même la
-  durée de vie et le plafond de ces Chrome, et la fermeture ne vient plus du
-  tube.
+### 8.1 Le choix : le tube de puppeteer, plus un port en boucle locale
+
+Deux chemins étaient ouverts : (A) garder Chrome lancé par
+`chrome-devtools-mcp` par son tube et lui faire ouvrir **en plus** un port de
+débogage en boucle locale ; (B) faire lancer Chrome par le lanceur et
+rattacher le serveur par `--browserUrl` / `--wsEndpoint`.
+
+**Mesures** (26/09, poste Windows 11, Chrome 153.0.8010.53 et
+chrome-headless-shell 154.0.8037.57 win64 ; puis Linux, conteneur de l'image
+`ghcr.io/nic01asfr/atelier:latest` — Ubuntu 24.04, Python 3.13, Node 22.23.2 —,
+chrome-headless-shell 154.0.8037.57 linux64, `chrome-devtools-mcp` 1.10.1) :
+
+| Question | Mesure |
+|---|---|
+| Chrome accepte-t-il `--remote-debugging-pipe` **et** `--remote-debugging-port=0` ? | Oui, les deux variantes, les deux systèmes. Chrome répond par le tube (`Browser.getVersion`) et écrit `DevToolsActivePort` (port, puis `/devtools/browser/<id>`) dans le profil dans la même milliseconde |
+| Où écoute le port ? | `127.0.0.1` seulement (`netstat` sous Windows ; `/proc/net/tcp` = `0100007F` sous Linux, avec `--remote-debugging-address=127.0.0.1`) |
+| Une page ouverte par le tube se voit-elle par le port ? | Oui (`Target.createTarget` par le tube, visible par `Target.getTargets` au port) ; screencast JPEG par le port (première image en 36 à 350 ms), `Input.dispatchMouseEvent` accepté |
+| Chrome meurt-il toujours avec son tube ? | Oui : tube fermé, sortie en 116 ms (headless shell) à 285 ms (Chrome) |
+| Et puppeteer ? | `computeLaunchArguments` n'ajoute `--remote-debugging-pipe` que si **aucun** `--remote-debugging-*` n'est déjà là : demander le port par `--chromeArg` seul lui ferait perdre son tube. Le port s'ajoute donc dans le rôle « navigateur » du lanceur, **après** puppeteer |
+| Chaîne entière | filtre, serveur 1.10.1, Chrome, écran de l'Atelier, page qui regarde : `tests/test_ecran_chrome_reel.py`, vert sous Windows (port par `--chromeArg=--remote-debugging-pipe` + `--chromeArg=--remote-debugging-port=0`, puppeteer ne sachant pas lancer un script bash) et sous Linux **par le vrai lanceur** (`ATELIER_ESSAI_LANCEUR=1`, trois passages). À la fin : fiche retirée, `DevToolsActivePort` retiré, profil gardé, aucun processus restant |
+
+**Choix : A.** Il garde tout ce que § 3 avait mesuré et retenu : Chrome
+n'est lancé qu'au premier outil (120 Mo tant que l'agent ne navigue pas), il
+meurt avec son tube (aucun orphelin), puppeteer garde son transport, le
+plafond de navigateurs reste dans le rôle « navigateur ». B aurait obligé le
+lanceur à démarrer Chrome d'avance (ou à réinventer le démarrage paresseux),
+à tenir lui-même sa durée de vie et le ménage des orphelins, pour le même
+port en boucle locale. Le point de bascule `ATELIER_CHROME_WS` /
+`ATELIER_CHROME_URL` / `attache/<session>` reste, inchangé ; un Chrome
+rattaché n'a pas d'écran.
+
+### 8.2 Ce que fait chaque pièce
+
+**Le lanceur** (`bin/atelier-chrome`), quand le processus appartient à une
+conversation (`ATELIER_SESSION`, sinon `CLAUDE_CODE_SESSION_ID` ; même forme
+que dans l'Atelier, `[A-Za-z0-9][A-Za-z0-9_.-]{0,119}`), hors passerelle et
+hors rattachement, et sauf `ATELIER_CHROME_ECRAN=0` :
+
+- profil **de la conversation**, `/tmp/atelier-chrome-<uid>/conversation.<id>`
+  (0700), gardé à la sortie : les connexions aux sites durent le temps de la
+  conversation, d'un processus au suivant (le CLI est éteint après 600 s
+  d'inactivité). Un verrou `flock` (`conversation.<id>.verrou`, hérité par le
+  serveur et Chrome) le réserve : un second processus de la même conversation
+  reçoit un profil jetable, sans écran, et le dit. Un profil de conversation
+  dont le verrou est libre et n'a pas été touché depuis
+  `ATELIER_CHROME_PROFIL_JOURS` jours (14) est balayé ;
+- rôle « navigateur » : ajoute `--remote-debugging-port=0
+  --remote-debugging-address=127.0.0.1` aux arguments de puppeteer ;
+- le filtre est toujours placé devant le serveur quand il y a un écran, même
+  avec `ATELIER_CHROME_ONGLETS_MAX=0` ;
+- à la sortie : `DevToolsActivePort` retiré, fiche de l'écran retirée si le
+  filtre n'a pas pu le faire ; au lancement, fiches d'un filtre mort
+  balayées. `ATELIER_CHROME_VERIFIER=1` affiche `ecran=0|1`.
+
+**Le filtre** (`bin/atelier-chrome-onglets.mjs`), en plus du plafond
+d'onglets :
+
+- publie `/tmp/atelier-chrome-<uid>/ecrans/<id>.json` (0600, écrit d'un coup)
+  : `version`, `conversation`, `pid` (le sien), `port` et `chemin` (lus dans
+  `DevToolsActivePort`, relu chaque seconde), `page` sélectionnée par l'agent
+  (`{id, url, titre}`, lue dans la ligne `[selected]` de la section
+  `## Pages` que rendent `new_page`, `navigate_page`, `select_page`,
+  `close_page`, `list_pages` ; un titre peut porter des parenthèses),
+  `attente` (actions retenues). Rien tant que Chrome n'a pas démarré ; retirée
+  quand le filtre s'arrête ;
+- **pause** : tant que `/tmp/atelier-chrome-<uid>/main/<id>.json` dit
+  `{"prise": true}`, tout `tools/call` attend dans le filtre, sans atteindre
+  le serveur ; un `notifications/cancelled` retire un appel retenu. Main
+  rendue (`{"prise": false, "note": "…"}`), les appels repartent dans l'ordre
+  (le plafond d'onglets tient toujours), et la note est **ajoutée au résultat
+  du premier** ; sans appel retenu, elle attend le prochain. La note ne sert
+  qu'une fois (le fichier part avec elle). Au-delà de
+  `ATELIER_CHROME_MAIN_MAX_S` (1800 s), un appel retenu reçoit une erreur
+  (« demande-lui où elle en est »), et une main posée depuis plus longtemps
+  est tenue pour oubliée : un nouvel appel passe.
+
+**L'écran** (`mcp_gateway/atelier/ecran.py`, dans le processus de l'Atelier) :
+
+- lit la fiche (fichier ordinaire, à ce compte, 0600 sous Unix, filtre
+  vivant, version, port et chemin de forme connue ; sinon ignorée) ; se
+  rattache à `ws://127.0.0.1:<port>/devtools/browser/<id>` et **à rien
+  d'autre** ;
+- suit la page de l'agent : `Target.setDiscoverTargets`, puis la page dont
+  l'adresse est celle de la fiche (celle déjà suivie si elle a la même, sinon
+  la plus récemment changée) ; une page qui change d'adresse sans nouvelle
+  liste (un lien cliqué) reste suivie. `Target.attachToTarget` (`flatten`),
+  `Page.startScreencast` (JPEG, qualité 60, 1280 × 800 au plus) ; chaque
+  image acquittée au plus `ATELIER_ECRAN_IPS` fois par seconde (8), ce qui
+  règle la cadence sans rien d'autre ; titre et adresse relus toutes les
+  0,5 s (`Target.getTargetInfo` : mesuré, Chrome ne signale pas toujours un
+  changement de titre) ;
+- **ne tourne que si quelqu'un regarde** : un registre par conversation,
+  ouvert au premier spectateur ; au départ du dernier, `Page.stopScreencast`
+  et la connexion se ferme (vérifié : plus aucune image acquittée) ;
+- relaie des **gestes**, pas le protocole : souris (fraction de l'image,
+  convertie en pixels de la page), molette, clavier, texte collé, adresse
+  (`http`/`https` seulement), et seulement **main prise**. Tout le reste est
+  refusé (`javascript:`, `file:`, `chrome:`, méthode inconnue, valeur hors
+  bornes) ;
+- porte la main : `prendre_la_main` (refusé sans navigateur ouvert) écrit
+  `main/<id>.json` ; `rendre_la_main` écrit la note, ou **relance l'agent**
+  par un message quand aucune action n'attend et qu'aucun tour ne travaille
+  (conversation de l'Atelier). Une personne qui quitte l'écran main prise la
+  rend au bout de 5 minutes sans spectateur (note « a quitté l'écran »).
+
+**L'hôte des applications** (`apps/serveur.py`) sert, en portée
+**`conversation:<id>`** (`apps/passage.py`, sur le modèle de la portée
+« connecteur ») :
+
+- `/_ecran/<id>/` (page), `ecran.js`, `ecran.css` : `default-src 'none'`,
+  `script-src 'self'`, `img-src blob:`, `connect-src` vers l'hôte lui-même ;
+  cadrage de l'Atelier seul, comme toute réponse de l'hôte ;
+- le WebSocket `/_ecran/<id>/flux` : `Origin` égale à l'hôte, session de la
+  **personne** couvrant `conversation:<id>` (une session d'agent jamais) ; il
+  envoie un état JSON (`disponible`, `raison`, `url`, `titre`, `main`,
+  `attente`) et des images JPEG binaires, et reçoit des gestes JSON
+  (`{"type": "main", "prendre": true}`, `souris`, `clavier`, `texte`,
+  `aller`).
+
+Pourquoi pas `relais_ws` : relayer le WebSocket DevTools brut donnerait à la
+page tout le navigateur de l'agent (scripts, cookies de tous les sites). Le
+flux reste un WebSocket de l'hôte des applications, gardé comme ceux des
+bureaux (`Origin`, session, portée), mais c'est l'Atelier qui parle à Chrome.
+
+**L'Atelier** (`navigateur_routes.py`) : `GET /v1/ecran/<id>` (état, sans
+port), `GET /v1/ecran/<id>/ouvrir` (session du navigateur exigée, code de
+portée `conversation:<id>`, destination `/_ecran/<id>/` ; 404 pour une
+conversation inconnue, y compris par le retour `/v1/apps/entree`),
+`POST /v1/ecran/<id>/main` (`{"prendre": bool}`, 409 sans navigateur). Il
+règle le registre des écrans : conversations connues, identifiant du CLI
+(`claude_session_id`) comme autre nom de la fiche, tour en cours, relance par
+`store.send` dans un fil, publiée en direct (`app.state.diffusion`, une ligne
+dans `api.py`).
+
+**Le panneau** (`web/js/views/panneau.js`, J-f2) : un `outil_debut` de
+`mcp__chrome-devtools-mcp__new_page|navigate_page|select_page` (ou la fin
+d'un tel appel, reconnue à son identifiant) ajoute l'onglet « Navigateur de
+l'agent » : panneau fermé, il s'ouvre dessus ; un autre onglet regardé reste
+regardé, l'onglet du navigateur porte un signal (« ● ») ; déjà regardé, rien
+ne bouge. Si la personne replie le panneau pendant que le navigateur y est,
+les pages suivantes ne le rouvrent plus : le signal passe sur le bouton du
+panneau. L'onglet est un flux vivant (cadre retiré quand il est masqué, donc
+screencast arrêté), jamais épinglé ni enregistré ; une conversation dont le
+navigateur est ouvert le retrouve au chargement (`GET /v1/ecran/<id>`), sans
+ouvrir le panneau. L'événement continue vers le fil (l'outil s'y affiche
+comme les autres).
+
+### 8.3 La pause de l'agent : bloquer, pas interrompre
+
+« Prendre la main » **retient les actions de l'agent sur son navigateur**
+dans le filtre, au lieu d'interrompre son tour :
+
+- interrompre, aujourd'hui, c'est `harness.interrupt` : SIGTERM au CLI, donc
+  au serveur MCP et à Chrome (mesuré en § 3 : « 0 processus restant »). La
+  page que la personne voulait prendre disparaîtrait avec l'agent ;
+- le filtre est sur toutes les surfaces (Atelier, VS Code, terminal,
+  wikichat) ; l'Atelier, lui, ne sait interrompre que ses propres tours ;
+- l'agent apprend ce qui a changé **à l'endroit même où il reprend** : la note
+  s'ajoute au résultat de l'action qui attendait. S'il ne travaillait pas, le
+  message de relance porte la même information.
+
+Limite assumée : seules ses actions sur le navigateur attendent ; ses autres
+outils (fichiers, Bash) continuent. Le bandeau de l'écran dit « Vous avez la
+main : l'agent est en pause (n actions en attente) ».
+
+### 8.4 J-f3 : les lectures du navigateur autorisées d'office
+
+`navigateur.OUTILS_EN_LECTURE` (`list_pages`, `take_snapshot`,
+`take_screenshot`, `wait_for`, `list_console_messages`,
+`get_console_message`, `list_network_requests`, `get_network_request`,
+`get_css_styles` ; relevés par `tools/list` du 1.10.1), exposée par
+`regles_de_lecture_du_navigateur()` (`mcp__chrome-devtools-mcp__<outil>`) et
+posée dans `permissions.allow` par `autoriser_les_lectures_du_navigateur`.
+Elle est appelée par `refuser_les_outils_simules`, la fonction que passent
+déjà les réglages de **chaque tour** (`harness`), ceux de VS Code, du
+terminal et de wikichat (`vscode_handoff`) et le vérificateur de cohérence :
+aucune ligne de `mcp_sync.py` n'a été nécessaire. Navigateur éteint
+(`ATELIER_NAVIGATEUR=0`), ces règles sont retirées ; celles de la personne ne
+sont jamais touchées. `select_page` n'y est pas (il change la page de
+l'agent).
+
+### 8.5 Vérifié, non vérifié
+
+Vérifié :
+
+- `tests/test_ecran.py` (hôte réel dans son fil, faux Chrome DevTools qui
+  acquitte comme Chrome) : portée `conversation` qui refuse une autre
+  conversation, un projet, une session de projet, une `Origin` étrangère, une
+  requête sans session, et qu'aucun code d'agent ne peut obtenir ; ni port ni
+  chemin DevTools dans la page, ses fichiers, le flux ou `GET /v1/ecran` ;
+  suivi de la page sélectionnée (changement d'onglet, lien cliqué, nouvel
+  onglet) ; rien ne tourne sans spectateur ; cadence bornée ; gestes refusés
+  main libre, traduits main prise, `javascript:` jamais transmis ; note ou
+  relance selon l'attente et le tour ; main abandonnée rendue ; fiche
+  douteuse ignorée (0644, filtre mort, version, port, chemin) ; ouverture
+  côté Atelier (code de la seule conversation, session du navigateur exigée) ;
+- `tests/test_filtre_ecran.py` (filtre réel, faux serveur 1.10.1) : fiche
+  (port, page, titre à parenthèses, 0600, retirée à la sortie) ; pause et
+  reprise dans l'ordre, note une seule fois ; note sans appel retenu ; main
+  trop longue ; appel retenu annulé ; plafond d'onglets tenu main rendue ;
+- `tests/test_lanceur_chrome.py` sous Linux (conteneur, faux node et faux
+  Chrome) : profil de conversation gardé, port ajouté en boucle locale dans le
+  rôle « navigateur », pas d'écran sans conversation sûre, passerelle ou
+  écran coupé, second processus en profil jetable, balayages ;
+- `tests/test_ecran_chrome_reel.py` : vrai Chrome sous Windows, vrai lanceur
+  sous Linux (voir 8.1) ; clic de la personne qui change le titre de la page,
+  action de l'agent retenue puis rendue avec la note ;
+- suites JS : `tests/js/panneau.suite.mjs` (onglet, ouverture, signal,
+  repli, cadre par l'Atelier, jamais enregistré) et
+  `tests/js/ecran.suite.mjs` (fractions de l'image, touches, bandeau).
+
+Non vérifié (ne se voit que sur le pod, après déploiement) :
+
+- la chaîne dans une vraie conversation `claude` du pod (CLI 2.1.281) : le nom
+  exact des outils dans le flux (`mcp__chrome-devtools-mcp__…`), l'ouverture
+  du panneau, l'image dans l'iframe sur `https`, la fluidité à travers
+  l'Ingress de l'hôte des applications ;
+- le bac à sable de Chrome sur le pod (dans le conteneur de mesure, il a
+  fallu `seccomp=unconfined` ; sur le pod, Chrome tourne déjà, § 3) ;
+- que Claude Code transmette `CLAUDE_CODE_SESSION_ID` à un serveur MCP stdio
+  (VS Code, terminal) : sans lui, ces surfaces gardent le profil jetable, sans
+  écran ;
+- que les règles `permissions.allow` de J-f3 suppriment bien la question pour
+  ces outils dans le CLI 2.1.281 (syntaxe `mcp__<serveur>__<outil>`,
+  documentée, non rejouée) ;
+- la relance après « Rendre la main » dans une vraie conversation (vérifiée
+  en mode factice seulement).
+
+### 8.6 Limites et suite
+
+- La page est reconnue à son adresse : deux onglets de même adresse, l'écran
+  suit le plus récemment changé.
+- Le screencast montre la page, pas les boîtes de dialogue (`alert`, choix
+  de fichier) : elles restent à l'agent (`handle_dialog`, `upload_file`).
+- Pas de composition de saisie (IME) ; le collage passe par `Input.insertText`.
+- Deux flux vivants au plus et vignettes (P4/P5) : non faits ; un onglet
+  masqué s'arrête déjà.
+- Un profil de conversation vit dans `/tmp` : il ne survit pas au
+  redémarrage du pod.
+
+### 8.7 Sur le pod, après le déploiement
+
+Rien à poser à la main : le lanceur et le filtre sont recopiés dans
+`~/work/bin/` par `install/atelier-init.sh` (le lanceur prend le filtre posé
+à côté de lui). Les CLI déjà vivants gardent l'ancien lanceur jusqu'à leur
+extinction (600 s d'inactivité).
+
+1. `ATELIER_CHROME_VERIFIER=1 ATELIER_SESSION=essai ~/work/bin/atelier-chrome`
+   : `ecran=1` et un `filtre=` qui existe.
+2. Dans une conversation de l'Atelier : « ouvre https://example.com ». Le
+   panneau s'ouvre sur « Navigateur de l'agent », l'image et l'adresse
+   s'affichent. Changer d'onglet du panneau pendant qu'il navigue : un signal,
+   pas de saut.
+3. `ls -l /tmp/atelier-chrome-$(id -u)/ecrans/` : une fiche en `-rw-------`
+   par conversation qui navigue ; `ss -ltnp | grep -i chrome` : seulement
+   `127.0.0.1:<port>`.
+4. « Prendre la main », cliquer dans la page, demander à l'agent une action
+   sur le navigateur (elle attend : bandeau « 1 action en attente »),
+   « Rendre la main » : son résultat porte la « Note de l'Atelier ». Main
+   rendue sans action en attente et sans tour : un message relance l'agent.
+5. Mode « défaut » : `take_screenshot` ne demande rien, `navigate_page`
+   demande (J-f3).
+6. Suivre la place : `du -sh /tmp/atelier-chrome-$(id -u)/conversation.*`.
 
 ## 9. Déploiement
 
