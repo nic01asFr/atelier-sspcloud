@@ -472,6 +472,8 @@ aucun modèle.
 | `GET /v1/memoire/conversations?repos_min=30` | les conversations : projet, genre (`assistant` ou `code`), état, `au_repos`, `empreinte` (change quand elle grandit). Les lancements de la routine de nuit (`wikichat:memoire:*`) en sont exclus |
 | `GET /v1/memoire/conversations/{id}` | le transcript **filtré et réduit** (lecture seule, par `fondre`, sans l'absorption qui écrit) : paroles de la personne, textes du modèle, outils (nom et quelques champs d'entrée, chemins relatifs), erreurs (300 caractères), fins de tour et leurs jetons. Jamais le contenu d'un résultat d'outil. Accepte l'identifiant du CLI |
 | `POST /v1/memoire/propositions` | une préférence, un trait du profil ou une interprétation proposés par un modèle : « À valider », source `memoire`, action `atelier_memoire_retenir`. Trois par conversation au plus, doublons ignorés, texte filtré |
+| `POST /v1/memoire/resumer` | **clé du lanceur seule** (`memoire_modele.py`, A-7 révisée le 26/09) : `{ conversation }`, jamais un texte. L'Atelier lit, filtre, prépare et borne l'entrée (58 000 caractères consigne comprise), appelle `qwen3-8-27b` par le relais (800 jetons de sortie), rend `{ texte, jetons: { entree, sortie } }`. 20 par jour, un à la fois (429, 409) ; 502 si le modèle manque ; chaque appel au journal unique |
+| `POST /v1/memoire/vecteurs` | **clé du lanceur seule** (A-9) : `{ textes (≤ 16), usage }` (`fiche` ou `requete`) → vecteurs `qwen3-embedding-8b` ; textes refiltrés, 8 000 caractères chacun, 2 000 par jour ; appels « fiche » au journal |
 
 **Commandes** (`commandes/rappel.py`, une ligne dans `commandes/enregistrer`) :
 
@@ -496,9 +498,10 @@ commandes réservées ; renvoi vers « À valider » pour les propositions en at
 **Côté wikichat** (`src/memoire/`, `docs/atelier-coherence.md` §14) : faits extraits par le
 code toutes les 15 min et à la fin d'une conversation ; fiches
 `~/.wikichat/knowledge/conversations/<projet>/<id>.md` et leur index, lues par
-`search_knowledge` (profil `code` : son projet) ; routine de nuit par des lancements de
-l'Atelier (20 × 30 000 jetons au plus, `qwen3-8-27b`, mode `dontAsk`, sans autorisation
-d'outil), trigger né désactivé ; mémoire de la personne (`memoire/personne.json`) avec les
+`search_knowledge` (profil `code` : son projet), complétés par le sens (A-9, vecteurs à
+côté de l'index, fusion des rangs, lexical seul sans point d'accès) ; routine de nuit par
+`POST /v1/memoire/resumer` (20 conversations au plus, sans agent depuis le 26/09 ; avant :
+un lancement de l'Atelier par conversation), trigger né désactivé ; mémoire de la personne (`memoire/personne.json`) avec les
 faits enregistrés d'office ; export assaini qui inclut les fiches (S6).
 
 **Mesuré sur le pod** (lecture seule, 26/09) : 54 conversations de l'Atelier, toutes d'agent
@@ -506,7 +509,12 @@ code, 44 d'au moins 3 échanges ; registres de 3,4 Mo en moyenne (14,7 Mo au plu
 préparée de 47 000 caractères en moyenne (≈ 13 800 jetons), 209 000 au plus ; environ 4,5
 conversations par jour. Nuit estimée à ≈ 35 000 jetons par conversation (entrée ≤ 17 000,
 plus le harnais d'un agent code, 21 695), soit ≈ 0,7 M pour chacune des deux nuits de
-rattrapage et ≈ 120 000 en régime.
+rattrapage et ≈ 120 000 en régime. **Remesuré le 26/09 (équipe R)** avec la préparation de
+la route de résumé (1 500 caractères par parole, 1 000 par réponse finale, comme la nuit
+le faisait déjà) : entrée de 15 600 caractères en moyenne, 57 950 au plus ; ≈ 4 600 jetons
+par conversation en moyenne au lieu de ≈ 26 400 (harnais compris), soit ≈ 92 000 pour une
+nuit de 20 conversations au lieu de ≈ 530 000. Les 47 000 caractères ci-dessus comptaient
+tous les textes du modèle, sans les bornes par message.
 
 **Écart à A-7** : le lot D refuse un message de plus de 60 000 caractères ; l'entrée effective
 est donc plafonnée à 58 000 caractères (≈ 17 000 jetons), pas à 30 000 jetons. 15
@@ -1047,5 +1055,30 @@ Le journal consigne, dans l'ordre, ce que chaque retour a changé dans la struct
     par toutes les surfaces, donc le vérificateur les voit ;
   - à confirmer sur le pod : bac à sable de Chrome, `CLAUDE_CODE_SESSION_ID` transmis aux
     serveurs stdio par VS Code et le terminal.
+- **26/09, équipe R (résumé de la mémoire, décisions de Nicolas du 26/09)** :
+  - A-7 révisée : la nuit de wikichat ne lance plus d'agent. `POST /v1/memoire/resumer`
+    (`memoire_modele.py`, clé du lanceur seule) prend un identifiant de conversation ;
+    l'Atelier lit le transcript, le filtre (T10), prépare l'entrée (paroles et réponse
+    finale de chaque tour), la borne à 58 000 caractères consigne comprise, appelle
+    `qwen3-8-27b` une fois par le relais (non streamé, 800 jetons de sortie) ; 20 résumés
+    par jour tous appelants, un à la fois ; chaque appel et chaque refus au journal unique
+    (`memoire_resumer`, `cout.entree` et `cout.sortie`) ; aucune commande du catalogue ;
+  - mesure sur le pod (44 conversations d'au moins 3 échanges, entrée préparée par le code
+    de la route, estimée à caractères / 3,4, sans appel de modèle) : médiane ≈ 24 900 →
+    ≈ 3 100 jetons par conversation, moyenne ≈ 26 400 → ≈ 4 600, maximum ≈ 38 800 →
+    ≈ 17 000 ; la différence est le harnais (21 695). 2 conversations sur 44 sont
+    raccourcies au milieu ;
+  - A-9 : `POST /v1/memoire/vecteurs` (`qwen3-embedding-8b`, 16 textes par appel, 8 000
+    caractères par texte, 2 000 par jour) ; wikichat range les vecteurs à côté de l'index
+    des fiches et fusionne les rangs lexical et sens dans le rappel et `search_knowledge` ;
+    choix : par l'Atelier plutôt que par la même configuration dans wikichat, pour que le
+    point d'accès, la clé, le filtre des secrets et le journal restent en un seul endroit
+    (S5) ;
+  - non vérifié : le chemin des embeddings sur le point d'accès SSPCloud (`/v1/embeddings`
+    puis `/embeddings` ; le sondage avec la clé a été refusé par la garde des permissions),
+    l'usage réel rendu par `qwen3-8-27b` à travers le relais, le seuil de similarité (0,35,
+    réglable) sur de vraies fiches ;
+  - essai à la main, sans activer la nuit : `POST /api/memoire/nuit?limite=3` chez wikichat
+    (clé du lanceur), non exécuté sur le pod.
 - **Explication de T12** : sur le poste, une tâche planifiée publie la mémoire toutes les 15 min depuis
     `Github Repositories/wikichat`, pendant que le dépôt évolue ailleurs.
