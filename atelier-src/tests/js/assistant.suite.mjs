@@ -154,6 +154,21 @@ const MOTS_INTERNES = ["artefact", "MCP", "jeton", "composition", "gabarit", "ex
   const sansInverse = carteDAction({ carte: { titre: "Arrêté", action: "x-1" } });
   egal(sansInverse.querySelectorAll(".msg-carte-annuler").length, 0, "pas d'« Annuler » sans inverse");
   egal(carteDAction({ carte: { titre: "Vue", voir: { lien: "javascript:alert(1)" } } }).querySelectorAll("a").length, 0, "jamais un lien javascript:");
+
+  const avecPreuve = carteDAction({
+    carte: {
+      titre: "Agent réglé",
+      preuve: { actif: false, horaire: "à la demande", pool: { present: true } },
+    },
+  });
+  const preuve = avecPreuve.querySelector(".msg-carte-preuve");
+  porte(texte(preuve.children[0]), "Actif : non.", "une preuve booléenne se lit comme une phrase");
+  porte(texte(preuve.children[1]), "Horaire : à la demande.", "une valeur se lit sans syntaxe JSON");
+  porte(texte(preuve.children[2]), "Pool · Présent : oui.", "une preuve imbriquée garde un chemin lisible");
+  const technique = preuve.querySelector(".msg-carte-preuve-technique");
+  verifier(!!technique && technique.open === false, "le JSON de preuve reste replié sous « Détails techniques »");
+  porte(texte(technique.querySelector("summary")), "Détails techniques", "le détail brut est nommé");
+  porte(texte(technique.querySelector("pre")), '"actif": false', "le JSON exact reste disponible pour diagnostiquer");
 }
 
 // ── L'aperçu d'une commande engageante : « Oui » ───────────────────────

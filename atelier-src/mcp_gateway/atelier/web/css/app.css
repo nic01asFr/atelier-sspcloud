@@ -3985,6 +3985,24 @@ button.session-face-link {
   font-size: var(--t-xs);
 }
 
+.msg-carte-preuve-technique {
+  margin-top: 0.25rem;
+}
+
+.msg-carte-preuve-technique > summary {
+  cursor: pointer;
+}
+
+.msg-carte-preuve-technique pre {
+  margin: 0.35rem 0 0;
+  padding: 0.45rem;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--texte-2);
+}
+
 /* --- Vague 2 : gardiens, tâches automatiques, « À valider », journal -------
    Les gardiens vivent dans la vue Agents (décision J-i) ; « À valider » et le
    journal ont leur onglet. Le badge dit, d'où qu'on soit, ce qui attend. */

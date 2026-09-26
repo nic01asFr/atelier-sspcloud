@@ -78,4 +78,4 @@ jobs:
           docker run --rm --entrypoint python3 ${{ env.IMAGE }}:${{ github.sha }} \
             -c "import mcp_gateway.atelier.app; print('import ok')"
           docker run --rm --entrypoint bash ${{ env.IMAGE }}:${{ github.sha }} \
-            -c 'test -x "$(ls -d /opt/atelier/extensions/anthropic.claude-code-* | sort -V | tail -1)/resources/native-binary/claude" && /opt/atelier/outils/node-*/bin/node --version && test -f /opt/atelier/wikichat/server.mjs && echo outils ok'
+            -c 'test ! -d /opt/atelier/extensions && ! command -v google-chrome >/dev/null && /opt/atelier/outils/node-*/bin/node --version && /opt/atelier/outils/code-server-*/bin/code-server --version && test -f /opt/atelier/wikichat/server.mjs && echo image redistribuable ok'

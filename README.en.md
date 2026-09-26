@@ -134,9 +134,10 @@ project is young: view names and screens may still change. See
 
 ## Claude Code
 
-This repository **does not contain** Claude Code. The chart's image installs
-the Claude Code extension (which brings the CLI) from the code-server
-marketplace when it is built; its use remains subject to Anthropic's terms.
+This repository **does not contain** Claude Code. On first start, the chart's
+image installs the Claude Code extension (which brings the CLI) from the
+code-server marketplace, then keeps it on the persistent volume; its use
+remains subject to Anthropic's terms.
 Inference goes through the model gateway set by `ANTHROPIC_BASE_URL` (the
 SSPCloud one by default), with your key, not through a shared account.
 Independent project, not affiliated with Anthropic.

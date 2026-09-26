@@ -14,8 +14,15 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 ## Version 0.3.0 : publication (non publiée)
 
 - une seule version pour le service, le paquet et le chart (0.3.0) ;
+- image redistribuable : le navigateur sans écran et l'extension Claude Code
+  sont téléchargés depuis leur source au premier démarrage, puis gardés sur
+  le volume ; seules les bibliothèques système du navigateur restent dans
+  l'image ;
 - retrait de `deploy-patches/`, `wikichat-atelier/` et du miroir de transition
-  `helm-repo/` : le dépôt Helm n'est plus servi que par GitHub Pages.
+  `helm-repo/` : le dépôt Helm n'est plus servi que par GitHub Pages ;
+- fil : le raisonnement n'occupe plus une ligne quand son affichage est coupé,
+  et les preuves des cartes d'action se lisent sans JSON brut ; celui-ci reste
+  disponible sous « Détails techniques ».
 
 Préparation de la publication du dépôt :
 

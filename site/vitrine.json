@@ -1184,6 +1184,13 @@
     },
     "entrees": [
       {
+        "version": "0.3.0",
+        "texte": {
+          "fr": "Une seule version pour le service, le paquet et le chart. Image redistribuable : le navigateur des agents et l'extension Claude Code sont téléchargés au premier démarrage depuis leur source officielle, puis gardés sur le volume. Le dépôt Helm n'est plus servi que par GitHub Pages.",
+          "en": "One version for the service, the package and the chart. Redistributable image: the agents' browser and the Claude Code extension are downloaded on first start from their official source, then kept on the volume. The Helm repository is now served by GitHub Pages only."
+        }
+      },
+      {
         "version": "chart 0.2.0",
         "texte": {
           "fr": "Hôte des applications sur un second Ingress (créations, bureaux relayés, écran du navigateur de l'agent), clé owner affichée là où Onyxia la copie. Côté service, depuis : commandes, « À valider », journal, gardiens, Assistant, navigateur en direct et mémoire (vagues 1 à 3), interface reprise avec thèmes clair et sombre.",

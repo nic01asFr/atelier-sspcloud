@@ -147,10 +147,10 @@ Le suivi est dans [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Claude Code
 
-Ce dépôt **ne contient pas** Claude Code. L'image du chart installe
-l'extension Claude Code (qui apporte le CLI) depuis la place de marché de
-code-server au moment de sa construction ; son usage reste soumis aux
-conditions d'Anthropic. L'inférence passe
+Ce dépôt **ne contient pas** Claude Code. Au premier démarrage, l'image du
+chart installe l'extension Claude Code (qui apporte le CLI) depuis la place de
+marché de code-server, puis la garde sur le volume ; son usage reste soumis
+aux conditions d'Anthropic. L'inférence passe
 par la passerelle de modèles configurée via `ANTHROPIC_BASE_URL` (celle du
 SSPCloud par défaut), avec votre clé, et non par un compte partagé. Projet
 indépendant, non affilié à Anthropic.

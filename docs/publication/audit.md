@@ -11,7 +11,7 @@ décisions du mainteneur, listées au §9.
 |---|---|---|---|
 | Secrets dans l'historique | inconnu | scan complet (gitleaks et motifs) : **aucun secret réel**, 6 + 8 faux positifs, tous des valeurs de test | rien sur les secrets ; l'adresse de l'auteur est dans les métadonnées des commits (§9) |
 | Données personnelles | chemins de la machine, adresses de pod nominatives, employeur, captures | neutralisées dans les documents vivants et les captures | le prénom de l'auteur dans les documents de vision, les exemples de projets réels (§9) |
-| Structure racine | fichiers égarés, traces mêlées | `filtre.mjs` et traces rangés, `install.sh` dans `install/` | retirer `deploy-patches/`, `wikichat-atelier/`, `helm-repo/` (§9) |
+| Structure racine | fichiers égarés, traces mêlées | `filtre.mjs` et traces rangés, `install.sh` dans `install/` ; `deploy-patches/`, `wikichat-atelier/` et `helm-repo/` retirés en 0.3.0 | — |
 | `docs/` | 30 documents à plat, sans index, dont la moitié périmés | index par usage, 13 traces en archives, bandeaux d'état, 9 contradictions avec le code corrigées | réécrire en profondeur les documents de vision marqués « partiel » (§4) |
 | Sécurité | `SECURITY.md` faux sur deux points de fond | réécrit sur le code actuel, signalement privé | activer le signalement privé sur GitHub (§9) |
 | Hygiène | licence et sécurité seulement | `CONTRIBUTING.md`, `CHANGELOG.md`, `CODE_OF_CONDUCT.md`, `.editorconfig`, métadonnées du paquet | — |
@@ -41,9 +41,9 @@ erreur de console, sans contraste insuffisant (§7).
 | `scripts/` | vérificateur de liens | **ajouté** |
 | `docs/` | documentation | réorganisée (§4) |
 | `filtre.mjs` | garde-fou d'un dépôt mémoire de wikichat, produit par un agent le 22/08, importé nulle part | **rangé** dans `docs/archives/filtre-depot-memoire/` avec une note ; à porter dans le dépôt qu'il protège puis à supprimer |
-| `deploy-patches/deploy_agent_ui.py` | outil de l'auteur : pousser l'arbre vers un pod par le MCP Onyxia | **à supprimer (proposé)** : dernier changement le 11/09, vise l'ancienne organisation (`/home/onyxia/work/atelier-src`, session `proj-claude-code`), une adresse de pod nominative par défaut, et pousse encore `wikichat-atelier/src/pilote.mjs` (ligne suivante) ; l'installation passe par l'image |
-| `wikichat-atelier/` | version de travail de `pilote.mjs` de wikichat | **à supprimer (proposé)** : la branche `atelier-coherence` de wikichat contient ses trois ajouts **et davantage** (le mode de permission des agents) ; ni l'image ni `atelier-init.sh` ne le posent, et `deploy_agent_ui.py` le pousserait par-dessus une version plus récente. Supprimer les deux ensemble |
-| `helm-repo/` | miroir de transition du dépôt Helm (`raw.githubusercontent.com`), repoussé par la CI | **à supprimer (proposé)** à la version suivante du chart, comme le prévoit `release.yml` ; retirer alors le pas « Miroir » et la permission `contents: write` |
+| `deploy-patches/deploy_agent_ui.py` | ancien outil de l'auteur : pousser l'arbre vers un pod par le MCP Onyxia | **supprimé en 0.3.0** : il visait l'ancienne organisation et aurait poussé un pilote wikichat dépassé |
+| `wikichat-atelier/` | ancienne version de travail de `pilote.mjs` de wikichat | **supprimé en 0.3.0** avec l'outil qui le poussait ; wikichat se suit dans son propre dépôt |
+| `helm-repo/` | ancien miroir de transition du dépôt Helm (`raw.githubusercontent.com`) | **supprimé en 0.3.0** avec le pas « Miroir » et la permission `contents: write` ; GitHub Pages est l'adresse unique |
 
 ## 3. Secrets
 
@@ -165,17 +165,17 @@ par lui), code-server (MIT) et `chrome-devtools-mcp` (Apache-2.0). Les
 modèles cités (Qwen, Gemma) ne sont pas distribués : ils sont appelés par la
 passerelle du SSPCloud.
 
-Deux points relèvent de l'**image**, pas du dépôt : elle embarque **Google
-Chrome** (paquet officiel, licence propriétaire de Google) et **l'extension
-Claude Code** (conditions d'Anthropic), installés à sa construction. Le
-README le dit désormais (« ce dépôt ne contient pas Claude Code ; l'image
-l'installe »). Publier l'image sur un registre public revient à redistribuer
-ces deux logiciels : à vérifier contre leurs conditions (§9).
+Depuis la 0.3.0, l'image n'embarque plus **Google Chrome** ni **l'extension
+Claude Code**. Elle ne garde que les bibliothèques système du navigateur ;
+`atelier-init.sh` télécharge `chrome-headless-shell` et l'extension depuis
+leurs sources au premier démarrage, puis les garde sur le volume. Le registre
+ne redistribue donc plus ces deux logiciels ; leur téléchargement et leur
+usage restent soumis aux conditions de leurs éditeurs.
 
 Métadonnées : `pyproject.toml` déclare maintenant sa licence et ses
-adresses ; la version du service (`mcp_gateway/atelier/__init__.py`, 0.1.0,
-rendue par `/health`) diffère de celle du paquet (0.2.0) et de celle du chart
-(0.2.0) : à aligner à la prochaine version.
+adresses. Depuis la 0.3.0, la version du service, rendue par `/health`, est la
+source du paquet Python et correspond à celle du chart ; un test tient cet
+accord.
 
 ## 7. Vitrine
 
@@ -222,10 +222,10 @@ Rendus : [`vitrine/`](vitrine/) — pages complètes en clair et en sombre, à
 | `docs.yml` | — | nouveau : teste le vérificateur et vérifie les liens de la documentation |
 
 Aucun secret n'est utilisé hors de `GITHUB_TOKEN` ; aucun déclencheur
-`pull_request_target`. Recommandations restantes : épingler les actions tierces
+`pull_request_target`. Recommandation restante : épingler les actions tierces
 par empreinte de commit plutôt que par étiquette (`docker/*`, `azure/setup-helm`,
-`helm/kind-action`) ; retirer `contents: write` de `release.yml` avec le
-miroir `helm-repo/`.
+`helm/kind-action`). La permission `contents: write` du job de publication a
+été retirée avec le miroir `helm-repo/` en 0.3.0.
 
 ## 9. Décisions pour le mainteneur
 
@@ -238,22 +238,18 @@ Avant de rendre le dépôt public :
    14 branches de travail (`integration-*`, `deploiement-26-09`…) qui
    deviendront visibles : les supprimer ou les garder ; les autres branches
    locales (48 en tout) ne sont pas poussées.
-2. **Supprimer `deploy-patches/` et `wikichat-atelier/`** ensemble (§2) : le
-   second est en retard sur `atelier-coherence` et le premier le pousserait sur
-   un pod.
-3. **Supprimer `helm-repo/`** à la prochaine version du chart, avec le pas
-   « Miroir » de `release.yml`.
-4. **Faire suivre wikichat par l'image** : le `Dockerfile` clone wikichat sur
-   `main`, qui a 23 commits de retard sur `atelier-coherence`, la branche dont
-   l'Atelier dépend (lot W, profils, mémoire). Fusionner `atelier-coherence`
-   dans `main` de wikichat, ou poser `WIKICHAT_REF=atelier-coherence`. Sans
-   cela, une installation neuve par le catalogue n'a pas ce que la vitrine
-   décrit.
+2. **Résolu en 0.3.0 — dossiers hérités** : `deploy-patches/` et
+   `wikichat-atelier/` ont été supprimés ensemble.
+3. **Résolu en 0.3.0 — dépôt Helm** : `helm-repo/` et le pas « Miroir » de
+   `release.yml` ont été supprimés ; seule l'adresse GitHub Pages reste.
+4. **Résolu avant la 0.3.0 — wikichat** : `main` de wikichat porte désormais
+   le travail auparavant isolé dans `atelier-coherence` ; l'image peut suivre
+   `main` sans perdre les profils ni la mémoire.
 5. **Activer le signalement privé des failles** (Settings › Code security ›
    Private vulnerability reporting), que `SECURITY.md` désigne désormais.
-6. **Image publique** : vérifier que redistribuer Google Chrome et l'extension
-   Claude Code dans `ghcr.io/nic01asfr/atelier` est permis par leurs
-   conditions, ou les faire installer au premier démarrage.
+6. **Résolu en 0.3.0 — image** : Google Chrome et l'extension Claude Code ne
+   sont plus redistribués dans l'image ; l'init les installe au premier
+   démarrage sur le volume.
 7. **Prénom dans les documents de vision** : garder (c'est l'auteur et le
    décideur nommé), ou remplacer par « le mainteneur ».
 8. **Captures `docs/ui/avant/`** : elles montrent la liste de projets du pod
@@ -265,9 +261,8 @@ Avant de rendre le dépôt public :
 10. **Mot-clé `cerema`** du chart et connecteur `ceremadoc` dans la
     configuration : les garder signale une affiliation ; les retirer si le
     projet se présente comme indépendant.
-11. **Version** : aligner la version du service (0.1.0) sur celle du paquet et
-    du chart, et monter le chart à la prochaine publication (0.3.0) : son
-    contenu a changé depuis la 0.2.0 publiée.
+11. **Résolu en 0.3.0 — version** : le service, le paquet et le chart portent
+    la même version, tenue par un test.
 12. **Réécrire les documents de vision partiels** (§4) ou les ranger en
     archives une fois leurs décisions reportées dans `decisions.md`.
 

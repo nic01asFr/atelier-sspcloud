@@ -73,6 +73,17 @@ def test_les_pieces_de_l_installation_sont_la() -> None:
         assert attendu.is_file(), f"{attendu.relative_to(RACINE)} manque"
 
 
+def test_l_image_ne_redistribue_ni_navigateur_ni_extension_claude() -> None:
+    dockerfile = (RACINE / "deploy" / "Dockerfile").read_text(encoding="utf-8")
+    init = (RACINE / "install" / "atelier-init.sh").read_text(encoding="utf-8")
+    assert "dl.google.com/linux/direct" not in dockerfile
+    assert "--install-extension anthropic.claude-code" not in dockerfile
+    assert "ATELIER_EXTENSIONS=/opt/atelier" not in dockerfile
+    assert "@puppeteer/browsers@$VERSION_PUPPETEER_BROWSERS" in init
+    assert "--install-extension anthropic.claude-code" in init
+    assert "CACHE_EXTENSIONS=\"$WORK/.code-server-extensions\"" in init
+
+
 def test_le_chart_est_eprouve_puis_publie_depuis_main_seulement() -> None:
     """`release.yml` a remplacé `helm.yml` : il éprouve le chart, puis le publie.
 

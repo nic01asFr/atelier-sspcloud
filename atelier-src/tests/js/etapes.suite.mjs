@@ -115,21 +115,32 @@ const parole = (t) => ({ type: "text", text: t });
     parole("Le titre de la page est « IANA »."),
     parole("Autre chose ?"),
   ];
-  const g = regrouperTour(blocs);
+  const g = regrouperTour(blocs, { raisonnement: false });
   egal(g.nombre, 2, "une étape par appel d'outil");
   egal(
     g.etapes.map((e) => e.genre),
-    ["raisonnement", "narration", "outil", "narration", "outil"],
-    "le raisonnement et les textes intermédiaires restent à leur place dans les étapes",
+    ["narration", "outil", "narration", "outil"],
+    "le raisonnement disparaît des étapes quand la personne ne l'a pas demandé",
   );
   egal(g.reponse.map((b) => b.text), ["Le titre de la page est « IANA ».", "Autre chose ?"],
     "le texte qui suit le dernier outil est la réponse");
   egal(g.toujoursVisibles, [], "rien à épingler dans un tour sans incident");
   egal(resumeDesEtapes(g), "Voir les étapes (2)", "le pli dit combien d'étapes");
 
-  const sansOutil = regrouperTour([{ type: "thinking", text: "hmm" }, parole("Bonjour.")]);
+  const sansOutil = regrouperTour([{ type: "thinking", text: "hmm" }, parole("Bonjour.")], { raisonnement: false });
   egal(sansOutil.reponse.length, 1, "sans outil, tout le texte est réponse");
-  egal(resumeDesEtapes(sansOutil), "Voir le raisonnement", "et le pli ne garde que le raisonnement");
+  egal(resumeDesEtapes(sansOutil), "", "le pli vide ne garde pas une ligne de raisonnement masquée");
+  const avecRaisonnement = regrouperTour(blocs, { raisonnement: true });
+  egal(
+    avecRaisonnement.etapes.map((e) => e.genre),
+    ["raisonnement", "narration", "outil", "narration", "outil"],
+    "le raisonnement reprend sa place quand la personne le demande",
+  );
+  egal(
+    resumeDesEtapes(regrouperTour([{ type: "thinking", text: "hmm" }, parole("Bonjour.")], { raisonnement: true })),
+    "Voir le raisonnement",
+    "un tour sans outil peut montrer son raisonnement à la demande",
+  );
   egal(resumeDesEtapes(regrouperTour([parole("Bonjour.")])), "", "une réponse seule n'a pas de pli");
   egal(texteDeLaReponse({ blocks: blocs }), "Le titre de la page est « IANA ».\n\nAutre chose ?",
     "« Copier » prend la réponse, sans la narration");
@@ -205,13 +216,14 @@ const parole = (t) => ({ type: "text", text: t });
   appendMessageBody(replie, { role: "assistant", blocks: blocs });
   verifier(!replie.querySelector(".tour-etapes").open, "par défaut, les étapes sont repliées");
   egal(replie.querySelectorAll(".msg-tool").length, 0, "et le brut d'un outil n'est construit qu'au dépliage");
+  egal(replie.querySelectorAll(".etape-raisonnement").length, 0, "le raisonnement n'occupe aucune ligne quand il est masqué");
 
   poserReglagesDuFil({ actions: true });
   const deplie = berceau();
   appendMessageBody(deplie, { role: "assistant", blocks: blocs });
   verifier(deplie.querySelector(".tour-etapes").open, "« actions » coché : les étapes s'ouvrent");
   egal(deplie.querySelectorAll(".msg-tool").length, 1, "et chaque outil montre son détail brut");
-  verifier(deplie.querySelector(".etape-raisonnement").querySelector(".etape-pli").open === false, "le raisonnement reste replié tant qu'on ne l'a pas demandé");
+  egal(deplie.querySelectorAll(".etape-raisonnement").length, 0, "ouvrir les actions ne fait pas réapparaître le raisonnement");
 
   poserReglagesDuFil({ raisonnement: true, actions: false });
   const pense = berceau();

@@ -571,9 +571,10 @@ Voir `docs/archives/chantiers/coherence-projet.md`, sections « Navigateur stdio
 ## 9 bis. Chrome durable
 
 Le Chrome des mesures (§ en-tête) était `/usr/bin/google-chrome`, installé à la
-main dans le système du pod. Or le pod ne tourne pas sur l'image de l'Atelier
-(`deploy/Dockerfile`, qui, elle, embarque Chrome) : il tourne sur l'image
-Jupyter du catalogue, dont on n'extrait que le code. Tout ce qui est hors du
+main dans le système du pod. Or le pod ne tourne pas sur l'image de l'Atelier :
+il tourne sur l'image Jupyter du catalogue, dont on n'extrait que le code.
+L'image de l'Atelier n'embarque plus non plus le navigateur depuis la 0.3.0.
+Tout ce qui est hors du
 volume persistant `~/work` — `/usr/bin/google-chrome`, et les bibliothèques
 qu'`apt` a tirées avec lui — disparaît au redémarrage du pod.
 
@@ -598,8 +599,8 @@ cd ~/work/.tools && ~/work/.tools/node-v22.23.2-linux-x64/bin/npx --yes \
   `ATELIER_CHROME_CANAL` un autre canal ou une version (`stable` par défaut).
 - Idempotent : rien n'est téléchargé si le binaire choisi est déjà là. Pour
   changer de version, supprimer le dossier `linux-<version>` et relancer l'init.
-- Rien n'est fait si `ATELIER_CHROME_VOLUME=0`, si `ATELIER_CHROME_BIN` désigne
-  déjà un Chrome, ou sur l'image de l'Atelier (Chrome y est). Un échec de
+- Rien n'est fait si `ATELIER_CHROME_VOLUME=0` ou si `ATELIER_CHROME_BIN` désigne
+  déjà un Chrome. Un échec de
   téléchargement n'arrête pas l'init (journal : `~/work/logs/chrome-install.log`).
 
 **Recherche par le lanceur.** `atelier-chrome` prend, dans l'ordre :
@@ -616,7 +617,8 @@ s'il en manque (`bibliothèques système absentes : …`). Sur le pod actuel, el
 sont présentes tant que le `google-chrome` posé par `apt` l'est ; après un
 redémarrage, seul l'avertissement de l'init dira si l'image Jupyter les a. Si
 elles manquent : les demander dans l'image du service (ou l'init personnel
-Onyxia qui tourne en root, `apt-get install -y libnss3 libgbm1 …`), ou passer au
-chart de l'Atelier, dont l'image les porte. À vérifier au premier redémarrage :
+Onyxia qui tourne en root, `apt-get install -y libnss3 libgbm1 …`). L'image du
+chart de l'Atelier porte ces bibliothèques sans porter le navigateur lui-même.
+À vérifier au premier redémarrage :
 `~/work/bin/atelier-chrome` avec `ATELIER_CHROME_VERIFIER=1`, puis un
 `take_screenshot` réel, puis `/chrome/health`.

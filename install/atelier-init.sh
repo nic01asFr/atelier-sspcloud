@@ -7,9 +7,10 @@
 #     Onyxia (rejoué à chaque démarrage) ou à la main : il télécharge node,
 #     code-server et l'extension Claude Code, clone les dépôts, installe,
 #     démarre ;
-#   - comme point d'entrée de l'image `atelier` (chart du catalogue) : tout
-#     est déjà dans l'image, sous /opt/atelier ; il ne reste que les secrets,
-#     les réglages et le démarrage, au premier plan.
+#   - comme point d'entrée de l'image `atelier` (chart du catalogue) : le code
+#     et les outils libres sont déjà sous /opt/atelier ; le navigateur et
+#     l'extension Claude Code sont posés sur le volume au premier démarrage,
+#     puis viennent les secrets, les réglages et les processus.
 #
 # Idempotent : il ne refait que ce qui manque. Tout ce qui doit durer vit sur
 # le volume persistant (~/work) ; $HOME est jetable et se regarnit ici.
@@ -99,7 +100,7 @@ ln -sfn "$DOSSIER_NODE/bin/npx" "$BIN/npx"
 # Le serveur MCP du navigateur (chrome-devtools-mcp, Apache-2.0), épinglé, dans
 # le volume — l'image l'embarque déjà sous /opt/atelier/outils. Chaque agent le
 # lance par ~/work/bin/atelier-chrome (voir docs/navigateur-atelier.md). Chrome
-# vient du volume (installé ci-dessous), de l'image, ou du système ; sans lui,
+# vient du volume (installé ci-dessous) ou du système ; sans lui,
 # le navigateur reste déclaré mais indisponible, et l'écran des connecteurs le dit.
 
 paquet_navigateur=node_modules/chrome-devtools-mcp/package.json
@@ -118,7 +119,6 @@ fi
 #                              interface) | chrome (Chrome for Testing complet)
 #   ATELIER_CHROME_CANAL       stable (défaut) | beta | un numéro de version
 #   ATELIER_CHROME_VOLUME=0    ne rien installer (Chrome fourni autrement)
-# Sur l'image de l'Atelier, Chrome est dans l'image : rien à faire.
 VERSION_PUPPETEER_BROWSERS="${PUPPETEER_BROWSERS_VERSION:-3.2.3}"
 NAVIGATEUR_CHROME="${ATELIER_CHROME_NAVIGATEUR:-chrome-headless-shell}"
 CANAL_CHROME="${ATELIER_CHROME_CANAL:-stable}"

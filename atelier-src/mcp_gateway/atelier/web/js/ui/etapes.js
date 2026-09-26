@@ -352,15 +352,20 @@ export function etapeEnEchec(bloc) {
  * - La réponse est le texte qui suit le dernier geste du tour (outil,
  *   demande, message du système). Sans geste, tout le texte est réponse.
  * - Les étapes sont tout le reste, dans l'ordre : un outil par étape, le
- *   texte écrit entre deux outils comme narration, le raisonnement.
+ *   texte écrit entre deux outils comme narration, et le raisonnement quand
+ *   « Montrer le raisonnement » est coché. Décoché (le défaut), il n'est pas
+ *   une étape du tout : il occupait une ligne sur deux de la liste, pour un
+ *   texte que la personne a choisi de ne pas voir. Le compteur ne compte que
+ *   les outils, dans les deux cas.
  * - Ne se replient jamais : les demandes d'autorisation et les questions,
  *   les demandes restées sans réponse, les messages du système, les outils
  *   en erreur ou refusés, les cartes d'action de l'Assistant (`aCarte`).
  *
  * @param {object[]} blocs les blocs du message, dans l'ordre du tour
- * @param {{ aCarte?: (bloc: object) => boolean }} [options]
+ * @param {{ aCarte?: (bloc: object) => boolean, raisonnement?: boolean }} [options]
+ *   `raisonnement` : montrer le raisonnement ; par défaut, le réglage du fil.
  */
-export function regrouperTour(blocs, { aCarte = () => false } = {}) {
+export function regrouperTour(blocs, { aCarte = () => false, raisonnement = reglages.raisonnement } = {}) {
   const liste = Array.isArray(blocs) ? blocs : [];
   let dernierGeste = -1;
   liste.forEach((b, i) => {
@@ -381,7 +386,7 @@ export function regrouperTour(blocs, { aCarte = () => false } = {}) {
       return;
     }
     if (b.type === "thinking") {
-      if (String(b.text || "").trim()) etapes.push({ genre: "raisonnement", bloc: b });
+      if (raisonnement && String(b.text || "").trim()) etapes.push({ genre: "raisonnement", bloc: b });
       return;
     }
     if (b.type === "tool") {

@@ -1,11 +1,11 @@
 # L'image de l'Atelier pour le catalogue Onyxia.
 #
 # Même base que le service Jupyter du catalogue officiel : même Python, même
-# utilisateur `onyxia`, même volume ~/work. Ce qui est lourd ou vient du
-# réseau — node, code-server, l'extension Claude Code, wikichat et ses
-# dépendances, le paquet de l'Atelier — est posé ici, une fois, sous
-# /opt/atelier. Au démarrage du pod, install/atelier-init.sh n'a plus que les
-# secrets, les réglages et les processus à poser, sur le volume.
+# utilisateur `onyxia`, même volume ~/work. Node, code-server, wikichat et le
+# paquet de l'Atelier sont posés ici sous /opt/atelier. Le navigateur et
+# l'extension Claude Code, soumis aux conditions de leurs éditeurs, ne sont
+# pas redistribués dans l'image : l'init les télécharge depuis leur source au
+# premier démarrage et les garde sur le volume.
 FROM inseefrlab/onyxia-jupyter-python:py3.13.13
 
 ARG NODE_VERSION=22.23.2
@@ -16,7 +16,7 @@ ARG GIT_SHA=
 
 USER root
 ENV ATELIER_OUTILS=/opt/atelier/outils
-RUN mkdir -p "$ATELIER_OUTILS" /opt/atelier/extensions /opt/atelier/bin
+RUN mkdir -p "$ATELIER_OUTILS" /opt/atelier/bin
 
 # node et npm, épinglés.
 RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
@@ -26,30 +26,28 @@ RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-l
 ENV ATELIER_NODE_DIR=/opt/atelier/outils/node-v${NODE_VERSION}-linux-x64
 ENV PATH=${ATELIER_NODE_DIR}/bin:${PATH}
 
-# code-server, épinglé, et l'extension Claude Code — c'est d'elle que vient
-# le binaire `claude`.
+# code-server, épinglé. L'extension Claude Code — et donc le binaire `claude`
+# qu'elle apporte — sera installée par atelier-init.sh sur le volume.
 RUN curl -fsSL "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server-${CODE_SERVER_VERSION}-linux-amd64.tar.gz" \
       -o /tmp/code-server.tar.gz \
     && tar -xzf /tmp/code-server.tar.gz -C "$ATELIER_OUTILS" \
     && rm -f /tmp/code-server.tar.gz
 ENV ATELIER_CODE_SERVER_DIR=/opt/atelier/outils/code-server-${CODE_SERVER_VERSION}-linux-amd64
-ENV ATELIER_EXTENSIONS=/opt/atelier/extensions
-RUN "$ATELIER_CODE_SERVER_DIR/bin/code-server" --extensions-dir "$ATELIER_EXTENSIONS" \
-      --install-extension anthropic.claude-code --force \
-    && ls -d "$ATELIER_EXTENSIONS"/anthropic.claude-code-* \
-    && test -x "$(ls -d "$ATELIER_EXTENSIONS"/anthropic.claude-code-* | sort -V | tail -1)/resources/native-binary/claude"
 
-# Le navigateur des agents : Google Chrome (paquet officiel, qui tire ses
-# bibliothèques) et le serveur MCP chrome-devtools-mcp, épinglé. Chaque agent
-# les lance par ~/work/bin/atelier-chrome, en stdio, sans écran
-# (docs/navigateur-atelier.md).
+# Le navigateur sans écran sera téléchargé sur le volume au premier démarrage.
+# L'image ne garde que ses bibliothèques système (liste Debian/Ubuntu publiée
+# par Puppeteer) et le serveur MCP épinglé. Chaque agent le lance par
+# ~/work/bin/atelier-chrome, en stdio (docs/navigateur-atelier.md).
 ARG CHROME_MCP_VERSION=1.10.1
-RUN curl -fsSL https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-      -o /tmp/chrome.deb \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends /tmp/chrome.deb \
-    && rm -rf /tmp/chrome.deb /var/lib/apt/lists/* \
-    && google-chrome --version
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      ca-certificates fonts-liberation libasound2t64 libatk-bridge2.0-0t64 \
+      libatk1.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libexpat1 libfontconfig1 \
+      libgbm1 libglib2.0-0t64 libgtk-3-0t64 libnspr4 libnss3 libpango-1.0-0 \
+      libpangocairo-1.0-0 libx11-6 libx11-xcb1 libxcb1 libxcomposite1 \
+      libxcursor1 libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 \
+      libxrender1 libxss1 libxtst6 xdg-utils \
+    && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p "$ATELIER_OUTILS/chrome-devtools-mcp" \
     && npm install --prefix "$ATELIER_OUTILS/chrome-devtools-mcp" --no-audit --no-fund \
       --save-exact "chrome-devtools-mcp@${CHROME_MCP_VERSION}"
@@ -71,7 +69,7 @@ RUN chmod +x /opt/atelier/bin/atelier-init.sh \
 
 USER onyxia
 WORKDIR /home/onyxia
-# Rien à cloner ni à télécharger au démarrage : tout est dans l'image.
+# Le code est dans l'image ; les deux outils tiers sont installés sur le volume.
 ENV ATELIER_DEPOT="" \
     WIKICHAT_DEPOT="" \
     ATELIER_AVANT_PLAN=1 \

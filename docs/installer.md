@@ -23,9 +23,10 @@ la clé du modèle et l'identité git viennent de son profil.
 5. Écrivez un premier message : le projet naît avec la conversation.
 
 Ce que le chart pose : un pod à partir de l'image `ghcr.io/nic01asfr/atelier`
-(même base que le Jupyter du catalogue, avec node, code-server, l'extension
-Claude Code, wikichat et l'Atelier déjà dedans), un volume `~/work` qui
-survit au service, un Secret pour la clé owner et la clé du modèle, l'ingress
+(même base que le Jupyter du catalogue, avec node, code-server, wikichat et
+l'Atelier déjà dedans ; le navigateur et l'extension Claude Code sont
+téléchargés au premier démarrage puis gardés sur le volume), un volume
+`~/work` qui survit au service, un Secret pour la clé owner et la clé du modèle, l'ingress
 avec les délais longs qu'exigent les flux d'événements, un second ingress pour
 l'hôte des applications (`user-<idep>-atelier-apps…`, port 8788 : créations,
 bureaux, écran du navigateur ; `apps.enabled`, actif par défaut), et une

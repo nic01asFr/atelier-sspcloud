@@ -84,6 +84,122 @@ const CHAMPS_D_APERCU = [
   ["message", "Consigne"],
 ];
 
+const LIBELLES_DE_PREUVE = {
+  actif: "Actif",
+  action_executee: "Action exécutée",
+  action_inverse: "Action inverse",
+  branche: "Branche",
+  champ: "Champ",
+  commit: "Commit",
+  consentement_de_l_action: "Accord donné",
+  contexte: "Contexte installé",
+  conversation: "Conversation",
+  distant: "Dépôt distant",
+  etat: "État",
+  fichier: "Fichier",
+  fonction: "Fonction",
+  horaire: "Horaire",
+  lancement: "Lancement",
+  mcp_json: "Configuration MCP",
+  pilote: "Pilote",
+  pool: "Pool",
+  port: "Port",
+  present: "Présent",
+  profil: "Profil",
+  projet_json_suivi: "Projet suivi",
+  relations_ecrites: "Relations écrites",
+  restaures: "Restaurés",
+  retires: "Retirés",
+  secret: "Secret",
+  sonde: "Sonde",
+  statut: "Statut",
+  structure: "Structure",
+  synchro: "Synchronisation",
+  tour_repris: "Tour repris",
+  wikichat: "Wikichat",
+};
+
+function libelleDePreuve(cle) {
+  if (LIBELLES_DE_PREUVE[cle]) return LIBELLES_DE_PREUVE[cle];
+  const mots = String(cle || "preuve")
+    .replace(/([a-zà-ÿ])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .trim();
+  return mots ? mots[0].toUpperCase() + mots.slice(1) : "Preuve";
+}
+
+function valeurDePreuve(v) {
+  if (v === true) return "oui";
+  if (v === false) return "non";
+  if (v == null || v === "") return "aucune";
+  if (Array.isArray(v)) {
+    if (!v.length) return "aucun élément";
+    if (v.every((x) => x == null || ["string", "number", "boolean"].includes(typeof x))) {
+      return v.map(valeurDePreuve).join(", ");
+    }
+    return `${v.length} élément${v.length > 1 ? "s" : ""}`;
+  }
+  const texte = String(v);
+  return texte.length > 180 ? `${texte.slice(0, 179)}…` : texte;
+}
+
+function lignesDePreuve(objet, chemin = [], lignes = []) {
+  if (lignes.length >= 8) return lignes;
+  if (objet && typeof objet === "object" && !Array.isArray(objet)) {
+    for (const [cle, valeur] of Object.entries(objet)) {
+      if (lignes.length >= 8) break;
+      const suite = [...chemin, libelleDePreuve(cle)];
+      if (valeur && typeof valeur === "object" && !Array.isArray(valeur)) {
+        lignesDePreuve(valeur, suite, lignes);
+      } else {
+        lignes.push(`${suite.join(" · ")} : ${valeurDePreuve(valeur)}.`);
+      }
+    }
+  }
+  return lignes;
+}
+
+function preuveLisible(preuve) {
+  if (typeof preuve === "string") {
+    const p = document.createElement("p");
+    p.className = "msg-carte-preuve";
+    p.textContent = preuve;
+    return p;
+  }
+  if (!preuve || typeof preuve !== "object") return null;
+
+  const enveloppe = document.createElement("div");
+  enveloppe.className = "msg-carte-preuve";
+  const lignes = lignesDePreuve(preuve);
+  for (const ligne of lignes) {
+    const p = document.createElement("p");
+    p.textContent = ligne;
+    enveloppe.appendChild(p);
+  }
+  const total = (() => {
+    const compter = (v) => v && typeof v === "object" && !Array.isArray(v)
+      ? Object.values(v).reduce((n, x) => n + compter(x), 0)
+      : 1;
+    return compter(preuve);
+  })();
+  if (total > lignes.length) {
+    const p = document.createElement("p");
+    p.textContent = `${total - lignes.length} autre${total - lignes.length > 1 ? "s" : ""} vérification${total - lignes.length > 1 ? "s" : ""}.`;
+    enveloppe.appendChild(p);
+  }
+
+  const details = document.createElement("details");
+  details.className = "msg-carte-preuve-technique";
+  details.open = false;
+  const resume = document.createElement("summary");
+  resume.textContent = "Détails techniques";
+  const brut = document.createElement("pre");
+  brut.textContent = JSON.stringify(preuve, null, 2);
+  details.append(resume, brut);
+  enveloppe.appendChild(details);
+  return enveloppe;
+}
+
 function lire(sortie) {
   if (sortie && typeof sortie === "object") return sortie;
   if (typeof sortie !== "string") return null;
@@ -138,10 +254,8 @@ function carteFaite(c, donnees) {
     boite.appendChild(p);
   }
   if (c.preuve) {
-    const p = document.createElement("p");
-    p.className = "msg-carte-preuve";
-    p.textContent = typeof c.preuve === "string" ? c.preuve : JSON.stringify(c.preuve);
-    boite.appendChild(p);
+    const preuve = preuveLisible(c.preuve);
+    if (preuve) boite.appendChild(preuve);
   }
   const gestes = document.createElement("div");
   gestes.className = "msg-carte-gestes";
@@ -397,4 +511,3 @@ export function marquerNonVerifie(noeud, actif) {
   marque.title = "Aucune carte d’action ne confirme ce qui est annoncé dans ce tour.";
   noeud.appendChild(marque);
 }
-
