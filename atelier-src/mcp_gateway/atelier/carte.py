@@ -451,20 +451,55 @@ def assembler(
                            "vers": f"connecteur:{nom}", "oriente": True,
                            "source": "pool" if herite else "connecteurs-choisis"})
 
-    # Connecteurs partagés que wikichat n'a pas vus (il lit `.mcp.json`, l'Atelier le choix).
+    # Connecteurs partagés : seulement ceux que les deux projets ont CHOISIS
+    # (`connecteurs.choisis`). Hériter du pool n'est pas un choix : tous les
+    # projets qui en héritent partagent le pool entier (blender, github,
+    # gitlab, llm, qgis sur le pod), et la carte se couvrait de liens qui ne
+    # disaient rien (181 arêtes au 26/09). wikichat lit `.mcp.json`, où
+    # l'héritage ne se distingue pas d'un choix : ses liens entre deux projets
+    # de l'Atelier sont donc recalculés ici, et retirés s'il ne reste rien.
     communs = set(CONNECTEURS_COMMUNS) | set(((wikichat or {}).get("limites") or {}).get("connecteurs_communs") or [])
-    actifs_pour_liens = {s: n for s, n in effectifs.items()
-                         if n and not par_slug[s].get("range")}
+    actifs_pour_liens = {
+        s: set((par_slug[s].get("connecteurs") or {}).get("choisis") or [])
+        for s in effectifs
+        if not (par_slug[s].get("connecteurs") or {}).get("herite_du_pool") and not par_slug[s].get("range")
+    }
+    actifs_pour_liens = {s: n for s, n in actifs_pour_liens.items() if n}
     if len(actifs_pour_liens) > 4:
         compte: dict[str, int] = {}
         for noms in actifs_pour_liens.values():
             for n in noms:
                 compte[n] = compte.get(n, 0) + 1
         communs |= {n for n, k in compte.items() if k > len(actifs_pour_liens) / 2}
+    def _partages(a: str, b: str) -> list[str]:
+        return sorted((actifs_pour_liens.get(a, set()) & actifs_pour_liens.get(b, set())) - communs)
+
+    # Un lien de wikichat dont un bout est un projet de l'Atelier ne garde que
+    # ce que ce projet a choisi ; entre deux projets de l'Atelier, il est
+    # recalculé. Un dossier que l'Atelier ne connaît pas garde son `.mcp.json`.
+    gardees: list[dict[str, Any]] = []
+    for arete in aretes:
+        bouts = [str(arete.get("de")), str(arete.get("vers"))]
+        du_nous = [b for b in bouts if b in slugs_atelier]
+        if arete.get("type") != "meme_connecteur" or not du_nous:
+            gardees.append(arete)
+            continue
+        if len(du_nous) == 2:
+            partages = _partages(*bouts)
+        else:
+            partages = sorted(
+                set(arete.get("connecteurs") or []) & actifs_pour_liens.get(du_nous[0], set()) - communs
+            )
+        if not partages:
+            ids_aretes.discard(arete.get("id"))
+            continue
+        arete["connecteurs"] = partages
+        gardees.append(arete)
+    aretes[:] = gardees
     slugs_tries = sorted(actifs_pour_liens)
     for i, a in enumerate(slugs_tries):
         for b in slugs_tries[i + 1:]:
-            partages = sorted((actifs_pour_liens[a] & actifs_pour_liens[b]) - communs)
+            partages = _partages(a, b)
             ident = f"meme_connecteur:{a}~{b}"
             if partages and ident not in ids_aretes:
                 aretes.append({"id": ident, "type": "meme_connecteur", "de": a, "vers": b, "oriente": False,

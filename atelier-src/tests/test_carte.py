@@ -265,15 +265,13 @@ def test_l_assemblage_joint_par_le_slug_et_remplit_le_champ_atelier(
     assert aretes[f"travaille_sur:{conversation}"]["vers"] == "lecteur-grist"
     assert aretes["utilise:lecteur-grist>grist"]["source"] == "connecteurs-choisis"
     assert "utilise:lecteur-grist>n8n" not in aretes, "un connecteur décoché n'est pas utilisé"
-    # Le lien de wikichat n'est pas doublé ; celui que seul l'Atelier voit s'ajoute :
-    # le dossier de l'Assistant hérite du pool, donc partage grist avec le lecteur.
+    # Le lien de wikichat reste (le lecteur a choisi grist) ; aucun lien ne naît
+    # de l'héritage du pool : le dossier de l'Assistant hérite de grist sans
+    # l'avoir choisi, il ne partage donc rien avec le lecteur (essais du 26/09).
     partages = {a["id"]: a for a in carte["aretes"] if a["type"] == "meme_connecteur"}
-    memoire_slug = atelier.app.state.settings.assistant_slug
-    assert set(partages) == {"meme_connecteur:grist-appstore~lecteur-grist",
-                             f"meme_connecteur:lecteur-grist~{memoire_slug}"}
+    assert set(partages) == {"meme_connecteur:grist-appstore~lecteur-grist"}
     assert partages["meme_connecteur:grist-appstore~lecteur-grist"]["source"] == ".mcp.json"
-    ajoute = partages[f"meme_connecteur:lecteur-grist~{memoire_slug}"]
-    assert ajoute["source"] == "atelier" and ajoute["connecteurs"] == ["grist"]
+    assert partages["meme_connecteur:grist-appstore~lecteur-grist"]["connecteurs"] == ["grist"]
     # Règle du contrat : toute arête relie deux nœuds de la carte.
     ids = set(noeuds)
     for a in carte["aretes"]:
@@ -462,6 +460,67 @@ def _couche_realiste(n_projets: int, *, tous_actifs: bool = False) -> tuple[Couc
     wikichat = {"version": 1, "noeuds": noeuds_wk, "aretes": aretes_wk, "groupes": [],
                 "limites": {"connecteurs_communs": ["atelier", "wikichat"]}}
     return couche, wikichat
+
+
+def _projet_de_l_atelier(slug: str, *, herite: bool, choisis: list[str] | None = None) -> dict[str, Any]:
+    return {
+        "slug": slug, "titre": slug, "kind": "code", "range": False, "chemin": f"/p/{slug}",
+        "cree_le": None, "maj": None,
+        "structure": {"projet_json": "valide", "gabarit": "vide", "deploiement": None,
+                      "vues_epinglees": 0, "description": None},
+        "connecteurs": {"herite_du_pool": herite, "choisis": [] if herite else list(choisis or [])},
+    }
+
+
+def test_un_lien_meme_connecteur_ne_compte_que_les_connecteurs_choisis() -> None:
+    """Essais du 26/09 : 181 liens « même connecteur » sur le pod, presque tous nés du pool.
+
+    Les projets qui héritent du pool partagent tous blender, github, gitlab,
+    llm et qgis ; wikichat, qui lit `.mcp.json`, en faisait autant de liens,
+    et l'Atelier en ajoutait. Seul un connecteur choisi par les deux projets
+    fait un lien.
+    """
+    pool = ["blender", "github", "gitlab", "grist", "llm", "qgis"]
+    projets = [
+        _projet_de_l_atelier("herite-a", herite=True),
+        _projet_de_l_atelier("herite-b", herite=True),
+        _projet_de_l_atelier("choix-a", herite=False, choisis=["grist", "qgis", "wikichat"]),
+        _projet_de_l_atelier("choix-b", herite=False, choisis=["grist", "wikichat"]),
+    ]
+    heritage = ["blender", "github", "gitlab", "llm", "qgis"]
+
+    def lien(a: str, b: str, connecteurs: list[str]) -> dict[str, Any]:
+        return {"id": f"meme_connecteur:{a}~{b}", "type": "meme_connecteur", "de": a, "vers": b,
+                "oriente": False, "connecteurs": connecteurs, "source": ".mcp.json"}
+
+    wikichat = {
+        "version": 1,
+        "noeuds": [_noeud_wikichat(p["slug"]) for p in projets] + [_noeud_wikichat("hors-atelier")],
+        "aretes": [
+            lien("herite-a", "herite-b", heritage),
+            lien("choix-a", "herite-a", ["qgis"]),
+            lien("choix-a", "choix-b", heritage + ["grist"]),
+            lien("hors-atelier", "herite-a", ["qgis"]),
+            lien("choix-a", "hors-atelier", ["grist", "qgis"]),
+        ],
+        "groupes": [],
+        "limites": {"connecteurs_communs": ["atelier", "wikichat"]},
+    }
+    carte = assembler(Couche(projets=projets, pool=pool), wikichat)
+    liens = {a["id"]: a["connecteurs"] for a in carte["aretes"] if a["type"] == "meme_connecteur"}
+    assert liens == {
+        "meme_connecteur:choix-a~choix-b": ["grist"],
+        "meme_connecteur:choix-a~hors-atelier": ["grist", "qgis"],
+    }, "ni héritage du pool, ni connecteur commun : seulement ce que les deux ont choisi"
+    # Les projets qui héritent du pool l'utilisent toujours.
+    utilise = {a["id"] for a in carte["aretes"] if a["type"] == "utilise"}
+    assert "utilise:herite-a>qgis" in utilise and "utilise:choix-b>grist" in utilise
+
+    # Sans wikichat, l'Atelier ne crée pas davantage de lien d'héritage.
+    seule = assembler(Couche(projets=projets, pool=pool), None)
+    assert {a["id"] for a in seule["aretes"] if a["type"] == "meme_connecteur"} == {
+        "meme_connecteur:choix-a~choix-b"
+    }
 
 
 def datetime_iso(t: float) -> str:

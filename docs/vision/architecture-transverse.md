@@ -252,15 +252,22 @@ connaît mais qui n'est pas un projet de l'Atelier ; sinon
 fiche du projet), ou une conversation en cours, une création en marche, une alerte ou une
 proposition. `systeme` : `atelier`, `atelier-gardiens` et le dossier de l'Assistant.
 
-Arêtes : celles de wikichat (`relation`, `proximite`, `meme_connecteur`) restent telles quelles.
-L'Atelier ajoute, au même format (`id`, `type`, `de`, `vers`, `oriente`, `source`) :
+Arêtes : celles de wikichat (`relation`, `proximite`) restent telles quelles. Ses
+`meme_connecteur` sont corrigées (correctif du 26/09, après essais) : un lien « même
+connecteur » ne compte que les connecteurs **choisis explicitement** par les deux projets
+(`connecteurs.choisis`), jamais l'héritage du pool, ni les connecteurs communs. wikichat lit
+`.mcp.json`, où l'héritage ne se distingue pas d'un choix : entre deux projets de l'Atelier, le
+lien est recalculé ; entre un projet de l'Atelier et un dossier qu'il ne connaît pas, il ne garde
+que les choix du premier ; un lien vide est retiré (181 liens sur le pod, presque tous nés du
+pool blender, github, gitlab, llm, qgis). L'Atelier ajoute, au même format (`id`, `type`, `de`,
+`vers`, `oriente`, `source`) :
 
 | `type` | De → vers | `source` |
 |---|---|---|
 | `sert` | création → projet | `artifacts` |
 | `travaille_sur` | conversation → projet | `fiches` |
 | `utilise` | projet → connecteur | `connecteurs-choisis`, ou `pool` quand le projet hérite |
-| `meme_connecteur` | projet ~ projet, s'il manque chez wikichat | `atelier` (connecteurs effectifs, mêmes connecteurs communs que wikichat) |
+| `meme_connecteur` | projet ~ projet, s'il manque chez wikichat | `atelier` (connecteurs choisis par les deux, hors héritage du pool et connecteurs communs) |
 
 `de` et `vers` sont toujours des `id` de `noeuds`.
 
