@@ -155,7 +155,13 @@ def register_mcp_endpoint(app: FastAPI, auth: Any) -> None:
         # l'en-tête ne peut que restreindre. Sans conversation : tout, comme
         # avant, et on le note.
         annonce = request.headers.get(ENTETE_PROFIL)
-        profil = profil_effectif(annonce, conversation, _magasin(request, passerelle))
+        profil = profil_effectif(
+            annonce,
+            conversation,
+            _magasin(request, passerelle),
+            projet=request.headers.get("x-atelier-projet"),
+            dossier=request.headers.get("x-atelier-dossier"),
+        )
         if not conversation or not (annonce or "").strip():
             actives = [m for m in _methodes(body) if m in ("initialize", "tools/list", "tools/call")]
             if actives:

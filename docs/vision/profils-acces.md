@@ -103,7 +103,8 @@ catalogue (`commandes/catalogue.py`).
 | Requête | Profil retenu |
 |---|---|
 | conversation de l'Assistant (`kind = assistant`, ou dossier sous `assistant_root`) | `assistant` ; `code` si l'en-tête annonce `code` |
-| toute autre conversation, connue ou non (`poste` compris) | `code`, quel que soit l'en-tête |
+| toute autre conversation connue | `code`, quel que soit l'en-tête |
+| conversation inconnue (VS Code, terminal, lancement hors de l'app ; `poste` compris) | l'en-tête, `code` par défaut ; `assistant` seulement sans `X-Atelier-Projet` et avec un `X-Atelier-Dossier` sous `assistant_root` (correctif du 26/09 : l'Assistant hors de l'app ne recevait que les 8 outils de `code`) |
 | sans conversation (passerelle, claude.ai, ancien client) | comportement d'avant (tout), sauf en-tête `code` ; journalisé |
 | en-tête de valeur inconnue | `code` |
 
@@ -151,6 +152,15 @@ décide, l'en-tête restreint.
   déclaration qui pose `X-Atelier-Profil` est à l'équipe S) ; le nombre réel
   d'outils `gateway_*` et `composition_*` que verra l'Assistant dépend du
   profil de passerelle actif (7 et 2 mesurés par l'audit).
+- **Limite du correctif** : pour une conversation inconnue, le profil
+  `assistant` repose sur la configuration écrite par l'Atelier (en-têtes
+  `X-Atelier-Profil`, `X-Atelier-Dossier`, absence de `X-Atelier-Projet`).
+  C'est le même niveau de confiance que la clé propriétaire : un agent qui
+  lit la clé peut aussi écrire ces en-têtes. **Vérifié** : conversation
+  inconnue avec `assistant` et le dossier de l'Assistant → méta-outils ; avec
+  un `X-Atelier-Projet`, sans dossier ou avec un dossier hors de
+  `assistant_root` → `code` ; conversation connue de `code` qui annonce
+  `assistant` (dossier compris) → `code`.
 - **Limite connue** : la clé de la porte, `ATELIER_MCP_KEY`, est celle du
   propriétaire. Un agent qui la lit et **omet l'en-tête de conversation** garde
   un accès complet (cas « sans conversation »). Il peut aussi nommer la

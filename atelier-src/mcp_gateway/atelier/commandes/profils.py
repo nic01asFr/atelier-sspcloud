@@ -14,9 +14,11 @@ Contrat : `docs/vision/profils-acces.md`. Deux profils :
 la porte `/mcp` et `/v1/commandes` lisent `X-Atelier-Conversation`, trouvent
 sa fiche, et c'est elle qui décide : une conversation de l'Assistant
 (`kind = assistant`, ou un dossier sous celui de l'Assistant) donne
-`assistant`, toute autre, connue ou non, donne `code`. L'en-tête
-`X-Atelier-Profil` (posé par la déclaration, équipe S) ne peut que
-**restreindre** : `code` restreint l'Assistant, `assistant` n'élargit personne.
+`assistant`, toute autre donne `code`. Pour une conversation connue,
+l'en-tête `X-Atelier-Profil` (posé par la déclaration, équipe S) ne peut que
+**restreindre**. Pour une conversation inconnue (VS Code, terminal), l'en-tête
+décide, `code` par défaut ; `assistant` exige en plus l'absence de
+`X-Atelier-Projet` et un `X-Atelier-Dossier` sous le dossier de l'Assistant.
 Une valeur inconnue vaut `code`.
 
 Une requête **sans conversation** garde le comportement d'avant (tout, sauf si
@@ -121,20 +123,62 @@ def _est_de_l_assistant(store: Any, fiche: Any) -> bool:
     return True
 
 
-def profil_effectif(entete: str | None, conversation: str | None, store: Any) -> str:
+ENTETE_DOSSIER = "X-Atelier-Dossier"
+
+
+def dossier_de_l_assistant(store: Any, dossier: str | None) -> bool:
+    """Vrai si `dossier` est un dossier existant sous `assistant_root`."""
+    from pathlib import Path
+
+    racine = getattr(getattr(store, "settings", None), "assistant_root", None)
+    brut = (dossier or "").strip()
+    if not racine or not brut:
+        return False
+    try:
+        chemin = Path(brut).resolve()
+        chemin.relative_to(Path(racine).resolve())
+    except (ValueError, OSError):
+        return False
+    return chemin.is_dir()
+
+
+def profil_effectif(
+    entete: str | None,
+    conversation: str | None,
+    store: Any,
+    *,
+    projet: str | None = None,
+    dossier: str | None = None,
+) -> str:
     """Le profil de l'appel, décidé par le serveur.
 
-    Avec une conversation, c'est sa fiche qui décide (`assistant` pour une
-    conversation de l'Assistant, `code` pour toute autre, connue ou non) ;
-    l'en-tête ne peut que restreindre. Sans conversation : l'en-tête seul, et
-    son absence vaut le comportement d'avant (vide).
+    - Conversation connue : sa fiche décide (`assistant` pour une conversation
+      de l'Assistant, `code` sinon) ; l'en-tête ne peut que restreindre.
+    - Conversation inconnue (VS Code, terminal, lancement hors de l'app) :
+      l'en-tête de profil, `code` par défaut. `assistant` n'est retenu que
+      sans `X-Atelier-Projet` et avec un `X-Atelier-Dossier` sous le dossier
+      de l'Assistant ; sinon `code`. C'est la confiance qu'on accorde à la
+      configuration écrite par l'Atelier, la même que celle de la clé.
+    - Sans conversation : l'en-tête seul, et son absence vaut le comportement
+      d'avant (vide).
     """
     annonce = lire_profil(entete)
     c = (conversation or "").strip()
     if not c:
         return PROFIL_CODE if annonce == PROFIL_CODE else ""
     fiche = fiche_de_la_conversation(store, c)
-    deduit = PROFIL_ASSISTANT if fiche is not None and _est_de_l_assistant(store, fiche) else PROFIL_CODE
+    if fiche is None:
+        if annonce != PROFIL_ASSISTANT:
+            return PROFIL_CODE
+        if not (projet or "").strip() and dossier_de_l_assistant(store, dossier):
+            return PROFIL_ASSISTANT
+        log.warning(
+            "conversation inconnue %s : profil assistant annoncé sans le dossier de l'Assistant "
+            "(ou avec un projet), code retenu",
+            c[:60],
+        )
+        return PROFIL_CODE
+    deduit = PROFIL_ASSISTANT if _est_de_l_assistant(store, fiche) else PROFIL_CODE
     if annonce == PROFIL_CODE:
         return PROFIL_CODE
     if annonce == PROFIL_ASSISTANT and deduit != PROFIL_ASSISTANT:
