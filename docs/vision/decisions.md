@@ -70,6 +70,16 @@ Ces points se trancheront avant le jalon concerné (`coherence-croisee.md` §5.3
 
 ## En attente d'une réponse explicite de Nicolas
 
+- Mémoire (équipe M, vague 3) : l'entrée de la routine de nuit est plafonnée à 58 000
+  caractères (≈ 17 000 jetons) par la limite de message du lot D, sous les 30 000 jetons
+  d'A-7. Relever cette limite pour les lancements de la mémoire, ou garder ce plafond ?
+- Mémoire : chaque conversation fichée la nuit coûte le harnais d'un agent code (≈ 21 700
+  jetons) en plus de l'entrée. Garder « un lancement de l'Atelier » (A-7), ou appeler le
+  relais sans harnais pour cette seule tâche ?
+- Mémoire : mesurer `qwen3-embedding-8b` sur les fiches (cela envoie leur texte au point
+  d'accès du modèle, comme la routine de nuit) ?
+- Mémoire : la routine de nuit naît désactivée ; l'activer (Pilote ou vue Agents) ?
+
 - Le trigger wikichat `cron-routine-4h` (routine `paradox-research`, toutes les 4 h) a été
   rattrapé au redémarrage du 25/09. Faut-il le couper comme les cinq autres ?
 - Faut-il supprimer les sauvegardes `*.avant-26-09` du pod une fois l'état validé ?

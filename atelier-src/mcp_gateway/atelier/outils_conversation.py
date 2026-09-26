@@ -508,12 +508,23 @@ class OutilsAtelier:
             resultat = gestionnaire(arguments or {})
             if inspect.isawaitable(resultat):
                 resultat = await resultat
-            return _rendre(resultat)
+            # T10 : un transcript, un suivi, un dernier texte peuvent porter un
+            # secret affiché par un agent. Rien ne sort d'ici sans le filtre.
+            return _rendre(self._filtrer(resultat))
         except _Refus as refus:
-            return _rendre({"erreur": str(refus)}, erreur=True)
+            return _rendre(self._filtrer({"erreur": str(refus)}), erreur=True)
         except Exception as exc:  # noqa: BLE001
             log.exception("outil %s", nom)
-            return _rendre({"erreur": f"{type(exc).__name__}: {exc}"}, erreur=True)
+            return _rendre(self._filtrer({"erreur": f"{type(exc).__name__}: {exc}"}), erreur=True)
+
+    def _filtrer(self, charge: Any) -> Any:
+        """Le filtre des transcripts (`filtre_transcripts.py`), sur toute charge rendue."""
+        from mcp_gateway.atelier.filtre_transcripts import filtre_pour
+
+        settings = getattr(self.store, "settings", None)
+        if settings is None or not getattr(settings, "secrets_dir", None):
+            return charge
+        return filtre_pour(settings).nettoyer(charge)
 
     # ── Les verbes ──────────────────────────────────────────────────────
 

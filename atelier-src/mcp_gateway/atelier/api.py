@@ -1856,7 +1856,12 @@ def build_app(
             text = store.transcript_text(session_id)
         except KeyError:
             raise HTTPException(404, "session not found") from None
-        return JSONResponse({"session_id": session_id, "transcript": text})
+        from mcp_gateway.atelier.filtre_transcripts import filtre_pour
+
+        # T10 : la clé du propriétaire ouvre cette route aux agents du pod ; les
+        # lignes restent du JSON valide (une marque ne contient ni guillemet ni
+        # barre oblique inverse).
+        return JSONResponse({"session_id": session_id, "transcript": filtre_pour(settings).texte(text)})
 
     @router.get("/mcp/servers")
     def mcp_list_servers(_owner: str = Depends(require_owner)) -> dict[str, Any]:
@@ -2529,9 +2534,11 @@ def build_app(
     ) -> dict[str, Any]:
         if app.state.use_fake:
             raise HTTPException(503, "wikichat pilote not available in fake harness mode")
+        from mcp_gateway.atelier.filtre_transcripts import filtre_pour
         from mcp_gateway.atelier.pilote_client import pilote_get
 
-        return await pilote_get(settings, f"/pilote/api/agent/{agent_id}/transcript")
+        # T10 : la clé du propriétaire ouvre cette route aux agents du pod.
+        return filtre_pour(settings).nettoyer(await pilote_get(settings, f"/pilote/api/agent/{agent_id}/transcript"))
 
     @router.post("/agent/{agent_id}/continue")
     async def agent_continue(

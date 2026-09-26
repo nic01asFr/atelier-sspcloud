@@ -450,6 +450,68 @@ Les mêmes briques produisent aussi, par projet et pour l'ensemble :
 **Voix** : même `session_id` et même mémoire que l'écrit. Ce qui est réduit à l'oral, c'est la
 sortie, pas la vue d'ensemble.
 
+#### Mémoire : ce qui existe (vague 3, équipe M, branches `v3-memoire`)
+
+**T10 réglé à la source.** `mcp_gateway/atelier/filtre_transcripts.py` réutilise
+`FiltreDesSecrets` du journal unique, sans coupe ni masque par nom de clé : les valeurs de
+`~/work/.secrets/claude-env.sh` et des fichiers d'une ligne de `~/work/.secrets/` deviennent
+leur empreinte (`<secret:0123456789ab>`, comme le journal des gardiens), y compris sous leur
+forme échappée JSON ; les motifs de jetons du gardien Sécurité deviennent `<jeton masqué>`.
+Il s'applique à **toute** charge rendue par un outil `atelier_*` (`OutilsAtelier.appeler` :
+`atelier_transcript`, `atelier_suivre`, `atelier_conversations`, erreurs comprises), à
+`GET /v1/sessions/{id}/transcript` (le JSON reste lisible), au fil d'un agent du pilote
+(`GET /v1/agent/{id}/transcript`) et à tout ce que l'Atelier fournit à la capitalisation.
+Non filtré : le flux en direct d'un tour vers l'écran de la personne (SSE), qui n'est lu par
+aucun modèle.
+
+**Frontière avec wikichat** (`mcp_gateway/atelier/memoire.py`), clé du lanceur
+(`X-Atelier-Lanceur`) ou propriétaire :
+
+| Route | Rôle |
+|---|---|
+| `GET /v1/memoire/conversations?repos_min=30` | les conversations : projet, genre (`assistant` ou `code`), état, `au_repos`, `empreinte` (change quand elle grandit). Les lancements de la routine de nuit (`wikichat:memoire:*`) en sont exclus |
+| `GET /v1/memoire/conversations/{id}` | le transcript **filtré et réduit** (lecture seule, par `fondre`, sans l'absorption qui écrit) : paroles de la personne, textes du modèle, outils (nom et quelques champs d'entrée, chemins relatifs), erreurs (300 caractères), fins de tour et leurs jetons. Jamais le contenu d'un résultat d'outil. Accepte l'identifiant du CLI |
+| `POST /v1/memoire/propositions` | une préférence, un trait du profil ou une interprétation proposés par un modèle : « À valider », source `memoire`, action `atelier_memoire_retenir`. Trois par conversation au plus, doublons ignorés, texte filtré |
+
+**Commandes** (`commandes/rappel.py`, une ligne dans `commandes/enregistrer`) :
+
+| Commande | Classe | Profil | Ce qu'elle garantit |
+|---|---|---|---|
+| `atelier_rappel(requete, projet?, depuis?, limite?)` | lecture | assistant ; **code : son projet** | au plus 5 fiches, une ligne chacune (identifiant court, date, projet, titre, résumé), **≤ 1 530 caractères, soit ≈ 450 jetons** (caractères / 3,4) |
+| `atelier_fiche(id)` | lecture | assistant ; **code : son projet** | une fiche, 2 500 caractères au plus ; l'identifiant court de 8 caractères suffit ; une fiche d'un autre projet est introuvable |
+| `atelier_memoire` | lecture | assistant | profil, préférences, interprétations, faits, propositions en attente |
+| `atelier_memoire_proposer(type, texte, raison?)` | reversible (inverse : `atelier_a_valider_refuser`) | assistant | ne retient rien : dépose dans « À valider » |
+| `atelier_memoire_retenir`, `_corriger`, `_oublier` | **reservee**, non exposées en MCP | la personne | écrivent chez wikichat ; chacune a son inverse (oublier ↔ retenir, corriger ↔ corriger) |
+
+En profil `code`, `atelier_rappel` et `atelier_fiche` sont dans `OUTILS_DU_PROFIL_CODE` ; le
+projet vient de la conversation (`cadrer_les_arguments`), un autre projet est refusé avant
+tout appel à wikichat, et le résultat est refiltré par projet. Mots d'intention dans
+`tool_search.MOTS_CLES_PAR_OUTIL`.
+
+**Vue « Ma mémoire »** (`web/js/views/memoire.js`, onglet de la navigation) : qui vous êtes,
+vos préférences, ce que l'Assistant a compris, faits retenus d'office ; « d'où ça vient » sur
+chaque ligne ; « Corriger » (champ en place) et « Oublier » (avec confirmation), par les
+commandes réservées ; renvoi vers « À valider » pour les propositions en attente.
+
+**Côté wikichat** (`src/memoire/`, `docs/atelier-coherence.md` §14) : faits extraits par le
+code toutes les 15 min et à la fin d'une conversation ; fiches
+`~/.wikichat/knowledge/conversations/<projet>/<id>.md` et leur index, lues par
+`search_knowledge` (profil `code` : son projet) ; routine de nuit par des lancements de
+l'Atelier (20 × 30 000 jetons au plus, `qwen3-8-27b`, mode `dontAsk`, sans autorisation
+d'outil), trigger né désactivé ; mémoire de la personne (`memoire/personne.json`) avec les
+faits enregistrés d'office ; export assaini qui inclut les fiches (S6).
+
+**Mesuré sur le pod** (lecture seule, 26/09) : 54 conversations de l'Atelier, toutes d'agent
+code, 44 d'au moins 3 échanges ; registres de 3,4 Mo en moyenne (14,7 Mo au plus) ; entrée
+préparée de 47 000 caractères en moyenne (≈ 13 800 jetons), 209 000 au plus ; environ 4,5
+conversations par jour. Nuit estimée à ≈ 35 000 jetons par conversation (entrée ≤ 17 000,
+plus le harnais d'un agent code, 21 695), soit ≈ 0,7 M pour chacune des deux nuits de
+rattrapage et ≈ 120 000 en régime.
+
+**Écart à A-7** : le lot D refuse un message de plus de 60 000 caractères ; l'entrée effective
+est donc plafonnée à 58 000 caractères (≈ 17 000 jetons), pas à 30 000 jetons. 15
+conversations du pod sont raccourcies au milieu. Voir « En attente » dans `decisions.md`.
+
 ### 1.7 Automates, journal, validation
 
 - **Ordonnancement : deux étages, sans doublon** (révisé après l'inventaire de wikichat).
@@ -755,7 +817,7 @@ au bon endroit.
 | T7 | Quatre inventaires en construction : carte de l'Assistant, G0 des gardiens, catalogue « + », briefing wikichat | visions | une seule carte (§1.3) | à dire aux équipes Assistant |
 | T8 | « Propositions » : trois files | écosystème, gardiens, structure-projet | une file « À valider » | décidé dans `synthese.md` |
 | T9 | `/chrome/*` était servi dans l'origine de l'Atelier | `chrome_proxy.py` | **réglé** par `chrome-stdio` (routes retirées) | — |
-| T10 | `atelier_transcript` et `atelier_suivre` rendent le texte brut d'une conversation : un secret affiché par un agent atteindrait l'Assistant, puis sa mémoire | outils `atelier_*` | filtrer à la source, dans le code, les valeurs connues de `claude-env.sh` (par empreinte, comme le gardien Sécurité) avant de rendre un transcript ; même filtre à la capitalisation | à faire avec le lot Assistant |
+| T10 | `atelier_transcript` et `atelier_suivre` rendent le texte brut d'une conversation : un secret affiché par un agent atteindrait l'Assistant, puis sa mémoire | outils `atelier_*` | filtrer à la source, dans le code, les valeurs connues de `claude-env.sh` (par empreinte, comme le gardien Sécurité) avant de rendre un transcript ; même filtre à la capitalisation | **réglé** sur `v3-memoire` (équipe M) : `filtre_transcripts.py` sur toute charge des outils `atelier_*`, la route du transcript, le fil du pilote et le transcript fourni à wikichat (§1.6 bis, « Mémoire : ce qui existe ») |
 | T12 | La publication GitHub `wikichat-memory` a divergé : 28 commits d'avance, 3 de retard, 289 instantanés, 19 axes sur 42 en double. Elle est publiée depuis le poste par une tâche planifiée. Rappel : la décision du 02/09 (alignement §10) tient. Le dossier de l'Assistant n'est **pas un dépôt, à dessein**, et le dépôt GitHub n'est qu'une publication assainie de la mémoire | poste, `atelier-wikichat-alignment.md` | un seul éditeur de la publication (le wikichat du pod) ; réconciliation unique ; arrêt de la tâche du poste | Nicolas (exécution) |
 | T13 | Le pool compte 293 outils, soit environ 52 000 jetons s'il était présenté en entier. Le plancher d'un agent code est de 21 695 jetons en entrée (mesuré au relais) | pod | confirme §1.5 : noyau et catalogue par profil, jamais le pool entier | équipe harness |
 | T14 | Aucun `ETAT.md` dans les 26 projets du pod ; les hooks wikichat ne sont pas encore déployés | pod | la couche C2 est vide tant que le lot G (structure de projet) et le déploiement du 26/09 ne sont pas faits | lots G et `deploiement-26-09` |
@@ -803,7 +865,7 @@ Sources :
 | Export, publication, mémoire à distance | `export-memory`, `publish-memory`, `remote/memory-mcp-server` | marche sur le poste | Assistant, claude.ai | un seul éditeur : le pod (T12) ; c'est la publication, pas le domicile |
 | Routines, triggers, pilote, file d'approbation | `routines.mjs`, `triggers.mjs`, `pilote.mjs` | marche ; plusieurs triggers en échec | tâches automatiques, gardiens (lecture) | onglet Automates ; étape `job` dans les routines (W3) ; « À valider » (§1.7) |
 | Messagerie, fils, hooks, identité | `fils.mjs`, `hooks-serveur.mjs`, `conversations.mjs` | écrit, non déployé | tous les acteurs à modèle | hooks (§1.6) |
-| Capitalisation des conversations | — | manque | Assistant, projets | ajout dans wikichat (§1.6 bis) |
+| Capitalisation des conversations | `src/memoire/` (W8) | écrit (vague 3), non déployé | Assistant, projets | fiches dans la connaissance ; `atelier_rappel`, `atelier_fiche` (§1.6 bis) |
 | Tableaux de bord | — (seul `pilote.html` existe) | manque | personne, Assistant | vues du panneau (§5.3) |
 
 ### 5.2 Atelier : état opérationnel
@@ -950,5 +1012,15 @@ Le journal consigne, dans l'ordre, ce que chaque retour a changé dans la struct
   - constaté : aucun projet du pod n'a encore d'`ETAT.md` (T14) ; la couche wikichat compte
     16 dossiers qui ne sont pas des projets (dossier parent, dossiers de session, dossiers
     d'agent), que la vue courte relègue en décompte.
+- **26/09, équipe M (mémoire, vague 3)** :
+  - T10 réglé à la source (`filtre_transcripts.py`) ;
+  - W8 écrit dans wikichat (`src/memoire/`) : faits par le code, routine de nuit plafonnée
+    par des lancements de l'Atelier, fiches dans la connaissance, mémoire de la personne ;
+  - `atelier_rappel` et `atelier_fiche` (profil `code` : son projet), propositions de mémoire
+    par « À valider », vue « Ma mémoire » ; l'export assaini inclut les fiches (S6) ;
+  - écart à A-7 constaté : l'entrée de la nuit est plafonnée par le message du lot D (58 000
+    caractères, ≈ 17 000 jetons) ; chaque lancement paie en plus le harnais (≈ 21 700 jetons) ;
+  - `qwen3-embedding-8b` non mesuré sur de vraies fiches (garde des permissions : ce serait
+    envoyer le texte des conversations) ; recherche lexicale seule.
 - **Explication de T12** : sur le poste, une tâche planifiée publie la mémoire toutes les 15 min depuis
     `Github Repositories/wikichat`, pendant que le dépôt évolue ailleurs.

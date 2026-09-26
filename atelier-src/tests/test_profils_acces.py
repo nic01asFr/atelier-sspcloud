@@ -43,6 +43,9 @@ OUTILS_CODE = {
     "atelier_artefact_journal",
     "atelier_montrer",
     "atelier_navigateur_ouvrir",
+    # Vague 3 (équipe M) : les fiches des conversations de son projet.
+    "atelier_rappel",
+    "atelier_fiche",
 }
 
 

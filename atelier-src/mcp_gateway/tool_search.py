@@ -137,6 +137,11 @@ MOTS_CLES_PAR_OUTIL: dict[str, str] = {
     "atelier_a_valider_rouvrir": "valider proposition rouvrir reprendre",
     "atelier_journal": "journal historique fait aujourd hui actions",
     "atelier_carte": "carte vue ensemble etat situation projets liens quoi de neuf alertes inventaire",
+    "atelier_rappel": "rappel retrouver conversation passee dont on a parle souvenir semaine derniere "
+    "fiche fiches memoire historique discussion recall past conversation",
+    "atelier_fiche": "fiche detail conversation passee resume decisions questions ouvertes memoire",
+    "atelier_memoire": "ma memoire ce que tu sais de moi profil preferences retenu memory",
+    "atelier_memoire_proposer": "retenir preference proposer memoire souviens toi note que je prefere remember",
     "atelier_annuler": "annuler defaire revenir inverse",
     "atelier_projet_creer": "projet nouveau creer ouvrir",
     "atelier_projet_modifier": "projet renommer modifier titre description",

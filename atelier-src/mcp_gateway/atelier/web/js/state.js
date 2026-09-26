@@ -62,7 +62,7 @@ export function saveTurns(sessionId, messages) {
 }
 
 /** Vues shell Atelier — alignées avec atelier-wikichat-alignment.md */
-export const VIEWS = ["code", "assistant", "connecteurs", "agent", "a-valider", "journal"];
+export const VIEWS = ["code", "assistant", "connecteurs", "agent", "a-valider", "journal", "memoire"];
 
 export function normalizeView(view) {
   const v = (view || "").trim().toLowerCase();
@@ -172,6 +172,7 @@ export function createState() {
       agent: "detail",
       "a-valider": "detail",
       journal: "detail",
+      memoire: "detail",
     },
     sessionMcp: null,
     meta: {

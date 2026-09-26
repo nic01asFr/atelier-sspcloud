@@ -4374,3 +4374,54 @@ button.session-face-link {
   font-size: 0.75rem;
 }
 
+/* ── Ma mémoire (vague 3, équipe M) ─────────────────────────────────── */
+
+.memoire-partie {
+  margin: 1rem 0 0.5rem;
+}
+
+.memoire-partie h3 {
+  font-size: 0.95rem;
+  margin: 0 0 0.35rem;
+}
+
+.memoire-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.memoire-ligne {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.6rem;
+  padding: 0.35rem 0.1rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.85rem;
+}
+
+.memoire-texte {
+  flex: 1 1 18rem;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.memoire-origine {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.memoire-gestes {
+  display: inline-flex;
+  gap: 0.3rem;
+}
+
+.memoire-champ {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.memoire-attente {
+  font-size: 0.85rem;
+}
