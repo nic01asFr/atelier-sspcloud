@@ -73,3 +73,40 @@ def test_un_tour_coupe_au_plafond_est_dit() -> None:
 def test_un_tour_qui_aboutit_reste_une_fin() -> None:
     ligne = json.dumps({"type": "result", "subtype": "success", "result": "voila"})
     assert [e.kind for e in parse_stream_json_line(SESSION, ligne)] == ["texte", "fin"]
+
+
+def test_le_drapeau_d_erreur_du_cli_accompagne_le_resultat() -> None:
+    """C'est `is_error`, pas le texte, qui dit qu'un outil a échoué (essais du 26/09).
+
+    `take_snapshot` a lu une page qui dit « without needing permission » : le
+    texte ne doit rien décider, l'interface lit `erreur`.
+    """
+    normal = parse_stream_json_line(
+        SESSION,
+        _ligne(
+            [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "lu",
+                    "content": [{"type": "text", "text": "examples without needing permission"}],
+                }
+            ]
+        ),
+    )
+    refuse = parse_stream_json_line(
+        SESSION,
+        _ligne(
+            [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "refus",
+                    "is_error": True,
+                    "content": "you haven't granted it yet",
+                }
+            ]
+        ),
+    )
+    assert [e.erreur for e in normal] == [False]
+    assert [e.erreur for e in refuse] == [True]
+    assert '"erreur": false' in normal[0].as_sse()
+    assert '"erreur": true' in refuse[0].as_sse()

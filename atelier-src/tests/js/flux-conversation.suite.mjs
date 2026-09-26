@@ -403,7 +403,7 @@ function tourAvecRefus(envoi) {
       text: JSON.stringify({ request_id: "req_1", outil: "Bash", tool_use_id: "toolu_1" }),
     },
     { ...commun, kind: "decision_rendue", tool: "Bash", tool_id: "req_1", cause: "deny" },
-    { ...commun, kind: "outil_fin", raw_type: "tool_result", tool_id: "toolu_1", text: "Refusé par l'utilisateur.", uuid: "u4" },
+    { ...commun, kind: "outil_fin", raw_type: "tool_result", tool_id: "toolu_1", text: "Refusé par l'utilisateur.", erreur: true, uuid: "u4" },
     { ...commun, kind: "texte", raw_type: "assistant", text: "Je n'ai pas lancé la commande.", uuid: "u5", message_id: "msg_02Fin" },
     { ...commun, kind: "texte", raw_type: "result_text", text: "Je n'ai pas lancé la commande.", uuid: "u6" },
     { ...commun, kind: "fin", raw_type: "result", cause: "success", uuid: "u6" },
@@ -537,6 +537,62 @@ function bullesAssistant(state) {
     2,
     "le même texte dans deux messages n’est pas un doublon",
   );
+}
+
+{
+  // Essais du 26/09 : `take_snapshot` a lu https://example.com, dont le texte
+  // dit « without needing permission ». Le statut se lisait dans le texte :
+  // l'outil, exécuté et rendu, s'affichait « permission refusée ». C'est le
+  // `is_error` du CLI (`erreur` de l'événement) qui décide.
+  const page =
+    'uid=1_0 RootWebArea "Example Domain" ' +
+    'uid=1_2 StaticText "This domain is for use in ' +
+    'documentation examples without needing permission. Avoid use in operations."';
+  const { state, ctx } = scene();
+  const memoire = creerMemoireDuFil();
+  state.messages.push({ role: "assistant", text: "", blocks: [], streaming: true });
+  const stream = { blocs: [], tools: [], decisions: [], phase: "attente" };
+  const commun = { session_id: "s1" };
+  const evenements = [
+    { ...commun, kind: "outil_debut", raw_type: "assistant", tool: "mcp__chrome-devtools-mcp__take_snapshot", tool_id: "t_lu", text: "{}", uuid: "p1" },
+    { ...commun, kind: "outil_fin", raw_type: "tool_result", tool_id: "t_lu", text: page, erreur: false, uuid: "p2" },
+    { ...commun, kind: "outil_debut", raw_type: "assistant", tool: "Bash", tool_id: "t_refus", text: "{}", uuid: "p3" },
+    {
+      ...commun, kind: "outil_fin", raw_type: "tool_result", tool_id: "t_refus", erreur: true, uuid: "p4",
+      text: "Claude requested permissions to use Bash, but you haven't granted it yet.",
+    },
+    { ...commun, kind: "outil_debut", raw_type: "assistant", tool: "Read", tool_id: "t_echec", text: "{}", uuid: "p5" },
+    { ...commun, kind: "outil_fin", raw_type: "tool_result", tool_id: "t_echec", text: "File does not exist.", erreur: true, uuid: "p6" },
+    // Même si un décompte de fin de tour nommait la lecture, elle a rendu la page.
+    {
+      ...commun, kind: "permission_demandee", raw_type: "permission_denials", uuid: "p7",
+      text: JSON.stringify([
+        { tool_name: "mcp__chrome-devtools-mcp__take_snapshot", tool_use_id: "t_lu" },
+        { tool_name: "Bash", tool_use_id: "t_refus" },
+      ]),
+    },
+  ];
+  for (const ev of evenements) recevoirDeLEnvoi(ctx, stream, memoire, ev);
+  const statut = (id) => stream.tools.find((t) => t.id === id)?.status;
+  egal(statut("t_lu"), "done", "une lecture qui a rendu la page est « terminée », même si la page parle de permission");
+  egal(statut("t_refus"), "denied", "un refus du CLI reste un refus");
+  egal(statut("t_echec"), "error", "un échec de l’outil se dit « erreur », pas « terminé »");
+
+  const racine = berceau();
+  appendBlock(racine, stream.tools.find((t) => t.id === "t_lu"));
+  porte(texte(racine), "terminé", "l’en-tête dit « terminé »");
+  nePorte(texte(racine), "permission refusée", "et jamais « permission refusée »");
+
+  // Relu du journal : même règle.
+  const ligne = (o) => JSON.stringify(o);
+  const relu = messagesFromTranscript(
+    [
+      ligne({ type: "assistant", uuid: "r1", message: { id: "m1", content: [{ type: "tool_use", id: "t_lu", name: "mcp__chrome-devtools-mcp__take_snapshot", input: {} }] } }),
+      ligne({ type: "user", uuid: "r2", message: { content: [{ type: "tool_result", tool_use_id: "t_lu", content: [{ type: "text", text: page }] }] } }),
+      ligne({ type: "result", subtype: "success", result: "", permission_denials: [{ tool_name: "x", tool_use_id: "t_lu" }] }),
+    ].join(String.fromCharCode(10)),
+  );
+  egal(relu[0]?.blocks?.[0]?.status, "done", "relue, la lecture reste « terminée »");
 }
 
 bilan("flux-conversation");

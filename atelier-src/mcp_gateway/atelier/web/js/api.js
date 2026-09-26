@@ -407,6 +407,28 @@ function toolOutputText(block) {
     .join("\n");
 }
 
+/**
+ * Ce que l'en-tête d'un outil doit dire, d'après ce que le CLI a rendu.
+ *
+ * Le drapeau `is_error` du résultat décide, et lui seul : un résultat normal
+ * est « terminé », quoi qu'il contienne. On cherchait le mot « permission »
+ * dans le texte de la sortie ; la page https://example.com, lue par
+ * `take_snapshot`, en contient un, et l'outil s'affichait « permission
+ * refusée » alors qu'il avait rendu la page (essais du 26/09). Le texte ne
+ * sert plus qu'à distinguer, parmi les résultats en erreur, un refus (message
+ * du CLI ou de l'Atelier) d'un échec de l'outil.
+ *
+ * @param {boolean|undefined} enErreur `is_error` du résultat
+ * @param {string} texte sortie de l'outil
+ * @returns {"done"|"denied"|"error"}
+ */
+export function statutDuResultat(enErreur, texte) {
+  if (enErreur !== true) return "done";
+  return /haven't granted|permission|refusé|refuse|denied/i.test(String(texte || ""))
+    ? "denied"
+    : "error";
+}
+
 function findToolBlock(blocks, toolId) {
   if (toolId) {
     const hit = blocks.find((b) => b.type === "tool" && b.id === toolId);
@@ -557,7 +579,7 @@ export function messagesFromTranscript(transcriptText) {
             const out = toolOutputText(block);
             if (tool) {
               tool.output = out;
-              tool.status = block.is_error ? "denied" : "done";
+              tool.status = statutDuResultat(block.is_error, tool.output);
             }
           }
         }
@@ -579,7 +601,7 @@ export function messagesFromTranscript(transcriptText) {
             const tool = findToolBlock(blocks, block.tool_use_id || "");
             if (tool) {
               tool.output = toolOutputText(block);
-              tool.status = block.is_error ? "denied" : "done";
+              tool.status = statutDuResultat(block.is_error, tool.output);
             }
           } else if (block.type === "text" && block.text) {
             dits.push(block.text);
@@ -609,7 +631,8 @@ export function messagesFromTranscript(transcriptText) {
         const toolId = String(d.tool_use_id || "");
         const tool = findToolBlock(blocks, toolId);
         if (tool) {
-          tool.status = "denied";
+          // Un résultat normal déjà lu dit que l'outil s'est exécuté.
+          if (!(tool.status === "done" && tool.output)) tool.status = "denied";
           if (!tool.name) tool.name = d.tool_name || "?";
           if (!tool.input && d.tool_input) tool.input = d.tool_input;
         } else {
