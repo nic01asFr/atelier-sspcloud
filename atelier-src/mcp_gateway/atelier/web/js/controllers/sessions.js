@@ -18,16 +18,10 @@ export function createSessionActions(ctx) {
   async function selectSession(sessionId) {
     try {
       S.setError(state, "");
-      S.setView(state, "code");
       const rec = await api.getSession(state.token, sessionId);
-      if (!S.isCodeSession(rec, state)) {
-        S.setError(
-          state,
-          "Session assistant — utilisez l’onglet Assistant (bientôt)"
-        );
-        render();
-        return;
-      }
+      // Une conversation de l'Assistant s'ouvre dans son fil, celle d'un
+      // projet dans le sien : même écran, espace différent.
+      S.setView(state, S.isCodeSession(rec, state) ? "code" : "assistant");
       S.setSlug(state, rec.slug);
       S.ensureExpanded(state, rec.slug);
       S.setSessionId(state, sessionId);

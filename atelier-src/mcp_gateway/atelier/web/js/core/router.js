@@ -13,8 +13,11 @@ export function readQuery() {
 
 export function writeQuery(state) {
   const q = new URLSearchParams();
-  if (state.view && state.view !== "code") q.set("view", state.view);
-  if (state.view === "code") {
+  const vue = S.vueAffichee(state);
+  if (vue && vue !== "code") q.set("view", vue);
+  if (vue === "assistant") {
+    if (state.sessionId) q.set("session", state.sessionId);
+  } else if (state.view === "code") {
     if (state.slug) q.set("slug", state.slug);
     if (state.sessionId) q.set("session", state.sessionId);
   }

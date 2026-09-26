@@ -1362,3 +1362,50 @@ export async function arreterLancement(id) {
   if (!res.ok) await parseError(res);
   return res.json();
 }
+
+// ── L'Assistant (vague 3, équipe A) ──────────────────────────────────────────
+
+/**
+ * Le « Oui » de la personne sur l'aperçu d'une commande engageante
+ * (`POST /v1/commandes/confirmer`). Lève une erreur qui porte la raison si
+ * le service ne l'a pas fait.
+ */
+export async function confirmerCommande(jeton) {
+  const res = await fetch("/v1/commandes/confirmer", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ jeton }),
+  });
+  let corps = null;
+  try {
+    corps = await res.clone().json();
+  } catch {
+    corps = null;
+  }
+  if (!corps || corps.statut !== "fait") {
+    if (!corps) await parseError(res);
+    const raison = corps?.resultat?.erreur || corps?.detail || corps?.statut || res.statusText;
+    const err = new Error(typeof raison === "string" ? raison : JSON.stringify(raison));
+    err.status = res.status;
+    throw err;
+  }
+  return corps;
+}
+
+/** L'état du dossier de l'Assistant : réglage d'accueil, taille de son contexte. */
+export async function lireAssistant() {
+  const res = await fetch("/v1/assistant", { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** « Ouvrir l'Atelier sur l'Assistant » : un choix de la personne, depuis l'interface. */
+export async function reglerAccueilAssistant(actif) {
+  const res = await fetch("/v1/assistant/reglages", {
+    method: "PUT",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ accueil_assistant: !!actif }),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}

@@ -50,6 +50,8 @@ export function createAuthController(ctx) {
     try {
       const meta = await api.getMeta(state.token);
       S.setMeta(state, meta);
+      // « Ouvrir l'Atelier sur l'Assistant » : l'accueil, quand l'adresse ne dit rien.
+      S.setView(state, S.vueDArrivee(location.search, meta));
       await refreshProjects(state);
       await refreshSessions(state);
       veillerLesSessions(state, render);

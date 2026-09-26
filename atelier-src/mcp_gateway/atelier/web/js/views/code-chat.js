@@ -5,6 +5,7 @@ import * as api from "../api.js";
 import * as S from "../state.js";
 import { $ } from "../core/dom.js";
 import { appendMessageBody } from "../ui/message-render.js";
+import { LIBELLES as LIBELLES_ASSISTANT } from "./assistant.js";
 
 /**
  * @param {object} ctx
@@ -311,7 +312,9 @@ const BAS_DU_FIL = 1e9;
     if (!state.sessionId) {
       const hint = document.createElement("p");
       hint.className = "empty-hint";
-      hint.textContent = state.pendingProjectSlug
+      hint.textContent = S.estAssistant(state)
+        ? LIBELLES_ASSISTANT.vide
+        : state.pendingProjectSlug
         ? "Écrivez votre premier message pour démarrer la conversation."
         : "Écrivez votre premier message — un projet sera créé pour l’accueillir.";
       thread.replaceChildren(hint);
@@ -459,7 +462,10 @@ const BAS_DU_FIL = 1e9;
     const attachInput = $("composer-attach-input");
     const hasContent =
       !!input?.value.trim() || (state.composerAttachments?.length > 0);
-    if (input) input.disabled = !canSend;
+    if (input) {
+      input.disabled = !canSend;
+      input.placeholder = S.estAssistant(state) ? LIBELLES_ASSISTANT.composeur : "Message Claude Code…";
+    }
     if (send) {
       send.disabled = !canSend || !hasContent;
       // Il reste visible pendant un tour : c'est par lui qu'on met en file.
@@ -528,6 +534,20 @@ const BAS_DU_FIL = 1e9;
       : state.pendingProjectSlug || "";
     const project = state.projects.find((p) => p.slug === slug);
 
+    if (S.estAssistant(state)) {
+      // L'Assistant n'a pas de projet à choisir : son nom tient lieu de projet.
+      $("session-title-display").textContent = current ? S.sessionLabel(current) : LIBELLES_ASSISTANT.nouvelle;
+      const etiquette = $("session-project-label");
+      if (etiquette) {
+        etiquette.hidden = false;
+        etiquette.textContent = LIBELLES_ASSISTANT.titre;
+      }
+      const choix = $("session-project-select");
+      if (choix) choix.hidden = true;
+      const lien = $("session-vscode-link");
+      if (lien) lien.hidden = true;
+      return;
+    }
     const titleEl = $("session-title-display");
     if (titleEl) {
       titleEl.textContent = enConversation

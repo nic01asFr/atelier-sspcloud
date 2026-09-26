@@ -498,6 +498,16 @@ export function createChatController(ctx) {
    * tant que l'utilisateur n'a rien envoye.
    */
   async function assurerConversation(texte) {
+    if (S.estAssistant(state)) {
+      // L'Assistant n'a pas de projet : sa conversation naît dans son dossier.
+      const rec = await api.createSession(state.token, { slug: S.assistantSlug(state), kind: "assistant" });
+      S.setSessionId(state, rec.session_id);
+      S.setMessages(state, []);
+      S.setPendingProjectSlug(state, null);
+      await refreshSessions(state);
+      writeQuery?.();
+      return;
+    }
     let slug = state.pendingProjectSlug || "";
     if (!slug) {
       const titre = S.projectNameFromMessage(texte) || "Projet sans nom";
