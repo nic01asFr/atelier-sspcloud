@@ -360,7 +360,20 @@ d'onglets :
   qu'une fois (le fichier part avec elle). Au-delà de
   `ATELIER_CHROME_MAIN_MAX_S` (1800 s), un appel retenu reçoit une erreur
   (« demande-lui où elle en est »), et une main posée depuis plus longtemps
-  est tenue pour oubliée : un nouvel appel passe.
+  est tenue pour oubliée : un nouvel appel passe ;
+- **page changée pendant la main** (correctif du 26/09, après essais) :
+  l'Atelier écrit avec la note `"page_changee": true|false` (adresse ou titre
+  de la page suivie par l'écran, avant la prise et au retour ;
+  `ecran.page_a_change`). Si elle a changé, une action qui vise un élément par
+  son identifiant de lecture (`uid`, `from_uid`, `to_uid`, `elements[].uid` :
+  click, fill, hover, drag, fill_form, upload_file…) **n'est pas transmise** :
+  l'agent reçoit une erreur d'outil qui porte la note et lui dit de relire la
+  page (`take_snapshot`), et il en va de même pour toute action par `uid`
+  jusqu'à son prochain `take_snapshot`. Les actions sans `uid`
+  (`navigate_page`, `new_page`, `press_key`…) repartent avec la note. Page
+  inchangée : rien ne change. Cause constatée : un `click uid=1_3` retenu,
+  libéré après que la personne avait navigué ailleurs, a été joué sur la
+  nouvelle page (« Successfully clicked »).
 
 **L'écran** (`mcp_gateway/atelier/ecran.py`, dans le processus de l'Atelier) :
 
