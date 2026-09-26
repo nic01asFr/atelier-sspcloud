@@ -357,7 +357,7 @@ Captures des deux thèmes : `apres/30` à `apres/34` (`-sombre`, `-clair`).
 Tout ce qui est marqué **Corrigé** ci-dessus. Vérifications :
 
 - suites JavaScript (`tests/js/*.suite.mjs`, lancées par pytest) : toutes
-  vertes, dont trois nouvelles : `etapes.suite.mjs` (106 vérifications :
+  vertes, dont trois nouvelles : `etapes.suite.mjs` (107 vérifications :
   table des libellés, regroupement d'un tour, ce qui ne se replie jamais,
   étape vivante, réglages, message long, heure, raccourcis, arbre,
   compositions, thème), `jetons.suite.mjs` (aucune couleur en dur hors de
