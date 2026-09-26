@@ -53,15 +53,19 @@ de Nicolas avant les redémarrages.
 | **G : gardiens** | exécuteur à part (module et processus séparés, comme le relais) ; G0 (inventaire des automates, lu de wikichat et de l'Atelier), G1 (santé : Atelier, relais, wikichat, créations servies, CI, image comparée à `main`), G2 (sécurité : ports déclarés, secrets par empreinte, droits 0600) ; journal JSONL ; API de lecture (la page viendra en vague 2) ; hooks `PreToolUse` du socle (refus de `pkill -f` et de `0.0.0.0`) | J1 (moteur), J3 (base) |
 | **M : mesures** | A0 et H0 sur le pod : effort `xhigh` comparé à `medium` (latence, qualité) ; méta-outils réels de la passerelle, 5 essais par cas ; latence de bout en bout de l'oral (STT de `voice_service.py`) ; vérifications peu coûteuses A1 à A13 de `coherence-croisee.md` §4 | lève les hypothèses |
 
-### Vague 2 : relier
+### Vague 2 : relier (lancée le 26/09)
 
-- **Carte** (couche Atelier, assemblage `/api/carte`, `atelier_carte`), sur W4 et F.
-- **Page Gardiens** et **onglet Automates** : P, sur G.
-- **Contexte** : lot B (`SessionStart`, `contexte.md`), lot C (une identité) et lot D
-  (lancements par l'Atelier) : F, avec W.
-- **Hôte MCP Apps** (P3), puis **bureaux** (P4, portées de session) : P.
-- **Commandes de création** : agents, connecteurs, liens entre projets (F). Migration du Lecteur
-  Grist vers la structure type.
+Décision de Nicolas (26/09) : **pas de page Gardiens**. Les gardiens sont des **agents
+spécifiques**, montrés et pilotés dans la vue Agents comme les autres agents planifiés. Leurs
+réparations sont proposées par des agents dédiés, lancés par l'Atelier.
+
+| Équipe | Contenu |
+|---|---|
+| **C : carte** | couche Atelier de la carte, assemblée avec `GET /api/cartographie` de wikichat ; `GET /api/carte` ; commande `atelier_carte` (profil `assistant`, vue synthétique et détail) ; recalcul après chaque commande réussie (crochet `apres_commande`) |
+| **V : vue Agents et validation** | gardiens présentés comme agents spécifiques dans la vue Agents (état, derniers constats, alertes, couper, lancer), lus depuis l'API des gardiens ; tous les automates (triggers et routines wikichat, gardiens, créations serveur) dans la même vue ; écran « À valider » ; lecture du journal unique |
+| **L : lancements et contexte** | lot B (contexte `SessionStart` et `.atelier/contexte.md` sans doubler le briefing wikichat) ; lot D (les agents lancés par wikichat passent par l'Atelier : identité, profil, mode, plafonds) ; agents réparateurs des gardiens (G5 : proposition sur branche et dépôt dans « À valider ») ; test instable `test_veille_journaux` rendu déterministe |
+| **K : commandes de création** | `atelier_agent_creer` et `atelier_agent_activer`, `atelier_connecteur_ajouter` et `atelier_connecteur_retirer`, liens entre projets (vers les relations de wikichat) ; migration du Lecteur Grist et des autres projets vers la structure type |
+| **B : bureaux** | services du namespace (QGIS, Blender, n8n) relayés par l'hôte des applications (J-d), jeton ajouté côté serveur, `frame-ancestors` restreint ; vue « bureau » dans le panneau ; portée de session par connecteur |
 
 ### Vague 3 : l'Assistant et le navigateur en direct
 
