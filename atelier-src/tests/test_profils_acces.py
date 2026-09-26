@@ -129,8 +129,10 @@ class Porte:
         self.client = TestClient(app, base_url=ATELIER)
 
     def rpc(self, methode: str, params: dict[str, Any] | None = None, *, profil: str | None = None,
-            conv: str | None = None, projet: str | None = None) -> dict[str, Any]:
+            conv: str | None = None, projet: str | None = None, dossier: str | None = None) -> dict[str, Any]:
         entetes = porteur(self.atelier)
+        if dossier is not None:
+            entetes["X-Atelier-Dossier"] = dossier
         if projet is not None:
             entetes["X-Atelier-Projet"] = projet
         if profil is not None:
@@ -494,3 +496,39 @@ def test_une_conversation_connue_ignore_le_projet_annonce(
 
 def test_le_projet_annonce_ne_donne_jamais_assistant(porte: Porte) -> None:
     assert porte.noms(profil="assistant", conv="cli-inconnue-3", projet="demo") == OUTILS_CODE
+
+
+# ── Conversation inconnue de l'Assistant (VS Code, terminal) ───────────
+
+
+def _dossier_de_l_assistant(atelier: TestClient) -> str:
+    dossier = atelier.app.state.settings.assistant_root
+    dossier.mkdir(parents=True, exist_ok=True)
+    return str(dossier)
+
+
+def test_une_conversation_inconnue_de_l_assistant_recoit_les_meta_outils(porte: Porte) -> None:
+    dossier = _dossier_de_l_assistant(porte.atelier)
+    noms = porte.noms(profil="assistant", conv="cli-assistant-1", dossier=dossier)
+    assert {"gateway_find_tools", "gateway_call_tool", "atelier_decider", "atelier_journal"} <= noms
+
+
+def test_une_conversation_inconnue_avec_un_projet_reste_en_code(porte: Porte) -> None:
+    dossier = _dossier_de_l_assistant(porte.atelier)
+    noms = porte.noms(profil="assistant", conv="cli-assistant-2", dossier=dossier, projet="demo")
+    assert noms == OUTILS_CODE
+
+
+@pytest.mark.parametrize("dossier", [None, "", "/tmp", "{projet}"])
+def test_une_conversation_inconnue_hors_du_dossier_de_l_assistant_reste_en_code(
+    porte: Porte, dossier: str | None
+) -> None:
+    if dossier == "{projet}":
+        dossier = str(porte.atelier.app.state.settings.projects_dir / "demo")
+    assert porte.noms(profil="assistant", conv="cli-assistant-3", dossier=dossier) == OUTILS_CODE
+
+
+def test_une_conversation_connue_de_code_qui_annonce_assistant_et_le_dossier_reste_en_code(porte: Porte) -> None:
+    conv = conversation(porte.atelier, "demo")
+    dossier = _dossier_de_l_assistant(porte.atelier)
+    assert porte.noms(profil="assistant", conv=conv, dossier=dossier) == OUTILS_CODE

@@ -80,7 +80,14 @@ def _appel_de(request: Request, ctx: Contexte) -> Iterator[None]:
     conversation = (request.headers.get("x-atelier-conversation") or "").strip()[:200]
     jeton = CONVERSATION_APPELANTE.set(conversation)
     store = getattr(request.app.state, "store", None)
-    jeton_profil = PROFIL_APPELANT.set(profil_effectif(request.headers.get(ENTETE_PROFIL), conversation, store))
+    profil = profil_effectif(
+        request.headers.get(ENTETE_PROFIL),
+        conversation,
+        store,
+        projet=request.headers.get(ENTETE_PROJET),
+        dossier=request.headers.get("x-atelier-dossier"),
+    )
+    jeton_profil = PROFIL_APPELANT.set(profil)
     jeton_projet = PROJET_ANNONCE.set((request.headers.get(ENTETE_PROJET) or "").strip()[:100])
     try:
         yield
