@@ -496,8 +496,8 @@ une autre chose et reste tel quel.
 | `atelier_agent_supprimer` | reversible | `atelier_agent_creer` (même id, désactivé) | un modèle ne supprime pas un agent actif ; dossier et propositions gardés |
 | `atelier_agent_activer` | **reservee**, non exposée en MCP | `atelier_agent_desactiver` | la personne seule (J-b2) ; refusée sans budget lisible |
 | `atelier_agent_desactiver` | reversible | `atelier_agent_activer` | permise à tous ; l'annuler (réactiver) revient à la personne |
-| `atelier_connecteur_ajouter` | **engageante** (`reprendre=true` : reversible) | `atelier_connecteur_retirer` | ajoute au pool (`gateway.db`), régénère par `mcp_sync.sync_summary`, rend la sonde (`probe_registry_server`) ; **aucun secret en argument** (en-tête ou variable secrète, `${…}`, adresse à jeton : refusés) ; `projets[]` facultatif |
-| `atelier_connecteur_retirer` | reversible | `atelier_connecteur_ajouter` avec `reprendre` | met hors service sans effacer : l'annulation remet la déclaration, secret compris, sans qu'il passe par un argument ; `reprendre` n'ouvre que ce que l'Atelier a retiré |
+| `atelier_connecteur_ajouter` | **engageante** | `atelier_connecteur_retirer` | ajoute au pool (`gateway.db`), régénère par `mcp_sync.sync_summary`, rend la sonde (`probe_registry_server`) ; **aucun secret en argument** (en-tête ou variable secrète, `${…}`, adresse à jeton : refusés) ; `projets[]` facultatif |
+| `atelier_connecteur_retirer` | reversible | `atelier_connecteur_ajouter` avec `reprendre` (engageante) | met hors service sans effacer : l'annulation remet la déclaration, secret compris, sans qu'il passe par un argument ; `reprendre` n'ouvre que ce que l'Atelier a retiré |
 | `atelier_connecteur_choisir` | reversible | elle-même (choix d'avant, ou `heriter`) | `connecteurs[]` du pool, ou `heriter=true` ; passe par `mcp_sync.write_project_binding` et donc par `configuration_du_profil` (appelée, pas modifiée) |
 | `atelier_connecteur_accorder` | **reservee**, non exposée en MCP | — | donne un secret **désigné par son nom** (fichier du dossier des secrets, lu par le serveur) à `headers.<Nom>` ou `env.<NOM>` ; la valeur n'apparaît ni au journal, ni dans la carte, ni dans un `.mcp.json` |
 | `atelier_projets_lier` | reversible | elle-même (`relations` d'avant) | écrit `set_project_meta.relations` par l'outil `wikichat__set_project_meta` (pool) ; garde les autres relations (lues dans `GET /api/cartographie`, puis réécrites en entier) ; `retirer=true` ; déclare d'abord un projet inconnu de wikichat |
@@ -526,9 +526,13 @@ git et la migration sont réels.
 (arguments faux) rend `statut: refus`, sans jeton, journalisé `refus`, au lieu de faire tomber
 l'appel en exception. `atelier_projet_deployer_declarer` en profite (testé).
 
-**Écart relevé.** Une inverse engageante ne s'applique pas par `atelier_annuler` (il reçoit un
-aperçu, pas `fait`) : c'est pourquoi `retirer` a pour inverse la reprise **réversible** d'un
-connecteur retiré.
+**Annuler une inverse engageante** (`natives.py`, `atelier_annuler`). Quand l'auteur de l'action
+(même acteur) ou la personne l'annule, son geste vaut accord pour l'inverse : elle s'exécute sans
+nouvel aperçu, avec cet acteur, et son journal porte `via: atelier_annuler:<action>` ; la carte
+d'annulation le dit (`preuve.consentement_de_l_action`). Un autre modèle retombe sur l'aperçu
+(refus). Une inverse réservée reste refusée à tout modèle (la classe est revérifiée). `retirer` a
+donc de nouveau son inverse naturelle, `atelier_connecteur_ajouter` avec `reprendre`, **engageante**
+(l'allègement en réversible est retiré) ; `atelier_projet_deployer_declarer` s'annule aussi.
 
 **Non vérifié** : contre le vrai Pilote et le vrai wikichat du pod (aucun essai en réel, pod en
 lecture seule) ; la sonde réelle d'un connecteur ajouté ; le budget en jetons, que le Pilote ne

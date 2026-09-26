@@ -212,9 +212,16 @@ def test_retirer_garde_la_declaration_et_annuler_la_remet(atelier: Any, sondes: 
     }
     assert JETON_QGIS not in json.dumps(ligne)
 
-    # Annuler par le modèle : la reprise est réversible, sans jeton ni secret.
+    # Un autre modèle n'annule pas sans accord : la reprise est engageante.
+    autre = Contexte(acteur="conversation:autre", origine=ORIGINE_MCP)
+    assert _executer(atelier, "atelier_annuler", {"action": retire.action}, autre).statut == REFUSE
+    assert _pool(atelier)["qgis"]["enabled"] is False
+    # Son auteur, si : son geste vaut accord pour l'inverse, sans jeton ni secret.
     annule = _executer(atelier, "atelier_annuler", {"action": retire.action})
     assert annule.statut == FAIT, annule.charge
+    reprise = atelier.app.state.commandes.journal.lire(commande="atelier_connecteur_ajouter", limite=1)[0]
+    assert reprise["resultat"] == "fait" and reprise["action"]["classe"] == "engageante"
+    assert reprise["action"]["via"] == f"atelier_annuler:{retire.action}"
     entree = _pool(atelier)["qgis"]
     assert entree["enabled"] is True
     assert entree["headers"]["Authorization"] == f"Bearer {JETON_QGIS}"
@@ -224,8 +231,9 @@ def test_retirer_garde_la_declaration_et_annuler_la_remet(atelier: Any, sondes: 
 
 def test_reprendre_n_ouvre_pas_ce_que_la_personne_a_coupe(atelier: Any, sondes: list[str]) -> None:
     _mettre_au_pool(atelier, qgis={"type": "http", "url": "http://qgis.invalid/mcp", "enabled": False})
-    reponse = _executer(atelier, "atelier_connecteur_ajouter", {"nom": "qgis", "reprendre": True})
-    assert reponse.statut == REFUSE and "n'a pas été retiré par l'Atelier" in reponse.charge["erreur"]
+    for ctx in (_modele(), contexte_interface()):
+        reponse = _executer(atelier, "atelier_connecteur_ajouter", {"nom": "qgis", "reprendre": True}, ctx)
+        assert reponse.statut == REFUSE and "n'a pas été retiré par l'Atelier" in reponse.charge["erreur"]
     assert _pool(atelier)["qgis"]["enabled"] is False
 
 

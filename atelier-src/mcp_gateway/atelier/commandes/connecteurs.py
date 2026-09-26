@@ -203,9 +203,30 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
             raise Refus("ce connecteur viserait la passerelle de l'Atelier elle-même")
         return cfg
 
+    def reprise_possible(nom: str, args: dict[str, Any]) -> None:
+        """Une reprise ne rouvre que ce que l'Atelier a retiré, et rien d'autre."""
+        autres = set(args) - {"nom", "reprendre"}
+        if autres:
+            raise Refus(f"reprendre ne se combine pas avec {sorted(autres)}")
+        conn = ouvrir()
+        try:
+            e = entree(conn, nom)
+            if e is None:
+                raise Refus(f"connecteur inconnu : {nom}")
+            if est_actif(conn, nom):
+                raise Refus(f"{nom} est déjà en service")
+            if not ((e.config.get("_metadata") or {}).get(_MARQUE) or {}).get("retire"):
+                raise Refus(
+                    f"{nom} n'a pas été retiré par l'Atelier : sa mise en service revient à la "
+                    "personne (écran des connecteurs)"
+                )
+        finally:
+            conn.close()
+
     def apercu_ajouter(ctx: Contexte, args: dict[str, Any]) -> dict[str, Any]:
         nom = nom_valide(args)
         if booleen(args, "reprendre"):
+            reprise_possible(nom, args)
             return {"connecteur": nom, "effet": "remis en service tel qu'il était avant son retrait"}
         cfg = declaration(args)
         projets = liste_de_noms(args, "projets") or []
@@ -260,22 +281,9 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
         )
 
     async def reprendre(ctx: Contexte, nom: str, args: dict[str, Any]) -> Effet:
-        autres = set(args) - {"nom", "reprendre"}
-        if autres:
-            raise Refus(f"reprendre ne se combine pas avec {sorted(autres)}")
+        reprise_possible(nom, args)
         conn = ouvrir()
         try:
-            e = entree(conn, nom)
-            if e is None:
-                raise Refus(f"connecteur inconnu : {nom}")
-            retrait = ((e.config.get("_metadata") or {}).get(_MARQUE) or {}).get("retire")
-            if est_actif(conn, nom):
-                raise Refus(f"{nom} est déjà en service")
-            if not retrait:
-                raise Refus(
-                    f"{nom} n'a pas été retiré par l'Atelier : sa mise en service revient à la "
-                    "personne (écran des connecteurs)"
-                )
             marquer(conn, nom, None)
             activer(conn, nom, True)
         finally:
@@ -310,11 +318,10 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
                 "nom unique dans le pool ; atelier, wikichat et Onyxia sont tenus par l'Atelier",
                 "régénère les configurations par mcp_sync (même chemin que la page Connecteurs)",
                 "rend la sonde du connecteur",
-                "reprendre : seulement un connecteur retiré par l'Atelier, et alors réversible",
+                "reprendre : seulement un connecteur retiré par l'Atelier (inverse de retirer)",
             ],
             executer=ajouter,
             apercu=apercu_ajouter,
-            allegement=lambda args: REVERSIBLE if args.get("reprendre") is True else ENGAGEANTE,
             schema={
                 "type": "object",
                 "properties": {
