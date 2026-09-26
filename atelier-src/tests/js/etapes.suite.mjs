@@ -43,6 +43,7 @@ import { reglagesDepuisMeta } from "../../mcp_gateway/atelier/web/js/controllers
 import { heureDuMessage, nomDeLOrateur, questionPrecedente } from "../../mcp_gateway/atelier/web/js/views/code-chat.js";
 import { empreinteDeLArbre } from "../../mcp_gateway/atelier/web/js/views/code-tree.js";
 import { memeTexte } from "../../mcp_gateway/atelier/web/js/views/agent.js";
+import { libelleControle } from "../../mcp_gateway/atelier/web/js/views/gardiens.js";
 import { filtrerOutils } from "../../mcp_gateway/atelier/web/js/views/composition-builder.js";
 import { badgeStatutComposition } from "../../mcp_gateway/atelier/web/js/views/connectors.js";
 import { appliquerTheme, themeDepuisMeta, themeValable } from "../../mcp_gateway/atelier/web/js/controllers/theme.js";
@@ -289,6 +290,10 @@ const parole = (t) => ({ type: "text", text: t });
   // Une description qui répète le nom ne se répète pas.
   verifier(memeTexte("Agent Qgis complet", " agent qgis  complet "), "même texte, casse et espaces mis à part");
   verifier(!memeTexte("", ""), "deux vides ne sont pas « le même texte »");
+
+  // Le contrôle quotidien de cohérence des surfaces a son libellé.
+  egal(libelleControle("coherence.surfaces"), "Chaque surface donne à l’agent ce que dit son profil",
+    "un contrôle se dit en phrase, pas par son identifiant");
 }
 
 // ── 7. Compositions : trouver un outil parmi des centaines ──────────────
