@@ -52,8 +52,9 @@ Statut :
 | A-2b | Profil `assistant` : pont wikichat réduit à un noyau d'une dizaine d'outils, le reste par le catalogue de la passerelle ; anciennes commandes (`envoyer`, `transcript`, `suivre`, `ouvrir`) retirées du profil | D (26/09) | mesures équipe A |
 | A-5 | Pour les propositions : l'Assistant refuse seul, n'accepte jamais seul | D | §6.7 |
 | A-6 | L'Assistant n'écrit que dans son dossier (notes de travail) ; la mémoire et les objets passent par des commandes | D | §6.8 |
-| A-7 | Mémoire : les faits extraits par le code sont enregistrés d'office ; préférences et interprétations passent par « À valider ». Capitalisation nocturne plafonnée à 20 conversations de 30 000 jetons, sur `qwen3-8-27b`. Les conversations des agents code sont capitalisées en fiches de projet | D | §6.9 |
+| A-7 | Mémoire : les faits extraits par le code sont enregistrés d'office ; préférences et interprétations passent par « À valider ». Capitalisation nocturne plafonnée à 20 conversations, sur `qwen3-8-27b`. Les conversations des agents code sont capitalisées en fiches de projet. **Révisé le 26/09** : chaque conversation est résumée par un **appel direct de l'Atelier** (`POST /v1/memoire/resumer`, clé du lanceur, identifiant de conversation seulement), sans lancement d'agent ni conversation ouverte dans `default` ; l'Atelier lit, filtre (T10) et borne l'entrée à **58 000 caractères** consigne comprise (limite gardée), sortie ≤ 800 jetons, 20 résumés par jour, un à la fois, chaque appel au journal unique avec ses jetons ; aucune commande du catalogue | D, révisé par N (26/09) | §6.9 ; équipe R |
 | A-8 | Voix : aucun audio conservé ; aucun accord à l'oral. Cibles révisées par la mesure : **accusé par un son préenregistré** (moins de 2 s) ; premier mot en moins de 3,5 s sans outil ; environ 5,5 s avec un outil, couvert par l'accusé. La **détection de fin de parole (VAD)** est requise : aujourd'hui, des tranches de 3 s | D, révisé par la mesure | §6.10 |
+| A-9 | Mémoire : recherche par le sens (`qwen3-embedding-8b`) sur les fiches de conversation, **en complément** de la recherche lexicale (fusion des rangs) : vecteurs calculés à l'écriture d'une fiche, depuis son texte filtré, rangés à côté de l'index ; mêmes portées (profil `code` : son projet) ; lexical seul si le point d'accès ne répond pas. Les appels passent par l'Atelier (`POST /v1/memoire/vecteurs`), qui tient le point d'accès, la clé et le filtre (S5) | N (26/09) | équipe R |
 
 ## Plus tard (non bloquant)
 
@@ -70,15 +71,9 @@ Ces points se trancheront avant le jalon concerné (`coherence-croisee.md` §5.3
 
 ## En attente d'une réponse explicite de Nicolas
 
-- Mémoire (équipe M, vague 3) : l'entrée de la routine de nuit est plafonnée à 58 000
-  caractères (≈ 17 000 jetons) par la limite de message du lot D, sous les 30 000 jetons
-  d'A-7. Relever cette limite pour les lancements de la mémoire, ou garder ce plafond ?
-- Mémoire : chaque conversation fichée la nuit coûte le harnais d'un agent code (≈ 21 700
-  jetons) en plus de l'entrée. Garder « un lancement de l'Atelier » (A-7), ou appeler le
-  relais sans harnais pour cette seule tâche ?
-- Mémoire : mesurer `qwen3-embedding-8b` sur les fiches (cela envoie leur texte au point
-  d'accès du modèle, comme la routine de nuit) ?
-- Mémoire : la routine de nuit naît désactivée ; l'activer (Pilote ou vue Agents) ?
+- Mémoire : la routine de nuit naît désactivée ; l'activer (Pilote ou vue Agents), après
+  l'essai sur trois conversations (réponses du 26/09 aux trois autres questions : A-7
+  révisée, A-9) ?
 
 - Le trigger wikichat `cron-routine-4h` (routine `paradox-research`, toutes les 4 h) a été
   rattrapé au redémarrage du 25/09. Faut-il le couper comme les cinq autres ?

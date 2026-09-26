@@ -15,7 +15,11 @@ L'Atelier, lui, tient les conversations. Ce module est la frontière :
      fins de tour avec leurs jetons. Jamais le contenu d'un résultat d'outil ;
    - `POST /v1/memoire/propositions` : une préférence ou une interprétation
      proposée par un modèle (la routine de nuit) entre dans « À valider »,
-     source `memoire` (A-7). Rien n'est retenu avant l'accord de la personne.
+     source `memoire` (A-7). Rien n'est retenu avant l'accord de la personne ;
+   - `POST /v1/memoire/resumer` et `POST /v1/memoire/vecteurs` : le résumé
+     d'une conversation par un appel direct du modèle, et les vecteurs des
+     fiches (décisions du 26/09), dans `memoire_modele.py`. Clé du lanceur
+     seulement : ni le propriétaire ni l'interface.
 
    La clé acceptée est celle du lanceur (`~/work/.secrets/atelier_lanceur_key`,
    en-tête `X-Atelier-Lanceur`) : c'est déjà la clé de wikichat auprès de

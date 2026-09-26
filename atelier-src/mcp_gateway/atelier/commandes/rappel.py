@@ -442,6 +442,10 @@ def inscrire_la_memoire(app: Any, catalogue: Catalogue) -> None:
         )
 
     app.include_router(construire_le_routeur(app))
+    # Résumé direct et vecteurs (décisions du 26/09) : des routes, pas des commandes.
+    from mcp_gateway.atelier.memoire_modele import enregistrer_la_memoire_modele
+
+    enregistrer_la_memoire_modele(app)
 
 
 __all__ = [
