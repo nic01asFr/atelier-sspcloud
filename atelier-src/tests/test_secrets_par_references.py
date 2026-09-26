@@ -175,9 +175,18 @@ def test_l_init_fait_charger_le_fichier_par_le_shell(tmp_path: Path) -> None:
     bloc = init[debut:fin]
     maison = tmp_path / "maison"
     maison.mkdir()
-    script = f'dire() {{ :; }}\nSECRETS="{tmp_path}/secrets"\n' + bloc
+    # Le bloc délègue à bin/atelier-bashrc (lot profils) : on lui donne la
+    # source réelle et un `avertir` qui fait échouer le test s'il est appelé.
+    source = Path(__file__).resolve().parents[1]
+    script = (
+        f'dire() {{ :; }}\navertir() {{ echo "$*" >&2; exit 1; }}\n'
+        f'SECRETS="{tmp_path}/secrets"\nSOURCE_ATELIER="{source}"\nBIN="{tmp_path}/bin"\n' + bloc
+    )
+    contenus = []
     for _ in range(2):
         subprocess.run([bash, "-c", script], env={"HOME": str(maison), "PATH": os.environ["PATH"]}, check=True)
-    bashrc = (maison / ".bashrc").read_text(encoding="utf-8")
-    assert bashrc.count(f"{tmp_path}/secrets/claude-env.sh") == 2  # test et source, sur une ligne
-    assert len([l for l in bashrc.splitlines() if "claude-env.sh" in l]) == 1
+        contenus.append((maison / ".bashrc").read_text(encoding="utf-8"))
+    bashrc = contenus[-1]
+    assert contenus[0] == contenus[1]  # idempotent
+    lignes = [l for l in bashrc.splitlines() if f"{tmp_path}/secrets/claude-env.sh" in l]
+    assert len(lignes) == 1

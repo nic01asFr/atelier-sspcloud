@@ -145,6 +145,14 @@ def test_la_commande_posee_bloque_depuis_un_dossier_quelconque(tmp_path: Path) -
     assert fini.returncode == 2, fini.stderr
     assert "Tue par PID" in fini.stderr
     # La même commande sans son PYTHONPATH : l'échec non bloquant d'avant.
+    # Témoin qui n'a de sens que si le paquet n'est pas installé dans cet
+    # interpréteur (en CI il l'est : il se trouve alors de partout).
+    temoin = subprocess.run(
+        [sys.executable, "-c", "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('mcp_gateway') else 1)"],
+        cwd=str(projet), env=env, capture_output=True, timeout=30,
+    )
+    if temoin.returncode == 0:
+        return
     nu = subprocess.run(
         [sys.executable, "-m", MODULE],
         input=json.dumps(appel),
