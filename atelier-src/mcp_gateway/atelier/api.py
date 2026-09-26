@@ -67,6 +67,7 @@ from mcp_gateway.atelier.vscode_bridge import (
 )
 from mcp_gateway.atelier.claude_home import aligner_le_lien_claude
 from mcp_gateway.atelier.commandes import enregistrer as enregistrer_les_commandes
+from mcp_gateway.atelier.automates import enregistrer_les_automates
 from mcp_gateway.atelier.vscode_handoff import (
     ecrire_mode_machine,
     prepare_vscode_handoff,
@@ -2582,6 +2583,7 @@ def build_app(
 
     app.include_router(router)
     enregistrer_les_commandes(app)
+    enregistrer_les_automates(app)
 
     # La porte MCP de l'Atelier : ce que l'interface sait faire devient
     # appelable par un agent (voir mcp_endpoint).

@@ -23,7 +23,7 @@ import os
 import sys
 from pathlib import Path
 
-from mcp_gateway.gardiens.api import PORT_PAR_DEFAUT, serveur
+from mcp_gateway.gardiens.api import PORT_PAR_DEFAUT, creer_le_jeton, serveur
 from mcp_gateway.gardiens.controles.commun import Contexte
 from mcp_gateway.gardiens.declaration import DeclarationInvalide, lire
 from mcp_gateway.gardiens.executeur import Executeur
@@ -101,7 +101,14 @@ def main(argv: list[str] | None = None) -> int:
             log.warning("hook du socle non posé : %s", exc)
     executeur = Executeur(declaration, ctx, journal, dossier, publier=journal_unique(ctx))
     try:
-        srv = serveur(executeur, args.port)
+        # Le jeton du pilotage : seul l'Atelier le relit, pour lancer, couper
+        # ou réactiver un contrôle à chaud (api.py, POST /pilotage).
+        jeton = creer_le_jeton(dossier)
+    except OSError as exc:
+        log.warning("pilotage fermé, jeton non écrit : %s", exc)
+        jeton = ""
+    try:
+        srv = serveur(executeur, args.port, jeton)
     except OSError as exc:
         # Un autre exécuteur tient déjà le port : on ne double pas les contrôles.
         log.error("port %s pris (%s) : un exécuteur tourne déjà ?", args.port, exc)

@@ -11,7 +11,11 @@ Ce qu'il fait, et seulement cela (décision J-a) :
 - **homme mort** : un contrôle qui n'a pas tourné à l'heure prévue (exécuteur
   arrêté, contrôle bloqué) est lui-même une alerte ;
 - il applique la liste fermée de gestes (`gestes.py`), à ses conditions, et
-  journalise chaque geste avec l'avant et l'après.
+  journalise chaque geste avec l'avant et l'après ;
+- il se laisse piloter à chaud par l'Atelier (`api.py`, `POST /pilotage`) :
+  lancer un contrôle tout de suite, le couper, le réactiver. Une coupure
+  survit au redémarrage (`coupes.json`) ; la déclaration reste la source, et
+  un contrôle qu'elle déclare `"actif": false` ne se réactive pas d'ici.
 
 Il ne consomme aucun jeton : aucun contrôle n'appelle de modèle.
 """
@@ -139,6 +143,9 @@ class Executeur:
         self.demarre_a = horloge()
         self.etats: dict[str, EtatControle] = {c.id: EtatControle() for c in declaration.controles}
         self.alertes: dict[str, dict[str, Any]] = {}
+        # Les contrôles coupés à chaud : {id: {par, quand}}. Un contrôle coupé
+        # ne tourne plus, n'a plus d'échéance et ne déclenche plus d'homme mort.
+        self.coupes: dict[str, dict[str, Any]] = {}
         self._verrou = threading.RLock()
         self._arret = threading.Event()
         self._fils: list[threading.Thread] = []
@@ -155,6 +162,9 @@ class Executeur:
         alertes = _lire_json(self.dossier_etat / "alertes.json") if self.dossier_etat else None
         if isinstance(alertes, dict):
             self.alertes = {k: v for k, v in alertes.items() if isinstance(v, dict)}
+        coupes = _lire_json(self.dossier_etat / "coupes.json") if self.dossier_etat else None
+        if isinstance(coupes, dict):
+            self.coupes = {k: v for k, v in coupes.items() if k in self.controles and isinstance(v, dict)}
         for rang, c in enumerate(self.declaration.controles):
             st = self.etats[c.id]
             ancien = (precedent or {}).get(c.id) if isinstance(precedent, dict) else None
@@ -165,7 +175,7 @@ class Executeur:
                 st.premier_echec = ancien.get("premier_echec")
             # Tout part dans la première minute, étalé : on ne sait rien de l'instant.
             st.prochaine = maintenant + min(rang * 2.0, 60.0)
-            if c.actif and st.derniere is not None:
+            if self.actif(c) and st.derniere is not None:
                 attendu = st.derniere + periode_attendue(c.quand, st.derniere) + self.tolerance(c)
                 if maintenant > attendu:
                     self._homme_mort(c, maintenant, f"dernière exécution {horodatage(st.derniere)}, rien depuis")
@@ -187,8 +197,13 @@ class Executeur:
             # le même fichier provisoire.
             _ecrire_json(self.dossier_etat / "etat.json", etat)
             _ecrire_json(self.dossier_etat / "alertes.json", self.alertes)
+            _ecrire_json(self.dossier_etat / "coupes.json", self.coupes)
 
     # --- exécution ----------------------------------------------------------
+
+    def actif(self, c: Controle) -> bool:
+        """Déclaré actif, et pas coupé à chaud."""
+        return c.actif and c.id not in self.coupes
 
     @staticmethod
     def tolerance(c: Controle) -> float:
@@ -402,7 +417,7 @@ class Executeur:
             st = self.etats[c.id]
             # La tolérance couvre le délai du contrôle : un contrôle en cours
             # depuis plus longtemps est bloqué, pas lent.
-            if c.actif and maintenant > st.prochaine + self.tolerance(c):
+            if self.actif(c) and maintenant > st.prochaine + self.tolerance(c):
                 en_retard.append(c.id)
                 self._homme_mort(c, maintenant, f"attendu à {horodatage(st.prochaine)}")
         return en_retard
@@ -462,7 +477,7 @@ class Executeur:
         return [
             c
             for c in self.declaration.controles
-            if c.actif and not self.etats[c.id].en_cours and self.etats[c.id].prochaine <= maintenant
+            if self.actif(c) and not self.etats[c.id].en_cours and self.etats[c.id].prochaine <= maintenant
         ]
 
     def tour(self) -> list[dict[str, Any]]:
@@ -497,7 +512,7 @@ class Executeur:
             threading.Thread(target=serie, name=f"gardien-{gardien}", daemon=True).start()
 
     def tout_une_fois(self) -> list[dict[str, Any]]:
-        return [self.passer(c) for c in self.declaration.controles if c.actif]
+        return [self.passer(c) for c in self.declaration.controles if self.actif(c)]
 
     def demarrer(self, pas_s: float = 5.0, veille_s: float = 30.0) -> None:
         def boucle() -> None:
@@ -523,6 +538,70 @@ class Executeur:
     def arreter(self) -> None:
         self._arret.set()
 
+    # --- pilotage (l'Atelier, par l'API locale) -----------------------------
+
+    def _cibles(self, gardien: str | None, controle: str | None) -> list[Controle]:
+        if controle:
+            c = self.controles.get(controle)
+            if c is None:
+                raise KeyError(f"contrôle inconnu : {controle}")
+            return [c]
+        if gardien:
+            liste = [c for c in self.declaration.controles if c.gardien == gardien]
+            if not liste:
+                raise KeyError(f"gardien sans contrôle : {gardien}")
+            return liste
+        raise KeyError("ni gardien ni contrôle")
+
+    def lancer_maintenant(self, gardien: str | None = None, controle: str | None = None) -> list[str]:
+        """Avance l'échéance des contrôles visés : la boucle les prend au tour suivant.
+
+        Rien ne tourne dans l'appel lui-même : un contrôle garde son fil, son
+        délai et son rang derrière les autres du même gardien. Un contrôle
+        coupé ou déjà en cours n'est pas relancé.
+        """
+        maintenant = self.horloge()
+        lances = []
+        with self._verrou:
+            for c in self._cibles(gardien, controle):
+                st = self.etats[c.id]
+                if self.actif(c) and not st.en_cours:
+                    st.prochaine = maintenant
+                    lances.append(c.id)
+        return lances
+
+    def couper(self, gardien: str | None = None, controle: str | None = None, par: str = "") -> list[str]:
+        maintenant = self.horloge()
+        coupes: list[str] = []
+        resolues: list[str] = []
+        with self._verrou:
+            for c in self._cibles(gardien, controle):
+                if c.id in self.coupes or not c.actif:
+                    continue
+                self.coupes[c.id] = {"par": par or "atelier", "quand": horodatage(maintenant)}
+                coupes.append(c.id)
+                # Un contrôle coupé n'est pas en retard : son homme mort se ferme.
+                self._fermer(f"{HOMME_MORT}:{c.id}", maintenant, resolues)
+        if coupes:
+            self._sauver()
+        return coupes
+
+    def reactiver(self, gardien: str | None = None, controle: str | None = None, par: str = "") -> list[str]:
+        del par
+        maintenant = self.horloge()
+        repris: list[str] = []
+        with self._verrou:
+            for c in self._cibles(gardien, controle):
+                if c.id not in self.coupes:
+                    continue
+                del self.coupes[c.id]
+                # Il repart tout de suite : l'échéance d'avant la coupure est passée.
+                self.etats[c.id].prochaine = maintenant
+                repris.append(c.id)
+        if repris:
+            self._sauver()
+        return repris
+
     # --- lecture (API) ------------------------------------------------------
 
     def etat_des_controles(self) -> list[dict[str, Any]]:
@@ -532,7 +611,10 @@ class Executeur:
                     **c.en_dict(),
                     "source": self.declaration.source,
                     "derniere": horodatage(self.etats[c.id].derniere) if self.etats[c.id].derniere else None,
-                    "prochaine": horodatage(self.etats[c.id].prochaine) if c.actif else None,
+                    "actif": self.actif(c),
+                    "actif_declare": c.actif,
+                    "coupe": self.coupes.get(c.id),
+                    "prochaine": horodatage(self.etats[c.id].prochaine) if self.actif(c) else None,
                     "etat": self.etats[c.id].etat,
                     "secondes": self.etats[c.id].secondes,
                     "echecs_consecutifs": self.etats[c.id].echecs_consecutifs,
