@@ -106,6 +106,11 @@ class AtelierEvent:
     message_id: str = ""
     uuid: str = ""
     envoi: str = ""
+    # Le `is_error` d'un résultat d'outil, tel que le CLI le donne. C'est lui,
+    # et non le texte du résultat, qui dit qu'un outil a échoué ou a été
+    # refusé : une page lue par `take_snapshot` qui contient le mot
+    # « permission » s'affichait « permission refusée » (essais du 26/09).
+    erreur: bool = False
 
     def as_sse(self) -> str:
         payload = sans_substituts(asdict(self))
@@ -190,6 +195,7 @@ def parse_stream_json_line(session_id: str, line: str) -> list[AtelierEvent]:
                             tool_id=str(block.get("tool_use_id") or ""),
                             text=sortie_outil(block),
                             raw_type="tool_result",
+                            erreur=block.get("is_error") is True,
                         )
                     )
     elif t == "result":
@@ -263,6 +269,7 @@ def parse_stream_json_line(session_id: str, line: str) -> list[AtelierEvent]:
                         tool_id=str(block.get("tool_use_id") or ""),
                         text=sortie_outil(block),
                         raw_type="tool_result",
+                        erreur=block.get("is_error") is True,
                     )
                 )
     elif t == "stream_event":
@@ -315,6 +322,7 @@ def parse_stream_json_line(session_id: str, line: str) -> list[AtelierEvent]:
                         tool_id=str(block.get("tool_use_id") or ""),
                         text=sortie_outil(block),
                         raw_type="tool_result",
+                        erreur=block.get("is_error") is True,
                     )
                 )
         elif et == "content_block_stop":

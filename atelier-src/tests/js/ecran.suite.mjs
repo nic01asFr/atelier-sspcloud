@@ -9,10 +9,12 @@
 //     remplace « Prendre la main » ;
 //   - aucun port, aucun chemin DevTools dans ce que la page fabrique.
 
+import { EvenementSimule, installerDom, saisir } from "./dom-minimal.mjs";
 import { bilan, egal, nePorte, verifier } from "./verifier.mjs";
 
 import {
   adresseDuFlux,
+  demarrer,
   fractionDansImage,
   messageDeSouris,
   messageDeTouche,
@@ -86,6 +88,96 @@ import {
   verifier(!absent.boutonActif, "rien à prendre sans navigateur");
   egal(absent.message, "Le navigateur de l'agent n'est pas ouvert.", "la raison se lit");
   nePorte(JSON.stringify([libre, prise, absent]), "devtools", "aucun chemin DevTools");
+}
+
+// ── La barre d'adresse : « Aller » et les mises à jour venues du serveur ──
+//
+// Essais du 26/09 : taper une adresse puis cliquer « Aller » ramenait
+// l'ancienne adresse, alors qu'Entrée marchait. Un clic sur le bouton retire
+// d'abord le focus du champ (blur), avant le clic et la soumission : le
+// blur redessinait la barre et remettait l'adresse du serveur dans le champ,
+// et c'est elle que la soumission envoyait.
+
+/** La page de l'écran, montée sur le DOM minimal, avec un faux flux. */
+function monterLEcran() {
+  const doc = installerDom();
+  const noeud = (balise, id, parent = doc.body) => {
+    const n = doc.createElement(balise);
+    n.id = id;
+    parent.appendChild(n);
+    return n;
+  };
+  const formulaire = noeud("form", "adresse");
+  const champ = noeud("input", "adresse-champ", formulaire);
+  const aller = noeud("button", "adresse-aller", formulaire);
+  noeud("button", "main");
+  noeud("div", "bandeau");
+  const scene = noeud("main", "scene");
+  noeud("img", "image", scene);
+  noeud("p", "message", scene);
+  const flux = [];
+  class FauxFlux {
+    constructor() {
+      this.readyState = 1;
+      this.envoyes = [];
+      flux.push(this);
+    }
+    send(texte) {
+      this.envoyes.push(JSON.parse(texte));
+    }
+  }
+  const fen = {
+    WebSocket: FauxFlux,
+    location: { protocol: "https:", host: "apps.exemple", pathname: "/_ecran/conv-a/" },
+    URL: { createObjectURL: () => "blob:x", revokeObjectURL: () => {} },
+    setTimeout: () => 0,
+  };
+  demarrer(doc, fen);
+  const ws = flux[0];
+  const etat = (e) => ws.onmessage({ data: JSON.stringify({ type: "etat", disponible: true, ...e }) });
+  const evenement = (n, type) => n.dispatchEvent(new EvenementSimule(type, {}));
+  const allers = () => ws.envoyes.filter((m) => m.type === "aller").map((m) => m.url);
+  return { champ, aller, formulaire, etat, evenement, allers };
+}
+
+{
+  const e = monterLEcran();
+  e.etat({ main: true, url: "https://ancienne.test/" });
+  egal(e.champ.value, "https://ancienne.test/", "le champ montre l'adresse de la page");
+
+  // Au clavier puis à la souris, dans l'ordre du navigateur : focus, saisie,
+  // blur (le bouton prend le focus au mousedown), clic, soumission.
+  e.evenement(e.champ, "focus");
+  saisir(e.champ, "nouvelle.test");
+  e.evenement(e.champ, "blur");
+  e.evenement(e.formulaire, "submit");
+  egal(e.allers(), ["https://nouvelle.test"], "« Aller » envoie l'adresse tapée, pas l'ancienne");
+}
+
+{
+  const e = monterLEcran();
+  e.etat({ main: true, url: "https://a.test/" });
+  e.evenement(e.champ, "focus");
+  saisir(e.champ, "b.te");
+  e.etat({ main: true, url: "https://a.test/", titre: "A", attente: 1 });
+  egal(e.champ.value, "b.te", "un état du serveur n'écrase pas le champ pendant la saisie");
+  e.evenement(e.champ, "blur");
+  e.etat({ main: true, url: "https://a2.test/" });
+  egal(e.champ.value, "b.te", "ni une adresse modifiée non soumise, une fois le focus parti");
+  e.evenement(e.formulaire, "submit");
+  e.etat({ main: true, url: "https://b.te/" });
+  egal(e.champ.value, "https://b.te/", "soumise, l'adresse suit de nouveau la page");
+}
+
+{
+  const e = monterLEcran();
+  e.etat({ main: true, url: "https://a.test/" });
+  e.evenement(e.champ, "focus");
+  saisir(e.champ, "abandonnee.test");
+  e.evenement(e.champ, "blur");
+  e.etat({ main: false, url: "https://c.test/" });
+  egal(e.champ.value, "https://c.test/", "main rendue : le brouillon part, la barre suit la page");
+  egal(e.allers(), [], "et rien n'a été envoyé");
 }
 
 bilan("ecran");

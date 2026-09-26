@@ -288,6 +288,19 @@ class AtelierSettings(BaseSettings):
     def assistant_sessions_dir(self) -> Path:
         return self.assistant_root / "assistant" / "sessions"
 
+    def masque_par_l_assistant(self, nom: str) -> bool:
+        """Un dossier de `projects_dir` au nom de l'Assistant n'est pas un projet.
+
+        Le slug de l'Assistant désigne `assistant_root` partout
+        (`ProjectStore`, `sessions._project_cwd`). Un dossier
+        `projects/<assistant_slug>` (reste de l'ancienne reprise dans VS Code,
+        constaté sur le pod le 26/09) est masqué par lui : il ne reçoit pas de
+        configuration de projet, le vérificateur ne l'énumère pas, et un agent
+        `code` ne peut pas l'annoncer comme son projet (il hériterait de celui
+        de l'Assistant).
+        """
+        return nom == self.assistant_slug
+
     @property
     def mcp_dir(self) -> Path:
         return self.work_dir / "mcp"

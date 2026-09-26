@@ -263,4 +263,72 @@ const MOTS_INTERNES = ["artefact", "MCP", "jeton", "composition", "gabarit", "ex
   egal(noeud.querySelectorAll(".msg-non-verifie").length, 0, "et s'enlève");
 }
 
+// ── Essais du 26/09 : résultats repliés dans le fil de l'Assistant ─────
+//
+// Le JSON brut d'`atelier_carte` s'affichait déplié dans le fil de
+// l'Assistant. Code et l'Assistant partagent le rendu des outils : dans le
+// fil de l'Assistant, le résultat est replié et la carte d'action reste
+// visible ; en Code, un résultat court reste déplié, un long se replie.
+{
+  const { createCodeChatView } = await import("../../mcp_gateway/atelier/web/js/views/code-chat.js");
+  globalThis.requestAnimationFrame = (f) => f();
+  const fil = berceau();
+  fil.id = "thread";
+  document.body.appendChild(fil);
+  const carteLongue = JSON.stringify({
+    carte: { titre: "Projet créé", action: "x-2" },
+    detail: "x".repeat(3000),
+  });
+  const outilDe = (id, output, name = "mcp__atelier__atelier_carte") => ({
+    type: "tool", id, name, input: {}, output, status: "done",
+  });
+  const resultats = () =>
+    fil.querySelectorAll(".msg-tool-section").filter((d) => d.querySelector("summary")?.textContent === "Résultat");
+
+  const state = S.createState();
+  state.meta = { assistant_slug: "wikichat-memory", ui: {} };
+  S.setView(state, "assistant");
+  S.setSessionId(state, "a-1");
+  S.setMessages(state, [
+    { role: "user", text: "Où en est Lecteur Grist ?" },
+    { role: "assistant", text: "", blocks: [outilDe("t1", '{"forme": "projet"}'), outilDe("t2", carteLongue)] },
+  ]);
+  const vue = createCodeChatView({ state, render: () => {}, composerInput: null, actions: {} });
+  vue.renderThread();
+  egal(resultats().length, 2, "deux résultats rendus");
+  verifier(resultats().every((d) => d.open === false), "dans l'Assistant, tout résultat est replié, même court");
+  porte(texte(fil), "Projet créé", "la carte d'action reste visible");
+
+  S.setView(state, "code");
+  S.setSessionId(state, "c-1");
+  S.setMessages(state, [
+    { role: "user", text: "Liste les fichiers" },
+    {
+      role: "assistant", text: "",
+      blocks: [outilDe("c1", "trois fichiers", "Bash"), outilDe("c2", "ligne\n".repeat(200), "Bash")],
+    },
+  ]);
+  vue.renderThread();
+  egal(resultats().map((d) => d.open), [true, false], "en Code : court déplié, long replié");
+  fil.remove();
+}
+
+// ── Essais du 26/09 : le libellé de la colonne suit la vue ─────────────
+{
+  const { createCodeTreeView } = await import("../../mcp_gateway/atelier/web/js/views/code-tree.js");
+  const arbre = berceau();
+  arbre.id = "project-tree";
+  arbre.setAttribute("aria-label", "Projets et conversations");
+  document.body.appendChild(arbre);
+  const state = S.createState();
+  state.meta = { assistant_slug: "wikichat-memory", ui: {} };
+  S.setView(state, "assistant");
+  createAssistantView({ state, render: () => {}, actions: {} }).render();
+  egal(arbre.getAttribute("aria-label"), "Conversations de l’Assistant", "dans l'Assistant");
+  S.setView(state, "code");
+  createCodeTreeView({ state, render: () => {}, writeQuery: () => {}, actions: {} }).renderProjectTree();
+  egal(arbre.getAttribute("aria-label"), "Projets et conversations", "revenu en Code, le libellé suit la vue");
+  arbre.remove();
+}
+
 bilan("assistant");

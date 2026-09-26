@@ -244,6 +244,22 @@ def _page_dite(page: dict[str, Any] | None) -> str:
     return f"« {titre} » ({url})" if titre else url
 
 
+def page_a_change(avant: dict[str, Any] | None, apres: dict[str, Any] | None) -> bool:
+    """La page de l'agent a-t-elle changé pendant la main (adresse ou titre) ?
+
+    Une page inconnue d'un seul côté compte comme un changement : dans le
+    doute, l'agent relit la page avant d'agir sur un élément.
+    """
+    if not avant and not apres:
+        return False
+    if not avant or not apres:
+        return True
+    return (str(avant.get("url") or ""), str(avant.get("titre") or "")) != (
+        str(apres.get("url") or ""),
+        str(apres.get("titre") or ""),
+    )
+
+
 def phrase_de_reprise(
     avant: dict[str, Any] | None,
     apres: dict[str, Any] | None,
@@ -846,6 +862,9 @@ class Ecrans:
                     "prise": False,
                     "depuis": int(self.horloge() * 1000),
                     "note": phrase_de_reprise(avant, apres, duree, pour="note", abandon=abandon),
+                    # Le filtre ne transmet pas une action par `uid` quand la
+                    # page a changé : l'élément lu désigne la page d'avant.
+                    "page_changee": page_a_change(avant, apres),
                 },
             )
         log.info("écran %s : main rendue (%s%s)", conversation, reprise, ", abandon" if abandon else "")
@@ -979,5 +998,6 @@ __all__ = [
     "commande_d_entree",
     "lire_fiche",
     "lire_main",
+    "page_a_change",
     "phrase_de_reprise",
 ]

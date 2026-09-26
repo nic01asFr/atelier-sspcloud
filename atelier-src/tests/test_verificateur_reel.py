@@ -202,3 +202,25 @@ def test_de_bout_en_bout_sur_les_quatre_surfaces(reglages: AtelierSettings, tmp_
     assert {v["mode"] for v in dossier["surfaces"].values()} == {"acceptEdits"}, dossier
     assert len({tuple(sorted(v["serveurs"])) for v in dossier["surfaces"].values()}) == 1, dossier
     assert shutil.which("bash") is not None
+
+
+def test_le_reste_au_nom_de_l_assistant_n_est_pas_verifie_comme_un_projet(reglages: AtelierSettings) -> None:
+    """Essais du 26/09 : « [wikichat-memory] profil code » à côté de « [assistant] profil assistant ».
+
+    Ce n'était pas le dossier de l'Assistant (`~/work/wikichat-memory`, profil
+    `assistant` sur toutes les surfaces) mais `~/work/projects/wikichat-memory`,
+    reste de l'ancienne reprise dans VS Code, que l'Atelier ne tient pas pour
+    un projet (le slug désigne l'Assistant). Il n'est plus vérifié sous `code` ;
+    le rapport le signale, à ranger.
+    """
+    from mcp_gateway.atelier.coherence import dossiers_masques, dossiers_reels, rapport_en_texte
+
+    reglages.assistant_root.mkdir(parents=True, exist_ok=True)
+    (reglages.projects_dir / reglages.assistant_slug).mkdir(parents=True)
+    (reglages.projects_dir / "vrai-projet").mkdir(parents=True)
+    vus = [(d.slug, d.profil) for d in dossiers_reels(reglages)]
+    assert vus == [("vrai-projet", "code"), ("assistant", "assistant")]
+    masques = dossiers_masques(reglages)
+    assert masques == [str(reglages.projects_dir / reglages.assistant_slug)]
+    texte = rapport_en_texte({"version_extension": "x", "dossiers": [], "ecarts": 0, "dossiers_masques": masques})
+    assert "porte le nom de l'Assistant sans être son dossier" in texte

@@ -252,15 +252,22 @@ connaît mais qui n'est pas un projet de l'Atelier ; sinon
 fiche du projet), ou une conversation en cours, une création en marche, une alerte ou une
 proposition. `systeme` : `atelier`, `atelier-gardiens` et le dossier de l'Assistant.
 
-Arêtes : celles de wikichat (`relation`, `proximite`, `meme_connecteur`) restent telles quelles.
-L'Atelier ajoute, au même format (`id`, `type`, `de`, `vers`, `oriente`, `source`) :
+Arêtes : celles de wikichat (`relation`, `proximite`) restent telles quelles. Ses
+`meme_connecteur` sont corrigées (correctif du 26/09, après essais) : un lien « même
+connecteur » ne compte que les connecteurs **choisis explicitement** par les deux projets
+(`connecteurs.choisis`), jamais l'héritage du pool, ni les connecteurs communs. wikichat lit
+`.mcp.json`, où l'héritage ne se distingue pas d'un choix : entre deux projets de l'Atelier, le
+lien est recalculé ; entre un projet de l'Atelier et un dossier qu'il ne connaît pas, il ne garde
+que les choix du premier ; un lien vide est retiré (181 liens sur le pod, presque tous nés du
+pool blender, github, gitlab, llm, qgis). L'Atelier ajoute, au même format (`id`, `type`, `de`,
+`vers`, `oriente`, `source`) :
 
 | `type` | De → vers | `source` |
 |---|---|---|
 | `sert` | création → projet | `artifacts` |
 | `travaille_sur` | conversation → projet | `fiches` |
 | `utilise` | projet → connecteur | `connecteurs-choisis`, ou `pool` quand le projet hérite |
-| `meme_connecteur` | projet ~ projet, s'il manque chez wikichat | `atelier` (connecteurs effectifs, mêmes connecteurs communs que wikichat) |
+| `meme_connecteur` | projet ~ projet, s'il manque chez wikichat | `atelier` (connecteurs choisis par les deux, hors héritage du pool et connecteurs communs) |
 
 `de` et `vers` sont toujours des `id` de `noeuds`.
 
@@ -1049,3 +1056,28 @@ Le journal consigne, dans l'ordre, ce que chaque retour a changé dans la struct
     serveurs stdio par VS Code et le terminal.
 - **Explication de T12** : sur le poste, une tâche planifiée publie la mémoire toutes les 15 min depuis
     `Github Repositories/wikichat`, pendant que le dépôt évolue ailleurs.
+- **26/09, correctifs après essais de la vague 3** (branche `v3-correctifs`, huit défauts vus dans
+  Chrome, chacun avec un test qui échouait avant) :
+  - l'état d'un outil se lit dans le `is_error` du CLI, porté par `outil_fin` (champ `erreur`),
+    plus dans le texte de sa sortie : `take_snapshot` de https://example.com (« without needing
+    permission ») s'affichait « permission refusée » ;
+  - page changée pendant la main (adresse ou titre, `ecran.page_a_change`, `page_changee` dans le
+    fichier de la main) : le filtre ne transmet plus une action par `uid` retenue, l'agent reçoit
+    une erreur qui porte la note et lui dit de relire la page, jusqu'à son prochain
+    `take_snapshot` ; les actions sans `uid` repartent comme avant (`navigateur-atelier.md` §8.2) ;
+  - écran : « Aller » envoyait l'ancienne adresse, le blur du champ la remettait avant la
+    soumission (reproduit) ; l'adresse modifiée non soumise n'est plus écrasée par l'état du
+    serveur ;
+  - une conversation prend son titre du premier message dès l'envoi, Assistant et Code
+    (« wikichat-memory-a5827138 » pendant tout le premier tour) ;
+  - fil de l'Assistant : résultats d'outils repliés, cartes d'action visibles ; même composant que
+    Code, replié partout au-delà de 1 500 caractères ou 25 lignes ; le libellé de la colonne suit
+    la vue ;
+  - carte : un `meme_connecteur` ne compte que les connecteurs choisis par les deux projets,
+    jamais l'héritage du pool (contrat du §1.3 révisé ; 181 liens sur le pod, presque tous nés
+    du pool) ;
+  - vérificateur : « [wikichat-memory] profil code » était `~/work/projects/wikichat-memory`,
+    reste de l'ancienne reprise dans VS Code, pas le dossier de l'Assistant (profil `assistant`
+    sur toutes les surfaces, constaté sur le pod). Le reste recevait pourtant un `.mcp.json` de
+    profil `code` annonçant le slug de l'Assistant, accepté comme projet d'un agent `code` :
+    corrigé à la source (`settings.masque_par_l_assistant`) ; le dossier reste à ranger (Nicolas).

@@ -327,14 +327,12 @@ function appliquerEvenement(ctx, stream, ev) {
         const tool = findStreamTool(stream, toolId);
         if (tool) {
           if (ev.text) tool.output = ev.text;
-          if (
-            ev.raw_type === "permission_denials" ||
-            /permission|haven't granted|refusé|refuse/i.test(ev.text || "")
-          ) {
-            tool.status = "denied";
-          } else {
-            tool.status = "done";
-          }
+          // `ev.erreur` est le `is_error` du CLI (events.py) : un résultat
+          // normal est « terminé », même si la page lue parle de permission.
+          tool.status =
+            ev.raw_type === "permission_denials"
+              ? "denied"
+              : api.statutDuResultat(ev.erreur, ev.text);
         }
         pushStreamToUi(state, stream);
         views.codeChat.renderThread();
@@ -352,8 +350,11 @@ function appliquerEvenement(ctx, stream, ev) {
             (q) => q.demande?.genre === "question" && q.demande?.tool_use_id === toolId
           );
           const existing = stream.tools.find((t) => t.id === toolId);
+          // Un outil qui a rendu un résultat normal s'est exécuté : aucun
+          // décompte de fin de tour ne le fait passer pour refusé.
+          const aAbouti = existing && existing.status === "done" && !!existing.output;
           if (existing) {
-            existing.status = etaitUneQuestion ? "done" : "denied";
+            existing.status = etaitUneQuestion || aAbouti ? "done" : "denied";
             if (d.tool_name) existing.name = d.tool_name;
             if (d.tool_input) existing.input = d.tool_input;
           } else {

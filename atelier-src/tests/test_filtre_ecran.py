@@ -213,6 +213,66 @@ def test_une_note_sans_appel_retenu_attend_le_prochain(tmp_path: Path) -> None:
         s.fermer()
 
 
+def test_page_changee_pendant_la_main_l_action_par_uid_n_est_pas_transmise(tmp_path: Path) -> None:
+    """Essais du 26/09 : l'agent a lu la page (uids 1_*), demandé click uid=1_3 ; la
+    personne a navigué ailleurs puis rendu la main ; le clic a été joué sur la
+    nouvelle page. Une action par uid ne part plus : l'agent doit relire la page.
+    """
+    s = Session(tmp_path)
+    try:
+        s.appeler("new_page", url="https://a.exemple/")
+        s.appeler("take_snapshot")
+        s.poser_la_main(prise=True, depuis=int(time.time() * 1000))
+        clic = s.envoyer("click", uid="1_3")
+        glisse = s.envoyer("drag", from_uid="1_4", to_uid="1_5")
+        formulaire = s.envoyer("fill_form", elements=[{"uid": "1_6", "value": "x"}])
+        touche = s.envoyer("press_key", key="Enter")
+        s.sans_reponse(clic)
+        s.poser_la_main(prise=False, note="Note de l'Atelier : la page a changé.", page_changee=True)
+        refus = s.reponse(clic)
+        assert refus["isError"] is True
+        textes = _textes(refus)
+        assert "take_snapshot" in textes[0] and "n'a pas été fait" in textes[0]
+        assert textes[-1] == "Note de l'Atelier : la page a changé.", "la note part avec le refus"
+        for ident in (glisse, formulaire):
+            assert s.reponse(ident)["isError"] is True, "tout outil qui prend un uid"
+        assert not s.reponse(touche).get("isError"), "une action sans uid repart"
+        assert "press_key" in s.recus()
+        assert "click" not in s.recus() and "drag" not in s.recus() and "fill_form" not in s.recus()
+        # Tant qu'il n'a pas relu la page, un uid d'avant reste refusé ; relue, il passe.
+        assert s.appeler("hover", uid="1_3")["isError"] is True
+        s.appeler("take_snapshot")
+        assert _textes(s.appeler("click", uid="2_1")) == ["Clicked."]
+    finally:
+        s.fermer()
+
+
+def test_page_changee_sans_appel_retenu_le_prochain_clic_par_uid_est_refuse(tmp_path: Path) -> None:
+    s = Session(tmp_path)
+    try:
+        s.appeler("list_pages")
+        s.poser_la_main(prise=False, note="Note de l'Atelier : reprise.", page_changee=True)
+        refus = s.appeler("click", uid="1_3")
+        assert refus["isError"] is True and _textes(refus)[-1] == "Note de l'Atelier : reprise."
+        assert "click" not in s.recus()
+    finally:
+        s.fermer()
+
+
+def test_page_inchangee_pendant_la_main_l_action_retenue_part(tmp_path: Path) -> None:
+    s = Session(tmp_path)
+    try:
+        s.appeler("list_pages")
+        s.poser_la_main(prise=True, depuis=int(time.time() * 1000))
+        clic = s.envoyer("click", uid="1_3")
+        s.sans_reponse(clic)
+        s.poser_la_main(prise=False, note="Note de l'Atelier : même page.", page_changee=False)
+        assert _textes(s.reponse(clic)) == ["Clicked.", "Note de l'Atelier : même page."]
+        assert "click" in s.recus()
+    finally:
+        s.fermer()
+
+
 def test_une_main_gardee_trop_longtemps_libere_l_agent_avec_une_erreur(tmp_path: Path) -> None:
     s = Session(tmp_path, ATELIER_CHROME_MAIN_MAX_S="1")
     try:

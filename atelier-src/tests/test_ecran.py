@@ -54,6 +54,7 @@ from mcp_gateway.atelier.ecran import (
     commande_d_entree,
     lire_fiche,
     lire_main,
+    page_a_change,
     phrase_de_reprise,
 )
 from mcp_gateway.auth import migrate_auth_schema, open_owner_session
@@ -449,6 +450,37 @@ def test_rendre_la_main_laisse_une_note_quand_l_agent_attend_ou_travaille(monte:
     assert monte.ecrans.rendre_la_main("conv-a")["reprise"] == "note"
     assert relances == []
     assert "Note de l'Atelier" in lire_main(monte.racine, "conv-a")["note"]
+
+
+def test_rendre_la_main_dit_au_filtre_si_la_page_a_change(monte: Monte) -> None:
+    """Essais du 26/09 : un clic retenu (uid de la page d'avant) a été joué sur la nouvelle page.
+
+    La main rendue dit au filtre si la page a changé (adresse ou titre) ; c'est
+    lui qui refuse alors les actions par `uid` (`test_filtre_ecran.py`).
+    """
+    monte.ecrans.tour_en_cours = lambda c: True
+    publier(monte.racine, "conv-a", monte.chrome.port, page={"url": "https://b.test/", "titre": "B"}, attente=1)
+    monte.ecrans.prendre_la_main("conv-a")
+    monte.ecrans.rendre_la_main("conv-a")
+    assert lire_main(monte.racine, "conv-a")["page_changee"] is False, "même page : rien ne change"
+
+    monte.ecrans.prendre_la_main("conv-a")
+    monte.ecrans._page_vue("conv-a", {"url": "https://c.test/", "titre": "C"})
+    monte.ecrans.rendre_la_main("conv-a")
+    assert lire_main(monte.racine, "conv-a")["page_changee"] is True, "autre adresse"
+
+    monte.ecrans.prendre_la_main("conv-a")
+    monte.ecrans._page_vue("conv-a", {"url": "https://c.test/", "titre": "C, connecté"})
+    monte.ecrans.rendre_la_main("conv-a")
+    assert lire_main(monte.racine, "conv-a")["page_changee"] is True, "même adresse, autre titre"
+
+
+def test_page_a_change() -> None:
+    a = {"url": "https://a.test/", "titre": "A"}
+    assert page_a_change(a, dict(a)) is False
+    assert page_a_change(None, None) is False
+    assert page_a_change(a, None) is True and page_a_change(None, a) is True
+    assert page_a_change(a, {"url": "https://a.test/", "titre": "A2"}) is True
 
 
 def test_prendre_la_main_sans_navigateur_est_refuse(monte: Monte) -> None:

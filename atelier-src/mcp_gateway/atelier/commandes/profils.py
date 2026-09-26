@@ -323,8 +323,15 @@ def fiche_de_la_conversation(store: Any, conversation: str | None) -> Any | None
 def projet_annonce_valide(store: Any, projet: str | None) -> str:
     """Le slug annoncé s'il nomme un dossier existant sous `projects_dir`, sinon vide."""
     slug = (projet or "").strip()
-    racine = getattr(getattr(store, "settings", None), "projects_dir", None)
+    settings = getattr(store, "settings", None)
+    racine = getattr(settings, "projects_dir", None)
     if not slug or racine is None or not _SLUG_VALIDE.match(slug):
+        return ""
+    # Le slug de l'Assistant désigne son dossier, jamais un projet de code :
+    # un `projects/<slug de l'Assistant>` (reste) donnerait à un agent `code`
+    # le projet de l'Assistant.
+    masque = getattr(settings, "masque_par_l_assistant", None)
+    if callable(masque) and masque(slug):
         return ""
     return slug if (racine / slug).is_dir() else ""
 

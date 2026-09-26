@@ -243,3 +243,45 @@ def test_une_fiche_ready_se_relit_au_repos(reglages, monkeypatch, tmp_path: Path
     donnees["state"] = "ready"
     chemin.write_text(json.dumps(donnees), encoding="utf-8")
     assert store.get(rec.session_id).state == "idle"
+
+
+def test_une_conversation_de_l_assistant_prend_son_titre_du_premier_message(
+    reglages, monkeypatch, tmp_path: Path
+) -> None:
+    """Essais du 26/09 : « wikichat-memory-a5827138 » pendant tout le premier tour.
+
+    Le titre ne venait que du transcript, relu à la fin du tour. La liste,
+    rafraîchie au premier événement du tour, montrait donc l'identifiant. Il
+    se prend maintenant sur le premier message, dès l'envoi, pour l'Assistant
+    comme pour Code.
+    """
+    store = _atelier_jetable(reglages, monkeypatch, tmp_path)
+    rec = store.create(slug=reglages.assistant_slug, kind="assistant")
+    assert rec.title == f"{reglages.assistant_slug}-{rec.session_id[:8]}"
+
+    vus: list[str] = []
+    store.send(
+        rec.session_id,
+        "Où en est le projet Lecteur Grist, et qu'est-ce qui attend mon accord ?",
+        on_event=lambda ev: vus.append(store.get(rec.session_id).title),
+    )
+    assert vus, "le faux harnais a émis des événements"
+    attendu = "Où en est le projet Lecteur Grist, et qu'est-ce qui attend m"
+    assert vus[0] == attendu, "dès le premier événement du tour"
+    assert store.get(rec.session_id).title == attendu
+
+
+def test_le_premier_message_ne_remplace_pas_un_titre_choisi(
+    reglages, monkeypatch, tmp_path: Path
+) -> None:
+    store = _atelier_jetable(reglages, monkeypatch, tmp_path)
+    rec = store.create(slug="essai")
+    store.patch(rec.session_id, title="Mon titre")
+    store.send(rec.session_id, "Répare le build")
+    assert store.get(rec.session_id).title == "Mon titre"
+
+    code = store.create(slug="essai")
+    store.send(code.session_id, "<!DOCTYPE html><html>")
+    assert store.get(code.session_id).title == f"essai-{code.session_id[:8]}", "rien de lisible : défaut"
+    store.send(code.session_id, "Répare le build")
+    assert store.get(code.session_id).title == f"essai-{code.session_id[:8]}", "seulement au premier tour"

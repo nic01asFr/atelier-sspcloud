@@ -41,6 +41,16 @@
 //    les appels retenus reçoivent une erreur qui dit à l'agent de demander où
 //    en est la personne.
 //
+//    Si la page a changé pendant la main (`"page_changee": true`, posé par
+//    l'Atelier qui compare adresse et titre avant et après), les éléments que
+//    l'agent a lus (`uid` d'un take_snapshot) désignent la page d'avant : une
+//    action qui en vise un (click, fill, hover, drag, fill_form, upload_file,
+//    tout outil qui prend un `uid`) n'est pas transmise. L'agent reçoit une
+//    erreur d'outil qui porte la note et lui dit de relire la page ; il en va
+//    de même pour toute action par `uid` jusqu'à son prochain take_snapshot.
+//    Les actions sans `uid` (navigate_page, new_page, press_key…) repartent
+//    avec la note, comme avant.
+//
 // Les messages du client qui arrivent pendant la vérification d'un
 // `new_page` attendent leur tour : l'ordre des appels est gardé.
 
@@ -86,6 +96,8 @@ const tenus = []; // appels retenus pendant que la personne a la main : { ligne,
 let minuterieMain = null;
 const notes = new Map(); // id d'appel du client (JSON) -> note à ajouter à sa réponse
 let noteEnReserve = ""; // une note rendue sans appel retenu : pour le prochain appel
+let pageChangeeEnReserve = false; // la page avait changé pendant la main de cette note
+let elementsPerimes = false; // la page a changé depuis la dernière lecture de l'agent
 
 const serveur = spawn(commande, argumentsServeur, { stdio: ["pipe", "pipe", "inherit"] });
 serveur.on("error", (err) => {
@@ -285,6 +297,45 @@ function lireLaMain({ oubliee = false } = {}) {
   }
 }
 
+// Une action qui vise un élément de la page par l'identifiant qu'une lecture
+// lui a donné : `uid` (click, fill, hover, upload_file), `from_uid` et
+// `to_uid` (drag), `elements[].uid` (fill_form), et tout autre champ de ce nom.
+function viseUnElement(objet) {
+  const args = objet && objet.params ? objet.params.arguments : null;
+  const chercher = (valeur, profondeur) => {
+    if (profondeur > 4 || !valeur || typeof valeur !== "object") return false;
+    if (Array.isArray(valeur)) return valeur.some((v) => chercher(v, profondeur + 1));
+    return Object.entries(valeur).some(
+      ([cle, v]) => (/(^|_)uid$/i.test(cle) && v !== undefined && v !== null && v !== "") || chercher(v, profondeur + 1)
+    );
+  };
+  return chercher(args, 0);
+}
+
+function refuserLElementPerime(objet, note) {
+  const nom = objet.params && typeof objet.params.name === "string" ? objet.params.name : "cette action";
+  process.stderr.write(`atelier-chrome-onglets : ${nom} par uid refusé, la page a changé pendant la main\n`);
+  versClient({
+    jsonrpc: "2.0",
+    id: objet.id,
+    result: ajouterLaNote(
+      {
+        content: [
+          {
+            type: "text",
+            text:
+              `Note de l'Atelier : ${nom} n'a pas été fait. La page a changé pendant que la personne ` +
+              "avait la main : les identifiants d'éléments (uid) de ta dernière lecture désignent la " +
+              "page d'avant. Reprends une lecture (take_snapshot) avant d'agir.",
+          },
+        ],
+        isError: true,
+      },
+      note
+    ),
+  });
+}
+
 // La note d'une reprise ne sert qu'une fois : le fichier part avec elle.
 function consommerLaNote(main) {
   if (!main || main.prise === true || typeof main.note !== "string" || !main.note.trim()) return "";
@@ -344,11 +395,16 @@ function surveillerLaMain() {
     clearInterval(minuterieMain);
     minuterieMain = null;
     // Rendue : les appels retenus repartent, dans l'ordre ; le premier porte la note.
+    const changee = !!(main && main.prise !== true && main.page_changee === true);
     const note = consommerLaNote(main);
     const liberes = tenus.splice(0, tenus.length);
     direLAttente();
+    if (changee) elementsPerimes = true;
     if (liberes.length && note) notes.set(JSON.stringify(liberes[0].id), note);
-    else if (note) noteEnReserve = note;
+    else if (note) {
+      noteEnReserve = note;
+      pageChangeeEnReserve = changee;
+    }
     for (const { ligne } of liberes) traiterDuClient(ligne, { dejaTenu: true });
   }, MAIN_INTERVALLE_MS);
 }
@@ -364,10 +420,31 @@ function tenirSiLaMainEstPrise(recu, ligne) {
     surveillerLaMain();
     return true;
   }
-  const note = consommerLaNote(main) || noteEnReserve;
+  const changee = !!(main && main.prise !== true && main.page_changee === true && main.note);
+  const noteDuFichier = consommerLaNote(main);
+  const note = noteDuFichier || noteEnReserve;
+  if (noteDuFichier ? changee : noteEnReserve && pageChangeeEnReserve) elementsPerimes = true;
   noteEnReserve = "";
+  pageChangeeEnReserve = false;
   if (note) notes.set(JSON.stringify(recu.id), note);
   return false;
+}
+
+// Après un changement de page pendant la main, une action par `uid` ne part
+// pas tant que l'agent n'a pas relu la page ; une lecture lève la garde.
+function refuserSiElementPerime(objet) {
+  if (!ECRAN || !objet || objet.method !== "tools/call" || objet.id === undefined) return false;
+  const nom = objet.params && objet.params.name;
+  if (nom === "take_snapshot") {
+    elementsPerimes = false;
+    return false;
+  }
+  if (!elementsPerimes || !viseUnElement(objet)) return false;
+  const cle = JSON.stringify(objet.id);
+  const note = notes.get(cle) || "";
+  notes.delete(cle);
+  refuserLElementPerime(objet, note);
+  return true;
 }
 
 // ── Le plafond d'onglets ──────────────────────────────────────────────────
@@ -432,6 +509,7 @@ function traiterDuClient(ligne, { dejaTenu = false } = {}) {
     }
   }
   if (!dejaTenu && objet && tenirSiLaMainEstPrise(objet, ligne)) return;
+  if (refuserSiElementPerime(objet)) return;
   const estNouvelOnglet =
     PLAFOND > 0 &&
     objet &&

@@ -42,6 +42,29 @@ function guessOutputLang(toolName, text) {
   return "";
 }
 
+// Le résultat brut d'un outil se replie :
+//   - toujours dans le fil de l'Assistant, où il n'est qu'une preuve derrière
+//     la carte d'action (essais du 26/09 : le JSON d'`atelier_carte` s'étalait
+//     déplié) ;
+//   - partout au-delà d'une longueur raisonnable : Code et l'Assistant
+//     partagent ce rendu, et un résultat de plusieurs écrans noie le fil.
+// Un résultat court reste déplié en Code, comme avant.
+export const RESULTAT_LONG_CARACTERES = 1500;
+export const RESULTAT_LONG_LIGNES = 25;
+let replierToujours = false;
+
+/** Règle le repli des résultats pour le fil affiché (vrai : l'Assistant). */
+export function replierLesResultats(toujours) {
+  replierToujours = !!toujours;
+}
+
+/** Le résultat de cet outil s'affiche-t-il replié ? */
+export function resultatReplie(sortie) {
+  if (replierToujours) return true;
+  const texte = String(sortie || "");
+  return texte.length > RESULTAT_LONG_CARACTERES || texte.split("\n").length > RESULTAT_LONG_LIGNES;
+}
+
 function truncate(text, max = 4000) {
   const s = String(text || "");
   if (s.length <= max) return { text: s, truncated: false };
@@ -120,7 +143,7 @@ export function appendBlock(parent, block) {
       const { text: outText } = truncate(block.output);
       const det = document.createElement("details");
       det.className = "msg-tool-section";
-      det.open = true;
+      det.open = !resultatReplie(block.output);
       const sum = document.createElement("summary");
       sum.textContent = "Résultat";
       const pre = document.createElement("pre");
@@ -624,6 +647,8 @@ export function empreinteDuBloc(b) {
       "tool", b.id || "", b.name || "", b.status || "",
       (b.output || "").length, JSON.stringify(b.input || "").length,
       b.masquerDetails ? "1" : "0",
+      // Le repli dépend du fil affiché : passer de Code à l'Assistant redessine.
+      replierToujours ? "r" : "",
     ].join(":");
   }
   if (b.type === "perimees") {
