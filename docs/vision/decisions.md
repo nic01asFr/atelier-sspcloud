@@ -30,6 +30,7 @@ Statut :
 | J-a | L'exécuteur des gardiens est un processus à part, lancé comme le relais LLM. Il ne fait que les contrôles santé et sécurité de l'Atelier et de wikichat. wikichat ordonne tout le reste | D | `coherence-croisee.md` §5.2-a ; transverse §1.7 |
 | J-b | Tâches automatiques : `max_per_day` à 24 par défaut, budget obligatoire ; un trigger créé par un agent naît désactivé | D | 5.2-b |
 | J-b2 | Un agent peut désactiver un trigger, jamais l'activer ; l'activation revient à la personne (Pilote, puis onglet Automates) | D | question de l'équipe W |
+| J-b3 | Un agent lancé pour modifier du code (routine, trigger, délégation) travaille sur une branche `agent/…` et dépose sa fin de travail dans « À valider » ; un réveil qui répond à un message travaille dans le projet. Réglable par définition (`branche: auto|toujours|jamais`) | D | question de l'équipe L |
 | J-c | La porte dormante reste pour ce qui lance un agent ; les contrôles en code n'y sont pas soumis | D | 5.2-c |
 | J-d | Les services du namespace (Blender, QGIS, n8n) sont relayés par l'hôte des applications | D | 5.2-d |
 | J-e | Vues épinglées : au projet dans `projet.json` (`vues_epinglees`), à la conversation dans sa fiche | D | 5.2-e |
