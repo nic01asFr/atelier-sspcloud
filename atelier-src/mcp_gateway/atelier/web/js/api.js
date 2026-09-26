@@ -767,6 +767,17 @@ export async function enregistrerReglagesFil(reglages) {
   return res.json();
 }
 
+/** Le thème de l'interface, retenu par le service : `systeme`, `clair`, `sombre`. */
+export async function enregistrerTheme(theme) {
+  const res = await fetch("/v1/meta", {
+    method: "PUT",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ theme }),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
 export async function listModels(token) {
   const res = await fetch("/v1/models", { headers: jsonHeaders(token) });
   if (!res.ok) await parseError(res);

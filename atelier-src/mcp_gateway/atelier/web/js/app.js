@@ -33,6 +33,7 @@ import { createComposerMcpController } from "./controllers/composer-mcp.js";
 import { createComposerInputController } from "./controllers/composer-input.js";
 import { createAuthController } from "./controllers/auth.js";
 import { createReglagesFil } from "./controllers/reglages-fil.js";
+import { createTheme } from "./controllers/theme.js";
 import { installerRaccourcis } from "./ui/raccourcis.js";
 
 function createApp() {
@@ -249,13 +250,25 @@ function createApp() {
     },
   });
 
+  // « Affichage » : le thème, suivi du système par défaut, clair ou sombre.
+  const theme = createTheme({
+    api,
+    erreur: (msg) => {
+      S.setError(state, msg);
+      render();
+    },
+  });
+
   const auth = createAuthController({
     state,
     render,
     writeQuery,
     sessionActions,
     connectorActions,
-    apresMeta: (meta) => reglagesFil.appliquerMeta(meta),
+    apresMeta: (meta) => {
+      reglagesFil.appliquerMeta(meta);
+      theme.appliquerMeta(meta);
+    },
     apresEntree: () => {
       validation.rafraichirCompte();
       validation.veiller();
@@ -426,12 +439,16 @@ function createApp() {
     bindModal(state);
     bindContextMenu(state);
     reglagesFil.bind();
+    theme.bind();
     installerRaccourcis({
       state,
       naviguer: (v) => navigateView(v),
       nouvelleConversation: () =>
         S.estAssistant(state) ? assistantActions.nouvelle() : sessionActions.newConversation(),
-      fermerLesPanneaux: () => reglagesFil.fermer({ rendreLeFocus: true }),
+      fermerLesPanneaux: () => {
+        reglagesFil.fermer({ rendreLeFocus: true });
+        theme.fermer({ rendreLeFocus: true });
+      },
     });
   }
 

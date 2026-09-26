@@ -1,45 +1,12 @@
 @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
 
 :root {
-  --bg: #12151a;
-  --bg-elev: #1a1f27;
-  --bg-sidebar: #0e1116;
-  --line: #2a3340;
-  --text: #e8ecef;
-  --muted: #8b97a5;
-  --accent: #c4a574;
-  --accent-dim: #8a7350;
-  --danger: #d4726a;
-  --user: #243040;
-  --assistant: #1c222c;
+  /* Les couleurs vivent dans css/jetons.css, pour les deux thèmes. Ici, ce
+     qui ne change pas d'un thème à l'autre (docs/ui/guide-interface.md). */
   --radius: 6px;
   --font: "IBM Plex Sans", "Segoe UI", sans-serif;
   --display: "Fraunces", Georgia, serif;
-
-  /* ── Jetons du refine (docs/ui/guide-interface.md) ──────────────────
-     Les noms ci-dessus restent : cent règles les emploient. Ceux-ci les
-     complètent ; tout composant neuf s'y tient. */
   --mono: ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, monospace;
-
-  /* Surfaces, de la plus basse à la plus haute. */
-  --surface-0: var(--bg-sidebar);
-  --surface-1: var(--bg);
-  --surface-2: var(--bg-elev);
-  --surface-3: #232a35;
-  --surface-survol: rgba(255, 255, 255, 0.05);
-  --surface-active: rgba(196, 165, 116, 0.1);
-
-  /* Texte : principal, secondaire (AA sur toutes les surfaces), discret. */
-  --texte-1: var(--text);
-  --texte-2: #a9b4c1;
-  --texte-3: var(--muted);
-
-  /* États : un seul jeu, pour pastilles, badges, bordures et messages. */
-  --ok: #4fae80;
-  --attention: #d6ad45;
-  --erreur: var(--danger);
-  --info: #6aa5dc;
-  --focus: #e3c48f;
 
   /* Espacements : une échelle de 4 px. */
   --esp-1: 0.25rem;
@@ -56,17 +23,14 @@
   --rayon-4: 14px;
   --rayon-rond: 999px;
 
-  /* Tailles de texte (la racine vaut 15 px). */
-  --t-xs: 0.75rem;
-  --t-s: 0.8125rem;
-  --t-m: 0.875rem;
+  /* Tailles de texte (la racine vaut 15 px) : rien sous 12 px. */
+  --t-xs: 0.8rem;
+  --t-s: 0.8667rem;
+  --t-m: 0.9333rem;
   --t-base: 1rem;
   --t-l: 1.125rem;
   --t-xl: 1.375rem;
 
-  /* Ombres et durées. */
-  --ombre-1: 0 1px 2px rgba(0, 0, 0, 0.35);
-  --ombre-2: 0 10px 30px rgba(0, 0, 0, 0.45);
   --duree: 120ms;
 
   /* La colonne de lecture du fil et du composeur. */
@@ -146,8 +110,8 @@ body {
   display: grid;
   place-items: center;
   background:
-    radial-gradient(ellipse 80% 50% at 20% 0%, #1e2836 0%, transparent 55%),
-    radial-gradient(ellipse 60% 40% at 90% 100%, #1a2218 0%, transparent 50%),
+    radial-gradient(ellipse 80% 50% at 20% 0%, var(--fond-login-1) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 90% 100%, var(--fond-login-2) 0%, transparent 50%),
     var(--bg);
 }
 
@@ -200,7 +164,7 @@ body {
   margin-top: 0.75rem;
   width: 100%;
   background: var(--accent);
-  color: #1a140c;
+  color: var(--sur-accent);
   border: none;
   border-radius: var(--radius);
   padding: 0.7rem 1rem;
@@ -463,7 +427,7 @@ button:disabled {
 
 .agent-card-selected {
   border-color: var(--accent);
-  background: rgba(212, 168, 75, 0.08);
+  background: var(--surface-active);
 }
 
 .agent-card-head {
@@ -494,20 +458,20 @@ button:disabled {
   height: 0.55rem;
   border-radius: 50%;
   background: var(--muted);
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 0 0 2px var(--anneau-pastille);
 }
 
 .status-dot-ok {
-  background: #3d9a6a;
+  background: var(--ok);
 }
 
 .status-dot-busy {
-  background: #2f7fd1;
+  background: var(--info);
   animation: status-pulse 1.4s ease-in-out infinite;
 }
 
 .status-dot-warn {
-  background: #c9a227;
+  background: var(--attention);
 }
 
 .status-dot-pending {
@@ -519,7 +483,7 @@ button:disabled {
 }
 
 .status-dot-off {
-  background: #8a8a8a;
+  background: var(--texte-3);
 }
 
 @keyframes status-pulse {
@@ -577,7 +541,7 @@ button:disabled {
 }
 
 .agent-overview-status {
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   color: var(--muted);
 }
 
@@ -673,7 +637,7 @@ button:disabled {
 
 .agent-form-error {
   margin: 0;
-  color: #c44;
+  color: var(--erreur);
   font-size: 0.85rem;
 }
 
@@ -686,7 +650,7 @@ button:disabled {
 .agent-list-section {
   margin: 0.9rem 0 0.35rem;
   padding: 0;
-  font-size: 0.68rem;
+  font-size: var(--t-xs);
   font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -723,7 +687,7 @@ button:disabled {
   justify-content: space-between;
   gap: 0.35rem;
   margin-top: 0.45rem;
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   color: var(--muted);
 }
 
@@ -811,7 +775,7 @@ button:disabled {
   border: 1px solid var(--line);
   background: var(--bg-elev);
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
   white-space: pre-wrap;
   max-height: 14rem;
   overflow: auto;
@@ -900,7 +864,7 @@ button:disabled {
   border-radius: 999px;
   background: var(--accent);
   color: var(--bg);
-  font-size: 0.7rem;
+  font-size: var(--t-xs);
   font-weight: 600;
   text-align: center;
 }
@@ -1001,7 +965,7 @@ button:disabled {
 
 .agent-profile-active {
   border-color: var(--accent);
-  background: rgba(212, 168, 75, 0.08);
+  background: var(--surface-active);
 }
 
 .agent-profile-main {
@@ -1017,7 +981,7 @@ button:disabled {
 .agent-profile-meta {
   display: block;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
 }
 
 .agent-profile-desc {
@@ -1034,7 +998,7 @@ button:disabled {
 }
 
 .agent-profile-badge {
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   padding: 0.15rem 0.45rem;
   border-radius: 999px;
   background: var(--accent);
@@ -1082,7 +1046,7 @@ button:disabled {
   position: fixed;
   inset: 0;
   z-index: 1100;
-  background: rgba(8, 10, 14, 0.72);
+  background: var(--voile);
   display: grid;
   place-items: center;
   padding: 1rem;
@@ -1092,7 +1056,7 @@ button:disabled {
 /* Modale circonscrite : elle assombrit sa zone, pas la page. Le voile est
    plus léger — il n'a plus à isoler d'un écran entier. */
 .modal-backdrop-scoped {
-  background: rgba(8, 10, 14, 0.55);
+  background: var(--voile-leger);
   backdrop-filter: blur(1.5px);
   border-radius: 0.5rem;
 }
@@ -1114,7 +1078,7 @@ button:disabled {
   background: var(--bg-elev);
   border: 1px solid var(--line);
   border-radius: calc(var(--radius) + 4px);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--ombre-2);
   margin: auto;
 }
 
@@ -1169,7 +1133,7 @@ button:disabled {
   margin: 0.85rem 0 0.45rem;
   padding-top: 0.55rem;
   border-top: 1px solid var(--line);
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1195,7 +1159,7 @@ button:disabled {
 
 .modal-hint {
   display: block;
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
   color: var(--muted);
   line-height: 1.35;
   margin-bottom: 0.4rem;
@@ -1229,7 +1193,7 @@ button:disabled {
 .modal-field select:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(212, 168, 75, 0.18);
+  box-shadow: 0 0 0 2px var(--anneau-focus);
 }
 
 .modal-field textarea {
@@ -1304,7 +1268,7 @@ button:disabled {
 .orphan-head,
 .tree-empty {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
   padding: 0.35rem 0.5rem;
 }
 
@@ -1332,7 +1296,7 @@ button:disabled {
 
 .session-meta {
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
 }
 
 .project-tree {
@@ -1352,7 +1316,7 @@ button:disabled {
 }
 
 .tree-add {
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
 }
 
 .project-block {
@@ -1380,7 +1344,7 @@ button:disabled {
 
 .chevron {
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
 }
 
 .project-title {
@@ -1419,7 +1383,7 @@ button:disabled {
 
 .project-title-edit:focus {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(212, 168, 75, 0.18);
+  box-shadow: 0 0 0 2px var(--anneau-focus);
 }
 
 /* Selecteur d'outils — partage entre agent, conversation et assistant. */
@@ -1432,7 +1396,7 @@ button:disabled {
 
 .tool-picker-title {
   margin: 0 0 0.35rem;
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -1537,7 +1501,7 @@ button:disabled {
 
 .tool-service-scope {
   color: var(--accent);
-  font-size: 0.7rem;
+  font-size: var(--t-xs);
   font-family: ui-monospace, Consolas, monospace;
   white-space: nowrap;
   overflow: hidden;
@@ -1547,7 +1511,7 @@ button:disabled {
 
 .tool-service-count {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1569,7 +1533,7 @@ button:disabled {
   border: none;
   color: var(--muted);
   cursor: pointer;
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   line-height: 1;
   padding: 0 0.1rem;
   opacity: 0;
@@ -1586,12 +1550,12 @@ button:disabled {
 
 .tool-chip-sm {
   padding: 0.2rem 0.45rem;
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
 }
 
 .tool-chip-note {
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: var(--t-xs);
 }
 
 /* Une composition est un outil : ligne discrète, subordonnée au groupe,
@@ -1600,7 +1564,7 @@ button:disabled {
    milieu d'un texte n'a pas à peser autant qu'un bouton. */
 .tool-picker-acquis {
   margin: 0.2rem 0 0.6rem;
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
   line-height: 1.5;
   color: var(--muted);
 }
@@ -1661,14 +1625,14 @@ button:disabled {
 
 .modal-checklist-hint {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
 }
 
 .composer-mcp-acquis {
   margin: 0 0 0.5rem;
   padding-bottom: 0.5rem;
   border-bottom: 1px solid var(--line);
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   line-height: 1.45;
   color: var(--muted);
 }
@@ -1678,13 +1642,13 @@ button:disabled {
   align-items: baseline;
   gap: 0.4rem;
   margin: 0 0 0.5rem;
-  font-size: 0.72rem;
-  color: var(--warn, #b45309);
+  font-size: var(--t-xs);
+  color: var(--attention);
 }
 
 .composer-mcp-group {
   margin: 0.5rem 0 0.2rem;
-  font-size: 0.68rem;
+  font-size: var(--t-xs);
   font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
@@ -1700,7 +1664,7 @@ button:disabled {
   margin-left: auto;
   color: var(--muted);
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.68rem;
+  font-size: var(--t-xs);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1723,7 +1687,7 @@ button:disabled {
 .composition-entree,
 .composition-ref {
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   padding: 0.15rem 0.45rem;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -1748,7 +1712,7 @@ button:disabled {
 }
 
 .composition-refs-label {
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   color: var(--muted);
 }
 
@@ -1765,7 +1729,7 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.76rem;
+  font-size: var(--t-xs);
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-word;
@@ -1777,7 +1741,7 @@ button:disabled {
   margin-left: 0.6rem;
   color: var(--muted);
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.76rem;
+  font-size: var(--t-xs);
 }
 
 .composition-step > summary {
@@ -1808,7 +1772,7 @@ button:disabled {
 .composition-step-actions {
   display: flex;
   gap: 0.75rem;
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
 }
 
 .composition-step-params textarea {
@@ -1826,14 +1790,14 @@ button:disabled {
 
 .composition-step-erreur {
   margin: 0.35rem 0 0;
-  font-size: 0.78rem;
-  color: var(--err, #f87171);
+  font-size: var(--t-xs);
+  color: var(--erreur);
 }
 
 .conn-repli > summary {
   cursor: pointer;
   padding: 0.3rem 0 0.3rem 0.15rem;
-  font-size: 0.76rem;
+  font-size: var(--t-xs);
   color: var(--muted);
 }
 
@@ -1877,7 +1841,7 @@ button:disabled {
 .composition-item-meta {
   color: var(--muted);
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.7rem;
+  font-size: var(--t-xs);
   white-space: nowrap;
 }
 
@@ -1897,7 +1861,7 @@ button:disabled {
   margin-left: 0.5rem;
   color: var(--muted);
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
 }
 
 .composition-step-params {
@@ -1905,7 +1869,7 @@ button:disabled {
   padding: 0.35rem 0.5rem;
   border-left: 2px solid var(--line);
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   white-space: pre-wrap;
 }
 
@@ -1928,7 +1892,7 @@ button:disabled {
   border-left: 2px solid var(--line);
   border-radius: 0;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
   padding: 0.1rem 0 0.1rem 0.6rem;
 }
 
@@ -2004,7 +1968,7 @@ button:disabled {
 
 .session-empty {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
   padding: 0.35rem 0.5rem 0.35rem 1.6rem;
   list-style: none;
 }
@@ -2017,7 +1981,7 @@ button:disabled {
 
 .session-project {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
   margin-right: 0.75rem;
 }
 
@@ -2029,7 +1993,7 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 0.35rem;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--ombre-2);
 }
 
 .context-menu button {
@@ -2132,7 +2096,7 @@ button:disabled {
 .session-list .meta {
   display: block;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   margin-top: 0.15rem;
 }
 
@@ -2143,7 +2107,7 @@ button:disabled {
 }
 
 .mcp-title {
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
@@ -2186,7 +2150,7 @@ button:disabled {
   color: var(--text);
   padding: 0.55rem 0.7rem;
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   line-height: 1.45;
   resize: vertical;
   min-height: 5.5rem;
@@ -2195,14 +2159,14 @@ button:disabled {
 #mcp-import:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(212, 168, 75, 0.18);
+  box-shadow: 0 0 0 2px var(--anneau-focus);
 }
 
 .connectors-sub {
   font-size: 0.8rem;
   font-weight: 600;
   margin: 1rem 0 0.35rem;
-  color: var(--text-muted, #9aa3b2);
+  color: var(--texte-3);
 }
 
 .mcp-pool-summary {
@@ -2213,21 +2177,21 @@ button:disabled {
 }
 
 .pool-chip {
-  font-size: 0.7rem;
+  font-size: var(--t-xs);
   padding: 0.15rem 0.45rem;
   border-radius: 4px;
   background: var(--bg-sidebar);
   border: 1px solid var(--line);
 }
 
-.pool-chip-ok { border-color: #3d8f5a; color: #8fd4a8; }
-.pool-chip-stdio { border-color: #4a7ab8; color: #9ec5f0; }
-.pool-chip-err { border-color: #b84a4a; color: #f0a0a0; }
+.pool-chip-ok { border-color: var(--ok); color: var(--ok-texte); }
+.pool-chip-stdio { border-color: var(--info); color: var(--info-texte); }
+.pool-chip-err { border-color: var(--erreur); color: var(--erreur-texte); }
 .pool-chip-off { opacity: 0.65; }
-.pool-chip-muted { opacity: 0.5; font-family: ui-monospace, monospace; }
+.pool-chip-muted { color: var(--texte-3); font-family: var(--mono); }
 
 .btn-sm {
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   padding: 0.35rem 0.6rem;
   min-height: 30px;
 }
@@ -2256,23 +2220,23 @@ button:disabled {
 }
 
 .mcp-row-name { font-weight: 500; }
-.mcp-row-meta { font-size: 0.7rem; opacity: 0.75; }
-.mcp-row-desc { font-size: 0.72rem; opacity: 0.7; }
+.mcp-row-meta { font-size: var(--t-xs); color: var(--texte-3); }
+.mcp-row-desc { font-size: var(--t-xs); color: var(--texte-3); }
 
 .mcp-badge {
-  font-size: 0.68rem;
+  font-size: var(--t-xs);
   padding: 0.12rem 0.4rem;
   border-radius: 4px;
   white-space: nowrap;
   align-self: center;
 }
 
-.mcp-badge-ok { background: #1a3d2a; color: #8fd4a8; }
-.mcp-badge-stdio { background: #1a2d4a; color: #9ec5f0; }
-.mcp-badge-err { background: #4a1a1a; color: #f0a0a0; }
-.mcp-badge-warn { background: #3d3520; color: #e0c080; }
+.mcp-badge-ok { background: var(--ok-fond); color: var(--ok-texte); }
+.mcp-badge-stdio { background: var(--info-fond); color: var(--info-texte); }
+.mcp-badge-err { background: var(--erreur-fond); color: var(--erreur-texte); }
+.mcp-badge-warn { background: var(--attention-fond); color: var(--attention-texte); }
 .mcp-badge-off { opacity: 0.55; }
-.mcp-badge-muted { opacity: 0.7; }
+.mcp-badge-muted { color: var(--texte-3); }
 
 .mcp-comp-item {
   padding: 0.35rem 0;
@@ -2280,7 +2244,7 @@ button:disabled {
 }
 
 .mcp-comp-desc {
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   margin: 0.2rem 0 0;
   opacity: 0.8;
 }
@@ -2295,7 +2259,7 @@ button:disabled {
   min-width: 0;
   min-height: 0;
   background:
-    linear-gradient(180deg, #151920 0%, var(--bg) 40%);
+    linear-gradient(180deg, var(--fond-degrade-fil) 0%, var(--bg) 40%);
 }
 
 .session-bar {
@@ -2314,12 +2278,12 @@ button:disabled {
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  font-size: 0.7rem;
+  font-size: var(--t-xs);
 }
 
 .session-id {
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
   color: var(--accent);
   user-select: all;
 }
@@ -2329,18 +2293,18 @@ button:disabled {
   min-width: auto;
   margin: 0;
   padding: 0.2rem 0.5rem;
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
 }
 
 .session-hint {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   flex: 1 1 12rem;
 }
 
 .session-face-link {
   color: var(--accent);
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
   text-decoration: none;
   border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
 }
@@ -2350,8 +2314,8 @@ button:disabled {
 }
 
 .banner {
-  background: #2a1e1c;
-  color: #f0c4c0;
+  background: var(--bandeau-fond);
+  color: var(--bandeau-texte);
   padding: 0.55rem 1rem;
   border-bottom: 1px solid var(--line);
   font-size: 0.9rem;
@@ -2396,7 +2360,7 @@ button:disabled {
 
 .msg-streaming {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(212, 165, 116, 0.15);
+  box-shadow: 0 0 0 1px var(--surface-active);
 }
 
 .msg-streaming .role::after {
@@ -2435,7 +2399,7 @@ button:disabled {
   border-radius: 999px;
   border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
   background: color-mix(in srgb, var(--accent) 10%, transparent);
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2467,7 +2431,7 @@ button:disabled {
 
 .msg .role {
   display: block;
-  font-size: 0.7rem;
+  font-size: var(--t-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
@@ -2494,10 +2458,10 @@ button:disabled {
 .msg-thinking pre {
   margin: 0.35rem 0 0;
   padding: 0.5rem;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--code-fond);
   border-radius: 4px;
   white-space: pre-wrap;
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   max-height: 12rem;
   overflow: auto;
 }
@@ -2505,7 +2469,7 @@ button:disabled {
 .msg-tool {
   margin: 0.35rem 0;
   padding: 0.45rem 0.55rem;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-survol);
   border: 1px solid var(--line);
   border-radius: 6px;
   font-size: 0.8rem;
@@ -2514,21 +2478,21 @@ button:disabled {
 .msg-tool-label {
   font-family: ui-monospace, Consolas, monospace;
   color: var(--accent);
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
 }
 
 .msg-tool-body {
   margin: 0.35rem 0 0;
   padding: 0.45rem;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--code-fond);
   border-radius: 4px;
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   max-height: 10rem;
   overflow: auto;
 }
 
 .msg.error-msg {
-  background: rgba(200, 60, 60, 0.08);
+  background: var(--erreur-fond);
   color: var(--danger);
 }
 
@@ -2561,7 +2525,7 @@ button:disabled {
 .md-code-inline {
   font-family: ui-monospace, Consolas, monospace;
   font-size: 0.85em;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--code-fond);
   padding: 0.1rem 0.35rem;
   border-radius: 4px;
 }
@@ -2574,21 +2538,21 @@ button:disabled {
 }
 
 .md-code-lang {
-  font-size: 0.68rem;
+  font-size: var(--t-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
   padding: 0.25rem 0.55rem;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--code-fond);
   border-bottom: 1px solid var(--line);
 }
 
 .md-code-block {
   margin: 0;
   padding: 0.55rem 0.65rem;
-  background: rgba(0, 0, 0, 0.28);
+  background: var(--code-fond-fort);
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
   line-height: 1.4;
   overflow-x: auto;
   max-height: 16rem;
@@ -2613,25 +2577,25 @@ button:disabled {
 }
 
 .msg-tool-denied {
-  border-color: #c49a5a;
-  background: rgba(196, 154, 90, 0.08);
+  border-color: var(--attention);
+  background: var(--attention-fond);
 }
 
 .msg-tool-denied .msg-tool-status {
-  color: #c49a5a;
+  color: var(--attention);
 }
 
 /* —— Coloration syntaxique légère —— */
 .hl-root .hl-kw {
-  color: #7eb8e8;
+  color: var(--hl-mot);
 }
 
 .hl-root .hl-str {
-  color: #a8d4a0;
+  color: var(--hl-chaine);
 }
 
 .hl-root .hl-num {
-  color: #d4a574;
+  color: var(--hl-nombre);
 }
 
 .hl-root .hl-cmt {
@@ -2640,7 +2604,7 @@ button:disabled {
 }
 
 .hl-root .hl-var {
-  color: #e8b86d;
+  color: var(--hl-variable);
 }
 
 .msg-tool-head {
@@ -2656,7 +2620,7 @@ button:disabled {
 
 .msg-tool-status {
   margin-left: auto;
-  font-size: 0.68rem;
+  font-size: var(--t-xs);
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -2664,7 +2628,7 @@ button:disabled {
 
 .msg-tool-section {
   margin-top: 0.35rem;
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
 }
 
 .msg-tool-section summary {
@@ -2760,7 +2724,7 @@ button:disabled {
   border-radius: 999px;
   border: 1px solid var(--line);
   background: color-mix(in srgb, var(--bg-sidebar) 50%, var(--bg-elev));
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   color: var(--muted);
 }
 
@@ -2827,7 +2791,7 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 0.55rem;
   background: var(--bg);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--ombre-2);
 }
 
 .composer-mcp-btn {
@@ -2889,7 +2853,7 @@ button:disabled {
   border-radius: 999px;
   border: 1px solid var(--bg-elev);
   background: var(--accent);
-  color: #1a140c;
+  color: var(--sur-accent);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
@@ -2900,7 +2864,7 @@ button:disabled {
 .composer-mcp-head {
   padding: 0.35rem 0.75rem 0.5rem;
   border-bottom: 1px solid var(--line);
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
   color: var(--muted);
 }
 
@@ -2954,7 +2918,7 @@ button:disabled {
 
 .composer-mcp-foot a,
 .composer-mcp-foot .linklike {
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
 }
 
 .composer-mcp-empty {
@@ -2983,8 +2947,8 @@ button:disabled {
   padding: 0.7rem 1rem;
   border: none;
   border-radius: var(--radius);
-  background: color-mix(in srgb, #c45c5c 82%, var(--bg-elev));
-  color: #fff;
+  background: color-mix(in srgb, var(--erreur) 82%, var(--bg-elev));
+  color: var(--sur-erreur);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -3020,7 +2984,7 @@ button:disabled {
 
   .nav-tab {
     flex: 0 0 auto;
-    font-size: 0.78rem;
+    font-size: var(--t-xs);
     padding: 0.35rem 0.55rem;
   }
 
@@ -3149,7 +3113,7 @@ button:disabled {
    réflexion d'un blocage. */
 .msg-attente {
   margin: 0;
-  color: var(--muted, #8b93a7);
+  color: var(--muted);
   font-size: 0.85rem;
   font-style: italic;
 }
@@ -3174,13 +3138,13 @@ button:disabled {
   background: none;
   border: none;
   padding: 0;
-  color: var(--muted, #8b93a7);
-  font-size: 0.78rem;
+  color: var(--muted);
+  font-size: var(--t-xs);
   cursor: pointer;
 }
 
 .msg-action:hover:not(:disabled) {
-  color: var(--text, #e6e9f0);
+  color: var(--text);
   text-decoration: underline;
 }
 
@@ -3201,9 +3165,9 @@ button:disabled {
   resize: vertical;
   padding: 0.5rem 0.6rem;
   border-radius: 6px;
-  border: 1px solid var(--border, #2a3040);
-  background: var(--bg, #0f1219);
-  color: var(--text, #e6e9f0);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
   font: inherit;
 }
 
@@ -3236,7 +3200,7 @@ button:disabled {
 }
 
 .md-table thead th {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-survol);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -3246,7 +3210,7 @@ button:disabled {
 }
 
 .md-table tbody tr:hover td {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-legere);
 }
 
 /* Le reste du vocabulaire markdown : règle, citation, tâches, image, barré. */
@@ -3320,7 +3284,7 @@ button:disabled {
    d'éditer, comme on le lui a demandé. */
 .composer-mode-label {
   margin-left: 0.5rem;
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   color: var(--muted);
 }
 
@@ -3333,7 +3297,7 @@ button:disabled {
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
 }
 
 .composer-mode:disabled {
@@ -3354,7 +3318,7 @@ button:disabled {
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   cursor: pointer;
 }
 
@@ -3366,7 +3330,7 @@ button:disabled {
 .msg-decision {
   margin: 0.5rem 0;
   padding: 0.6rem 0.7rem;
-  background: rgba(196, 165, 116, 0.06);
+  background: var(--surface-legere);
   border: 1px solid var(--accent-dim);
   border-left-width: 3px;
   border-radius: var(--radius);
@@ -3376,7 +3340,7 @@ button:disabled {
 /* Une fois tranchée, la carte cesse d'appeler : elle devient une trace. */
 .msg-decision-allow,
 .msg-decision-deny {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-legere);
   border-color: var(--line);
   opacity: 0.75;
 }
@@ -3399,14 +3363,14 @@ button:disabled {
 .msg-decision-tool {
   margin-left: auto;
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   color: var(--accent);
 }
 
 .msg-decision-cible {
   margin: 0.3rem 0 0;
   font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   color: var(--text);
   overflow-wrap: anywhere;
 }
@@ -3414,7 +3378,7 @@ button:disabled {
 .msg-decision-raison {
   margin: 0.2rem 0 0;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
 }
 
 .msg-decision-actions,
@@ -3434,7 +3398,7 @@ button:disabled {
   border-radius: 4px;
   color: var(--text);
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
 }
 
 .msg-decision-btn {
@@ -3444,7 +3408,7 @@ button:disabled {
   background: var(--bg-elev);
   color: var(--text);
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
   cursor: pointer;
 }
 
@@ -3455,12 +3419,12 @@ button:disabled {
 .msg-decision-oui {
   background: var(--accent);
   border-color: var(--accent);
-  color: #1a1409;
+  color: var(--sur-accent);
   font-weight: 600;
 }
 
 .msg-decision-oui:hover {
-  background: #d4b788;
+  background: var(--accent-clair);
 }
 
 .msg-decision-non:hover {
@@ -3470,7 +3434,7 @@ button:disabled {
 
 /* Une question dont le tour a disparu : lisible, mais sans geste possible. */
 .msg-decision-orpheline {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-legere);
   border-color: var(--line);
   border-left-color: var(--muted);
   opacity: 0.7;
@@ -3483,7 +3447,7 @@ button:disabled {
 }
 
 .msg-decision-toujours:hover {
-  background: rgba(196, 165, 116, 0.12);
+  background: var(--surface-active-fort);
 }
 
 /* --- Une question posée par l'agent --------------------------------------
@@ -3533,7 +3497,7 @@ button:disabled {
 
 .msg-question-option.choisie {
   border-color: var(--accent);
-  background: rgba(196, 165, 116, 0.12);
+  background: var(--surface-active-fort);
 }
 
 .msg-question-label {
@@ -3542,7 +3506,7 @@ button:disabled {
 }
 
 .msg-question-desc {
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   color: var(--muted);
 }
 
@@ -3555,12 +3519,12 @@ button:disabled {
   border-radius: 4px;
   color: var(--text);
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
 }
 
 /* Une question répondue : refermée, mais sans la teinte d'un refus. */
 .msg-decision-repondu {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-legere);
   border-color: var(--line);
   border-left-color: var(--accent-dim);
   opacity: 0.75;
@@ -3594,7 +3558,7 @@ button:disabled {
 .msg-question-indice {
   margin: -0.25rem 0 0.45rem;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   letter-spacing: 0.02em;
 }
 
@@ -3650,10 +3614,9 @@ button:disabled {
 /* Sur la racine, il vaut pour tout ce que le navigateur dessine lui-même :
    les listes déroulantes, mais aussi les barres de défilement et les champs
    natifs, qui restaient clairs au milieu d'une interface sombre. */
-:root,
 select,
 select option {
-  color-scheme: dark;
+  color-scheme: inherit;
 }
 
 .composer-mode option {
@@ -3681,15 +3644,15 @@ select option {
   margin: 0;
   padding: 0.4rem 0.55rem;
   border-left: 2px solid var(--accent);
-  background: rgba(196, 165, 116, 0.08);
+  background: var(--surface-active);
   color: var(--text);
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
 }
 
 /* Rangé : présent, mais en retrait — on doit pouvoir le retrouver sans le
    confondre avec ce sur quoi on travaille. */
-.project-title.project-archived { opacity: 0.6; font-style: italic; }
-.tree-archives[aria-pressed="true"] { background: var(--surface-2, rgba(255,255,255,0.08)); }
+.project-title.project-archived { color: var(--texte-3); font-style: italic; }
+.tree-archives[aria-pressed="true"] { background: var(--surface-3); }
 
 /* ── Panneau « Applications » du projet (views/applications.js) ──────── */
 
@@ -3700,7 +3663,7 @@ button.session-face-link {
   padding: 0;
   cursor: pointer;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
 }
 
 .apps-panel {
@@ -3712,7 +3675,7 @@ button.session-face-link {
 
 .apps-titre {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   margin-bottom: 0.4rem;
@@ -3744,12 +3707,12 @@ button.session-face-link {
 .apps-etat-en_echec,
 .apps-etat-invalide,
 .apps-erreur {
-  color: #f0a8a0;
+  color: var(--erreur-texte);
 }
 
 .apps-erreur {
   flex-basis: 100%;
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
 }
 
 .apps-note {
@@ -3770,7 +3733,7 @@ button.session-face-link {
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 6px;
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   white-space: pre-wrap;
 }
 
@@ -3873,7 +3836,7 @@ button.session-face-link {
 .panneau-note {
   margin: 0;
   padding: 0.4rem 0.75rem;
-  color: #f0a8a0;
+  color: var(--erreur-texte);
   font-size: 0.8rem;
 }
 
@@ -3887,7 +3850,7 @@ button.session-face-link {
   position: relative;
   flex: 1;
   min-height: 0;
-  background: #fff;
+  background: var(--cadre-app-fond);
 }
 
 .panneau-corps:empty {
@@ -3900,7 +3863,7 @@ button.session-face-link {
   width: 100%;
   height: 100%;
   border: 0;
-  background: #fff;
+  background: var(--cadre-app-fond);
 }
 
 /* Au téléphone : une feuille plein écran, par-dessus le fil. « Replier »
@@ -3932,13 +3895,13 @@ button.session-face-link {
 .fil-message {
   flex-basis: 100%;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
   padding-left: 0.75rem;
   border-left: 2px solid var(--line);
 }
 
 .fil-en-retard {
-  color: #f0a8a0;
+  color: var(--erreur-texte);
 }
 
 /* ── Ce qu'un hook dit à la personne, dans le fil ───────────────────── */
@@ -4019,7 +3982,7 @@ button.session-face-link {
 
 .msg-carte-preuve {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
 }
 
 /* --- Vague 2 : gardiens, tâches automatiques, « À valider », journal -------
@@ -4034,7 +3997,7 @@ button.session-face-link {
   border-radius: 999px;
   background: var(--accent);
   color: var(--bg);
-  font-size: 0.7rem;
+  font-size: var(--t-xs);
   font-weight: 700;
   line-height: 1.1rem;
   text-align: center;
@@ -4062,7 +4025,7 @@ button.session-face-link {
   padding: 0.05rem 0.5rem;
   border-radius: 999px;
   border: 1px solid var(--line);
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   color: var(--muted);
 }
 
@@ -4072,13 +4035,13 @@ button.session-face-link {
 }
 
 .gardien-etat-warn {
-  border-color: #c9a227;
-  color: #c9a227;
+  border-color: var(--attention);
+  color: var(--attention);
 }
 
 .gardien-etat-ok {
-  border-color: #3d9a6a;
-  color: #3d9a6a;
+  border-color: var(--ok);
+  color: var(--ok);
 }
 
 .gardien-gestes {
@@ -4109,7 +4072,7 @@ button.session-face-link {
   gap: 0.2rem;
   padding: 0.5rem 0.65rem;
   border: 1px solid var(--line);
-  border-left: 3px solid #c9a227;
+  border-left: 3px solid var(--attention);
   border-radius: var(--radius);
   background: var(--bg-elev);
   font-size: 0.85rem;
@@ -4121,7 +4084,7 @@ button.session-face-link {
 
 .gardien-preuve {
   font-family: var(--mono);
-  font-size: 0.74rem;
+  font-size: var(--t-xs);
   color: var(--muted);
   word-break: break-word;
 }
@@ -4155,7 +4118,7 @@ button.session-face-link {
 }
 
 .automate-genre {
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   color: var(--muted);
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -4200,7 +4163,7 @@ button.session-face-link {
 }
 
 .proposition-source {
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   font-weight: 600;
   color: var(--accent);
   text-transform: uppercase;
@@ -4288,13 +4251,13 @@ button.session-face-link {
 }
 
 .journal-ligne-marquee .journal-texte {
-  color: #e0b25a;
+  color: var(--attention-texte);
 }
 
 .journal-quand {
   flex: 0 0 7.5rem;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
 }
 
 .journal-texte {
@@ -4304,13 +4267,13 @@ button.session-face-link {
 }
 
 .journal-resultat {
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   color: var(--danger);
   white-space: nowrap;
 }
 
 .journal-source {
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -4335,12 +4298,12 @@ button.session-face-link {
    ligne sobre sous la saisie ; l'écart plus permissif se marque. */
 .composer-mode-note {
   margin: 0.3rem 0 0;
-  font-size: 0.76rem;
+  font-size: var(--t-xs);
   color: var(--muted);
 }
 
 .composer-mode-note-alerte {
-  color: #e0b25a;
+  color: var(--attention-texte);
 }
 
 .composer-mode-note[hidden] {
@@ -4427,7 +4390,7 @@ button.session-face-link {
   border: 1px solid var(--danger);
   border-radius: var(--radius);
   color: var(--danger);
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
 }
 
 /* ── Ma mémoire (vague 3, équipe M) ─────────────────────────────────── */
@@ -4465,7 +4428,7 @@ button.session-face-link {
 
 .memoire-origine {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--t-xs);
 }
 
 .memoire-gestes {
@@ -5025,8 +4988,8 @@ button.session-face-link[aria-expanded="true"] {
 .msg-long-replie .msg-text-plain {
   max-height: 12rem;
   overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, #000 65%, transparent);
-  mask-image: linear-gradient(to bottom, #000 65%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, var(--masque-opaque) 65%, transparent);
+  mask-image: linear-gradient(to bottom, var(--masque-opaque) 65%, transparent);
 }
 
 .msg-long-bascule {
@@ -5840,4 +5803,92 @@ li[role="button"]:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ── Lisibilité : le texte estompé passe par la couleur, pas l'opacité ──
+   Une opacité de 0,6 à 0,85 sur du texte déjà discret le faisait tomber
+   sous le seuil AA. Le texte en retrait prend `--texte-2` ou `--texte-3`,
+   dont le contraste est mesuré (docs/ui/audit.md). */
+.mcp-comp-desc,
+.md-image-hote,
+.md-image-lien::before {
+  opacity: 1;
+  color: var(--texte-3);
+}
+
+.md-quote {
+  opacity: 1;
+  color: var(--texte-2);
+}
+
+.md-root del {
+  opacity: 1;
+  color: var(--texte-3);
+}
+
+.msg-decision-deny,
+.msg-decision-orpheline,
+.msg-decision-repondu {
+  opacity: 1;
+  color: var(--texte-2);
+}
+
+.composer-mcp-item-off {
+  opacity: 1;
+  color: var(--texte-3);
+}
+
+::placeholder {
+  color: var(--texte-3);
+  opacity: 1;
+}
+
+/* Un champ se voit : sa bordure atteint 3:1 contre sa surface. */
+.field input:not([type="checkbox"]):not([type="radio"]),
+.field select,
+.field textarea,
+.composer-input-wrap,
+.journal-filtre,
+.composer-mode,
+.proposition-detail select,
+.proposition-detail input,
+.proposition-motif,
+.agent-create-form input,
+.agent-create-form select,
+.agent-create-form textarea,
+.msg-decision-motif input,
+.msg-question-autre,
+.msg-edition-champ,
+.memoire-champ,
+.session-project-select {
+  border-color: var(--bordure-champ);
+}
+
+/* ── « Affichage » : le choix du thème, dans l'en-tête ─────────────────── */
+.entete-affichage {
+  flex: none;
+  margin-left: auto;
+}
+
+#btn-affichage {
+  font-size: 1rem;
+}
+
+.choix-theme {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.choix-theme legend {
+  margin-bottom: var(--esp-1);
+  padding: 0;
+  color: var(--texte-2);
+  font-size: var(--t-s);
+}
+
+/* Une étape en échec reste visible pli fermé ; pli ouvert, elle se lit dans
+   la liste, marquée : on ne la montre pas deux fois. */
+.tour-etapes[open] ~ .tour-visibles > .tour-etapes-echec {
+  display: none;
 }

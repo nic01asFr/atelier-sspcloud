@@ -434,6 +434,9 @@ class MetaPatchBody(BaseModel):
     # défaut ; retenus ici pour valoir sur tous les appareils de la personne.
     fil_raisonnement: bool | None = None
     fil_actions: bool | None = None
+    # Le thème de l'interface : « systeme » (défaut, suit le système),
+    # « clair » ou « sombre ».
+    theme: str | None = None
 
 
 
@@ -970,6 +973,12 @@ def build_app(
             patch["fil_raisonnement"] = True if body.fil_raisonnement else None
         if body.fil_actions is not None:
             patch["fil_actions"] = True if body.fil_actions else None
+        if body.theme is not None:
+            choix = body.theme.strip().lower()
+            if choix not in {"systeme", "clair", "sombre"}:
+                raise HTTPException(400, f"thème inconnu : {choix}")
+            # Suivre le système est le défaut : il s'écrit par l'absence.
+            patch["theme"] = None if choix == "systeme" else choix
         if patch:
             save_ui_settings(settings, patch)
         if body.vscode_password is not None:

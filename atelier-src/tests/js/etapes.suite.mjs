@@ -45,6 +45,7 @@ import { empreinteDeLArbre } from "../../mcp_gateway/atelier/web/js/views/code-t
 import { memeTexte } from "../../mcp_gateway/atelier/web/js/views/agent.js";
 import { filtrerOutils } from "../../mcp_gateway/atelier/web/js/views/composition-builder.js";
 import { badgeStatutComposition } from "../../mcp_gateway/atelier/web/js/views/connectors.js";
+import { appliquerTheme, themeDepuisMeta, themeValable } from "../../mcp_gateway/atelier/web/js/controllers/theme.js";
 
 const outil = (id, name, input = {}, extra = {}) => ({ type: "tool", id, name, input, output: "", status: "done", ...extra });
 const parole = (t) => ({ type: "text", text: t });
@@ -316,6 +317,34 @@ const parole = (t) => ({ type: "text", text: t });
 
   egal(badgeStatutComposition("production").textContent, "active", "l'état d'une composition se dit en français");
   egal(badgeStatutComposition("temporary").textContent, "brouillon", "un « temporary » est un brouillon");
+}
+
+// ── 8. Le thème ──────────────────────────────────────────────────────────
+
+{
+  const attributs = new Map();
+  const doc = {
+    documentElement: {
+      setAttribute: (k, v) => attributs.set(k, v),
+      removeAttribute: (k) => attributs.delete(k),
+    },
+  };
+  const memo = new Map();
+  const stockage = { setItem: (k, v) => memo.set(k, v), removeItem: (k) => memo.delete(k) };
+
+  egal(themeValable("Clair"), "clair", "la casse ne compte pas");
+  egal(themeValable("fluo"), "systeme", "un thème inconnu revient au système");
+  egal(themeDepuisMeta({ ui: {} }), "systeme", "par défaut : suivre le système");
+  egal(themeDepuisMeta({ ui: { theme: "sombre" } }), "sombre", "le choix retenu par le service");
+
+  appliquerTheme("clair", doc, stockage);
+  egal(attributs.get("data-theme"), "clair", "clair : l'attribut est posé");
+  egal(memo.get("atelier.theme"), "clair", "et gardé pour le prochain chargement, sans éclair");
+  appliquerTheme("systeme", doc, stockage);
+  verifier(!attributs.has("data-theme"), "suivre le système : plus d'attribut");
+  verifier(!memo.has("atelier.theme"), "ni de copie locale");
+  const refuse = { setItem: () => { throw new Error("refusé"); }, removeItem: () => { throw new Error("refusé"); } };
+  egal(appliquerTheme("sombre", doc, refuse), "sombre", "un stockage refusé n'empêche pas d'appliquer le thème");
 }
 
 bilan("etapes");

@@ -44,3 +44,18 @@ def test_les_reglages_du_fil_ne_touchent_pas_aux_autres(atelier: TestClient) -> 
     ui = atelier.get("/v1/meta", headers=_cle(atelier)).json()["ui"]
     assert ui["langue"] == "fr"
     assert ui["fil_actions"] is True
+
+
+def test_le_theme_se_retient_et_suivre_le_systeme_l_efface(atelier: TestClient) -> None:
+    assert "theme" not in atelier.get("/v1/meta", headers=_cle(atelier)).json()["ui"], "par défaut : le système"
+    r = atelier.put("/v1/meta", headers=_cle(atelier), json={"theme": "clair"})
+    assert r.status_code == 200 and r.json()["ui"]["theme"] == "clair"
+    r = atelier.put("/v1/meta", headers=_cle(atelier), json={"theme": "Sombre"})
+    assert r.json()["ui"]["theme"] == "sombre", "la casse ne compte pas"
+    r = atelier.put("/v1/meta", headers=_cle(atelier), json={"theme": "systeme"})
+    assert "theme" not in r.json()["ui"], "suivre le système efface le choix"
+
+
+def test_un_theme_inconnu_est_refuse(atelier: TestClient) -> None:
+    r = atelier.put("/v1/meta", headers=_cle(atelier), json={"theme": "fluo"})
+    assert r.status_code == 400

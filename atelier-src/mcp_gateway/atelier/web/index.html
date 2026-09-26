@@ -4,7 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Atelier</title>
-  <link rel="stylesheet" href="/css/app.css?v=20260926-interface" />
+  <!-- Le thème avant le premier rendu : voir js/theme-initial.js. -->
+  <script src="/js/theme-initial.js?v=20260926-theme"></script>
+  <link rel="stylesheet" href="/css/jetons.css?v=20260926-theme" />
+  <link rel="stylesheet" href="/css/app.css?v=20260926-theme" />
 </head>
 <body>
   <div id="login" class="screen login hidden" aria-live="polite">
@@ -33,6 +36,19 @@
           <button type="button" class="nav-tab" data-view="journal">Journal</button>
           <button type="button" class="nav-tab" data-view="memoire">Ma mémoire</button>
         </nav>
+        <div id="affichage-zone" class="reglages-fil-zone entete-affichage">
+          <button type="button" id="btn-affichage" class="icon-btn" aria-expanded="false" aria-controls="affichage" aria-haspopup="dialog" aria-label="Affichage" title="Affichage : thème clair ou sombre"><span class="icone" aria-hidden="true"><svg class="icone-svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg></span></button>
+          <div id="affichage" class="popover" role="dialog" aria-labelledby="affichage-titre" hidden>
+            <p id="affichage-titre" class="popover-titre">Affichage</p>
+            <fieldset class="choix-theme">
+              <legend>Thème</legend>
+              <label class="case"><input type="radio" name="theme" value="systeme" checked /> <span>Suivre le système</span></label>
+              <label class="case"><input type="radio" name="theme" value="clair" /> <span>Clair</span></label>
+              <label class="case"><input type="radio" name="theme" value="sombre" /> <span>Sombre</span></label>
+            </fieldset>
+            <p class="popover-note">Retenu pour vous, sur chacun de vos appareils.</p>
+          </div>
+        </div>
         <button type="button" id="btn-logout" class="ghost">Quitter</button>
       </div>
     </header>
@@ -198,6 +214,6 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=20260926-interface"></script>
+  <script type="module" src="/js/app.js?v=20260926-theme"></script>
 </body>
 </html>
