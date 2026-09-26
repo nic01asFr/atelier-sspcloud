@@ -66,6 +66,23 @@ export async function patchSession(token, sessionId, patch) {
   return res.json();
 }
 
+/** Le défaut de mode d'un projet (`.claude/settings.local.json`). */
+export async function getProjectMode(token, slug) {
+  const res = await fetch(`/v1/projets/${encodeURIComponent(slug)}/mode`, { headers: jsonHeaders(token) });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+export async function setProjectMode(token, slug, mode) {
+  const res = await fetch(`/v1/projets/${encodeURIComponent(slug)}/mode`, {
+    method: "PUT",
+    headers: jsonHeaders(token),
+    body: JSON.stringify({ mode }),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
 export async function deleteSession(token, sessionId) {
   const res = await fetch(`/v1/sessions/${encodeURIComponent(sessionId)}`, {
     method: "DELETE",

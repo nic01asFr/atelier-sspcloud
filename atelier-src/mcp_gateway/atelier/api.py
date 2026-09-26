@@ -78,6 +78,7 @@ from mcp_gateway.atelier.vscode_proxy import (
     resolve_vscode_password,
     VscodeUpstream,
 )
+from mcp_gateway.atelier.modes_routes import register_modes_routes
 from mcp_gateway.atelier.navigateur_routes import register_navigateur_routes
 from mcp_gateway.atelier.wikichat_pilote_proxy import proxy_wikichat_pilote
 
@@ -2584,6 +2585,7 @@ def build_app(
 
     register_vscode_proxy(app, settings, require_owner_nav)
     register_navigateur_routes(app, settings, require_owner_nav)
+    register_modes_routes(app, settings, require_owner)
 
     @app.get("/pilote")
     @app.api_route("/pilote/{rest:path}", methods=["GET", "POST", "DELETE"])

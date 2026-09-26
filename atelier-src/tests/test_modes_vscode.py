@@ -261,3 +261,30 @@ def test_l_alias_du_terminal_passe_par_l_enveloppeur(tmp_path: Path) -> None:
     texte = bashrc.read_text(encoding="utf-8")
     assert texte.count("alias claude=") == 1
     assert "alias claude='\"/w/bin/atelier-claude-vscode\" \"/w/bin/claude\"'" in texte
+
+
+def test_le_defaut_du_projet_se_regle_par_l_interface(atelier: TestClient) -> None:
+    entete = {"Authorization": f"Bearer {_cle(atelier)}"}
+    atelier.post("/v1/sessions", headers=entete, json={"slug": "essai"})
+    lu = atelier.get("/v1/projets/essai/mode", headers=entete).json()
+    assert lu["mode"] == "" and lu["source"] == "service" and lu["modes"] == ["default", "acceptEdits", "plan", "bypassPermissions"]
+    regle = atelier.put("/v1/projets/essai/mode", headers=entete, json={"mode": "bypassPermissions"}).json()
+    assert regle["mode"] == "bypassPermissions" and "Sans garde-fou" in regle["avertissement"]
+    dossier = Path(folder_abs(atelier.app.state.settings, "essai"))
+    assert mode_du_projet(dossier) == "bypassPermissions"
+    assert _machine()[CLE_BYPASS] is True
+    assert atelier.put("/v1/projets/essai/mode", headers=entete, json={"mode": "auto-magique"}).status_code == 400
+    assert atelier.put("/v1/projets/../mode", headers=entete, json={"mode": "plan"}).status_code in (400, 404)
+    assert atelier.put("/v1/projets/essai/mode", headers=entete, json={"mode": ""}).json()["source"] == "service"
+    assert CLE_BYPASS not in _machine()
+
+
+def test_le_selecteur_propose_les_quatre_modes() -> None:
+    import re
+
+    page = (Path(__file__).resolve().parents[1] / "mcp_gateway/atelier/web/index.html").read_text(encoding="utf-8")
+    bloc = page[page.index('<select id="composer-mode"') : page.index("</select>", page.index('<select id="composer-mode"'))]
+    assert re.findall(r'<option value="([^"]*)"', bloc) == ["", "plan", "default", "acceptEdits", "bypassPermissions"]
+    script = (Path(__file__).resolve().parents[1] / "mcp_gateway/atelier/web/js/controllers/composer-input.js").read_text(encoding="utf-8")
+    # Le bypass demande une confirmation avant de partir.
+    assert 'mode === "bypassPermissions" && !window.confirm(AVERTISSEMENT_BYPASS)' in script

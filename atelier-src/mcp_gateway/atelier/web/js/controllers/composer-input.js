@@ -129,11 +129,29 @@ export function createComposerInputController(ctx) {
     $("btn-composer-attach")?.addEventListener("click", onAttachClick);
     $("composer-attach-input")?.addEventListener("change", onAttachFiles);
     $("composer-mode")?.addEventListener("change", onModeChange);
+    $("btn-mode-projet")?.addEventListener("click", onModeProjet);
+  }
+
+  const AVERTISSEMENT_BYPASS =
+    "Sans garde-fou : l’agent agira sans rien demander — modifier ou supprimer des " +
+    "fichiers, lancer des commandes, y compris hors du projet. Ce choix vaut aussi " +
+    "dans VS Code et au terminal pour cette conversation.
+
+Continuer ?";
+
+  function slugCourant() {
+    const courante = state.sessions?.find((x) => x.session_id === state.sessionId);
+    return state.slug || courante?.slug || state.pendingProjectSlug || "";
   }
 
   /** Le mode de travail se pose sur la conversation, pas sur le message. */
   async function onModeChange(ev) {
     const mode = ev.target.value;
+    if (mode === "bypassPermissions" && !window.confirm(AVERTISSEMENT_BYPASS)) {
+      // Refusé : le sélecteur reprend la valeur d'avant au prochain rendu.
+      render();
+      return;
+    }
     if (!state.sessionId) {
       // Conversation pas encore née : le choix attend le premier message.
       state.modeEnAttente = mode;
@@ -153,6 +171,26 @@ export function createComposerInputController(ctx) {
       S.setError(state, `Mode non appliqué : ${err.message}`);
       render();
     }
+  }
+
+  /** Le mode affiché devient le défaut du projet (conversations sans choix propre). */
+  async function onModeProjet() {
+    const slug = slugCourant();
+    const mode = $("composer-mode")?.value || "";
+    if (!slug || !mode) return;
+    if (mode === "bypassPermissions" && !window.confirm(
+      "Sans garde-fou pour tout le projet : chaque conversation sans choix propre agira " +
+      "sans rien demander, dans l’Atelier, dans VS Code et au terminal.
+
+Continuer ?",
+    )) return;
+    try {
+      await api.setProjectMode(state.token, slug, mode);
+      S.setError(state, "");
+    } catch (err) {
+      S.setError(state, `Défaut du projet non appliqué : ${err.message}`);
+    }
+    render();
   }
 
   return {
