@@ -27,6 +27,17 @@
  * vivant : il ne s'ouvre que sur un geste de la personne, jamais sur un
  * événement (J-f), n'est pas épinglé, et son cadre n'existe que tant que son
  * onglet est affiché (masqué, le flux s'arrête).
+ *
+ * Le navigateur de l'agent (J-f2). Dès qu'un outil qui ouvre ou change sa page
+ * (`new_page`, `navigate_page`, `select_page`) passe dans le flux du tour,
+ * l'onglet « Navigateur de l'agent » apparaît : il montre la page de l'agent
+ * en direct (l'écran de l'hôte des applications, ouvert par
+ * `/v1/ecran/<conversation>/ouvrir`), son adresse, et « Prendre la main ». Le
+ * panneau fermé s'ouvre sur lui ; un autre onglet regardé n'est pas quitté :
+ * l'onglet du navigateur porte un signal. Si la personne replie le panneau
+ * alors que le navigateur y est, les pages suivantes ne le rouvrent plus : le
+ * signal passe sur le bouton du panneau. C'est un flux vivant : pas épinglé,
+ * et son cadre (donc le screencast) n'existe que tant qu'il est affiché.
  */
 
 import { rendrePanneauApplications } from "./applications.js";
@@ -41,9 +52,41 @@ export function estUnService(vue) {
   return !!(vue && vue.connecteur);
 }
 
-/** Un flux vivant : ne s'ouvre jamais seul, ne tourne que s'il est affiché. */
+/** L'onglet du navigateur de l'agent de la conversation. */
+export function estLeNavigateur(vue) {
+  return !!(vue && vue.genre === "navigateur");
+}
+
+/** Un flux vivant : ne tourne que s'il est affiché. */
 export function estUnFluxVivant(vue) {
-  return estUnService(vue) && vue.genre === "bureau";
+  return estLeNavigateur(vue) || (estUnService(vue) && vue.genre === "bureau");
+}
+
+// Les outils du navigateur (chrome-devtools-mcp, serveur `chrome-devtools-mcp`
+// du lanceur de l'Atelier) qui ouvrent ou changent la page de l'agent.
+const OUTILS_DE_NAVIGATION = new Set(["new_page", "navigate_page", "select_page"]);
+
+/** Un outil qui ouvre ou change la page du navigateur de l'agent (J-f2). */
+export function estUnOutilDeNavigation(nom) {
+  const m = /^mcp__chrome-devtools-mcp__([a-z_]+)$/.exec(String(nom || ""));
+  return !!m && OUTILS_DE_NAVIGATION.has(m[1]);
+}
+
+/** L'onglet « Navigateur de l'agent » d'une conversation. */
+export function vueDuNavigateur(sessionId) {
+  return { id: "navigateur", genre: "navigateur", conversation: sessionId, titre: "Navigateur de l'agent", par: "agent" };
+}
+
+/**
+ * Ce que fait le panneau quand l'agent ouvre ou change de page (J-f2) :
+ * `ouvrir` (panneau fermé), `rien` (on regarde déjà sa page), `signaler`
+ * (un autre onglet est regardé, ou la personne a replié le panneau pendant
+ * que le navigateur y était : on ne vole pas l'attention).
+ */
+export function decisionDuNavigateur({ ouvert, actif, catalogue, replie }) {
+  if (!ouvert) return replie ? "signaler" : "ouvrir";
+  if (actif === "navigateur" && !catalogue) return "rien";
+  return "signaler";
 }
 
 /** L'onglet d'un service, tiré de sa fiche du catalogue. */
@@ -60,6 +103,9 @@ export function vueDeService(fiche) {
 
 /** L'adresse, sur l'Atelier, qui ouvre la vue par le passage. */
 export function adresseDeLaVue(vue) {
+  if (estLeNavigateur(vue)) {
+    return vue.conversation ? `/v1/ecran/${encodeURIComponent(vue.conversation)}/ouvrir` : "";
+  }
   if (estUnService(vue)) {
     if (!vue.nom) return "";
     return `/v1/bureaux/${encodeURIComponent(vue.connecteur)}/${encodeURIComponent(vue.nom)}/ouvrir`;
@@ -80,6 +126,15 @@ export function libelleEpingle(vue) {
   return vue?.epingle === "projet"
     ? { texte: "Épinglée au projet", titre: "Ne garder que dans cette conversation", suivante: "conversation" }
     : { texte: "Épingler au projet", titre: "Montrer dans toutes les conversations du projet", suivante: "projet" };
+}
+
+/** L'état de l'écran d'une conversation (repli si `api` ne le porte pas). */
+async function lireEcran(sessionId) {
+  const res = await fetch(`/v1/ecran/${encodeURIComponent(sessionId)}`, {
+    headers: { "X-Atelier-Interface": "1", Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`écran illisible (${res.status})`);
+  return res.json();
 }
 
 /** Les services du catalogue, lus sur l'Atelier (repli si `api` ne les porte pas). */
@@ -118,13 +173,29 @@ export function createPanneauView(ctx) {
   const iframes = new Map();
   let sessionChargee = null;
   let chargement = null;
-  const local = { vues: [], actif: null, ouvert: false, catalogue: false, erreur: "", rayon: "creations" };
+  const local = {
+    vues: [],
+    actif: null,
+    ouvert: false,
+    catalogue: false,
+    erreur: "",
+    rayon: "creations",
+    // J-f2 : l'onglet du navigateur attend d'être regardé ; la personne a
+    // replié le panneau pendant qu'il y était (il ne se rouvre plus seul).
+    signal: false,
+    replie: false,
+  };
+  // Les appels d'outils de navigation du tour, reconnus à leur fin (`outil_fin`
+  // ne porte que l'identifiant de l'appel).
+  const appelsDeNavigation = new Set();
 
   const racine = () => document.getElementById("panneau");
   const vueCode = () => document.getElementById("view-code");
 
   function ouvrir(oui) {
     local.ouvert = !!oui;
+    if (!local.ouvert && local.vues.some(estLeNavigateur)) local.replie = true;
+    if (local.ouvert && local.actif === "navigateur") local.signal = false;
     rendre();
   }
 
@@ -136,6 +207,9 @@ export function createPanneauView(ctx) {
     local.actif = null;
     local.catalogue = false;
     local.erreur = "";
+    local.signal = false;
+    local.replie = false;
+    appelsDeNavigation.clear();
     if (!sessionId) {
       local.ouvert = false;
       rendre();
@@ -150,6 +224,33 @@ export function createPanneauView(ctx) {
       local.actif = local.vues.length ? local.vues[local.vues.length - 1].id : null;
     } catch (err) {
       local.erreur = err.message || String(err);
+    }
+    rendre();
+    // Une conversation dont l'agent a déjà un navigateur ouvert retrouve son
+    // onglet, sans ouvrir le panneau.
+    try {
+      const ecran = await (api.ecranEtat || lireEcran)(sessionId);
+      if (sessionChargee !== sessionId || !ecran?.disponible) return;
+      if (!local.vues.some(estLeNavigateur)) local.vues = [...local.vues, vueDuNavigateur(sessionId)];
+      if (!local.actif) local.actif = "navigateur";
+      rendre();
+    } catch {
+      /* pas d'écran : rien à retrouver */
+    }
+  }
+
+  /** L'agent ouvre ou change de page (J-f2) : l'onglet apparaît, sans voler l'attention. */
+  function agentNavigue() {
+    if (state.view !== "code" || !state.sessionId) return;
+    if (!local.vues.some(estLeNavigateur)) local.vues = [...local.vues, vueDuNavigateur(state.sessionId)];
+    const decision = decisionDuNavigateur(local);
+    if (decision === "ouvrir") {
+      local.ouvert = true;
+      local.actif = "navigateur";
+      local.catalogue = false;
+      local.signal = false;
+    } else if (decision === "signaler") {
+      local.signal = true;
     }
     rendre();
   }
@@ -168,8 +269,25 @@ export function createPanneauView(ctx) {
     rendre();
   }
 
-  /** Événement `panneau_montrer` du flux en direct de la conversation. */
+  /**
+   * Un événement du flux en direct de la conversation. Rend vrai s'il est
+   * consommé ici (`panneau_montrer`) ; un outil du navigateur est seulement
+   * observé : le fil l'affiche comme les autres.
+   */
   function surEvenement(ev) {
+    if (ev?.kind === "outil_debut" || ev?.kind === "outil_fin") {
+      if (ev.session_id && ev.session_id !== state.sessionId) return false;
+      let navigation = false;
+      if (ev.kind === "outil_debut" && estUnOutilDeNavigation(ev.tool)) {
+        navigation = true;
+        if (ev.tool_id) appelsDeNavigation.add(ev.tool_id);
+      } else if (ev.kind === "outil_fin" && ev.tool_id && appelsDeNavigation.has(ev.tool_id)) {
+        navigation = true;
+        appelsDeNavigation.delete(ev.tool_id);
+      }
+      if (navigation) agentNavigue();
+      return false;
+    }
     if (ev?.cause !== "panneau_montrer" || !ev.text) return false;
     if (ev.session_id && ev.session_id !== state.sessionId) return true;
     try {
@@ -199,9 +317,10 @@ export function createPanneauView(ctx) {
     iframes.delete(vue.id);
     if (local.actif === vue.id) local.actif = local.vues.length ? local.vues[local.vues.length - 1].id : null;
     if (!local.vues.length) local.ouvert = false;
+    if (estLeNavigateur(vue)) local.signal = false;
     rendre();
-    // Un service n'est pas enregistré : rien à retirer côté Atelier.
-    if (estUnService(vue)) return;
+    // Un service ou le navigateur ne sont pas enregistrés : rien à retirer côté Atelier.
+    if (estUnService(vue) || estLeNavigateur(vue)) return;
     try {
       await api.panneauRetirer(state.sessionId, vue.id);
     } catch (err) {
@@ -333,23 +452,32 @@ export function createPanneauView(ctx) {
     if (bascule) {
       bascule.hidden = !(state.view === "code" && state.sessionId);
       bascule.setAttribute("aria-expanded", visible ? "true" : "false");
-      bascule.textContent = local.vues.length ? `Panneau (${local.vues.length})` : "Panneau";
+      const signal = local.signal && !visible ? " ●" : "";
+      bascule.textContent = (local.vues.length ? `Panneau (${local.vues.length})` : "Panneau") + signal;
+      if (signal) bascule.title = "Le navigateur de l'agent a changé de page";
+      else bascule.removeAttribute("title");
     }
     if (!visible) return;
 
     const onglets = document.getElementById("panneau-onglets");
     onglets.replaceChildren(
       ...local.vues.map((v) => {
-        const b = el("button", "panneau-onglet", v.titre || v.nom);
+        const signal = estLeNavigateur(v) && local.signal && !(v.id === local.actif && !local.catalogue);
+        const b = el("button", "panneau-onglet", signal ? `● ${v.titre || v.nom}` : v.titre || v.nom);
         b.type = "button";
         b.setAttribute("role", "tab");
         b.setAttribute("aria-selected", v.id === local.actif ? "true" : "false");
         b.title = v.epingle === "projet" ? `${v.titre} — épinglée au projet` : v.titre;
+        if (signal) {
+          b.dataset.signal = "1";
+          b.title = "L'agent a changé de page";
+        }
         if (v.epingle === "projet") b.classList.add("panneau-onglet-projet");
         if (v.par === "agent") b.classList.add("panneau-onglet-agent");
         b.addEventListener("click", () => {
           local.actif = v.id;
           local.catalogue = false;
+          if (estLeNavigateur(v)) local.signal = false;
           rendre();
         });
         return b;
@@ -361,15 +489,15 @@ export function createPanneauView(ctx) {
     if (active) {
       const epingle = libelleEpingle(active);
       const gestes = [];
-      // Un service n'est pas épinglé : il ne revient pas seul (J-f).
-      if (!estUnService(active)) {
+      // Un service ou le navigateur ne s'épinglent pas : ils ne reviennent pas seuls (J-f).
+      if (!estUnService(active) && !estLeNavigateur(active)) {
         gestes.push(
           bouton(epingle.texte, epingle.titre, () => enregistrer({ ...active, epingle: epingle.suivante }),
             `ghost panneau-btn${active.epingle === "projet" ? " panneau-btn-actif" : ""}`),
         );
       }
       gestes.push(
-        bouton("Recharger", estUnService(active) ? "Recharger cet onglet" : "Recharger cette création", () => {
+        bouton("Recharger", estUnService(active) || estLeNavigateur(active) ? "Recharger cet onglet" : "Recharger cette création", () => {
           const f = iframes.get(active.id);
           if (f) f.src = adresseDeLaVue(active);
         }),
@@ -433,5 +561,5 @@ export function createPanneauView(ctx) {
     rendre();
   }
 
-  return { bind, renderPanneau, montrer, surEvenement, ouvrir };
+  return { bind, renderPanneau, montrer, surEvenement, ouvrir, agentNavigue };
 }

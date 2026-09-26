@@ -13,7 +13,11 @@
 //     « artefact » ;
 //   - un bureau (service du namespace) s'ouvre par l'Atelier, depuis l'onglet
 //     « Bureaux » du catalogue, jamais sur un événement (J-f) ; masqué ou
-//     panneau replié, son cadre part et le flux s'arrête.
+//     panneau replié, son cadre part et le flux s'arrête ;
+//   - un outil qui ouvre ou change la page du navigateur de l'agent ajoute
+//     l'onglet « Navigateur de l'agent » (J-f2) : panneau fermé, il s'ouvre
+//     dessus ; autre onglet regardé, un signal, sans changer d'onglet ; son
+//     cadre passe par l'Atelier et part quand il est masqué.
 
 import { berceau, cliquer, ecouter, texte } from "./dom-minimal.mjs";
 import { bilan, egal, nePorte, porte, verifier } from "./verifier.mjs";
@@ -21,11 +25,15 @@ import { bilan, egal, nePorte, porte, verifier } from "./verifier.mjs";
 import {
   adresseDeLaVue,
   createPanneauView,
+  decisionDuNavigateur,
+  estLeNavigateur,
   estUnFluxVivant,
+  estUnOutilDeNavigation,
   estUnService,
   fusionnerVues,
   libelleEpingle,
   vueDeService,
+  vueDuNavigateur,
 } from "../../mcp_gateway/atelier/web/js/views/panneau.js";
 import { rendrePanneauApplications } from "../../mcp_gateway/atelier/web/js/views/applications.js";
 import { libelleEchanges, rendreFils } from "../../mcp_gateway/atelier/web/js/views/fils.js";
@@ -296,6 +304,122 @@ async function attendre() {
   const avecLien = carteDAction({ carte: { titre: "Vue", voir: { lien: "/v1/apps/demo/x/ouvrir" } } });
   egal(avecLien.querySelectorAll("a").length, 1, "un lien de l'Atelier l'est");
   egal(carteDAction("pas du json"), null, "une sortie ordinaire n'a pas de carte");
+}
+
+// ── Le navigateur de l'agent (J-f2) ────────────────────────────────────
+{
+  verifier(estUnOutilDeNavigation("mcp__chrome-devtools-mcp__navigate_page"), "naviguer est un outil de navigation");
+  verifier(estUnOutilDeNavigation("mcp__chrome-devtools-mcp__new_page"), "ouvrir un onglet aussi");
+  verifier(estUnOutilDeNavigation("mcp__chrome-devtools-mcp__select_page"), "changer d'onglet aussi");
+  verifier(!estUnOutilDeNavigation("mcp__chrome-devtools-mcp__take_screenshot"), "une capture n'en est pas un");
+  verifier(!estUnOutilDeNavigation("mcp__autre__navigate_page"), "le navigateur d'un autre connecteur n'en est pas un");
+  verifier(!estUnOutilDeNavigation("Bash"), "un outil natif non plus");
+  const nav = vueDuNavigateur("s 3");
+  egal(adresseDeLaVue(nav), "/v1/ecran/s%203/ouvrir", "l'écran s'ouvre par l'Atelier, conversation encodée");
+  verifier(estLeNavigateur(nav) && estUnFluxVivant(nav), "le navigateur est un flux vivant");
+  nePorte(JSON.stringify(nav), "port", "l'onglet ne connaît aucun port");
+  egal(decisionDuNavigateur({ ouvert: false, replie: false }), "ouvrir", "panneau fermé : il s'ouvre");
+  egal(decisionDuNavigateur({ ouvert: false, replie: true }), "signaler", "replié par la personne : un signal seulement");
+  egal(decisionDuNavigateur({ ouvert: true, actif: "v_1" }), "signaler", "autre onglet regardé : un signal");
+  egal(decisionDuNavigateur({ ouvert: true, actif: "navigateur", catalogue: false }), "rien", "déjà regardé : la vue suit seule");
+
+  const ids = ["panneau", "view-code", "session-panneau-button", "panneau-onglets", "panneau-outils",
+    "panneau-catalogue", "panneau-corps", "panneau-note", "panneau-ajouter", "panneau-replier"];
+  for (const id of ids) {
+    document.getElementById(id)?.remove();
+    const n = document.createElement(id === "panneau" ? "aside" : "div");
+    n.id = id;
+    document.body.appendChild(n);
+  }
+  document.getElementById("panneau").hidden = true;
+  document.getElementById("panneau-catalogue").hidden = true;
+
+  const carte = { id: "v_1", genre: "creation", projet: "demo", nom: "carte", chemin: "", titre: "Carte", epingle: "conversation", par: "personne" };
+  const appels = [];
+  const api = {
+    panneauVues: async () => ({ vues: [carte] }),
+    panneauEnregistrer: async (sid, v) => (appels.push(["enregistrer"]), v),
+    panneauRetirer: async (sid, id) => (appels.push(["retirer", id]), { retiree: true }),
+    listApps: async () => ({ expose: true, artefacts: [] }),
+    artifactsUrl: () => "/v1/artifacts/demo/",
+    ecranEtat: async (sid) => (appels.push(["ecran", sid]), { disponible: false }),
+  };
+  const state = { view: "code", sessionId: "s3", slug: "demo", sessions: [] };
+  const panneau = createPanneauView({ state, api, render: () => {} });
+  panneau.bind();
+  panneau.renderPanneau();
+  await attendre();
+  verifier(appels.some((a) => a[0] === "ecran" && a[1] === "s3"), "au chargement, on demande si l'agent a un navigateur");
+
+  const aside = document.getElementById("panneau");
+  const corps = document.getElementById("panneau-corps");
+  const bascule = document.getElementById("session-panneau-button");
+  const onglets = () => document.getElementById("panneau-onglets").querySelectorAll("button");
+  const actif = () => onglets().find((b) => b.getAttribute("aria-selected") === "true");
+  const cadreDuNavigateur = () => corps.querySelectorAll(".panneau-cadre").find((f) => (f.getAttribute("src") || f.src) === "/v1/ecran/s3/ouvrir") || null;
+  const outil = (id, nom) => ({ kind: "outil_debut", session_id: "s3", tool: nom, tool_id: id, text: "{}" });
+
+  // Un outil qui ne navigue pas : rien ne change.
+  verifier(!panneau.surEvenement(outil("t0", "mcp__chrome-devtools-mcp__take_snapshot")), "l'événement continue vers le fil");
+  verifier(aside.hidden, "une lecture n'ouvre pas le panneau");
+
+  // L'agent ouvre une page, panneau fermé : le panneau s'ouvre sur son navigateur.
+  const pris = panneau.surEvenement(outil("t1", "mcp__chrome-devtools-mcp__new_page"));
+  verifier(!pris, "l'outil s'affiche aussi dans le fil (événement non consommé)");
+  verifier(!aside.hidden, "panneau fermé : il s'ouvre (J-f2)");
+  egal(texte(actif()), "Navigateur de l'agent", "sur l'onglet du navigateur");
+  verifier(cadreDuNavigateur(), "le cadre passe par l'Atelier (passage de portée conversation)");
+  porte(cadreDuNavigateur().getAttribute("sandbox"), "allow-same-origin", "l'écran a besoin de son cookie sur l'hôte");
+  nePorte(cadreDuNavigateur().getAttribute("sandbox"), "allow-top-navigation", "jamais la navigation du haut");
+  const gestes = document.getElementById("panneau-outils").querySelectorAll("button").map((b) => texte(b));
+  egal(gestes, ["Recharger", "Détacher", "Fermer"], "le navigateur ne s'épingle pas");
+
+  // La personne regarde une création : l'agent change de page, on ne lui vole pas l'attention.
+  cliquer(onglets().find((b) => texte(b) === "Carte"));
+  verifier(cadreDuNavigateur() === null, "masqué : le cadre du navigateur part, le screencast s'arrête");
+  panneau.surEvenement(outil("t2", "mcp__chrome-devtools-mcp__navigate_page"));
+  egal(texte(actif()), "Carte", "l'onglet regardé reste celui de la personne");
+  const signale = onglets().find((b) => texte(b).includes("Navigateur de l'agent"));
+  egal(texte(signale), "● Navigateur de l'agent", "un signal sur l'onglet du navigateur");
+  egal(signale.dataset.signal, "1", "signal lisible");
+  egal(onglets().filter((b) => texte(b).includes("Navigateur")).length, 1, "un seul onglet de navigateur");
+  cliquer(signale);
+  egal(texte(actif()), "Navigateur de l'agent", "un clic y mène");
+  verifier(!onglets().some((b) => b.dataset.signal === "1"), "et efface le signal");
+  verifier(cadreDuNavigateur(), "affiché, le cadre revient");
+
+  // Déjà regardé : la vue suit seule, rien ne clignote.
+  panneau.surEvenement(outil("t3", "mcp__chrome-devtools-mcp__select_page"));
+  verifier(!onglets().some((b) => b.dataset.signal === "1"), "pas de signal sur l'onglet regardé");
+
+  // Replié par la personne : les pages suivantes ne le rouvrent plus, le bouton signale.
+  cliquer(document.getElementById("panneau-replier"));
+  verifier(aside.hidden, "replié");
+  verifier(cadreDuNavigateur() === null, "panneau replié : plus de screencast");
+  panneau.surEvenement(outil("t4", "mcp__chrome-devtools-mcp__navigate_page"));
+  verifier(aside.hidden, "la personne a replié : le panneau reste replié");
+  porte(texte(bascule), "●", "le bouton du panneau porte le signal");
+  // Fin d'un appel dont on n'a vu que l'identifiant : reconnue aussi.
+  panneau.surEvenement({ kind: "outil_fin", session_id: "s3", tool_id: "t4", text: "ok" });
+  panneau.surEvenement({ kind: "outil_debut", session_id: "autre", tool: "mcp__chrome-devtools-mcp__new_page", tool_id: "x" });
+  cliquer(bascule);
+  verifier(!aside.hidden, "rouvert par la personne");
+  egal(onglets().filter((b) => texte(b).includes("Navigateur")).length, 1, "toujours un seul onglet");
+
+  // Fermer l'onglet : rien à retirer côté Atelier.
+  cliquer(onglets().find((b) => texte(b).includes("Navigateur")));
+  cliquer(document.getElementById("panneau-outils").querySelectorAll("button").find((b) => texte(b) === "Fermer"));
+  await attendre();
+  verifier(!appels.some((a) => a[0] === "retirer" || a[0] === "enregistrer"), "le navigateur n'est jamais enregistré");
+
+  // Une conversation dont le navigateur est déjà ouvert retrouve son onglet, panneau fermé.
+  api.ecranEtat = async () => ({ disponible: true });
+  state.sessionId = "s4";
+  panneau.renderPanneau();
+  await attendre();
+  await attendre();
+  verifier(!onglets().some((b) => b.dataset.signal === "1"), "retrouvé sans signal");
+  porte(texte(bascule), "Panneau (2)", "l'onglet du navigateur est retrouvé");
 }
 
 bilan("panneau");
