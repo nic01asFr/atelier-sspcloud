@@ -75,6 +75,13 @@ OUTILS_CREATIONS = (
 )
 OUTILS_DU_PROFIL_CODE = frozenset(OUTILS_CREATIONS + ("atelier_montrer", "atelier_navigateur_ouvrir"))
 
+# Les commandes de conversation d'avant la délégation (lot D) : l'Assistant
+# délègue par `atelier_lancer_agent` et suit par `atelier_lancements`. Elles ne
+# sont plus **déclarées** à l'Assistant (environ 2 000 unités de schémas par
+# requête, `assistant.py`), mais restent **permises** : `gateway_find_tools`
+# les trouve, `gateway_call_tool` les appelle, par les mêmes gardes.
+HORS_LISTE_ASSISTANT = frozenset({"atelier_envoyer", "atelier_transcript", "atelier_suivre", "atelier_ouvrir"})
+
 # Un identifiant de conversation : celui de l'Atelier ou celui du CLI. Il
 # nomme un fichier du magasin ; rien d'autre ne passe.
 _CONVERSATION_VALIDE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$")
@@ -245,11 +252,23 @@ def _adapter_au_profil_code(definition: dict[str, Any]) -> dict[str, Any]:
     return d
 
 
-def definitions_du_profil(definitions: Iterable[dict[str, Any]], profil: str | None = None) -> list[dict[str, Any]]:
-    """Les définitions d'outils que ce profil voit, dans la forme qu'il reçoit."""
+def definitions_du_profil(
+    definitions: Iterable[dict[str, Any]],
+    profil: str | None = None,
+    *,
+    pour_la_recherche: bool = False,
+) -> list[dict[str, Any]]:
+    """Les définitions d'outils que ce profil voit, dans la forme qu'il reçoit.
+
+    `pour_la_recherche` : ce que `gateway_find_tools` peut trouver, qui est
+    tout ce que le profil permet ; la liste déclarée de l'Assistant, elle, se
+    passe de `HORS_LISTE_ASSISTANT`.
+    """
     profil = profil if profil is not None else profil_courant()
     liste = [d for d in definitions if isinstance(d, dict)]
     if not est_restreint(profil):
+        if profil == PROFIL_ASSISTANT and not pour_la_recherche:
+            return [d for d in liste if str(d.get("name") or "") not in HORS_LISTE_ASSISTANT]
         return liste
     return [_adapter_au_profil_code(d) for d in liste if str(d.get("name") or "") in OUTILS_DU_PROFIL_CODE]
 

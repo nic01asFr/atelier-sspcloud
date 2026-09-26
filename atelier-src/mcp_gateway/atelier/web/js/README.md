@@ -36,7 +36,7 @@ js/
 | `?view=` | Rôle |
 |----------|------|
 | `code` (défaut) | Projets `kind=code`, chat Claude Code |
-| `assistant` | Panneau d'attente — la vue reste à écrire |
+| `assistant` | Le fil de l'Assistant, dans l'écran des conversations (`views/assistant.js`, `state.espace`) ; cartes d'action « Voir », « Annuler », « Oui » (`views/assistant-cartes.js`) |
 | `connecteurs` | Admin pool MCP (niveau 1 — catalogue, perso, compositions) |
 | `agent` | Tout ce qui agit seul : agents planifiés (pilote), gardiens (`views/gardiens.js`), tâches automatiques |
 | `a-valider` | La file unique « À valider » (`views/a-valider.js`, `controllers/validation.js`) ; badge dans la navigation |

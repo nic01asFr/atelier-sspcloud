@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Atelier</title>
-  <link rel="stylesheet" href="/css/app.css?v=20260926-vague2" />
+  <link rel="stylesheet" href="/css/app.css?v=20260926-vague3a" />
 </head>
 <body>
   <div id="login" class="screen login hidden" aria-live="polite">
@@ -111,20 +111,8 @@
       </aside>
     </div>
 
-    <div id="view-assistant" class="view view-panel hidden" hidden>
-      <div class="placeholder-panel">
-        <h2 class="placeholder-title">Assistant &amp; mémoire</h2>
-        <p class="placeholder-lead">
-          Chat transverse et repo <code>wikichat-memory</code> — espace dédié, distinct des projets code.
-        </p>
-        <ul class="placeholder-list">
-          <li>Mémoire unifiée Wikichat (<code>.wikichat/</code> central)</li>
-          <li>Consignes assistant (<code>CONSIGNES.md</code>)</li>
-          <li>Pas d’édition du code des projets métier</li>
-        </ul>
-        <p class="placeholder-note">Intégration UI complète : prochaine phase. Les conversations de l’assistant restent accessibles via l’API.</p>
-      </div>
-    </div>
+    <!-- L'Assistant parle dans l'écran des conversations (#view-code) : même fil,
+         même composeur, même panneau. Voir js/views/assistant.js. -->
 
     <div id="view-connecteurs" class="view view-shell view-connecteurs shell-mode-detail hidden" hidden>
       <aside class="shell-sidebar connectors-sidebar" aria-label="Connecteurs">
@@ -192,6 +180,6 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=20260926-vague2"></script>
+  <script type="module" src="/js/app.js?v=20260926-vague3a"></script>
 </body>
 </html>

@@ -77,6 +77,8 @@ export function createState() {
     // démarrage, `enterHub` le vérifie par le cookie) ; `SESSION_OUVERTE` ensuite.
     token: "",
     view: "code",
+    // `projets` ou `assistant` : quel fil l'écran de conversation montre.
+    espace: "projets",
     slug: "",
     sessionId: null,
     projects: [],
@@ -211,8 +213,60 @@ export function setMcpOverlayBusy(state, busy) {
   state.mcpOverlayBusy = !!busy;
 }
 
+/**
+ * L'Assistant est un fil de conversation comme ceux des projets : il en
+ * emprunte l'écran (fil, composeur, panneau), et `state.view` y vaut `code`.
+ * Ce qui le distingue est l'espace : `assistant` ou `projets`. L'adresse, elle,
+ * dit `?view=assistant` (voir `core/router.js` et `views/assistant.js`).
+ */
+export const ESPACE_ASSISTANT = "assistant";
+export const ESPACE_PROJETS = "projets";
+
 export function setView(state, view) {
-  state.view = normalizeView(view);
+  const v = normalizeView(view);
+  const avant = state.espace || ESPACE_PROJETS;
+  if (v === "assistant") {
+    state.view = "code";
+    state.espace = ESPACE_ASSISTANT;
+  } else {
+    if (v === "code") state.espace = ESPACE_PROJETS;
+    state.view = v;
+  }
+  if (state.view === "code" && state.espace !== avant) {
+    // Passer des projets à l'Assistant (ou l'inverse) ne garde pas le fil de
+    // l'autre espace : il n'y a pas sa place.
+    state.sessionId = null;
+    state.sessionMcp = null;
+    state.messages = [];
+    state.enFile = [];
+    state.pendingProjectSlug = null;
+  }
+}
+
+export function estAssistant(state) {
+  return state.view === "code" && state.espace === ESPACE_ASSISTANT;
+}
+
+/** La vue telle que la navigation la montre : `assistant` pour le fil de l'Assistant. */
+export function vueAffichee(state) {
+  return estAssistant(state) ? "assistant" : state.view;
+}
+
+/** Les conversations de l'Assistant, les plus récentes d'abord (le service les trie). */
+export function assistantSessions(state) {
+  return (state.sessions || []).filter(
+    (s) => !isCodeSession(s, state) && (state.montrerArchives || s.state !== "archived")
+  );
+}
+
+/**
+ * La vue d'arrivée : celle de l'adresse, sinon l'Assistant si la personne a
+ * choisi « Ouvrir l'Atelier sur l'Assistant » (désactivé par défaut, A-3).
+ */
+export function vueDArrivee(recherche, meta) {
+  const q = new URLSearchParams(recherche || "");
+  if (q.get("view") || q.get("session") || q.get("slug")) return normalizeView(q.get("view"));
+  return meta?.ui?.accueil_assistant === true ? "assistant" : "code";
 }
 
 export function setSlug(state, slug) {

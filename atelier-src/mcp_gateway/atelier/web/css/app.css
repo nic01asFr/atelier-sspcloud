@@ -4307,3 +4307,70 @@ button.session-face-link {
     background: var(--bg-elev);
   }
 }
+
+/* ── L'Assistant (vague 3, équipe A) ─────────────────────────────────────── */
+
+.assistant-reglage {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin: 1rem 0.75rem 0.5rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.assistant-reglage input {
+  margin-top: 0.15rem;
+}
+
+.msg-carte-gestes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.4rem;
+}
+
+.msg-carte-apercu {
+  border-left: 3px solid var(--accent);
+}
+
+.msg-carte-note,
+.msg-carte-issue {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.msg-carte-issue-refus,
+.msg-carte-refus {
+  color: var(--danger);
+}
+
+.msg-carte-champs {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 0.75rem;
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+}
+
+.msg-carte-champs dt {
+  color: var(--muted);
+}
+
+.msg-carte-champs dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.msg-non-verifie {
+  display: inline-block;
+  margin-top: 0.3rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  color: var(--danger);
+  font-size: 0.75rem;
+}
+

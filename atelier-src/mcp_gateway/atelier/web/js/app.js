@@ -17,6 +17,8 @@ import { rendreJournal } from "./views/journal.js";
 import { createComposerMcpView } from "./views/composer-mcp.js";
 import { createPanneauView } from "./views/panneau.js";
 import { createFilsView } from "./views/fils.js";
+import { createAssistantView, createAssistantActions } from "./views/assistant.js";
+import { createCartesActions } from "./views/assistant-cartes.js";
 import { createProjectActions } from "./controllers/projects.js";
 import { createSessionActions } from "./controllers/sessions.js";
 import { createChatController } from "./controllers/chat.js";
@@ -209,7 +211,21 @@ function createApp() {
   const fils = createFilsView({ state, api });
   const aValider = { render: () => rendreAValider($("a-valider-corps"), state, validation) };
   const journal = { render: () => rendreJournal($("journal-corps"), state, validation) };
-  ctx.views = { codeTree, codeChat, connectors, composerMcp, agent, panneau, fils, aValider, journal };
+  const assistantActions = createAssistantActions({ state, render, writeQuery, api });
+  const assistant = createAssistantView({
+    state,
+    render,
+    actions: { selectSession: sessionActions.selectSession, ...assistantActions },
+  });
+  const cartes = createCartesActions({
+    api,
+    racine: () => $("thread"),
+    erreur: (msg) => {
+      S.setError(state, msg);
+      render();
+    },
+  });
+  ctx.views = { codeTree, codeChat, connectors, composerMcp, agent, panneau, fils, aValider, journal, assistant };
 
   const auth = createAuthController({
     state,
@@ -357,6 +373,7 @@ function createApp() {
     composerMcpCtrl.bind();
     ctx.views.panneau.bind();
     ctx.views.fils.bind();
+    cartes.bind();
     composerInput.bind();
     $("composer").addEventListener("submit", chat.onSend);
     // Le fil est reconstruit à chaque rendu : on écoute sur le document, que

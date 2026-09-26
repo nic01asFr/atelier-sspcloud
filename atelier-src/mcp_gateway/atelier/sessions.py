@@ -569,6 +569,10 @@ class SessionStore:
         resolved_kind = kind or _kind_for_slug(self.settings, slug)
         cwd = _cwd_for_new_session(self.settings, slug, resolved_kind, sid)
         cwd.mkdir(parents=True, exist_ok=True)
+        if resolved_kind == "assistant":
+            from mcp_gateway.atelier.assistant import preparer_la_session
+
+            preparer_la_session(self.settings, cwd)
         overlay_path = str(cwd) if resolved_kind == "assistant" else ""
         tdir = self.settings.transcripts_dir / slug
         tdir.mkdir(parents=True, exist_ok=True)

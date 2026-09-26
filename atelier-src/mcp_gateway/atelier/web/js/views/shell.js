@@ -30,10 +30,12 @@ export function createShellView(ctx) {
   function renderShellNav() {
     const nav = $("app-nav");
     if (!nav) return;
+    const affichee = S.vueAffichee(state);
     for (const btn of nav.querySelectorAll("[data-view]")) {
       const v = btn.getAttribute("data-view");
-      btn.classList.toggle("active", v === state.view);
+      btn.classList.toggle("active", v === affichee);
     }
+    ctx.views.assistant?.renderNav?.(nav);
     renderBadge();
   }
 
@@ -72,7 +74,8 @@ export function createShellView(ctx) {
     applyShellModes();
 
     if (state.view === "code") {
-      ctx.views.codeTree.renderProjectTree();
+      if (S.estAssistant(state)) ctx.views.assistant?.render();
+      else ctx.views.codeTree.renderProjectTree();
       ctx.views.codeChat.renderCodeChat();
       ctx.views.composerMcp?.renderComposerMcp();
       showBanner(state.error);

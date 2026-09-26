@@ -299,11 +299,33 @@ def test_la_conversation_se_retrouve_par_l_identifiant_du_cli(porte: Porte) -> N
 def test_le_profil_assistant_voit_tout_l_atelier_et_la_passerelle(porte: Porte) -> None:
     noms = porte.noms(profil="assistant")
     assert OUTILS_CODE <= noms
-    for nom in ("atelier_decider", "atelier_journal", "atelier_a_valider", "atelier_suivre",
-                "atelier_transcript", "atelier_projet_creer", "atelier_annuler",
+    for nom in ("atelier_decider", "atelier_journal", "atelier_a_valider", "atelier_lancements",
+                "atelier_projet_creer", "atelier_annuler",
                 "gateway_find_tools", "gateway_call_tool", "composition_resume"):
         assert nom in noms, nom
     assert "atelier_a_valider_accepter" not in noms, "une commande réservée n'est jamais exposée"
+
+
+def test_les_anciennes_commandes_de_conversation_ne_sont_pas_declarees_mais_restent_joignables(porte: Porte) -> None:
+    """L'Assistant délègue par `atelier_lancer_agent` : les quatre ne pèsent plus sur sa liste."""
+    conv = _conversation_de_l_assistant(porte.atelier)
+    noms = porte.noms(profil="assistant", conv=conv)
+    assert not (profils.HORS_LISTE_ASSISTANT & noms), sorted(profils.HORS_LISTE_ASSISTANT & noms)
+    # La recherche les trouve, avec leur schéma ; l'appel passe par les mêmes gardes.
+    charge, erreur = porte.appeler("gateway_find_tools", {"query": "transcript conversation"}, profil="assistant", conv=conv)
+    assert not erreur, charge
+    trouves = {t["name"]: t for t in charge["tools"]}
+    assert "atelier_transcript" in trouves and trouves["atelier_transcript"].get("inputSchema")
+    charge, erreur = porte.appeler(
+        "gateway_call_tool", {"name": "atelier_conversations", "arguments": {}}, profil="assistant", conv=conv
+    )
+    assert not erreur, charge
+    charge, erreur = porte.appeler(
+        "gateway_call_tool", {"name": "atelier_suivre", "arguments": {"conversation": conv}}, profil="assistant", conv=conv
+    )
+    assert "hors du profil" not in json.dumps(charge, ensure_ascii=False), charge
+    # Sans conversation (passerelle, claude.ai) : le comportement d'avant, tout est déclaré.
+    assert profils.HORS_LISTE_ASSISTANT <= porte.noms()
 
 
 def test_sans_conversation_rien_ne_change_et_c_est_note(

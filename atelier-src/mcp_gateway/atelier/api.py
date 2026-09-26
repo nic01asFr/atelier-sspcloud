@@ -71,6 +71,7 @@ from mcp_gateway.atelier.lancements import enregistrer_les_lancements
 from mcp_gateway.atelier.sessions import enregistrer_les_routes_des_processus
 from mcp_gateway.atelier.automates import enregistrer_les_automates
 from mcp_gateway.atelier.accords import enregistrer_les_accords
+from mcp_gateway.atelier.assistant import enregistrer_l_assistant
 from mcp_gateway.atelier.vscode_handoff import (
     ecrire_mode_machine,
     prepare_vscode_handoff,
@@ -2595,6 +2596,7 @@ def build_app(
     enregistrer_les_routes_des_processus(app)
     enregistrer_les_automates(app)
     enregistrer_les_accords(app)
+    enregistrer_l_assistant(app)
 
     # La porte MCP de l'Atelier : ce que l'interface sait faire devient
     # appelable par un agent (voir mcp_endpoint).

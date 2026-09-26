@@ -263,6 +263,10 @@ class Catalogue:
         """Les outils MCP, filtrés et mis en forme pour le profil de l'appel."""
         return profils.definitions_du_profil(self._definitions_completes())
 
+    def definitions_a_chercher(self) -> list[dict[str, Any]]:
+        """Ce que `gateway_find_tools` peut trouver : tout ce que le profil permet, déclaré ou non."""
+        return profils.definitions_du_profil(self._definitions_completes(), pour_la_recherche=True)
+
     def _definitions_completes(self) -> list[dict[str, Any]]:
         sortie: list[dict[str, Any]] = []
         for commande in sorted(self.commandes().values(), key=lambda c: c.nom):

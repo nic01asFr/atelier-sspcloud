@@ -2,6 +2,7 @@
 
 import { renderMarkdown } from "./markdown.js";
 import { highlightElement } from "./code-highlight.js";
+import { carteDAction } from "../views/assistant-cartes.js";
 
 const TOOL_ICONS = {
   Read: "📄",
@@ -52,46 +53,11 @@ function truncate(text, max = 4000) {
  * @param {{ type: string, text?: string, name?: string, id?: string, input?: unknown, output?: string, status?: string }} block
  */
 /**
- * La carte d'action qu'une commande rend (`{carte: {titre, resume, voir,
- * preuve, …}}`), ou rien. Tout est posé en texte ; « Voir » n'accepte qu'une
- * adresse de l'Atelier (chemin absolu) ou en https.
+ * La carte d'action qu'une commande rend (`{carte: {...}}`), ou l'aperçu d'une
+ * commande engageante : voir `views/assistant-cartes.js`, qui porte « Voir »,
+ * « Annuler » et « Oui ».
  */
-export function carteDAction(sortie) {
-  let donnees;
-  try {
-    donnees = typeof sortie === "string" ? JSON.parse(sortie) : sortie;
-  } catch {
-    return null;
-  }
-  const c = donnees && typeof donnees === "object" ? donnees.carte : null;
-  if (!c || typeof c !== "object" || !c.titre) return null;
-  const boite = document.createElement("div");
-  boite.className = "msg-carte";
-  const titre = document.createElement("strong");
-  titre.textContent = String(c.titre);
-  boite.appendChild(titre);
-  if (c.resume) {
-    const p = document.createElement("p");
-    p.textContent = String(c.resume);
-    boite.appendChild(p);
-  }
-  if (c.preuve) {
-    const p = document.createElement("p");
-    p.className = "msg-carte-preuve";
-    p.textContent = typeof c.preuve === "string" ? c.preuve : JSON.stringify(c.preuve);
-    boite.appendChild(p);
-  }
-  const lien = c.voir && typeof c.voir === "object" ? String(c.voir.lien || "") : "";
-  if (/^(\/(?!\/)|https:\/\/)/.test(lien)) {
-    const a = document.createElement("a");
-    a.href = lien;
-    a.target = "_blank";
-    a.rel = "noopener";
-    a.textContent = "Voir";
-    boite.appendChild(a);
-  }
-  return boite;
-}
+export { carteDAction };
 
 export function appendBlock(parent, block) {
   if (block.type === "thinking" && block.text) {
