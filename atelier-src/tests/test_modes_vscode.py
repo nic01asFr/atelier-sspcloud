@@ -217,7 +217,7 @@ def _posix(chemin: Path | str) -> str:
     return str(chemin).replace("\\", "/")
 
 
-def _lancer(tmp_path: Path, *args: str, entree: str = "") -> list[str]:
+def _lancer(tmp_path: Path, *args: str, entree: str = "", cwd: Path | None = None) -> list[str]:
     import os
 
     env = dict(os.environ)
@@ -232,6 +232,7 @@ def _lancer(tmp_path: Path, *args: str, entree: str = "") -> list[str]:
         text=True,
         timeout=30,
         env=env,
+        cwd=str(cwd or tmp_path),
     )
     assert fini.returncode == 0, fini.stderr
     return fini.stdout.splitlines()
@@ -252,26 +253,73 @@ def test_l_enveloppeur_applique_le_choix_de_la_conversation_reprise(reglages: At
 
 
 @pytest.mark.skipif(BASH is None, reason="pas de bash")
-def test_sans_choix_l_extension_laisse_le_cli_resoudre_le_defaut_du_projet(tmp_path: Path) -> None:
-    assert _lancer(tmp_path, "--session-id", "neuve", "--permission-mode", "default", entree="claude-vscode") == [
-        "--session-id",
-        "neuve",
-    ]
+def test_sans_choix_l_extension_recoit_le_defaut_du_projet(tmp_path: Path) -> None:
+    """Mesuré sur le pod : avec `CLAUDE_CODE_ENTRYPOINT=claude-vscode`, le CLI ignore `defaultMode`.
+
+    L'enveloppeur passe donc lui-même le défaut du projet à la place du
+    `default` que l'extension envoie d'office.
+    """
+    projet = tmp_path / "projet"
+    (projet / ".claude").mkdir(parents=True)
+    (projet / ".claude/settings.local.json").write_text(
+        '{\n  "permissions": {\n    "defaultMode": "acceptEdits"\n  }\n}\n', encoding="utf-8"
+    )
+    vscode = _lancer(tmp_path, "--session-id", "neuve", "--permission-mode", "default", entree="claude-vscode", cwd=projet)
+    assert vscode == ["--session-id", "neuve", "--permission-mode", "acceptEdits"]
+    # Au terminal, le CLI résout ce défaut lui-même : rien n'est touché.
+    assert _lancer(tmp_path, "-p", cwd=projet) == ["-p"]
+    # Sans défaut de projet, les arguments de l'extension restent tels quels.
+    assert _lancer(tmp_path, "--permission-mode", "default", entree="claude-vscode") == ["--permission-mode", "default"]
     # Au terminal, un mode tapé sans conversation à reprendre n'est pas touché.
     assert _lancer(tmp_path, "--permission-mode", "plan", "-p", "x y") == ["--permission-mode", "plan", "-p", "x y"]
 
 
 @pytest.mark.skipif(BASH is None, reason="pas de bash")
-def test_l_alias_du_terminal_passe_par_l_enveloppeur(tmp_path: Path) -> None:
+def test_l_enveloppeur_met_le_bin_de_l_atelier_dans_le_path(tmp_path: Path) -> None:
+    """gitlab et n8n (npx) échouaient hors de l'app : `~/work/bin` n'était pas dans le PATH."""
+    import os
+
+    sortie = subprocess.run(
+        [BASH, _posix(ENVELOPPEUR), "sh", "-c", 'printf "%s" "$PATH"'],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env={**os.environ, "ATELIER_WORK": "/w"},
+    ).stdout
+    assert sortie.split(":")[0] == "/w/bin"
+
+
+@pytest.mark.skipif(BASH is None, reason="pas de bash")
+def test_claude_passe_par_l_enveloppeur_meme_sans_shell_interactif(tmp_path: Path) -> None:
+    """`bash -lc claude` ne trouvait rien : le PATH est posé avant la garde, par un script, pas un alias."""
+    import sys
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    enveloppeur = bin_dir / "atelier-claude-vscode"
+    enveloppeur.write_text('#!/bin/sh\nprintf "enveloppe:%s\\n" "$*"\n', encoding="utf-8", newline="\n")
+    enveloppeur.chmod(0o755)
     bashrc = tmp_path / ".bashrc"
+    bashrc.write_text("case $- in\n  *i*) ;;\n  *) return;;\nesac\n", encoding="utf-8", newline="\n")
     script = Path(__file__).resolve().parents[1] / "bin" / "atelier-bashrc"
-    args = [_posix(bashrc), "/w/.secrets/claude-env.sh", "/w/bin/atelier-claude-vscode", "/w/bin/claude"]
+    args = [_posix(bashrc), "/w/.secrets/claude-env.sh", _posix(enveloppeur), "/w/bin/claude"]
     for attendu in ("posé", "inchangé"):
         fini = subprocess.run([BASH, _posix(script), *args], capture_output=True, text=True)
         assert fini.stdout.strip() == attendu, fini.stderr
     texte = bashrc.read_text(encoding="utf-8")
-    assert texte.count("alias claude=") == 1
-    assert "alias claude='\"/w/bin/atelier-claude-vscode\" \"/w/bin/claude\"'" in texte
+    assert "alias claude" not in texte
+    assert texte.index("surfaces") < texte.index("case $- in")
+    assert (bin_dir / "surfaces" / "claude").is_file()
+    if sys.platform == "win32":
+        return  # un script sans extension ne s'exécute que sur le pod
+    fini = subprocess.run(
+        [BASH, "-c", f'. "{_posix(bashrc)}"; claude -p ok'],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        env={"PATH": "/usr/bin:/bin", "HOME": _posix(tmp_path)},
+    )
+    assert fini.stdout.strip() == "enveloppe:/w/bin/claude -p ok", fini.stderr
 
 
 def test_le_defaut_du_projet_se_regle_par_l_interface(atelier: TestClient) -> None:

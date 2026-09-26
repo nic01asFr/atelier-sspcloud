@@ -1358,17 +1358,37 @@ class SessionStore:
             raise KeyError(session_id)
         if rec.kind == "assistant":
             _normalize_assistant_cwd(self.settings, rec)
+        # Le « + » du fil règle le choix du DOSSIER, pas de la seule
+        # conversation : VS Code et le terminal lisent un `.mcp.json` par
+        # dossier, sans rien savoir de la conversation. Une sélection propre
+        # à la conversation ne pouvait donc valoir que dans l'app — c'est
+        # l'écart mesuré le 26/09 (qgis dans l'app seule). Pour un projet, le
+        # choix vaut pour toutes ses conversations ; une conversation de
+        # l'Assistant a son propre dossier, donc son propre choix.
+        from mcp_gateway.atelier.mcp_sync import (
+            SERVICE_ATELIER,
+            _ecrire_la_selection,
+            lier_le_projet,
+            write_project_binding,
+        )
+
         binding, _ = session_mcp_layers(self.settings, rec)
-        binding_names = set(binding.keys())
-        new_overlay = dict(rec.mcp_overlay or {})
+        actifs = {n for n in binding if n != SERVICE_ATELIER}
         for name, active in overlay.items():
-            if not isinstance(name, str) or name not in binding_names:
+            if not isinstance(name, str) or name == SERVICE_ATELIER:
                 continue
             if active:
-                new_overlay.pop(name, None)
+                actifs.add(name)
             else:
-                new_overlay[name] = False
-        rec.mcp_overlay = new_overlay
+                actifs.discard(name)
+        cwd = Path(rec.cwd)
+        if rec.kind == "assistant":
+            connus = actifs | {n for n in overlay if isinstance(n, str)}
+            _ecrire_la_selection(cwd, {n: n in actifs for n in connus if n != SERVICE_ATELIER})
+            lier_le_projet(self.settings, cwd, kind="assistant")
+        else:
+            write_project_binding(self.settings, cwd, sorted(actifs))
+        rec.mcp_overlay = {}
         self.save(rec)
         return rec
 

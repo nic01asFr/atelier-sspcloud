@@ -234,6 +234,10 @@ def noter_les_sondes(settings: AtelierSettings, statut: dict[str, Any] | None) -
         return False
     from datetime import datetime, timezone
 
+    # Le pool ne sonde pas les serveurs stdio (« stdio-local ») : n8n, un pont
+    # `mcp-remote` vers une adresse à jeton, restait distribué en 401 (mesuré le
+    # 26/09). On sonde ces ponts nous-mêmes, au même moment.
+    statut = {**statut, **sonder_les_ponts_distants(settings)}
     avant = connecteurs_en_echec_d_authentification(settings)
     apres = dict(avant)
     for cle, valeur in statut.items():
@@ -243,7 +247,7 @@ def noter_les_sondes(settings: AtelierSettings, statut: dict[str, Any] | None) -
             code = 403 if "403" in texte or "forbidden" in texte.lower() else 401
             if nom not in apres:
                 apres[nom] = {"code": code, "depuis": datetime.now(timezone.utc).isoformat(timespec="seconds")}
-        elif texte and texte != "probing":
+        elif texte and texte not in ("probing", "stdio-local"):
             apres.pop(nom, None)
     if set(apres) == set(avant):
         return False
@@ -259,6 +263,65 @@ def noter_les_sondes(settings: AtelierSettings, statut: dict[str, Any] | None) -
     except OSError as exc:
         log.warning("liaison après sonde impossible : %s", exc)
     return True
+
+
+def _pont_distant(cfg: Any) -> tuple[str, dict[str, str]] | None:
+    """L'adresse et les en-têtes d'un pont `mcp-remote <url> --header "K: V"`, ou None."""
+    if not isinstance(cfg, dict):
+        return None
+    args = cfg.get("args")
+    if not isinstance(args, list) or not any(isinstance(a, str) and "mcp-remote" in a for a in args):
+        return None
+    url = next((a for a in args if isinstance(a, str) and a.startswith(("http://", "https://"))), "")
+    if not url:
+        return None
+    entetes: dict[str, str] = {}
+    for i, a in enumerate(args[:-1]):
+        if a == "--header" and isinstance(args[i + 1], str) and ":" in args[i + 1]:
+            nom, _, valeur = args[i + 1].partition(":")
+            entetes[nom.strip()] = valeur.strip()
+    return url, entetes
+
+
+def sonder_les_ponts_distants(settings: AtelierSettings, delai: float = 8.0) -> dict[str, str]:
+    """Sonde en HTTP l'adresse des ponts `mcp-remote` du pool (`initialize`).
+
+    Rend `{nom: "connected" | "error: 401" | "error: 403"}` ; rien pour une
+    réponse ambiguë (injoignable, autre code) : on ne retire un connecteur que
+    sur un refus d'authentification avéré. Aucun en-tête ni jeton n'est écrit.
+    """
+    import httpx
+
+    sortie: dict[str, str] = {}
+    try:
+        pool = _pool_enabled(settings)
+    except Exception:  # noqa: BLE001 — une base illisible ne bloque pas le démarrage
+        return sortie
+    for nom, cfg in pool.items():
+        pont = _pont_distant(cfg)
+        if pont is None:
+            continue
+        url, entetes = pont
+        corps = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "atelier-sonde", "version": "1"}},
+        }
+        try:
+            reponse = httpx.post(
+                url,
+                json=corps,
+                headers={**entetes, "Accept": "application/json, text/event-stream"},
+                timeout=delai,
+            )
+        except httpx.HTTPError:
+            continue
+        if reponse.status_code in (401, 403):
+            sortie[nom] = f"error: {reponse.status_code}"
+        elif 200 <= reponse.status_code < 300:
+            sortie[nom] = "connected"
+    return sortie
 
 
 def _sans_echecs_d_authentification(
@@ -635,6 +698,7 @@ def merge_session_mcp_servers(
 
 
 ENTETE_PROJET = "X-Atelier-Projet"
+ENTETE_DOSSIER = "X-Atelier-Dossier"
 AIDE_AUX_ENTETES = "atelier-entetes-mcp"
 _SOURCE_AIDE = Path(__file__).resolve().parents[2] / "bin" / AIDE_AUX_ENTETES
 
@@ -697,6 +761,11 @@ def declaration_atelier(
     }
     if profil != "assistant" and slug:
         entetes[ENTETE_PROJET] = slug
+    if profil == "assistant":
+        # Règle de l'équipe A pour une conversation que le serveur ne connaît
+        # pas (VS Code, terminal) : `assistant` annoncé, le dossier de
+        # l'Assistant, et pas de projet, donnent le profil `assistant`.
+        entetes[ENTETE_DOSSIER] = settings.assistant_root.as_posix()
     return {
         "type": "http",
         "url": f"http://127.0.0.1:{settings.port}/mcp",
@@ -1029,6 +1098,7 @@ def lier_le_projet(
                 encoding="utf-8",
             )
     approuver_les_serveurs_du_projet(cwd, sorted(ecrits), adresses_directes_d_onyxia(_pool_enabled(settings)))
+    approuver_dans_les_reglages_du_dossier(cwd, sorted(ecrits))
     # Le mode aussi, le même sur toutes les surfaces : sans défaut de projet,
     # le CLI partirait en `default` dans VS Code et au terminal.
     from mcp_gateway.atelier.modes_permission import assurer_le_defaut_du_projet
@@ -1161,6 +1231,40 @@ def approuver_les_serveurs_du_projet(dossier: Path, noms: list[str], directes: s
     return True
 
 
+def approuver_dans_les_reglages_du_dossier(dossier: Path, noms: list[str]) -> bool:
+    """Écrit la même approbation dans `.claude/settings.local.json` du dossier.
+
+    `enabledMcpjsonServers` y est une clé de réglages que Claude Code réunit
+    à celle de `~/.claude.json`. Mesuré sur le pod le 26/09 : une ancienne
+    liste y restait (`Onyxia`, `n8n`, des noms absents du `.mcp.json`), et
+    l'entrée d'un projet dans `~/.claude.json` peut disparaître quand un
+    `claude` en cours réécrit ce fichier avec sa propre copie. Ici, la liste
+    est exactement celle du `.mcp.json`, et un nom qu'on y approuve sort de
+    `disabledMcpjsonServers`. Le reste du fichier est gardé ; un fichier
+    illisible n'est pas touché. Rend vrai si le fichier a changé.
+    """
+    chemin = dossier / ".claude" / "settings.local.json"
+    donnees: dict[str, Any] = {}
+    if chemin.is_file():
+        lu = _load_json_object(chemin)
+        if lu is None:
+            return False
+        donnees = lu
+    avant = json.dumps(donnees, sort_keys=True)
+    donnees["enabledMcpjsonServers"] = sorted(set(noms))
+    refuses = donnees.get("disabledMcpjsonServers")
+    if isinstance(refuses, list):
+        reste = [n for n in refuses if n not in noms]
+        if reste:
+            donnees["disabledMcpjsonServers"] = reste
+        else:
+            donnees.pop("disabledMcpjsonServers", None)
+    if json.dumps(donnees, sort_keys=True) == avant:
+        return False
+    _atomic_write_json(chemin, donnees)
+    return True
+
+
 def _ecrire_claude_json(chemin: Path, data: dict[str, Any]) -> None:
     tmp = chemin.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
@@ -1287,8 +1391,12 @@ def materialize_session_mcp(
     (`mcp_overlay`, jamais celle de l'Atelier) et la résolution des variables
     qu'on connaît ici (`${ATELIER_SESSION}`).
     """
+    # Plus de sélection propre à une conversation : VS Code lit un `.mcp.json`
+    # par dossier et ne saurait pas la suivre. Le « + » du fil règle le choix
+    # du projet (`sessions.patch_mcp_overlay`) ; `mcp_overlay` est ignoré.
+    del mcp_overlay
     binding_merged = configuration_du_profil(settings, profil=profil_du_type(kind), cwd=cwd)
-    merged = apply_mcp_overlay(binding_merged, mcp_overlay)
+    merged = dict(binding_merged)
     if agent_name:
         merged = {
             nom: _avec_identite(cfg, agent_name, settings.wikichat_url)
