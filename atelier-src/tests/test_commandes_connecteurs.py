@@ -163,12 +163,9 @@ def test_ajouter_montre_un_apercu_puis_agit_sur_le_oui(atelier: Any, sondes: lis
 def test_aucun_secret_ne_passe_par_un_argument(
     atelier: Any, sondes: list[str], arguments: dict[str, Any], motif: str
 ) -> None:
-    arguments = {"nom": "qgis", **arguments}
-    # L'aperçu le dit déjà ; le « Oui » ne change rien : refusé, rien n'est fait.
-    apercu = _executer(atelier, "atelier_connecteur_ajouter", arguments)
-    assert apercu.statut == APERCU and motif in apercu.charge["apercu"]["refus"]
-    reponse = _executer(atelier, "atelier_connecteur_ajouter", {**arguments, "confirmation": apercu.charge["confirmation"]})
-    assert reponse.statut == REFUSE
+    # Refusé dès l'aperçu : pas de jeton, rien n'est fait.
+    reponse = _executer(atelier, "atelier_connecteur_ajouter", {"nom": "qgis", **arguments})
+    assert reponse.statut == REFUSE and "confirmation" not in reponse.charge
     assert motif in reponse.charge["erreur"] and "atelier_connecteur_accorder" in reponse.charge["erreur"]
     assert "qgis" not in _pool(atelier)
 
@@ -176,8 +173,7 @@ def test_aucun_secret_ne_passe_par_un_argument(
 def test_ajouter_refuse_un_nom_pris_ou_tenu(atelier: Any, sondes: list[str]) -> None:
     _mettre_au_pool(atelier, qgis={"type": "http", "url": "http://q.invalid/mcp"})
     tenu = _executer(atelier, "atelier_connecteur_ajouter", {"nom": "wikichat", "url": "http://w.invalid/sse"})
-    assert "tenu par l'Atelier" in tenu.charge["apercu"]["refus"]
-    assert _ajouter(atelier, {"nom": "wikichat", "url": "http://w.invalid/sse"}).statut == REFUSE
+    assert tenu.statut == REFUSE and "tenu par l'Atelier" in tenu.charge["erreur"]
     deja = _ajouter(atelier, {"nom": "qgis", "url": "http://autre.invalid/mcp"})
     assert deja.statut == REFUSE and "déjà dans le pool" in deja.charge["erreur"]
 

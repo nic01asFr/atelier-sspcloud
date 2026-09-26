@@ -135,6 +135,19 @@ def test_arguments_invalides_refuses(atelier, arguments: dict[str, Any]) -> None
     assert reponse.statut == REFUSE, reponse.charge
 
 
+@besoin_de_git
+@pytest.mark.parametrize("arguments", [{"pod": POD, "service": "carte.service.yml"}, {"pod": "Pas Un Pod"}])
+def test_un_apercu_aux_arguments_faux_est_un_refus(atelier, arguments: dict[str, Any]) -> None:  # noqa: ANN001
+    """Sans confirmation, l'aperçu refuse lui-même, sans jeton ni exception (catalogue)."""
+    slug = _projet(atelier)
+    reponse = _executer(atelier, NOM, {"projet": slug, **arguments}, confirme=False)
+    assert reponse.statut == REFUSE, reponse.charge
+    assert "déploiement invalide" in reponse.charge["erreur"] and "confirmation" not in reponse.charge
+    ligne = atelier.app.state.commandes.journal.lire(commande=NOM, limite=1)[0]
+    assert ligne["resultat"] == "refus"
+    assert _executer(atelier, NOM, {"projet": "inconnu", "pod": POD}, confirme=False).statut == REFUSE
+
+
 def test_projet_inconnu_ou_assistant_refuse(atelier) -> None:  # noqa: ANN001
     for projet in ("inconnu", atelier.app.state.settings.assistant_slug, "../x"):
         assert _executer(atelier, NOM, {"projet": projet, "pod": POD}).statut == REFUSE

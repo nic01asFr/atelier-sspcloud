@@ -479,7 +479,12 @@ class Catalogue:
                         "d'autres arguments : redemandez un aperçu"
                     )
             else:
-                apercu = await self._apercu(commande, ctx, arguments)
+                try:
+                    apercu = await self._apercu(commande, ctx, arguments)
+                except Refus as exc:
+                    # Des arguments qu'on refuserait au « Oui » : on le dit dès
+                    # l'aperçu, sans jeton, au lieu de laisser l'exception filer.
+                    return refuser(str(exc))
                 jeton = self._emettre_jeton(nom, arguments, ctx.acteur)
                 self._journaliser(
                     identifiant=identifiant, commande=commande, classe=classe, ctx=ctx,

@@ -44,7 +44,7 @@ from typing import Any
 from mcp_gateway.atelier import git_repos
 from mcp_gateway.atelier.commandes import structure
 from mcp_gateway.atelier.commandes.catalogue import Catalogue
-from mcp_gateway.atelier.commandes.creations import apercu_prudent, booleen, texte
+from mcp_gateway.atelier.commandes.creations import booleen, texte
 from mcp_gateway.atelier.commandes.journal import maintenant
 from mcp_gateway.atelier.commandes.modele import (
     ENGAGEANTE,
@@ -586,7 +586,7 @@ def inscrire_la_migration(app: Any, catalogue: Catalogue) -> None:
                 "a_blanc : le plan, rien d'écrit",
             ],
             executer=structurer,
-            apercu=apercu_prudent(apercu),
+            apercu=apercu,
             allegement=lambda args: LECTURE if args.get("a_blanc") is True else ENGAGEANTE,
             schema={
                 "type": "object",

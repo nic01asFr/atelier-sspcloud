@@ -32,7 +32,7 @@ from urllib.parse import parse_qsl, urlsplit
 
 from mcp_gateway.atelier.commandes import structure
 from mcp_gateway.atelier.commandes.catalogue import Catalogue
-from mcp_gateway.atelier.commandes.creations import apercu_prudent, booleen, liste_de_noms, services_de, texte
+from mcp_gateway.atelier.commandes.creations import booleen, liste_de_noms, services_de, texte
 from mcp_gateway.atelier.commandes.journal import maintenant
 from mcp_gateway.atelier.commandes.modele import (
     ENGAGEANTE,
@@ -313,7 +313,7 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
                 "reprendre : seulement un connecteur retiré par l'Atelier, et alors réversible",
             ],
             executer=ajouter,
-            apercu=apercu_prudent(apercu_ajouter),
+            apercu=apercu_ajouter,
             allegement=lambda args: REVERSIBLE if args.get("reprendre") is True else ENGAGEANTE,
             schema={
                 "type": "object",

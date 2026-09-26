@@ -117,23 +117,6 @@ def texte_de_reponse_mcp(reponse: Any) -> str:
     return json.dumps(reponse, ensure_ascii=False, default=str)
 
 
-def apercu_prudent(fonction: Callable[..., Any]) -> Callable[..., Any]:
-    """Un aperçu qui dit un refus au lieu de lever.
-
-    `Catalogue._apercu` ne rattrape pas `Refus` : un argument faux ferait
-    tomber l'appel en erreur. L'aperçu rend donc `refus`, et l'exécution
-    confirmée refusera de même (rien n'est fait).
-    """
-
-    def apercu(ctx: Any, args: dict[str, Any]) -> dict[str, Any]:
-        try:
-            return fonction(ctx, args)
-        except Refus as exc:
-            return {"refus": str(exc), "note": "rien ne sera fait avec ces arguments : corrigez-les"}
-
-    return apercu
-
-
 # ── Les accès réels ─────────────────────────────────────────────────────
 
 
@@ -206,7 +189,6 @@ def services_de(app: Any) -> ServicesCreations:
 __all__ = [
     "AccesPilote",
     "ServicesCreations",
-    "apercu_prudent",
     "booleen",
     "entier",
     "inscrire_les_creations",

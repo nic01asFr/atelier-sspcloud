@@ -522,12 +522,13 @@ par un modèle) ; chaque « Annuler » par `atelier_annuler`. Le Pilote et wikic
 qui suivent leur API (`pilote.mjs`, `tools.mjs`, contrat de la cartographie) ; le pool, `mcp_sync`,
 git et la migration sont réels.
 
-**Écarts relevés.** `Catalogue._apercu` ne rattrape pas `Refus` : un argument faux faisait tomber
-l'aperçu d'une engageante en exception (le cas existe aussi pour `atelier_projet_deployer_declarer`).
-Les commandes K enrobent leur aperçu (`creations.apercu_prudent`) : il rend `refus`, et l'appel
-confirmé refuse. La correction à la source revient au propriétaire de `catalogue.py`. Et une
-inverse engageante ne s'applique pas par `atelier_annuler` (il reçoit un aperçu, pas `fait`) :
-c'est pourquoi `retirer` a pour inverse la reprise **réversible** d'un connecteur retiré.
+**Aperçu qui refuse** (corrigé dans `catalogue.py`). Un aperçu d'engageante qui lève `Refus`
+(arguments faux) rend `statut: refus`, sans jeton, journalisé `refus`, au lieu de faire tomber
+l'appel en exception. `atelier_projet_deployer_declarer` en profite (testé).
+
+**Écart relevé.** Une inverse engageante ne s'applique pas par `atelier_annuler` (il reçoit un
+aperçu, pas `fait`) : c'est pourquoi `retirer` a pour inverse la reprise **réversible** d'un
+connecteur retiré.
 
 **Non vérifié** : contre le vrai Pilote et le vrai wikichat du pod (aucun essai en réel, pod en
 lecture seule) ; la sonde réelle d'un connecteur ajouté ; le budget en jetons, que le Pilote ne
