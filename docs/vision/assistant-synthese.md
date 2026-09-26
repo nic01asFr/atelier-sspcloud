@@ -278,6 +278,22 @@ ni nom de commande à l'écran. La carte garde l'issue quand le fil se redessine
 **Vérificateur.** `coherence.ecarts_du_dossier` signale un Assistant qui a `Bash`, `NotebookEdit`
 ou `WebSearch`.
 
+**Profil allégé** (`commandes/profils.py`, `HORS_LISTE_ASSISTANT`). `atelier_envoyer`,
+`atelier_transcript`, `atelier_suivre` et `atelier_ouvrir` ne sont plus **déclarés** à
+l'Assistant : il délègue par `atelier_lancer_agent`. Ils restent **permis** : `gateway_find_tools`
+les trouve avec leur schéma, et `gateway_call_tool` les appelle, par les mêmes gardes. Sans
+conversation (passerelle, claude.ai), rien ne change. Gain, compté sur les schémas : 41 → 37
+commandes déclarées, 26 924 → 24 227 caractères, soit **2 697 caractères, environ 790 unités** par
+requête (`atelier_envoyer` à lui seul : 349).
+
+**Contre l'invention après un refus.** `consignes.md` porte une règle : un appel refusé ou en
+échec ne s'est pas produit ; aucun résultat sans carte d'action ni preuve ; dire « refusé », ou
+« en attente de votre Oui ». À l'écran, un message de l'Assistant qui affirme un résultat (« c'est
+fait », « projet créé », « j'ai lancé », « vérifié »…) sans carte d'action dans le même tour (depuis
+le dernier message de la personne) est marqué **« non vérifié »** (`assistant-cartes.nonVerifie`).
+Une négation juste avant (« rien n'est fait », « non vérifié », « quand ce sera créé ») ne compte
+pas. Le cas d4-a du pod (« Lien créé… vérifié » après un refus) est marqué ; testé.
+
 ### 8.2 Mesures sur le pod (26/09, CLI 2.1.282, `qwen3-6-35b-moe`, effort `medium`)
 
 Protocole : 20 `claude -p` dans un dossier jetable (`/var/tmp/am/`, supprimé depuis), avec un
@@ -332,7 +348,7 @@ rejoué, les 20 essais étaient consommés.
 ### 8.3 Vérifié, non vérifié
 
 - **Vérifié par les tests** (`tests/test_assistant.py`, 21 tests ; `tests/js/assistant.suite.mjs`,
-  54 vérifications) :
+  71 vérifications ; `test_profils_acces.py` pour le profil allégé) :
   - fichiers générés et idempotents, imports qui désignent des fichiers existants,
     `# Compact instructions`, `CLAUDE.md` étranger mis de côté ;
   - consigne forte ; chaque commande citée existe et est permise au profil `assistant` ;
@@ -343,7 +359,11 @@ rejoué, les 20 essais étaient consommés.
   - délégation : aperçu, « Oui » de la personne, suivi, jeton à usage unique ;
   - réglage d'accueil : désactivé par défaut, réservé à la personne ;
   - vue : espace, arrivée, liste, gestes, cartes « Voir », « Annuler », « Oui », lexique S2 ;
-  - écart du vérificateur.
+  - écart du vérificateur ;
+  - les quatre commandes absentes de la liste de l'Assistant, trouvées et appelées par les
+    méta-outils ;
+  - la règle contre l'invention, et la marque « non vérifié » (affirmation, négation, preuve dans
+    le tour, tour suivant, message en cours).
 - **Vérifié sur le pod** (lecture seule, CLI 2.1.282) : les refus retirent les outils de la liste ;
   les imports du `CLAUDE.md` parent ne sont lus qu'approuvés ; la carte réelle et C1 tiennent dans
   le budget ; le choix des commandes (§8.2).
@@ -352,6 +372,7 @@ rejoué, les 20 essais étaient consommés.
   - l'interface dans un vrai navigateur ;
   - VS Code (mêmes approbations dans `~/.claude.json` : supposé) ;
   - la relecture des imports après une compaction avec `qwen3` ;
+  - l'effet de la règle contre l'invention sur `qwen3` (aucun essai restant) ;
   - la réécriture de `~/.claude.json` par un `claude` en cours, qui peut effacer une approbation
     (déjà vu pour `enabledMcpjsonServers`) : elle est reposée avant chaque tour.
 
@@ -364,8 +385,8 @@ rejoué, les 20 essais étaient consommés.
 2. **Délégation sans accord (A-4)** : la commande du lot D est engageante. Faut-il la garder ainsi
    (un « Oui » par délégation), ou l'alléger en réversible pour l'Assistant quand la personne l'a
    demandé ?
-3. **Les commandes anciennes** (`atelier_envoyer`, `_transcript`, `_suivre`, `_ouvrir`) restent au
-   profil, pour environ 4 000 unités (estimation). Faut-il les retirer du profil `assistant` ?
+3. ~~Les commandes anciennes au profil~~ : retirées de la liste déclarée (décision du coordinateur,
+   26/09), joignables par les méta-outils ; gain d'environ 790 unités (§8.1).
 
 ### 8.5 Déploiement sur le pod
 

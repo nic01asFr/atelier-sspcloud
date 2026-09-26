@@ -6,6 +6,7 @@ import * as S from "../state.js";
 import { $ } from "../core/dom.js";
 import { appendMessageBody } from "../ui/message-render.js";
 import { LIBELLES as LIBELLES_ASSISTANT } from "./assistant.js";
+import { marquerNonVerifie, nonVerifie } from "./assistant-cartes.js";
 
 /**
  * @param {object} ctx
@@ -345,13 +346,14 @@ const BAS_DU_FIL = 1e9;
     state.messages.forEach((m, rang) => {
       const cle = rang + ":" + (m.role || "system");
       const garde = anciens.get(cle);
+      const noeud = garde || construireMessage(m, cle);
       if (garde) {
         anciens.delete(cle);
         majMessage(garde, m);
-        voulus.push(garde);
-        return;
       }
-      voulus.push(construireMessage(m, cle));
+      // L'Assistant qui annonce un résultat sans carte d'action dans le tour.
+      marquerNonVerifie(noeud, S.estAssistant(state) && nonVerifie(state.messages, rang));
+      voulus.push(noeud);
     });
     // Ce qui attend son tour se montre au bout du fil, à sa place : après ce
     // qui est déjà dit, avant ce qui viendra. Sans cela on écrirait dans le

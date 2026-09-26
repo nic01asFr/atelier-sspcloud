@@ -288,3 +288,96 @@ export function createCartesActions(ctx) {
 
   return { bind, annuler, oui };
 }
+
+// ── « Non vérifié » : une affirmation sans carte ─────────────────────────
+//
+// Mesuré sur le pod : après un refus, le modèle annonce parfois un résultat
+// qui n'a pas eu lieu (« Lien créé… vérifié », un aperçu inventé). Seule une
+// commande qui agit rend une carte d'action ; un message de l'Assistant qui
+// affirme avoir fait, créé, lancé ou vérifié quelque chose, sans carte dans
+// le même tour, est donc marqué « non vérifié ». Le marquage ne juge pas le
+// fond : il dit seulement qu'aucune preuve n'est à l'écran.
+
+// Ce qui affirme un résultat : « c'est fait », « projet créé », « j'ai lancé »,
+// « est relié », « vérifié »… Une négation juste avant (« rien n'est fait »,
+// « pas encore créé », « non vérifié ») n'en est pas une.
+// `\b` ne connaît pas les lettres accentuées : les bornes de mot se disent ici
+// par « pas une lettre » avant et après.
+const DEBUT = String.raw`(?<!\p{L})`;
+const FIN = String.raw`(?!\p{L})`;
+const PARTICIPES = String.raw`(?:cré|lanc|reli|ajout|rang|annul|supprim|activ|désactiv|modifi|renomm|branch|confi|termin|exécut)ée?s?`;
+const AFFIRMATIONS = new RegExp(
+  [
+    String.raw`c['’]est fait${FIN}`,
+    String.raw`${DEBUT}fait\s*[.!]`,
+    String.raw`${DEBUT}(?:j['’]ai|je l['’]ai|est|sont|a été|ont été|bien)\s+${PARTICIPES}${FIN}`,
+    String.raw`${DEBUT}(?:projet|lien|agent|connecteur|création|relation|tâche)s?\s+${PARTICIPES}${FIN}`,
+    String.raw`${DEBUT}vérifiée?s?${FIN}`,
+  ].join("|"),
+  "giu"
+);
+const NEGATION = new RegExp(
+  String.raw`${DEBUT}(?:n['’]|pas|rien|jamais|non|sans|si|quand|une fois|avant|dès que|«)${FIN}[^.!?\n]{0,24}$`,
+  "iu"
+);
+
+/** Le texte affirme-t-il un résultat (fait, créé, lancé, vérifié…) ? */
+export function affirmeUnResultat(texte) {
+  const t = String(texte || "");
+  AFFIRMATIONS.lastIndex = 0;
+  for (let m = AFFIRMATIONS.exec(t); m; m = AFFIRMATIONS.exec(t)) {
+    const avant = t.slice(Math.max(0, m.index - 30), m.index);
+    if (!NEGATION.test(avant)) return true;
+  }
+  return false;
+}
+
+function texteDuMessage(m) {
+  const morceaux = [m?.text || ""];
+  for (const b of m?.blocks || []) if (b?.type === "text" && b.text) morceaux.push(b.text);
+  return morceaux.join("\n");
+}
+
+/** Une carte d'action (d'une commande qui a agi) parmi les blocs du message. */
+function porteUneCarte(m) {
+  for (const b of m?.blocks || []) {
+    if (b?.type !== "tool") continue;
+    const d = lire(b.output);
+    if (d && typeof d === "object" && d.carte && typeof d.carte === "object" && d.carte.titre) return true;
+  }
+  return false;
+}
+
+/**
+ * Ce message de l'Assistant affirme-t-il un résultat sans carte dans son tour ?
+ *
+ * Le tour va du dernier message de la personne jusqu'à celui-ci : un résultat
+ * rendu plus tôt dans le même tour compte comme preuve. Un message en cours
+ * d'écriture n'est pas jugé.
+ */
+export function nonVerifie(messages, rang) {
+  const m = messages?.[rang];
+  if (!m || m.role !== "assistant" || m.streaming) return false;
+  if (!affirmeUnResultat(texteDuMessage(m))) return false;
+  for (let i = rang; i >= 0; i -= 1) {
+    const x = messages[i];
+    if (i < rang && x?.role === "user") break;
+    if (porteUneCarte(x)) return false;
+  }
+  return true;
+}
+
+/** Pose (ou retire) la marque « non vérifié » sur le nœud d'un message. */
+export function marquerNonVerifie(noeud, actif) {
+  if (!noeud) return;
+  for (const enfant of [...(noeud.children || [])]) {
+    if (enfant.classList?.contains("msg-non-verifie")) enfant.remove();
+  }
+  if (!actif) return;
+  const marque = document.createElement("span");
+  marque.className = "msg-non-verifie";
+  marque.textContent = "non vérifié";
+  marque.title = "Aucune carte d’action ne confirme ce qui est annoncé dans ce tour.";
+  noeud.appendChild(marque);
+}
+

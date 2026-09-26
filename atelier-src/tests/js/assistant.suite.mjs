@@ -24,7 +24,7 @@ const S = await import("../../mcp_gateway/atelier/web/js/state.js");
 const { createAssistantView, createAssistantActions, LIBELLES } = await import(
   "../../mcp_gateway/atelier/web/js/views/assistant.js"
 );
-const { carteDAction, createCartesActions, oublierLesIssues } = await import(
+const { carteDAction, createCartesActions, oublierLesIssues, affirmeUnResultat, nonVerifie, marquerNonVerifie } = await import(
   "../../mcp_gateway/atelier/web/js/views/assistant-cartes.js"
 );
 const rendu = await import("../../mcp_gateway/atelier/web/js/ui/message-render.js");
@@ -226,6 +226,41 @@ const MOTS_INTERNES = ["artefact", "MCP", "jeton", "composition", "gabarit", "ex
   porte(texte(apercu), "Agent lancé", "la carte de l'action faite apparaît sous l'aperçu");
   egal(apercu.querySelectorAll(".msg-carte-oui").length, 0, "« Oui » ne se clique qu'une fois");
   egal(erreurs, [], "aucune erreur");
+}
+
+// ── « Non vérifié » : une affirmation sans carte dans le tour ──────────
+{
+  for (const t of ["Lien créé : Lecteur Grist → BigStarter. Vérifié par la carte.", "C’est fait.", "Le projet est créé.", "J’ai lancé l’agent."]) {
+    verifier(affirmeUnResultat(t), `affirme un résultat : ${t}`);
+  }
+  for (const t of ["Rien n’est fait tant que vous n’avez pas dit oui.", "Refusé : en attente de votre Oui.", "Non vérifié : 3 communes.",
+                   "Voici l’aperçu du projet Budget 2027.", "Quand ce sera créé, je vous préviens.", "Je le lance dès que vous dites oui."]) {
+    verifier(!affirmeUnResultat(t), `n'affirme rien : ${t}`);
+  }
+  const carte = JSON.stringify({ carte: { titre: "Projets reliés", action: "a-1" } });
+  const refus = "Claude requested permissions to use mcp__atelier__atelier_projets_lier, but you haven't granted it yet.";
+  const invente = [
+    { role: "user", text: "Relie X et Y" },
+    { role: "assistant", text: "Lien créé : X → Y. Vérifié.", blocks: [{ type: "tool", name: "mcp__atelier__atelier_projets_lier", output: refus, status: "denied" }] },
+  ];
+  verifier(nonVerifie(invente, 1), "après un refus, « lien créé » est non vérifié (l'essai d4-a du pod)");
+  const prouve = [
+    { role: "user", text: "Relie X et Y" },
+    { role: "assistant", text: "", blocks: [{ type: "tool", output: carte }] },
+    { role: "assistant", text: "Lien créé : X → Y." },
+  ];
+  verifier(!nonVerifie(prouve, 2), "une carte plus tôt dans le même tour vaut preuve");
+  const tourSuivant = [...prouve, { role: "user", text: "Et Z ?" }, { role: "assistant", text: "C’est fait." }];
+  verifier(nonVerifie(tourSuivant, 4), "la carte d'un tour précédent ne prouve rien pour celui-ci");
+  verifier(!nonVerifie([{ role: "user" }, { role: "assistant", text: "C’est fait.", streaming: true }], 1), "un message en cours n'est pas jugé");
+
+  const noeud = berceau();
+  marquerNonVerifie(noeud, true);
+  marquerNonVerifie(noeud, true);
+  egal(noeud.querySelectorAll(".msg-non-verifie").length, 1, "une seule marque, même redessiné");
+  porte(texte(noeud), "non vérifié", "la marque se lit");
+  marquerNonVerifie(noeud, false);
+  egal(noeud.querySelectorAll(".msg-non-verifie").length, 0, "et s'enlève");
 }
 
 bilan("assistant");
