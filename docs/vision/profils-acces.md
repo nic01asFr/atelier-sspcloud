@@ -26,7 +26,7 @@ précise `architecture-transverse.md` §1.1 (acteurs) et §1.5 (outils), et il f
 | Connecteurs du projet | ceux que la personne a choisis pour ce projet | secrets par référence ; un connecteur en échec d'authentification n'est pas distribué |
 | wikichat | **limité à son projet** : état et notes de son projet, sa mémoire, sa connaissance et celle de son projet, messagerie et fils (pour s'adresser aux agents d'autres projets) | pas de vue globale des projets, pas de lancement d'agent, pas de trigger ni de routine, pas d'audit global ; filtré par le serveur wikichat selon le profil annoncé par le pont |
 | Navigateur | **sa propre fenêtre Chrome isolée**, avec les onglets qu'il veut | plafond d'onglets par conversation (performance) ; plafond global de Chrome (6) |
-| Atelier | **les seuls outils de son projet** : ses créations (créer, vérifier, démarrer, arrêter, journal), `atelier_montrer`, `atelier_navigateur_ouvrir` | le serveur `atelier` en profil `code` n'expose que ces outils, bornés au projet de la conversation ; ni méta-outils, ni passerelle, ni commandes globales, ni « À valider » |
+| Atelier | **les seuls outils de son projet** : ses créations (créer, vérifier, démarrer, arrêter, journal), `atelier_montrer`, `atelier_navigateur_ouvrir`, et la mémoire de son projet (`atelier_rappel`, `atelier_fiche`, ajoutés en vague 3) | le serveur `atelier` en profil `code` n'expose que ces outils, bornés au projet de la conversation ; ni méta-outils, ni passerelle, ni commandes globales, ni « À valider » |
 | Onyxia | **seulement par le déploiement de son projet** | voir plus bas |
 
 ## Profil « Assistant »
@@ -77,7 +77,9 @@ L'accès d'un agent code à Onyxia est alors cadré par le fait de vouloir dépl
   - modèle et effort ;
   - hooks réellement exécutables depuis le projet.
 - Il compare les deux profils à ce contrat.
-- Les gardiens le font tourner régulièrement, sans modèle.
+- Les gardiens le font tourner régulièrement, sans modèle. **Pas fait** au 26/09 : aucun
+  contrôle de `gardiens.json` ne le lance ; il se lance à la main
+  (`~/work/bin/atelier-verifier-coherence`).
 
 ## État — équipe A (serveur `atelier`, navigateur, `atelier-app`), 26/09/2026
 
@@ -94,7 +96,7 @@ catalogue (`commandes/catalogue.py`).
 
 | Profil | Outils |
 |---|---|
-| `code` | exactement 8 : `atelier_artefacts`, `atelier_artefact_creer`, `atelier_artefact_verifier`, `atelier_artefact_demarrer`, `atelier_artefact_arreter`, `atelier_artefact_journal`, `atelier_montrer`, `atelier_navigateur_ouvrir`. Schémas adaptés : `projet` facultatif, `auteur` retiré. Consignes d'initialisation propres ; `prompts` et `resources` de la passerelle vides |
+| `code` | exactement 8 à ce lot (10 depuis la vague 3 : `atelier_rappel` et `atelier_fiche`, bornés au projet ; `OUTILS_DU_PROFIL_CODE` fait foi) : `atelier_artefacts`, `atelier_artefact_creer`, `atelier_artefact_verifier`, `atelier_artefact_demarrer`, `atelier_artefact_arreter`, `atelier_artefact_journal`, `atelier_montrer`, `atelier_navigateur_ouvrir`. Schémas adaptés : `projet` facultatif, `auteur` retiré. Consignes d'initialisation propres ; `prompts` et `resources` de la passerelle vides |
 | `assistant` | les 27 commandes exposées (`atelier_a_valider`, `_a_valider_refuser`, `_a_valider_rouvrir`, `atelier_annuler`, les 6 des créations, `atelier_conversation_ranger`, `_ressortir`, `atelier_conversations`, `atelier_decider`, `atelier_envoyer`, `atelier_interrompre`, `atelier_journal`, `atelier_montrer`, `atelier_navigateur_ouvrir`, `atelier_ouvrir`, `atelier_projet_creer`, `_modifier`, `_ranger`, `_ressortir`, `atelier_projets`, `atelier_suivre`, `atelier_transcript`), plus ce que le profil de la passerelle expose (méta-outils `gateway_*`, compositions). `atelier_projet_publier` et `atelier_a_valider_accepter` restent `reservee`, jamais exposées |
 
 **Qui décide du profil : la conversation, côté serveur**
@@ -167,8 +169,9 @@ décide, l'en-tête restreint.
   conversation d'un autre. Fermer ce trou demande des capacités courtes par
   conversation, émises par l'Atelier et vérifiées par la porte : hors de ce
   lot.
-- **Changement visible dès maintenant** : VS Code et le terminal envoient
-  aujourd'hui `X-Atelier-Conversation: poste`. Ils passent donc en `code`, et
+- **Changement visible dès maintenant** (réglé depuis : `bin/atelier-entetes-mcp`,
+  `headersHelper` de l'entrée `atelier`, transmet l'identifiant de la conversation) :
+  VS Code et le terminal envoyaient alors `X-Atelier-Conversation: poste`. Ils passent donc en `code`, et
   comme `poste` ne nomme aucun projet, leurs 8 outils répondent « le projet ne
   peut pas être établi ». `atelier-app` (qui prend `CLAUDE_CODE_SESSION_ID`)
   marche pour une conversation reprise de l'Atelier.

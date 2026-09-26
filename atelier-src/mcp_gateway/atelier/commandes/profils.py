@@ -221,8 +221,9 @@ def outil_permis(nom: str, profil: str | None = None) -> bool:
 def message_hors_profil(nom: str) -> str:
     return (
         f"{nom} n'est pas un outil du profil code. Ici : tes créations "
-        "(atelier_artefact_*), atelier_montrer, atelier_navigateur_ouvrir, pour ton "
-        "projet seulement. Ce qui touche un autre projet passe par ses agents, par wikichat."
+        "(atelier_artefact_*), atelier_montrer, atelier_navigateur_ouvrir, atelier_rappel, "
+        "atelier_fiche, pour ton projet seulement. Ce qui touche un autre projet passe par "
+        "ses agents, par wikichat."
     )
 
 
