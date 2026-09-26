@@ -280,6 +280,9 @@ export function createCodeTreeView(ctx) {
     const root = $("project-tree");
     if (!root) return;
     root.innerHTML = "";
+    // La colonne est la même que celle de l'Assistant, qui la renomme : sans
+    // ceci, elle gardait « Conversations de l'Assistant » en revenant en Code.
+    root.setAttribute("aria-label", "Projets et conversations");
 
     const headerRow = document.createElement("div");
     headerRow.className = "tree-toolbar";

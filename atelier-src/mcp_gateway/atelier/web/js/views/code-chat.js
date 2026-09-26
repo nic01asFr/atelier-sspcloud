@@ -4,7 +4,7 @@ import { rendreNoteDuMode } from "../ui/mode-processus.js";
 import * as api from "../api.js";
 import * as S from "../state.js";
 import { $ } from "../core/dom.js";
-import { appendMessageBody } from "../ui/message-render.js";
+import { appendMessageBody, replierLesResultats } from "../ui/message-render.js";
 import { LIBELLES as LIBELLES_ASSISTANT } from "./assistant.js";
 import { marquerNonVerifie, nonVerifie } from "./assistant-cartes.js";
 
@@ -295,6 +295,9 @@ const BAS_DU_FIL = 1e9;
   function rendreLeFil() {
     const thread = $("thread");
     if (!thread) return;
+    // Dans le fil de l'Assistant, le résultat brut d'un outil est replié : la
+    // carte d'action dit ce qui s'est passé. En Code, seulement s'il est long.
+    replierLesResultats(S.estAssistant(state));
     if (!ecouteDecisions) {
       ecouteDecisions = true;
       thread.addEventListener("atelier:decision", (e) => repondre(e.detail));
