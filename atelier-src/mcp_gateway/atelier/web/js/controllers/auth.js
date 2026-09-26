@@ -43,17 +43,23 @@ export function createAuthController(ctx) {
     render();
   }
 
+  // La fiche lue par `reprendre`, que `enterHub` réutilise : elle était lue
+  // deux fois de suite au démarrage.
+  let metaDeReprise = null;
+
   async function enterHub() {
     const q = readQuery();
     S.setView(state, q.view);
     if (q.slug) S.setSlug(state, q.slug);
     try {
-      const meta = await api.getMeta(state.token);
+      // La reprise vient de lire la fiche : on ne la redemande pas.
+      const meta = metaDeReprise || (await api.getMeta(state.token));
+      metaDeReprise = null;
       S.setMeta(state, meta);
+      ctx.apresMeta?.(meta);
       // « Ouvrir l'Atelier sur l'Assistant » : l'accueil, quand l'adresse ne dit rien.
       S.setView(state, S.vueDArrivee(location.search, meta));
-      await refreshProjects(state);
-      await refreshSessions(state);
+      await Promise.all([refreshProjects(state), refreshSessions(state)]);
       veillerLesSessions(state, render);
       // Ce qui se lit partout : le badge « À valider », et la vue d'arrivée.
       ctx.apresEntree?.();
@@ -124,7 +130,7 @@ export function createAuthController(ctx) {
   async function reprendre() {
     await api.migrerAncienneCle(S.lireAncienneCle, S.oublierAncienneCle);
     try {
-      await api.getMeta("");
+      metaDeReprise = await api.getMeta("");
     } catch {
       S.setToken(state, "");
       return false;

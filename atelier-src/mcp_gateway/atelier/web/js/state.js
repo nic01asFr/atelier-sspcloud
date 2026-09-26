@@ -85,6 +85,9 @@ export function createState() {
     sessions: [],
     expandedSlugs: new Set(loadExpandedSlugs()),
     messages: [],
+    // La conversation dont le fil est en cours de lecture : le fil montre un
+    // squelette plutôt que « aucun message » tant que le transcrit n'est pas là.
+    chargementFil: null,
     // Ce qu'on a écrit pendant qu'un tour travaillait : déposé côté service,
     // pas encore parti. On le garde ici pour le montrer, et pour pouvoir le
     // retirer tant qu'il n'a pas quitté la file.
@@ -476,6 +479,10 @@ export function setMessages(state, messages) {
   state.messages = messages || [];
 }
 
+export function setChargementFil(state, sessionId) {
+  state.chargementFil = sessionId || null;
+}
+
 export function setMcpTravail(state, quoi) {
   state.mcpTravail = quoi || "";
 }
@@ -560,8 +567,9 @@ export function updateLastAssistant(state, payload) {
 }
 
 export function finalizeAssistant(state) {
+  const maintenant = new Date().toISOString();
   state.messages = state.messages.map((m) =>
-    m.streaming ? { ...m, streaming: false } : m
+    m.streaming ? { ...m, streaming: false, horodatage: m.horodatage || maintenant } : m
   );
 }
 

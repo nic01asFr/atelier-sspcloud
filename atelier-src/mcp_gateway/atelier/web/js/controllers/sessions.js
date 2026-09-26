@@ -15,37 +15,75 @@ import { openVscode as openVscodeService } from "../services/vscode.js";
 export function createSessionActions(ctx) {
   const { state, render, writeQuery, logout } = ctx;
 
+  // Le rang de la dernière ouverture demandée. Deux clics rapprochés lancent
+  // deux lectures ; la plus lente arrivait parfois la dernière et remplaçait
+  // le fil qu'on venait de choisir par le précédent.
+  let ouverture = 0;
+
+  /** Place l'écran sur une conversation : espace, projet, fil. */
+  function placer(rec, sessionId) {
+    // Une conversation de l'Assistant s'ouvre dans son fil, celle d'un
+    // projet dans le sien : même écran, espace différent.
+    S.setView(state, S.isCodeSession(rec, state) ? "code" : "assistant");
+    S.setSlug(state, rec.slug);
+    S.ensureExpanded(state, rec.slug);
+    S.setSessionId(state, sessionId);
+    S.setPendingProjectSlug(state, null);
+    S.setShellMode(state, "code", "detail");
+  }
+
+  /**
+   * Ouvre une conversation.
+   *
+   * Le clic se voit tout de suite : la conversation connue de la liste suffit
+   * à ouvrir son fil (titre, ligne active, squelette de chargement), et le
+   * transcrit vient le remplir quand il arrive. On attendait sa lecture avant
+   * de rien montrer — mesuré : 3,3 s pour une conversation de 24 tours —, et
+   * le fil restait sur « Nouvelle conversation » : on croyait le clic perdu.
+   */
   async function selectSession(sessionId) {
-    try {
-      S.setError(state, "");
-      const rec = await api.getSession(state.token, sessionId);
-      // Une conversation de l'Assistant s'ouvre dans son fil, celle d'un
-      // projet dans le sien : même écran, espace différent.
-      S.setView(state, S.isCodeSession(rec, state) ? "code" : "assistant");
-      S.setSlug(state, rec.slug);
-      S.ensureExpanded(state, rec.slug);
-      S.setSessionId(state, sessionId);
-      S.setPendingProjectSlug(state, null);
-      S.setShellMode(state, "code", "detail");
-      const msgs = await buildMessagesFromServer(state, sessionId);
-      S.setMessages(state, msgs);
-      // Ce qui attend son tour se retrouve à l'ouverture : un message déposé
-      // depuis un autre écran, ou avant qu'on ferme celui-ci, doit se voir.
-      try {
-        const file = await api.fileDesMessages(state.token, sessionId);
-        S.setEnFile(state, file.messages || []);
-      } catch {
-        S.setEnFile(state, []);
-      }
-      try {
-        S.setSessionMcp(state, await api.getSessionMcp(state.token, sessionId));
-      } catch {
-        S.setSessionMcp(state, null);
-      }
-      await refreshSessions(state);
+    const rang = ++ouverture;
+    const aJour = () => rang === ouverture;
+    S.setError(state, "");
+    const connue = (state.sessions || []).find((s) => s.session_id === sessionId);
+    if (connue) {
+      placer(connue, sessionId);
+      S.setMessages(state, []);
+      S.setEnFile(state, []);
+      S.setChargementFil(state, sessionId);
       writeQuery();
       render();
+    }
+    try {
+      const [rec, msgs] = await Promise.all([
+        api.getSession(state.token, sessionId),
+        buildMessagesFromServer(state, sessionId),
+      ]);
+      if (!aJour()) return;
+      placer(rec, sessionId);
+      S.setMessages(state, msgs);
+      S.setChargementFil(state, null);
+      // Ce qui attend son tour se retrouve à l'ouverture : un message déposé
+      // depuis un autre écran, ou avant qu'on ferme celui-ci, doit se voir.
+      const [file, mcp] = await Promise.allSettled([
+        api.fileDesMessages(state.token, sessionId),
+        api.getSessionMcp(state.token, sessionId),
+      ]);
+      if (!aJour()) return;
+      S.setEnFile(state, file.status === "fulfilled" ? file.value?.messages || [] : []);
+      S.setSessionMcp(state, mcp.status === "fulfilled" ? mcp.value : null);
+      writeQuery();
+      render();
+      // La liste se relit ensuite, sans retenir l'ouverture : elle ne
+      // change rien au fil qu'on vient d'ouvrir.
+      refreshSessions(state)
+        .then(() => {
+          if (aJour()) render();
+        })
+        .catch(() => {});
     } catch (err) {
+      if (!aJour()) return;
+      S.setChargementFil(state, null);
       if (err.status === 404) {
         S.setSessionId(state, null);
         S.setMessages(state, []);
@@ -61,7 +99,19 @@ export function createSessionActions(ctx) {
     }
   }
 
+  /**
+   * Quitter le fil qu'on chargeait : une lecture encore en route ne doit pas
+   * y ramener. Sans cela, ouvrir une conversation neuve pendant qu'une autre
+   * se chargeait (au démarrage, par l'adresse) rendait l'écran à l'ancienne
+   * quand sa lecture aboutissait — et le premier message partait dedans.
+   */
+  function abandonnerLOuverture() {
+    ouverture += 1;
+    S.setChargementFil(state, null);
+  }
+
   function newConversation() {
+    abandonnerLOuverture();
     S.setError(state, "");
     S.setView(state, "code");
     S.setSessionId(state, null);
@@ -73,6 +123,7 @@ export function createSessionActions(ctx) {
   }
 
   function newSessionForSlug(slug) {
+    abandonnerLOuverture();
     S.setError(state, "");
     S.setView(state, "code");
     S.setSlug(state, slug);
@@ -163,6 +214,7 @@ export function createSessionActions(ctx) {
 
   return {
     newConversation,
+    abandonnerLOuverture,
     selectSession,
     newSessionForSlug,
     startRenameSession,
