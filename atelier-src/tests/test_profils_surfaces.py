@@ -289,6 +289,7 @@ def test_en_tetes_du_profil_code_sur_chaque_surface(reglages: AtelierSettings) -
         entetes = entree["headers"]
         assert entetes["X-Atelier-Profil"] == "code", surface
         assert entetes["X-Atelier-Projet"] == "lecteur-grist", surface
+        assert "X-Atelier-Dossier" not in entetes, surface
         assert entetes["Authorization"] == "Bearer ${ATELIER_MCP_KEY}", surface
         assert entree["headersHelper"].endswith("atelier-entetes-mcp'") or entree["headersHelper"].endswith("atelier-entetes-mcp"), surface
     assert surfaces["app"]["headers"]["X-Atelier-Conversation"] == "conv-e"
@@ -302,6 +303,7 @@ def test_en_tetes_du_profil_assistant_sur_chaque_surface(reglages: AtelierSettin
     for surface, entree in surfaces.items():
         assert entree["headers"]["X-Atelier-Profil"] == "assistant", surface
         assert "X-Atelier-Projet" not in entree["headers"], surface
+        assert entree["headers"]["X-Atelier-Dossier"] == reglages.assistant_root.as_posix(), surface
     assert surfaces["app"]["headers"]["X-Atelier-Conversation"] == "conv-e"
 
 
@@ -369,3 +371,73 @@ def test_l_aide_aux_en_tetes_retrouve_la_conversation_du_claude_parent(tmp_path:
     vide = tmp_path / "vide"
     vide.mkdir()
     assert json.loads(_aide(tmp_path, {"CLAUDE_CONFIG_DIR": str(vide)})) == {}
+
+
+# --- Correctifs du 26/09 (vérificateur réel sur le pod) -----------------------
+
+
+def test_n8n_derriere_mcp_remote_est_sonde_et_retire(reglages: AtelierSettings, monkeypatch) -> None:
+    """Le pool ne sonde pas les stdio : n8n (`mcp-remote` + jeton) restait distribué en 401."""
+    import httpx
+
+    _pool(
+        reglages,
+        n8n={"command": "npx", "args": ["-y", "mcp-remote", "https://n8n.exemple/mcp", "--header", "Authorization: Bearer jeton-n8n-1234567890"]},
+        qgis={"type": "http", "url": "http://qgis/mcp"},
+    )
+    vus: list[dict] = []
+
+    class Reponse:
+        status_code = 401
+
+    def post(url, json=None, headers=None, timeout=None):  # noqa: A002
+        vus.append({"url": url, "auth": (headers or {}).get("Authorization", "")})
+        return Reponse()
+
+    monkeypatch.setattr(httpx, "post", post)
+    projet = reglages.projects_dir / "p"
+    lier_le_projet(reglages, projet)
+    assert "n8n" in _lire(projet / ".mcp.json")
+    # Le pool dit « stdio-local » : ce n'est pas une réussite, la sonde du pont décide.
+    assert noter_les_sondes(reglages, {"registry:n8n": "stdio-local", "registry:qgis": "connected"})
+    assert vus == [{"url": "https://n8n.exemple/mcp", "auth": "Bearer jeton-n8n-1234567890"}]
+    assert "n8n" not in _lire(projet / ".mcp.json")
+    reglages_locaux = json.loads((projet / ".claude" / "settings.local.json").read_text(encoding="utf-8"))
+    assert "n8n" not in reglages_locaux["enabledMcpjsonServers"]
+
+
+def test_l_approbation_du_dossier_est_exactement_son_mcp_json(reglages: AtelierSettings) -> None:
+    """Une ancienne liste (Onyxia, n8n…) dans `.claude/settings.local.json` est remplacée."""
+    _pool_complet(reglages)
+    projet = reglages.projects_dir / "p"
+    (projet / ".claude").mkdir(parents=True)
+    (projet / ".claude" / "settings.local.json").write_text(
+        json.dumps({"permissions": {"allow": ["Bash(ls:*)"]}, "enabledMcpjsonServers": ["Onyxia", "n8n", "fantome"],
+                    "disabledMcpjsonServers": ["qgis", "autre"]}),
+        encoding="utf-8",
+    )
+    lier_le_projet(reglages, projet)
+    locaux = json.loads((projet / ".claude" / "settings.local.json").read_text(encoding="utf-8"))
+    assert locaux["enabledMcpjsonServers"] == sorted(_lire(projet / ".mcp.json")) == sorted(_approuves(projet))
+    assert locaux["disabledMcpjsonServers"] == ["autre"]
+    assert locaux["permissions"]["allow"] == ["Bash(ls:*)"]
+
+
+def test_le_choix_du_fil_vaut_pour_le_dossier_sur_toutes_les_surfaces(reglages: AtelierSettings) -> None:
+    """Le « + » d'une conversation règle le choix du projet : app et VS Code restent égaux."""
+    from mcp_gateway.atelier.harness import FakeHarness
+    from mcp_gateway.atelier.sessions import SessionStore
+
+    _pool_complet(reglages)
+    store = SessionStore(reglages, FakeHarness())
+    rec = store.create(slug="p")
+    projet = Path(rec.cwd)
+    lier_le_projet(reglages, projet)
+    assert "qgis" in _lire(projet / ".mcp.json")
+    store.patch_mcp_overlay(rec.session_id, {"qgis": False})
+    app = _lire(materialize_session_mcp(reglages, rec.session_id, kind="code", cwd=projet, mcp_overlay={"n8n": False}))
+    vscode = _lire(projet / ".mcp.json")
+    assert "qgis" not in vscode and "qgis" not in app
+    # Une ancienne désactivation propre à la conversation n'a plus d'effet : même ensemble partout.
+    assert set(app) == set(vscode)
+    assert (store.get(rec.session_id).mcp_overlay or {}) == {}

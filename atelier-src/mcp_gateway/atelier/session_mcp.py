@@ -7,7 +7,7 @@ from typing import Any
 
 from mcp_gateway.atelier.config import AtelierSettings
 from mcp_gateway.atelier.gateway_tools import nature_service
-from mcp_gateway.atelier.mcp_sync import apply_mcp_overlay, compute_binding_merged
+from mcp_gateway.atelier.mcp_sync import compute_binding_merged
 
 
 def session_mcp_layers(
@@ -20,7 +20,9 @@ def session_mcp_layers(
         _normalize_assistant_cwd(settings, rec)
     cwd = Path(rec.cwd)
     binding = compute_binding_merged(settings, kind=rec.kind, cwd=cwd)
-    effective = apply_mcp_overlay(binding, rec.mcp_overlay or None)
+    # La sélection est celle du projet (ou du dossier de l'Assistant), la même
+    # sur toutes les surfaces : plus de désactivation propre à la conversation.
+    effective = dict(binding)
     return binding, effective
 
 

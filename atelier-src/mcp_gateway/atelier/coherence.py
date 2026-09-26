@@ -232,6 +232,10 @@ from dataclasses import dataclass as _dataclass  # noqa: E402
 from dataclasses import field as _field  # noqa: E402
 
 SURFACES = ("app", "vscode", "terminal", "bash-lc")
+# Le nom sous lequel les mesures se présentent à wikichat. Un seul, fixe : le
+# pont se connecte vraiment (on mesure ses outils, filtrés par profil), sans
+# créer une identité par lancement. Voir `--sans-wikichat`.
+NOM_VERIFICATEUR = "verificateur-coherence"
 MODELE_MORT = "http://127.0.0.1:9"
 # Ce qu'un agent code ne doit jamais recevoir (profils-acces.md, profil « agent code »).
 OUTILS_INTERDITS_CODE = (
@@ -489,7 +493,7 @@ def lancements(
     dossier: Dossier,
     config: Path,
     *,
-    avec_wikichat: bool = False,
+    avec_wikichat: bool = True,
     claude: Path | None = None,
 ) -> list[Lancement]:
     """Les quatre lancements d'un dossier, tels que chaque surface les fait."""
@@ -520,9 +524,16 @@ def lancements(
     ]
     base = _env_de_base()
     base["CLAUDE_CONFIG_DIR"] = str(config)
-    if not avec_wikichat:
-        # Le pont wikichat ne se connecte pas : sinon chaque mesure fixerait
-        # une identité dans wikichat (audit, §1).
+    # L'enveloppeur et le script `surfaces/claude` trouvent le volume par là.
+    base["ATELIER_WORK"] = str(settings.work_dir)
+    if avec_wikichat:
+        # Une seule identité, fixe, pour toutes les mesures : sans elle, chaque
+        # lancement laissait une identité `<projet>-<id6>` dans wikichat (audit
+        # §1). Le profil et le projet viennent de la déclaration, comme pour un
+        # agent : ce sont eux que le serveur filtre.
+        base["WIKICHAT_AGENT"] = NOM_VERIFICATEUR
+    else:
+        # Pont neutralisé : wikichat n'est pas mesuré (rapporté comme tel).
         base["WIKICHAT_PORT"] = "1"
     # Hooks désactivés, et une adresse de modèle morte : `--settings` l'emporte
     # sur `settings.json` (mesuré, 2.1.281). Aucun modèle n'est appelé.
@@ -540,12 +551,14 @@ def lancements(
     harnais.settings = settings
     impose = harnais._env_impose(None)
     env_app = dict(base)
+    if not avec_wikichat:
+        env_app["WIKICHAT_PORT"] = "1"
     env_app.update(lire_le_fichier(chemin_du_fichier(settings)))
     env_app.update(variables_du_projet(settings.secrets_dir, dossier.chemin))
     env_app.update(impose)
     env_app["CLAUDE_CODE_EFFORT_LEVEL"] = effort_accepte_partout(settings.effort)
     env_app["ATELIER_SESSION"] = session
-    env_app["WIKICHAT_AGENT"] = f"{dossier.slug}-verif"
+    env_app["WIKICHAT_AGENT"] = NOM_VERIFICATEUR
     env_app["PATH"] = str(settings.work_dir / "bin") + _os.pathsep + env_app.get("PATH", "")
     reglages_app = refuser_les_outils_simules({}, settings)
     reglages_app["env"] = {**impose, **reglages["env"]}
@@ -673,10 +686,31 @@ def _outils_comparables(vu: Vu, connectes: set[str]) -> set[str]:
     return sortie
 
 
+def notes_du_dossier(vus: dict[str, Vu], *, avec_wikichat: bool = True) -> list[str]:
+    """Ce qui n'est pas mesuré, et n'est donc pas un écart."""
+    notes: list[str] = []
+    if not avec_wikichat:
+        notes.append("wikichat non mesuré (pont coupé exprès, --sans-wikichat)")
+    for s, v in vus.items():
+        attente = sorted(n for n, e in v.serveurs.items() if e == "pending")
+        if attente:
+            notes.append(f"{s} : encore en attente à l'init {attente} (outils non comparés)")
+    return notes
+
+
 def ecarts_du_dossier(
-    settings: AtelierSettings, dossier: Dossier, vus: dict[str, Vu], version_attendue: str
+    settings: AtelierSettings,
+    dossier: Dossier,
+    vus: dict[str, Vu],
+    version_attendue: str,
+    *,
+    avec_wikichat: bool = True,
 ) -> list[str]:
-    """Les surfaces entre elles, puis au profil du contrat."""
+    """Les surfaces entre elles, puis au profil du contrat.
+
+    Un écart qui attend le filtrage du serveur `atelier` (équipe A) le dit
+    par « (équipe A) ».
+    """
     from mcp_gateway.atelier.mcp_sync import configuration_du_profil
     from mcp_gateway.atelier.modes_permission import mode_resolu
 
@@ -700,7 +734,9 @@ def ecarts_du_dossier(
             + "; ".join(f"{s} sans {sorted(tous - n)}" for s, n in noms.items() if tous - n)
         )
     for s, v in lus.items():
-        echoues = sorted(n for n, etat in v.serveurs.items() if etat == "failed")
+        echoues = sorted(
+            n for n, etat in v.serveurs.items() if etat == "failed" and (avec_wikichat or n != "wikichat")
+        )
         if echoues:
             ecarts.append(f"{s} : serveurs en échec {echoues}")
     connectes = set.intersection(*[{n for n, e in v.serveurs.items() if e == "connected"} for v in lus.values()])
@@ -734,11 +770,12 @@ def ecarts_du_dossier(
                 or (t.startswith("mcp__wikichat__") and t.split("__", 2)[2] in WIKICHAT_INTERDITS_CODE)
             )
             if interdits:
-                ecarts.append(f"{s} : outils hors du profil code {interdits[:8]}")
+                equipe_a = " (équipe A)" if all(t.startswith("mcp__atelier__") for t in interdits) else ""
+                ecarts.append(f"{s} : outils hors du profil code {interdits[:8]}{equipe_a}")
         elif v.serveurs.get("atelier") == "connected":
             manquants = [t for t in META_OUTILS if t not in v.outils]
             if manquants:
-                ecarts.append(f"{s} : l'Assistant n'a pas les méta-outils {manquants}")
+                ecarts.append(f"{s} : l'Assistant n'a pas les méta-outils {manquants} (équipe A)")
     return ecarts
 
 
@@ -747,7 +784,7 @@ def verifier_reel(
     *,
     projets: list[str] | None = None,
     rapide: bool = False,
-    avec_wikichat: bool = False,
+    avec_wikichat: bool = True,
     claude: Path | None = None,
     surfaces: tuple[str, ...] = SURFACES,
     delai: float = 60.0,
@@ -767,7 +804,7 @@ def verifier_reel(
             for lancement in lancements(settings, dossier, config, avec_wikichat=avec_wikichat, claude=claude):
                 if lancement.surface in surfaces:
                     vus[lancement.surface] = lire_init(lancement, delai)
-            ecarts = ecarts_du_dossier(settings, dossier, vus, version)
+            ecarts = ecarts_du_dossier(settings, dossier, vus, version, avec_wikichat=avec_wikichat)
             garde = verifier_le_hook_de_garde(dossier.chemin)
             if not garde["pose"]:
                 ecarts.append("hook garde_bash absent des réglages")
@@ -780,6 +817,7 @@ def verifier_reel(
                     "surfaces": {s: v.to_dict() for s, v in vus.items()},
                     "hook_garde": garde,
                     "ecarts": ecarts,
+                    "notes": notes_du_dossier(vus, avec_wikichat=avec_wikichat),
                 }
             )
             rapport["ecarts"] += len(ecarts)
@@ -806,8 +844,11 @@ def rapport_en_texte(rapport: dict[str, Any]) -> str:
             )
         garde = d["hook_garde"]
         lignes.append(f"  hook garde_bash : {'code ' + str(garde['code']) if garde['pose'] else 'absent'}")
+        for n in d.get("notes") or []:
+            lignes.append(f"  note : {n}")
         for e in d["ecarts"]:
             lignes.append(f"  ÉCART : {e}")
     lignes.append("")
-    lignes.append(f"{rapport.get('ecarts', 0)} écart(s).")
+    equipe_a = sum(1 for d in rapport.get("dossiers") or [] for e in d["ecarts"] if e.endswith("(équipe A)"))
+    lignes.append(f"{rapport.get('ecarts', 0)} écart(s), dont {equipe_a} en attente de l'équipe A.")
     return "\n".join(lignes)

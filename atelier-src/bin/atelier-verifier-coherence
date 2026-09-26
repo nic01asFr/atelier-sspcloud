@@ -19,8 +19,8 @@ Aucune valeur secrète n'est affichée : des noms, des états, des versions.
   --rapide            un projet par profil (pour les gardiens)
   --projets a,b       l'échantillon de projets (slugs ; `assistant` pour l'Assistant)
   --json              le rapport en JSON
-  --avec-wikichat     laisse le pont wikichat se connecter (sinon neutralisé :
-                      chaque mesure fixerait une identité)
+  --sans-wikichat     coupe le pont wikichat (non mesuré). Par défaut il se
+                      connecte sous un seul nom fixe, `verificateur-coherence`
   --auto-test         l'ancien essai : un Atelier jetable, deux faux serveurs,
                       trois surfaces sur des projets d'essai
 
@@ -284,7 +284,7 @@ def mode_reel(args: argparse.Namespace) -> int:
         get_settings(),
         projets=projets,
         rapide=args.rapide,
-        avec_wikichat=args.avec_wikichat,
+        avec_wikichat=not args.sans_wikichat,
         claude=Path(args.claude) if args.claude else None,
         surfaces=surfaces,
         delai=args.delai,
@@ -303,7 +303,8 @@ def main() -> int:
     parser.add_argument("--projets", default="", help="slugs séparés par des virgules")
     parser.add_argument("--surfaces", default="", help="app,vscode,terminal,bash-lc (défaut : toutes)")
     parser.add_argument("--json", action="store_true", help="rapport JSON")
-    parser.add_argument("--avec-wikichat", action="store_true", help="ne pas neutraliser le pont wikichat")
+    parser.add_argument("--sans-wikichat", action="store_true", help="couper le pont wikichat (non mesuré)")
+    parser.add_argument("--avec-wikichat", action="store_true", help="(défaut, gardé pour compatibilité)")
     parser.add_argument("--delai", type=float, default=60.0, help="attente de system/init, en secondes")
     parser.add_argument("--auto-test", action="store_true", help="l'ancien essai sur un Atelier jetable")
     parser.add_argument("--garder", action="store_true", help="(--auto-test) garder le dossier de test")

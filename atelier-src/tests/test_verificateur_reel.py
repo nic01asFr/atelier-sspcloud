@@ -170,7 +170,7 @@ def test_le_rapport_texte_ne_montre_que_des_noms() -> None:
         "ecarts": 0,
     }
     texte = rapport_en_texte(rapport)
-    assert "[p] profil code" in texte and "hook garde_bash : code 2" in texte and "0 écart(s)." in texte
+    assert "[p] profil code" in texte and "hook garde_bash : code 2" in texte and "0 écart(s), dont 0 en attente de l'équipe A." in texte
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="enveloppeur et shells du pod")
