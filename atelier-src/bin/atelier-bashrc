@@ -1,6 +1,6 @@
 #!/bin/sh
 # atelier-bashrc — fait charger le fichier d'environnement unique par ~/.bashrc,
-# AVANT la garde non interactive.
+# AVANT la garde non interactive, et fait passer `claude` par l'enveloppeur.
 #
 #   atelier-bashrc <bashrc> <claude-env.sh> [<enveloppeur> <claude>]
 #
@@ -14,9 +14,14 @@
 # le bloc en tête du fichier, donc avant toute garde. Idempotent : un second
 # passage ne change rien, et le fichier n'est réécrit que s'il change.
 #
-# Avec un enveloppeur, il pose aussi l'alias `claude` du terminal interactif :
-# `atelier-claude-vscode <claude> …`, qui applique le mode choisi pour une
-# conversation reprise (docs/vision/profils-acces.md, « Mode de permission »).
+# Avec un enveloppeur, il pose aussi :
+#   - `<bin>/surfaces/claude`, un script qui lance `<enveloppeur> <claude> …` :
+#     l'enveloppeur applique le mode de la conversation reprise et met `<bin>`
+#     (node, npx) dans le PATH (docs/vision/profils-acces.md) ;
+#   - en tête de ~/.bashrc, donc pour les shells interactifs ET non
+#     interactifs, `<bin>/surfaces` puis `<bin>` en tête du PATH. Un alias ne
+#     valait qu'en interactif, et `bash -lc claude` ne trouvait rien (mesuré le
+#     26/09 : `~/work/bin` n'était pas dans le PATH d'un shell de connexion).
 #
 # Rien n'est affiché du contenu : ni du fichier d'environnement, ni du bashrc.
 
@@ -32,18 +37,34 @@ ENVELOPPEUR=${3:-}
 CLAUDE=${4:-}
 MARQUE="# Atelier : valeurs des références \${ATELIER_MCP_...}, avant la garde non interactive (voir docs/coherence-projet.md)"
 LIGNE="[ -r \"$ENV_SECRETS\" ] && . \"$ENV_SECRETS\""
+MARQUE_PATH="# Atelier : claude par l'enveloppeur"
 
 [ -e "$BASHRC" ] || : > "$BASHRC"
+
+if [ -n "$ENVELOPPEUR" ]; then
+  BIN=$(dirname -- "$ENVELOPPEUR")
+  SURFACES="$BIN/surfaces"
+  mkdir -p "$SURFACES"
+  script="$SURFACES/claude"
+  voulu=$(printf '#!/bin/sh\n# Posé par atelier-bashrc : claude, par l enveloppeur de l Atelier (mode, PATH, secrets).\nexec "%s" "%s" "$@"\n' "$ENVELOPPEUR" "$CLAUDE")
+  if [ ! -f "$script" ] || [ "$(cat "$script")" != "$voulu" ]; then
+    printf '%s\n' "$voulu" > "$script.atelier-tmp"
+    chmod 755 "$script.atelier-tmp"
+    mv "$script.atelier-tmp" "$script"
+  fi
+  CHEMIN="case \":\$PATH:\" in *\":$SURFACES:\"*) ;; *) PATH=\"$SURFACES:$BIN:\$PATH\"; export PATH ;; esac  $MARQUE_PATH"
+fi
 
 provisoire="$BASHRC.atelier-tmp"
 {
   printf '%s\n%s\n' "$MARQUE" "$LIGNE"
   if [ -n "$ENVELOPPEUR" ]; then
-    printf '%s\n' "alias claude='\"$ENVELOPPEUR\" \"$CLAUDE\"'  # Atelier : mode de la conversation reprise"
+    printf '%s\n' "$CHEMIN"
   fi
-  # Tout le reste, moins nos anciennes lignes : le commentaire (ancienne et
-  # nouvelle formulation) et toute ligne qui charge ce fichier.
-  grep -vF -e "$ENV_SECRETS" -e "# Atelier : valeurs des références" -e "# Atelier : mode de la conversation reprise" "$BASHRC" || true
+  # Tout le reste, moins nos anciennes lignes : les commentaires (anciennes et
+  # nouvelles formulations), toute ligne qui charge ce fichier, l'ancien alias.
+  grep -vF -e "$ENV_SECRETS" -e "# Atelier : valeurs des références" \
+    -e "# Atelier : mode de la conversation reprise" -e "$MARQUE_PATH" "$BASHRC" || true
 } > "$provisoire"
 
 # L'ancienne pose ajoutait une ligne vide avant son commentaire : on retire les

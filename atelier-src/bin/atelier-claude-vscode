@@ -23,13 +23,20 @@
 #      (`<code-server>/User/globalStorage/anthropic.claude-code/session-permission-modes/<id>.json`,
 #      où l'Atelier écrit aussi) part dans ce mode ;
 #    - sans choix pour la conversation, un lancement de l'extension
-#      (`CLAUDE_CODE_ENTRYPOINT=claude-vscode`) perd le `--permission-mode`
-#      qu'elle a tiré de son état global : le CLI résout alors le défaut du
-#      projet (`permissions.defaultMode` de `.claude/settings.local.json`),
-#      comme au terminal. Avec un enveloppeur, l'extension passe sinon
-#      `default` d'office (`resolvePermissionModeInCli` faux, relevé en 2.1.282).
+#      (`CLAUDE_CODE_ENTRYPOINT=claude-vscode`) reçoit le défaut du projet
+#      (`permissions.defaultMode` de `.claude/settings.local.json`, puis de
+#      `.claude/settings.json`) en `--permission-mode`. Mesuré sur le pod
+#      (2.1.282) : avec ce point d'entrée, le CLI ignore `defaultMode` et part
+#      en `default` ; et avec un enveloppeur, l'extension passe `default`
+#      d'office (`resolvePermissionModeInCli` faux). Au terminal, le CLI
+#      résout ce défaut de lui-même.
 #    Un `--permission-mode` tapé au terminal sans conversation à reprendre
 #    n'est pas touché.
+#
+# 3. Il met `~/work/bin` en tête du PATH : `node` et `npx` de l'Atelier, que
+#    lancent les serveurs stdio (gitlab, n8n). Sans lui, VS Code et le
+#    terminal les trouvaient absents (« Executable not found in $PATH: npx »,
+#    mesuré le 26/09) quand l'app, dont le harnais pose ce PATH, les avait.
 #
 # Rien n'est affiché : ni le contenu du fichier, ni les variables. La sortie
 # standard appartient au protocole entre l'extension et `claude`.
@@ -52,6 +59,11 @@ if [ -r "$ENV_SECRETS" ]; then
   # Aucune sortie : ni sur le flux du protocole, ni dans le journal.
   . "$ENV_SECRETS" >/dev/null 2>&1
 fi
+
+case ":$PATH:" in
+  *":$WORK/bin:"*) ;;
+  *) PATH="$WORK/bin:$PATH"; export PATH ;;
+esac
 
 if [ "$#" -eq 0 ]; then
   echo "atelier-claude-vscode : aucune commande à lancer" >&2
@@ -100,7 +112,20 @@ case $conversation in
     ;;
 esac
 
-if [ -n "$choisi" ] || [ "${CLAUDE_CODE_ENTRYPOINT:-}" = "claude-vscode" ]; then
+# Le défaut du projet, pour l'extension seulement : le CLI l'ignore avec ce
+# point d'entrée. `manual` est l'autre nom de `default`.
+if [ -z "$choisi" ] && [ "${CLAUDE_CODE_ENTRYPOINT:-}" = "claude-vscode" ]; then
+  for reglages in .claude/settings.local.json .claude/settings.json; do
+    [ -r "$reglages" ] || continue
+    mode=$(tr -d '\n\r' < "$reglages" 2>/dev/null | sed -n 's/.*"defaultMode" *: *"\([A-Za-z]*\)".*/\1/p')
+    [ "$mode" = "manual" ] && mode=default
+    case $mode in
+      default|acceptEdits|plan|bypassPermissions) choisi=$mode; break ;;
+    esac
+  done
+fi
+
+if [ -n "$choisi" ]; then
   # On réécrit les arguments sans leur `--permission-mode`, puis on ajoute
   # le choix de la conversation s'il y en a un.
   compte=$#
