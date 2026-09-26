@@ -15,7 +15,10 @@ Ingress, autre origine. On n'y trouve rien de l'Atelier — ni `/v1`, ni
   (leurs sous-ressources partent sans cookie, d'une origine opaque) ;
 - `/_services/<connecteur>/<vue>/…`, un service du namespace que ce
   connecteur déclare (bureau noVNC, éditeur), relayé avec son jeton posé
-  ici, jamais dans la page (voir `bureaux`).
+  ici, jamais dans la page (voir `bureaux`) ;
+- `/_ecran/<conversation>/`, l'écran en direct du navigateur de l'agent de
+  cette conversation, et son flux `/_ecran/<conversation>/flux` (voir
+  `ecran`) : des images et des gestes, jamais le protocole DevTools.
 
 Toute requête dont l'hôte n'est pas celui des applications reçoit 421 : un
 Ingress mal réglé ne doit pas faire servir ce contenu sous une autre adresse,
@@ -31,6 +34,7 @@ from __future__ import annotations
 import html
 import logging
 import time
+from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote
 
@@ -53,7 +57,13 @@ from mcp_gateway.atelier.apps import proxy as px
 from mcp_gateway.atelier.apps import bureaux as bx
 from mcp_gateway.atelier.apps.cadrage import CadrageDesReponses
 from mcp_gateway.atelier.apps.manifeste import Manifeste, ManifesteInvalide, nom_valide
-from mcp_gateway.atelier.apps.passage import COOKIE_APPS, DUREE_SESSION_S, destination_valide
+from mcp_gateway.atelier.apps.passage import (
+    COOKIE_APPS,
+    DUREE_SESSION_S,
+    conversation_valide,
+    destination_valide,
+    portee_conversation,
+)
 from mcp_gateway.atelier.apps.service import ApplicationInconnue, ServiceApps
 from mcp_gateway.atelier.apps.superviseur import EN_ECHEC, ErreurApplication
 from mcp_gateway.atelier.artefacts_servis import ServeurArtefacts
@@ -62,6 +72,11 @@ from mcp_gateway.atelier.relais_ws import relayer
 log = logging.getLogger("atelier.apps.serveur")
 
 ENTETES_PASSAGE = {"Referrer-Policy": "no-referrer", "Cache-Control": "no-store"}
+# La page de l'écran du navigateur : trois fichiers, servis tels quels.
+PAGE_ECRAN = Path(__file__).with_name("page_ecran")
+FICHIERS_ECRAN = {"": ("index.html", "text/html; charset=utf-8"),
+                  "ecran.js": ("ecran.js", "text/javascript; charset=utf-8"),
+                  "ecran.css": ("ecran.css", "text/css; charset=utf-8")}
 # Plafond d'un corps envoyé à un service du namespace (un envoi de fichier à n8n).
 SERVICE_CORPS_MAX = 64 * 2**20
 
@@ -554,6 +569,59 @@ def construire_app_apps(service: ServiceApps, *, origine_atelier: Callable[[], s
             ping_s=px.WS_PING_S,
         )
 
+    # ── L'écran du navigateur d'une conversation (voir `ecran`) ─────────
+
+    def session_d_ecran(request: Request | WebSocket, conversation: str) -> bool:
+        """Une session de la personne, ouverte pour cette conversation-là."""
+        s = service.passage.session(request.cookies.get(COOKIE_APPS))
+        return (
+            s is not None
+            and not s.est_agent
+            and conversation_valide(conversation)
+            and s.couvre(portee_conversation(conversation))
+        )
+
+    async def ecran_seul(request: Request) -> Response:
+        conversation = request.path_params["conversation"]
+        if not conversation_valide(conversation):
+            return PlainTextResponse("introuvable", status_code=404)
+        return RedirectResponse(f"/_ecran/{quote(conversation, safe='')}/", 308)
+
+    async def ecran_page(request: Request) -> Response:
+        conversation = request.path_params["conversation"]
+        fichier = FICHIERS_ECRAN.get(request.path_params.get("fichier", ""))
+        if fichier is None or not conversation_valide(conversation):
+            return PlainTextResponse("introuvable", status_code=404)
+        if not session_d_ecran(request, conversation):
+            return vers_l_entree(request)
+        nom, type_ = fichier
+        hote = service.hote
+        politique = (
+            "default-src 'none'; script-src 'self'; style-src 'self'; img-src blob:; "
+            f"connect-src 'self' wss://{hote} ws://{hote}; base-uri 'none'; form-action 'none'"
+        )
+        return Response(
+            (PAGE_ECRAN / nom).read_bytes(),
+            media_type=type_,
+            headers={
+                "Cache-Control": "no-store",
+                "Referrer-Policy": "no-referrer",
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": politique,
+            },
+        )
+
+    async def ecran_flux(websocket: WebSocket) -> None:
+        origine = (websocket.headers.get("origin") or "").rstrip("/").lower()
+        if not origine or origine != service.origine:
+            await websocket.close(code=px.FERME_ORIGINE_REFUSEE)
+            return
+        conversation = websocket.path_params["conversation"]
+        if not session_d_ecran(websocket, conversation):
+            await websocket.close(code=px.FERME_NON_AUTHENTIFIE)
+            return
+        await service.ecrans.servir(websocket, conversation)
+
     async def fermer_clients() -> None:
         for c in clients.values():
             await c.aclose()
@@ -568,6 +636,11 @@ def construire_app_apps(service: ServiceApps, *, origine_atelier: Callable[[], s
         Route("/_services/{connecteur}/{vue}/{reste:path}", service_http, methods=toutes),
         WebSocketRoute("/_services/{connecteur}/{vue}/{reste:path}", service_ws),
         WebSocketRoute("/_services/{connecteur}/{vue}", service_ws),
+        # Avant `/{slug}/…` : `_ecran` n'est pas un projet.
+        Route("/_ecran/{conversation}", ecran_seul, methods=["GET", "HEAD"]),
+        Route("/_ecran/{conversation}/", ecran_page, methods=["GET", "HEAD"]),
+        Route("/_ecran/{conversation}/{fichier}", ecran_page, methods=["GET", "HEAD"]),
+        WebSocketRoute("/_ecran/{conversation}/flux", ecran_flux),
         Route("/{slug}", projet_seul, methods=["GET", "HEAD"]),
         Route("/{slug}/{reste:path}", projet, methods=toutes),
         WebSocketRoute("/{slug}/{nom}/{reste:path}", application_ws),

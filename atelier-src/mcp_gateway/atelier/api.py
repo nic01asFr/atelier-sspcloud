@@ -683,6 +683,7 @@ def build_app(
     app.state.harness = harness
     app.state.use_fake = use_fake
     app.state.apps = service_apps
+    app.state.diffusion = diffusion  # l'écran du navigateur relance l'agent en direct (navigateur_routes)
     # L'application de l'hôte des applications, servie sur son propre port
     # par `app.main` (voir `apps.serveur`). Construite ici pour partager les
     # magasins de ce processus ; rien de ses routes ne vit dans celle-ci.

@@ -1,0 +1,134 @@
+:root {
+  --fond: #f6f6f4;
+  --surface: #ffffff;
+  --texte: #1f1f1f;
+  --doux: #5f6368;
+  --bord: #d9d9d4;
+  --accent: #1a5fb4;
+  --main: #b45309;
+  --main-fond: #fff4e5;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fond: #1a1a1a;
+    --surface: #242424;
+    --texte: #e8e8e8;
+    --doux: #a0a0a0;
+    --bord: #3a3a3a;
+    --accent: #7fb0ff;
+    --main: #f5b35c;
+    --main-fond: #3a2a14;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  background: var(--fond);
+  color: var(--texte);
+  font: 14px/1.4 system-ui, sans-serif;
+}
+
+.barre {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--bord);
+  background: var(--surface);
+}
+
+.adresse {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+}
+
+.adresse input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--bord);
+  border-radius: 6px;
+  background: var(--fond);
+  color: var(--texte);
+  font: inherit;
+}
+
+.adresse input[readonly] {
+  color: var(--doux);
+}
+
+button {
+  padding: 4px 10px;
+  border: 1px solid var(--bord);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--texte);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#main.rendre {
+  border-color: var(--main);
+  color: var(--main);
+  font-weight: 600;
+}
+
+.bandeau {
+  padding: 6px 10px;
+  background: var(--main-fond);
+  color: var(--main);
+  border-bottom: 1px solid var(--main);
+}
+
+.scene {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  outline: none;
+  overflow: hidden;
+}
+
+.scene.main {
+  box-shadow: inset 0 0 0 2px var(--main);
+}
+
+.scene img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+
+.scene.main img {
+  cursor: default;
+}
+
+.message {
+  position: absolute;
+  inset: auto 0 45% 0;
+  margin: 0;
+  text-align: center;
+  color: var(--doux);
+}

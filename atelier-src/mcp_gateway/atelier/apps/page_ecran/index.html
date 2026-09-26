@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Navigateur de l'agent</title>
+<link rel="stylesheet" href="ecran.css">
+<script type="module" src="ecran.js"></script>
+</head>
+<body data-ecran-auto="1">
+<header class="barre">
+  <form class="adresse" id="adresse" autocomplete="off">
+    <input id="adresse-champ" type="text" aria-label="Adresse de la page" readonly spellcheck="false">
+    <button id="adresse-aller" type="submit" hidden>Aller</button>
+  </form>
+  <button id="main" type="button" disabled>Prendre la main</button>
+</header>
+<div class="bandeau" id="bandeau" role="status" hidden></div>
+<main class="scene" id="scene" tabindex="0" aria-label="Page affichée par le navigateur de l'agent">
+  <img id="image" alt="" draggable="false">
+  <p class="message" id="message">Connexion au navigateur de l'agent…</p>
+</main>
+</body>
+</html>
