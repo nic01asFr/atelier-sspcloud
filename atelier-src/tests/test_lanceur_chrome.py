@@ -246,3 +246,32 @@ def test_chrome_headless_shell_recoit_headless_sans_mode(banc: dict[str, Path], 
     r = subprocess.run([str(LANCEUR), "--headless=new", "--user-data-dir=/tmp/x"], env=env, timeout=10)
     assert r.returncode == 0
     assert notes.read_text(encoding="utf-8").splitlines() == ["--headless", "--user-data-dir=/tmp/x"]
+
+
+# --- Plafond d'onglets (bin/atelier-chrome-onglets.mjs) ----------------------
+
+
+def test_le_serveur_passe_par_le_filtre_d_onglets(banc: dict[str, Path]) -> None:
+    """Le lanceur place le filtre entre le client et le serveur, avec le plafond."""
+    p = _lancer(banc, ATELIER_CHROME_ONGLETS_MAX="5")
+    args = _args(banc)
+    assert args[0] == str(LANCEUR.parent / "atelier-chrome-onglets.mjs")
+    assert args[1] == str(banc["node"]) and args[2].endswith("chrome-devtools-mcp.js")
+    env = (banc["notes"] / "env").read_text(encoding="utf-8")
+    assert "ATELIER_CHROME_ONGLETS_MAX=5" in env
+    p.stdin.close()
+    assert p.wait(10) == 0
+
+
+def test_zero_onglet_retire_le_filtre(banc: dict[str, Path]) -> None:
+    p = _lancer(banc, ATELIER_CHROME_ONGLETS_MAX="0")
+    args = _args(banc)
+    assert args[0].endswith("chrome-devtools-mcp.js"), "sans plafond, le serveur directement"
+    p.stdin.close()
+    p.wait(10)
+
+
+def test_verifier_dit_le_plafond_d_onglets(banc: dict[str, Path]) -> None:
+    r = subprocess.run([str(LANCEUR)], env=_env(banc, ATELIER_CHROME_VERIFIER="1"), capture_output=True, text=True)
+    assert "onglets=8" in r.stdout
+    assert "filtre=" + str(LANCEUR.parent / "atelier-chrome-onglets.mjs") in r.stdout

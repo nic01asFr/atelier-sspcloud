@@ -22,6 +22,13 @@
 #
 # Réglages (environnement) :
 #   ATELIER_CHROME_MAX       Chrome simultanés permis pour ce compte (défaut 6)
+#   ATELIER_CHROME_ONGLETS_MAX  onglets permis par conversation (défaut 8 ;
+#                            0 = sans plafond). Tenu par le filtre
+#                            atelier-chrome-onglets.mjs, placé entre le client
+#                            et le serveur : au-delà, new_page rend « ferme un
+#                            onglet » sans rien ouvrir.
+#   ATELIER_CHROME_FILTRE    chemin du filtre (sinon à côté de ce script, puis
+#                            ~/work/atelier-src/bin)
 #   ATELIER_CHROME_OUTILS    courant (défaut) | complet | minimal
 #   ATELIER_CHROME_PORTEE    conversation (défaut) | passerelle
 #   ATELIER_CHROME_RESEAU    tout (défaut en conversation) | public (défaut
@@ -34,7 +41,7 @@
 #                            (ws://… ou http://…) au lieu d'en lancer un
 #   ATELIER_CHROME_VERIFIER=1  vérifie l'installation, n'ouvre rien, sort.
 #
-# Le plafond atteint, Chrome refuse de démarrer : l'agent reçoit alors de
+# Le plafond de navigateurs atteint, Chrome refuse de démarrer : l'agent reçoit alors de
 # chrome-devtools-mcp une erreur de protocole (« Target closed »), pas notre
 # phrase, que seul le journal du serveur garde (ATELIER_CHROME_JOURNAL).
 set -u
@@ -111,6 +118,17 @@ trouver_node() {
   return 1
 }
 
+# Le filtre du plafond d'onglets : à côté du lanceur (dépôt), ou dans la
+# source de l'Atelier (le lanceur est copié seul dans ~/work/bin).
+trouver_filtre() {
+  local c
+  for c in "${ATELIER_CHROME_FILTRE:-}" "${SOI%/*}/atelier-chrome-onglets.mjs" \
+    "$WORK/atelier-src/bin/atelier-chrome-onglets.mjs"; do
+    [ -n "$c" ] && [ -f "$c" ] && { echo "$c"; return 0; }
+  done
+  return 1
+}
+
 # Un pid n'est compté que s'il est encore un Chrome : un pid réutilisé par un
 # autre programme ne doit pas bloquer l'ouverture d'un navigateur.
 est_un_chrome() {
@@ -160,8 +178,18 @@ SERVEUR="$(trouver_serveur)" || {
 }
 trouver_chrome >/dev/null || { dire "aucun Chrome sur cette machine (ATELIER_CHROME_BIN)"; exit 127; }
 
+ONGLETS="${ATELIER_CHROME_ONGLETS_MAX:-8}"
+FILTRE=""
+if [ "$ONGLETS" != "0" ]; then
+  FILTRE="$(trouver_filtre)" || {
+    FILTRE=""
+    dire "filtre d'onglets introuvable (atelier-chrome-onglets.mjs) : pas de plafond d'onglets"
+  }
+fi
+
 if [ "${ATELIER_CHROME_VERIFIER:-}" = "1" ]; then
-  printf 'node=%s\nserveur=%s\nchrome=%s\n' "$NODE" "$SERVEUR" "$(trouver_chrome)"
+  printf 'node=%s\nserveur=%s\nchrome=%s\nonglets=%s\nfiltre=%s\n' \
+    "$NODE" "$SERVEUR" "$(trouver_chrome)" "$ONGLETS" "${FILTRE:-aucun}"
   exit 0
 fi
 
@@ -236,6 +264,7 @@ export CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1
 export ATELIER_CHROME_ROLE=navigateur
 export ATELIER_CHROME_RACINE="$RACINE"
 export ATELIER_CHROME_MAX="$MAX"
+export ATELIER_CHROME_ONGLETS_MAX="$ONGLETS"
 
 enfant=""
 ranger() { rm -rf "$PROFIL"; }
@@ -248,8 +277,13 @@ trap ranger EXIT
 trap arreter TERM INT HUP
 
 # En tâche de fond pour pouvoir relayer les signaux ; l'entrée standard est
-# donnée explicitement, sans quoi bash la remplacerait par /dev/null.
-"$NODE" "$SERVEUR" "${args[@]}" <&0 &
+# donnée explicitement, sans quoi bash la remplacerait par /dev/null. Le
+# filtre d'onglets, s'il y en a un, lance le serveur et lui relaie tout.
+if [ -n "$FILTRE" ]; then
+  "$NODE" "$FILTRE" "$NODE" "$SERVEUR" "${args[@]}" <&0 &
+else
+  "$NODE" "$SERVEUR" "${args[@]}" <&0 &
+fi
 enfant=$!
 wait "$enfant"
 code=$?

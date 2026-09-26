@@ -129,6 +129,25 @@ restait ; le lanceur le range (voir §4).
   `ATELIER_CHROME_MAX` (défaut **6**, soit ≈ 2 à 5 Go selon les pages).
   Limite connue : l'agent reçoit alors une erreur de protocole
   (« Target closed ») plutôt que la phrase du lanceur.
+- **Onglets par conversation** : `ATELIER_CHROME_ONGLETS_MAX` (défaut **8** ;
+  `0` = sans plafond). Le lanceur place le filtre
+  `bin/atelier-chrome-onglets.mjs` entre le client et le serveur. Avant de
+  laisser passer un `new_page`, le filtre demande `list_pages` au serveur et
+  compte sa section `## Pages` : les fenêtres ouvertes par un site sont donc
+  comptées. Au plafond, l'agent reçoit une erreur d'outil lisible (« Ferme un
+  onglet avec close_page… ») et le serveur ne reçoit rien. Serveur muet (15 s) :
+  le filtre se fie au dernier compte vu, et laisse passer s'il n'en a aucun.
+  C'est une garde de mémoire, pas de sécurité. Le lanceur trouve le filtre à
+  côté de lui, sinon dans `~/work/atelier-src/bin/` (il est copié seul dans
+  `~/work/bin/`) ; absent, il le dit sur sa sortie d'erreur et lance le serveur
+  sans plafond. `ATELIER_CHROME_VERIFIER=1` affiche `onglets=` et `filtre=`.
+- **Coût d'un onglet**, mesuré le 26/09 sous Windows (poste de développement,
+  serveur 1.10.1 derrière le filtre, Chrome stable, mémoire privée des
+  processus Chrome, à ne pas confondre avec la PSS du pod) : 1 onglet
+  `example.com` 269 Mo, puis ≈ 30 à 50 Mo par onglet de plus ; 1 onglet
+  Wikipédia « Marseille » 488 Mo, puis ≈ 200 à 260 Mo par onglet de plus. Huit
+  onglets lourds coûteraient donc de l'ordre de 2 Go pour une conversation. Non
+  mesuré sur le pod (lecture seule pendant ce lot).
 
 ## 4. Une déclaration pour toutes les surfaces
 
