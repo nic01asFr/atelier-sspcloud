@@ -1022,5 +1022,30 @@ Le journal consigne, dans l'ordre, ce que chaque retour a changé dans la struct
     caractères, ≈ 17 000 jetons) ; chaque lancement paie en plus le harnais (≈ 21 700 jetons) ;
   - `qwen3-embedding-8b` non mesuré sur de vraies fiches (garde des permissions : ce serait
     envoyer le texte des conversations) ; recherche lexicale seule.
+- **26/09, équipe A (Assistant, vague 3)** :
+  - le dossier `~/work/wikichat-memory` est généré par l'Atelier (pas un dépôt) : `CLAUDE.md`
+    qui importe rôle, outils, carte et « À valider », rafraîchis avant chaque tour ;
+  - deux réglages du CLI sans lesquels rien ne marchait, posés par l'Atelier : approbation des
+    imports externes, confiance au dossier exact ;
+  - coût d'entrée mesuré ≈ 16 000 jetons (budget 20 000), premier mot en 1,7 à 3,8 s ; bon
+    choix de commande 17 fois sur 17 ; exécution de bout en bout non rejouée ;
+  - risque vu : invention d'un résultat après un refus ; consigne « un refus n'est pas un
+    résultat » et marque « non vérifié » dans l'interface ;
+  - `HORS_LISTE_ASSISTANT` : les anciennes commandes de conversation restent joignables par
+    `gateway_find_tools` et `gateway_call_tool` sans être déclarées ;
+  - noyau wikichat de l'Assistant (10 outils, fait par M) : ≈ 11 100 → 2 470 jetons.
+- **26/09, équipe N (navigateur en direct, vague 3)** :
+  - Chrome garde son tube (`chrome-devtools-mcp`) et reçoit en plus un port DevTools en
+    boucle locale ; le lanceur l'ajoute après puppeteer pour ne pas lui faire perdre le tube ;
+  - profil gardé par conversation sous verrou ; un second processus de la même conversation
+    reçoit un profil jetable, sans écran ;
+  - l'écran passe par `ecran.py` (images JPEG et gestes validés), jamais par un relais
+    DevTools brut, portée `conversation:<id>` ;
+  - « Prendre la main » retient les actions de l'agent sur le navigateur au lieu d'interrompre
+    le tour (interrompre tuerait Chrome et la page) ;
+  - J-f3 : les neuf lectures du navigateur passent par `refuser_les_outils_simules`, déjà appelé
+    par toutes les surfaces, donc le vérificateur les voit ;
+  - à confirmer sur le pod : bac à sable de Chrome, `CLAUDE_CODE_SESSION_ID` transmis aux
+    serveurs stdio par VS Code et le terminal.
 - **Explication de T12** : sur le poste, une tâche planifiée publie la mémoire toutes les 15 min depuis
     `Github Repositories/wikichat`, pendant que le dépôt évolue ailleurs.
