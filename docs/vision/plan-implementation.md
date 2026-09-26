@@ -121,6 +121,6 @@ aux équipes concernées.
 | Vague | État |
 |---|---|
 | 1 | **déployée le 25/09 au soir** : `main` = `776fb73`, wikichat `atelier-coherence` = `82a06ce`. Atelier, wikichat (lot W, `~/.wikichat` sur le volume) et exécuteur des gardiens en service. Vérifié en réel : cohérence sans écart, 29 commandes, journal, « À valider », hook du socle qui bloque, carte wikichat (35 projets, 46 liens), migration W2 sans conflit |
-| 2 | — |
+| 2 | **déployée le 26/09** : `main` = `91e3e13`, wikichat `098460c`. Vérifié en réel : vérificateur 0 écart (27 dossiers × 4 surfaces) ; vue Agents avec gardiens, « À valider », journal ; bureau QGIS en direct dans le panneau ; route de lancement (clé 0600, 401 sans clé). Correctif après déploiement : dossiers d'agent acceptés comme cible de lancement |
 | 3 | — |
 | 4 | — |
