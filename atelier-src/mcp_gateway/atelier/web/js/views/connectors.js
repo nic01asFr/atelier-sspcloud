@@ -2,6 +2,7 @@
 
 import { $, rendreActivable } from "../core/dom.js";
 import { renderCompositionBuilder } from "./composition-builder.js";
+import { icone } from "../ui/icones.js";
 import { chromeHealth } from "../api.js";
 
 // Les états que le moteur de compositions écrit, dits dans la langue de
@@ -266,7 +267,9 @@ function renderCompositionDetail(comp, state, actions) {
   const retour = document.createElement("button");
   retour.type = "button";
   retour.className = "ghost btn-sm";
-  retour.textContent = "← Compositions";
+  const ditRetour = document.createElement("span");
+  ditRetour.textContent = "Compositions";
+  retour.append(icone("fleche-gauche"), ditRetour);
   retour.title = "Revenir à la liste.";
   retour.addEventListener("click", () => actions.select("atelier", "compositions"));
   actionsRow.appendChild(retour);

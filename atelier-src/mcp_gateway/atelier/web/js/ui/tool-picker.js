@@ -14,6 +14,8 @@
  *   - outil précis   → "mcp__<service>__<outil>"
  */
 
+import { icone } from "./icones.js";
+
 const PREFIXE_SERVICE = "registry:";
 
 /** Comparaison insensible aux accents : « memoris » trouve « Mémoriser ». */
@@ -138,8 +140,9 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
 
     const chevron = document.createElement("button");
     chevron.type = "button";
-    chevron.className = "chevron";
-    chevron.textContent = "▸";
+    chevron.className = "chevron icon-btn";
+    chevron.appendChild(icone("chevron-droite"));
+    chevron.setAttribute("aria-expanded", "false");
     chevron.disabled = !outils.length;
     chevron.title = outils.length ? "Voir les outils" : "Aucun outil connu";
 
@@ -232,7 +235,8 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
         const perso = document.createElement("button");
         perso.type = "button";
         perso.className = "tool-chip-perso";
-        perso.textContent = "⚙";
+        perso.appendChild(icone("engrenage"));
+        perso.setAttribute("aria-label", "Spécialiser cet outil");
         perso.title =
           "Spécialiser cet outil pour cet agent : figer certains paramètres.";
         perso.addEventListener("click", (ev) => {
@@ -294,7 +298,7 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
     btnAucun.addEventListener("click", toutDecocher);
     chevron.addEventListener("click", () => {
       corps.hidden = !corps.hidden;
-      chevron.textContent = corps.hidden ? "▸" : "▾";
+      chevron.setAttribute("aria-expanded", corps.hidden ? "false" : "true");
     });
 
     tete.appendChild(chevron);
@@ -343,11 +347,11 @@ export function renderToolPicker({ builtins, catalog, toolsByService, selection,
       if (q) {
         l.ligne.hidden = visibles === 0;
         l.corps.hidden = visibles === 0;
-        l.chevron.textContent = visibles ? "▾" : "▸";
+        l.chevron.setAttribute("aria-expanded", visibles ? "true" : "false");
       } else {
         l.ligne.hidden = false;
         l.corps.hidden = true;
-        l.chevron.textContent = "▸";
+        l.chevron.setAttribute("aria-expanded", "false");
       }
     }
   });

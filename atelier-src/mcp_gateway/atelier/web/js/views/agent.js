@@ -2,6 +2,22 @@
 
 import { $, rendreActivable } from "../core/dom.js";
 import { showContextMenu } from "../ui/context-menu.js";
+import { icone } from "../ui/icones.js";
+
+/** Deux textes qui disent la même chose, casse et espaces mis à part. */
+export function memeTexte(a, b) {
+  const n = (x) => String(x || "").replace(/\s+/g, " ").trim().toLowerCase();
+  return !!n(a) && n(a) === n(b);
+}
+
+/** Un bouton de navigation : son libellé, avec la flèche du sens où il mène. */
+function libelleFleche(bouton, texte, sens) {
+  const dit = document.createElement("span");
+  dit.textContent = texte;
+  const fleche = icone(sens === "droite" ? "fleche-droite" : "fleche-gauche");
+  if (sens === "droite") bouton.replaceChildren(dit, fleche);
+  else bouton.replaceChildren(fleche, dit);
+}
 import { renderToolPicker } from "../ui/tool-picker.js";
 import { carteGardien, ficheGardien, listeAutomates } from "./gardiens.js";
 import { listeLancements } from "./lancements.js";
@@ -114,6 +130,8 @@ function renderAgentCard(agent, selected, daemon, actions, panel, state) {
   const desc = document.createElement("p");
   desc.className = "agent-card-desc";
   desc.textContent = agent.desc || "Agent planifié";
+  // Une description qui répète le nom n'apprend rien : la carte la tait.
+  desc.hidden = memeTexte(agent.desc, agent.name || agent.id);
 
   const meta = document.createElement("div");
   meta.className = "agent-card-meta";
@@ -254,9 +272,8 @@ function renderMecanismes(ov, actions, into) {
     const dernier = m.lastFired
       ? new Date(m.lastFired).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })
       : "jamais";
-    text.innerHTML = `<strong>${escapeHtml(infos.titre)}</strong> · ${escapeHtml(
-      infos.texte
-    )} · ${m.fired || 0} fois · dernier : ${escapeHtml(dernier)}`;
+    const texte = memeTexte(infos.texte, infos.titre) ? "" : ` · ${escapeHtml(infos.texte)}`;
+    text.innerHTML = `<strong>${escapeHtml(infos.titre)}</strong>${texte} · ${m.fired || 0} fois · dernier : ${escapeHtml(dernier)}`;
     info.appendChild(text);
     const btn = document.createElement("button");
     btn.type = "button";
@@ -1018,15 +1035,15 @@ export function createAgentView(ctx) {
     if (forward) {
       const showForward = panel === "home";
       forward.hidden = !showForward;
-      forward.textContent = "Liste →";
+      libelleFleche(forward, "Liste", "droite");
     }
     if (back) {
       if (panel === "create") {
         back.hidden = false;
-        back.textContent = "← Annuler";
+        libelleFleche(back, "Annuler", "gauche");
       } else if (panel === "detail" || panel === "gardien") {
         back.hidden = false;
-        back.textContent = "← Liste";
+        libelleFleche(back, "Liste", "gauche");
       } else {
         back.hidden = true;
       }
