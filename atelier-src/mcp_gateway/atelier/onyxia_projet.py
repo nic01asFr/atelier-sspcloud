@@ -36,7 +36,11 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Literal
 from uuid import uuid4
 
+from fastapi import HTTPException, Request, Response
+from fastapi.responses import JSONResponse
+
 from mcp_gateway.atelier.commandes import structure
+from mcp_gateway.auth import bearer_from_header, validate_credential
 
 log = logging.getLogger("atelier.onyxia_projet")
 
@@ -465,6 +469,23 @@ class MandataireOnyxia:
             )
         self._sessions_verifiees[cle] = time.monotonic()
 
+    async def lier(self, borne: Borne) -> dict[str, Any]:
+        """Attache la session du projet à son pod, par `project_bind` d'Onyxia.
+
+        `project_bind(pod, project)` ouvre une session nommée `proj-<projet>`
+        sur ce pod (`session_start(attach_pod=…)`, dossier
+        `…/projects/<projet>`). Rend ce qu'Onyxia en dit ; `RefusOnyxia` si
+        Onyxia refuse (pod absent, non Running) ; laisse passer une panne de
+        transport, que l'appelant distingue.
+        """
+        self.oublier_la_session(borne.slug)
+        resultat = await self._appeler("project_bind", filtrer_appel("code", borne, "project_bind", {}))
+        erreur = _erreur_de(resultat)
+        if erreur is not None:
+            raise RefusOnyxia(f"Onyxia n'attache pas {borne.pod} : {erreur.get('message') or erreur}")
+        charge = _charge_de(resultat)
+        return charge if isinstance(charge, dict) else {}
+
     def oublier_la_session(self, slug: str) -> None:
         self._sessions_verifiees = {k: v for k, v in self._sessions_verifiees.items() if k[0] != slug}
 
@@ -533,11 +554,6 @@ def monter(app: Any) -> MandataireOnyxia:
 
     Même porteur que `/mcp` : la clé du propriétaire ou un jeton OAuth.
     """
-    from fastapi import HTTPException, Request, Response
-    from fastapi.responses import JSONResponse
-
-    from mcp_gateway.auth import bearer_from_header, validate_credential
-
     mandataire: MandataireOnyxia = getattr(app.state, "onyxia_mandataire", None) or _mandataire_du_pool(app)
     app.state.onyxia_mandataire = mandataire
 
