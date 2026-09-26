@@ -74,7 +74,7 @@ En résumé :
 Les vues de l'interface (Code, Assistant, Connecteurs, Agents, À valider,
 Journal, Ma mémoire) sont en cours de reprise : leurs noms peuvent changer.
 Ce que les agents doivent savoir tient dans le socle de leurs consignes,
-[`docs/consignes/socle.md`](docs/consignes/socle.md).
+[`atelier-src/mcp_gateway/atelier/consignes/socle.md`](atelier-src/mcp_gateway/atelier/consignes/socle.md).
 
 ---
 

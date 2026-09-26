@@ -18,7 +18,7 @@ Statuts employés :
 - **pas fait** : prévu par la vision (`docs/vision/`), absent du code.
 
 Pour un agent, la version courte et opérationnelle de ce guide est le socle des consignes,
-[`docs/consignes/socle.md`](consignes/socle.md).
+[`atelier-src/mcp_gateway/atelier/consignes/socle.md`](../atelier-src/mcp_gateway/atelier/consignes/socle.md).
 
 ---
 
@@ -140,7 +140,11 @@ titre, commandes, chemins protégés, vues épinglées, déploiement), `.gitigno
 dossier parent :
 
 1. `~/work/projects/CLAUDE.md` : le socle, commun à tous les projets
-   ([`docs/consignes/socle.md`](consignes/socle.md), posé à la main sur le pod) ;
+   ([`atelier-src/mcp_gateway/atelier/consignes/socle.md`](../atelier-src/mcp_gateway/atelier/consignes/socle.md)),
+   posé depuis le code déployé par `install/atelier-init.sh` et à chaque démarrage de l'Atelier
+   (`atelier-relancer` compris) : écriture atomique, et un fichier modifié à la main est gardé
+   en copie datée sous `~/work/.atelier-etat/socle/`, avec une ligne au journal, avant d'être
+   remplacé (`atelier/socle.py`). Il ne répète pas ce que dit la section suivante ;
 2. la section `atelier:contexte` (ou `.atelier/contexte.md` pour un projet à la structure type),
    régénérée par l'Atelier : projet, liste exacte des outils `atelier_*` du profil, wikichat,
    Onyxia, manière de montrer ses créations ;

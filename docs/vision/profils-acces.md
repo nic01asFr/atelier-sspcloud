@@ -227,7 +227,7 @@ décide, l'en-tête restreint.
 
 ### Consignes
 
-`docs/consignes/socle.md`, « Montrer ce que tu produis », réécrite pour le
+`atelier-src/mcp_gateway/atelier/consignes/socle.md`, « Montrer ce que tu produis », réécrite pour le
 profil `code` ; `transcripts-youtube.md` ne passe plus `projet`. À reposer sur
 le pod (`~/work/projects/CLAUDE.md` et le projet concerné) : **non fait**, pod
 en lecture seule pendant ce lot.

@@ -23,6 +23,12 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["mcp_gateway*"]
 
+# Des fichiers que le code lit à l'exécution : ils suivent le paquet même
+# installé autrement qu'en mode éditable.
+[tool.setuptools.package-data]
+"mcp_gateway.atelier" = ["consignes/*.md"]
+"mcp_gateway.gardiens" = ["gardiens.json"]
+
 [project.scripts]
 atelier = "mcp_gateway.atelier.app:main"
 
