@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import gzip
 import json
+import os
 import socket
 import threading
 import time
@@ -737,6 +738,8 @@ def test_le_jeton_se_lit_dans_l_entree_ou_un_secret(tmp_path: Path) -> None:
     secrets = tmp_path / "apps"
     secrets.mkdir()
     (secrets / "n8n-editeur").write_text("secret-du-fichier\n", encoding="utf-8")
+    # Comme un vrai secret : 0600 (sous Linux, le relais refuse un secret lisible par d'autres).
+    os.chmod(secrets / "n8n-editeur", 0o600)
     pool = {
         "a": {"headers": {"authorization": "Bearer du-pool"}, "atelier": {"vues": [
             {"nom": "v", "genre": "bureau", "amont": "http://a:1", "jeton": {"depuis": "entete:Authorization", "pose": "cookie:t"}}]}},
