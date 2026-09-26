@@ -1204,3 +1204,79 @@ export async function filsDeLaConversation(sessionId, statut = "ouvert") {
   if (!res.ok) await parseError(res);
   return res.json();
 }
+
+// ── Ce qui agit seul, « À valider » et le journal (vague 2, vue Agents) ───
+
+/** Un agent par gardien : contrôles, alertes, constats, échéance, gestes. */
+export async function getGardiens() {
+  const res = await fetch("/v1/gardiens", { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Toutes les tâches automatiques : gardiens, triggers, routines, créations. */
+export async function getAutomates() {
+  const res = await fetch("/v1/automates", { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/**
+ * Lancer, couper, réactiver ou activer (`id` : `gardien.<nom>`,
+ * `controle.<id>` ou `trigger.<id>`). Le service tranche qui en a le droit.
+ */
+export async function agirSurAutomate(id, geste) {
+  const res = await fetch("/v1/automates/action", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ id, geste }),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** La file « À valider » : `{statut, action, resultat: {propositions, nombre, note?}}`. */
+export async function listerAValider({ statut = "en_attente" } = {}) {
+  const q = new URLSearchParams({ statut });
+  const res = await fetch(`/v1/a-valider?${q}`, { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Accepter ou refuser une proposition ; `complete` : les réponses qu'elle attend. */
+export async function deciderAValider(id, decision, { motif = "", complete = null } = {}) {
+  const corps = { decision, motif };
+  if (complete && Object.keys(complete).length) corps.complete = complete;
+  const res = await fetch(`/v1/a-valider/${encodeURIComponent(id)}/decision`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(corps),
+  });
+  // Un refus du catalogue (403, 422) porte sa raison dans `resultat.erreur`.
+  let reponse = null;
+  try {
+    reponse = await res.clone().json();
+  } catch {
+    reponse = null;
+  }
+  if (!reponse || !reponse.statut) {
+    if (!res.ok) await parseError(res);
+    return reponse;
+  }
+  if (reponse.statut !== "fait") {
+    const err = new Error(reponse?.resultat?.erreur || "La décision n'a pas abouti.");
+    err.status = res.status;
+    throw err;
+  }
+  return reponse;
+}
+
+/** Le journal unique, le plus récent d'abord. */
+export async function lireJournal({ source = "", acteur = "", limite = 300 } = {}) {
+  const q = new URLSearchParams({ limite: String(limite) });
+  if (source) q.set("source", source);
+  if (acteur) q.set("acteur", acteur);
+  const res = await fetch(`/v1/journal?${q}`, { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}

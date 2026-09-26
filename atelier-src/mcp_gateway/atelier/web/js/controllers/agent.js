@@ -18,7 +18,14 @@ export function createAgentActions(ctx) {
   const { state, render, renderAgent, logout } = ctx;
 
   async function refreshAll() {
-    await refreshPiloteOverview(state);
+    try {
+      await refreshPiloteOverview(state);
+    } catch (err) {
+      // Le pilote absent (mode factice, wikichat arrêté) n'efface pas le
+      // reste de la vue : gardiens et tâches se lisent ailleurs.
+      if (err?.status === 401) throw err;
+    }
+    await ctx.rafraichirAutomates?.();
     S.syncShellModeFromSelection(state);
     render();
   }
@@ -34,6 +41,7 @@ export function createAgentActions(ctx) {
   }
 
   function select(agentId) {
+    S.setSelectedGardienId(state, null);
     S.setSelectedAgentId(state, agentId);
     S.setAgentPanel(state, "detail");
     S.setAgentTab(state, "discussion");
@@ -98,6 +106,7 @@ export function createAgentActions(ctx) {
 
   function showAgentList() {
     S.setSelectedAgentId(state, null);
+    S.setSelectedGardienId(state, null);
     S.setAgentPanel(state, "home");
     S.setShellMode(state, "agent", "list");
     render();
@@ -105,6 +114,7 @@ export function createAgentActions(ctx) {
 
   function showAgentHome() {
     S.setSelectedAgentId(state, null);
+    S.setSelectedGardienId(state, null);
     S.setAgentPanel(state, "home");
     S.setAgentCreateForm(state, null);
     S.setAgentCreateError(state, "");
@@ -167,11 +177,14 @@ export function createAgentActions(ctx) {
 
   async function decide(agentId, actionId, decision) {
     await withErr(async () => {
-      await api.decideAgentAction(state.token, agentId, {
-        actionId,
-        decision: decision === "reject" ? "reject" : "approve",
-      });
+      // La file unique (S3) : la décision passe par la commande réservée,
+      // et va au journal avec son acteur, comme depuis « À valider ».
+      await api.deciderAValider(
+        `pilote:${agentId}:${actionId}`,
+        decision === "reject" ? "refuser" : "accepter"
+      );
       await refreshAll();
+      ctx.apresDecision?.();
     });
   }
 

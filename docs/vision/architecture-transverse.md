@@ -322,8 +322,17 @@ sortie, pas la vue d'ensemble.
 - **Une file « À valider »** : propositions des gardiens, des agents et des créations, et
   décisions en attente de l'Assistant.
 - **État (vague 1)** : le journal et la file existent, avec leur API ; leurs contrats sont
-  au §1.8 (« Commandes : ce qui existe »). L'écran « À valider » et la page du journal restent à
-  faire (équipe P).
+  au §1.8 (« Commandes : ce qui existe »).
+- **État (vague 2, équipe V)** : l'écran « À valider » (onglet de la navigation, badge du
+  nombre en attente relu toutes les 30 s ; détail, ce qu'accepter fera, précisions demandées
+  par un agent du pilote ; Accepter, réservé à la personne par le catalogue ; Refuser en un
+  clic, motif facultatif) et le journal (onglet, phrases en langage humain, filtres projet,
+  acteur, source) existent, sur les API ci-dessus. Les propositions d'un agent du pilote,
+  tranchées depuis sa fiche, passent aussi par `/v1/a-valider/<id>/decision`. L'inventaire des
+  automates n'est plus une page : c'est la liste « Tâches automatiques » de la vue Agents
+  (`GET /v1/automates`, `mcp_gateway/atelier/automates.py`) ; activer une tâche y est réservé à la
+  personne (J-b2), côté serveur. Reste : faire converger ces gestes vers le catalogue de
+  commandes quand les commandes d'agents de l'équipe K existeront.
 
 ### 1.8 Les commandes de l'Atelier
 

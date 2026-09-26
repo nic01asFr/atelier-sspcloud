@@ -1,0 +1,88 @@
+/**
+ * Gardiens et tâches automatiques : lire, choisir, lancer, couper, réactiver.
+ *
+ * Le service tranche les droits (couper un gardien, activer une tâche : la
+ * personne seule) ; ici on n'ajoute que la confirmation d'un geste qui retire
+ * un filet, et l'on relit l'état après chaque geste.
+ */
+
+import * as S from "../state.js";
+
+/**
+ * @param {object} ctx
+ * @param {object} ctx.state
+ * @param {object} ctx.api  getGardiens, getAutomates, agirSurAutomate
+ * @param {() => void} ctx.render
+ * @param {() => void} [ctx.renderAgent]
+ * @param {(msg: string) => void} [ctx.logout]
+ * @param {(msg: string) => boolean} [ctx.confirmer]
+ */
+export function createAutomatesActions(ctx) {
+  const { state, api, render } = ctx;
+  const renderAgent = ctx.renderAgent || render;
+  const confirmer = ctx.confirmer || ((msg) => globalThis.confirm?.(msg) ?? true);
+
+  function erreur(err) {
+    if (err?.status === 401) return ctx.logout?.("Clé invalide");
+    S.setError(state, err?.message || String(err));
+    render();
+  }
+
+  /** Relit gardiens et tâches ; une source absente n'empêche pas l'autre. */
+  async function rafraichir() {
+    const [gardiens, automates] = await Promise.allSettled([api.getGardiens(), api.getAutomates()]);
+    if (gardiens.status === "fulfilled") S.setGardiens(state, gardiens.value);
+    else if (gardiens.reason?.status === 401) return erreur(gardiens.reason);
+    if (automates.status === "fulfilled") S.setAutomates(state, automates.value);
+    if (
+      state.selectedGardienId &&
+      state.gardiens?.gardiens &&
+      !state.gardiens.gardiens.some((g) => g.id === state.selectedGardienId)
+    ) {
+      S.setSelectedGardienId(state, null);
+      if (state.agentPanel === "gardien") S.setAgentPanel(state, "home");
+    }
+  }
+
+  async function rafraichirEtRendre() {
+    await rafraichir();
+    renderAgent();
+  }
+
+  function choisirGardien(id) {
+    S.setSelectedAgentId(state, null);
+    S.setSelectedGardienId(state, id);
+    S.setAgentPanel(state, "gardien");
+    S.setShellMode(state, "agent", "detail");
+    render();
+    rafraichirEtRendre();
+  }
+
+  /** `id` : `gardien.<nom>`, `controle.<id>` ou `trigger.<id>`. */
+  async function agir(id, geste) {
+    state.automateEnCours = id;
+    renderAgent();
+    try {
+      await api.agirSurAutomate(id, geste);
+      S.setError(state, "");
+      await rafraichir();
+    } catch (err) {
+      erreur(err);
+    } finally {
+      state.automateEnCours = "";
+      renderAgent();
+    }
+  }
+
+  /** Couper retire un filet : on le dit avant, en clair. */
+  async function couper(id, nom) {
+    const quoi = id.startsWith("gardien.") ? `le gardien ${String(nom).toLowerCase()}` : `« ${nom} »`;
+    const ok = confirmer(
+      `Couper ${quoi} ? Il ne vérifiera plus rien jusqu’à ce que vous le réactiviez.`
+    );
+    if (!ok) return;
+    await agir(id, "couper");
+  }
+
+  return { rafraichir, rafraichirEtRendre, choisirGardien, agir, couper };
+}

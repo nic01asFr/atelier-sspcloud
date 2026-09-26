@@ -2,12 +2,15 @@
 
 import * as S from "../state.js";
 import { $, showBanner } from "../core/dom.js";
+import { rendreBadge } from "./a-valider.js";
 
 const VIEW_IDS = {
   code: "view-code",
   assistant: "view-assistant",
   connecteurs: "view-connecteurs",
   agent: "view-agent",
+  "a-valider": "view-a-valider",
+  journal: "view-journal",
 };
 
 /**
@@ -31,6 +34,12 @@ export function createShellView(ctx) {
       const v = btn.getAttribute("data-view");
       btn.classList.toggle("active", v === state.view);
     }
+    renderBadge();
+  }
+
+  /** Le nombre en attente, sur l'onglet « À valider », d'où qu'on soit. */
+  function renderBadge() {
+    rendreBadge($("nav-badge-a-valider"), state.aValiderCompte);
   }
 
   function renderViews() {
@@ -73,10 +82,16 @@ export function createShellView(ctx) {
     } else if (state.view === "agent") {
       ctx.views.agent.renderAgent();
       showBanner(state.error);
+    } else if (state.view === "a-valider") {
+      ctx.views.aValider?.render();
+      showBanner(state.error);
+    } else if (state.view === "journal") {
+      ctx.views.journal?.render();
+      showBanner(state.error);
     } else {
       showBanner(state.error);
     }
   }
 
-  return { renderApp, renderScreens, applyShellModes };
+  return { renderApp, renderScreens, applyShellModes, renderBadge };
 }

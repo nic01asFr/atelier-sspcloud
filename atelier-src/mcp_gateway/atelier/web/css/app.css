@@ -3965,3 +3965,312 @@ button.session-face-link {
   color: var(--muted);
   font-size: 0.78rem;
 }
+
+/* --- Vague 2 : gardiens, tâches automatiques, « À valider », journal -------
+   Les gardiens vivent dans la vue Agents (décision J-i) ; « À valider » et le
+   journal ont leur onglet. Le badge dit, d'où qu'on soit, ce qui attend. */
+
+.nav-badge {
+  display: inline-block;
+  margin-left: 0.3rem;
+  min-width: 1.1rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--bg);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.1rem;
+  text-align: center;
+}
+
+.nav-badge[hidden] {
+  display: none;
+}
+
+.view-page {
+  overflow-y: auto;
+}
+
+.vue-page {
+  max-width: 56rem;
+  margin: 0 auto;
+}
+
+.vue-page .empty-hint {
+  margin: 2rem auto;
+}
+
+.gardien-etat {
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.gardien-etat-err {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.gardien-etat-warn {
+  border-color: #c9a227;
+  color: #c9a227;
+}
+
+.gardien-etat-ok {
+  border-color: #3d9a6a;
+  color: #3d9a6a;
+}
+
+.gardien-gestes {
+  margin: 0.5rem 0 0.9rem;
+}
+
+.gardien-couper {
+  color: var(--danger);
+}
+
+.gardien-alertes,
+.gardien-controles,
+.gardien-constats,
+.automates-liste,
+.propositions,
+.journal-liste {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.gardien-alerte {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line);
+  border-left: 3px solid #c9a227;
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  font-size: 0.85rem;
+}
+
+.gardien-alerte-alerte {
+  border-left-color: var(--danger);
+}
+
+.gardien-preuve {
+  font-family: var(--mono);
+  font-size: 0.74rem;
+  color: var(--muted);
+  word-break: break-word;
+}
+
+.gardien-constats li {
+  font-size: 0.82rem;
+  color: var(--muted);
+  padding: 0.2rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.gardien-controle,
+.automate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  font-size: 0.85rem;
+}
+
+.gardien-controle-texte,
+.automate-texte {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.automate-genre {
+  font-size: 0.72rem;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 0.45rem;
+  white-space: nowrap;
+}
+
+.agent-a-valider .agent-daemon-bar-inner {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+}
+
+.proposition {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  padding: 0.55rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.proposition-ouverte {
+  border-color: var(--accent-dim);
+}
+
+.proposition-tete {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.proposition-source {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.proposition-titre {
+  flex: 1 1 14rem;
+  min-width: 0;
+}
+
+.proposition-quand,
+.proposition-decision,
+.proposition-resume {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.proposition-resume {
+  color: var(--text);
+}
+
+.proposition-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.proposition-effet {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.proposition-detail select,
+.proposition-detail input,
+.proposition-motif {
+  font: inherit;
+  font-size: 0.82rem;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.5rem;
+}
+
+.proposition-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.proposition-motif {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.journal-filtres {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  margin-bottom: 0.9rem;
+}
+
+.journal-filtre {
+  font: inherit;
+  font-size: 0.82rem;
+  color: inherit;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.45rem;
+  max-width: 100%;
+}
+
+.journal-ligne {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding: 0.35rem 0.1rem;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.85rem;
+}
+
+.journal-ligne-marquee .journal-texte {
+  color: #e0b25a;
+}
+
+.journal-quand {
+  flex: 0 0 7.5rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.journal-texte {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.journal-resultat {
+  font-size: 0.75rem;
+  color: var(--danger);
+  white-space: nowrap;
+}
+
+.journal-source {
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .gardien-controle,
+  .automate {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .journal-ligne {
+    flex-wrap: wrap;
+  }
+
+  .journal-quand {
+    flex-basis: 100%;
+  }
+}
