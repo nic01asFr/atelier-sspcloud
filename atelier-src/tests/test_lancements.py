@@ -265,3 +265,19 @@ def test_le_contexte_de_l_agent_lance_est_celui_du_projet(reglages: AtelierSetti
     from mcp_gateway.atelier.project_context import contexte_attendu
 
     assert contexte == contexte_attendu(reglages, dossier, "alpha")[1] + "\n"
+
+
+def test_le_dossier_de_travail_d_un_agent_est_une_cible_valable(reglages: AtelierSettings) -> None:
+    # Cas du pod (26/09) : les agents planifiés de l'Atelier travaillent dans un
+    # dossier marqué `.atelier-agent`, absent de la liste des projets de Code ;
+    # leurs lancements étaient refusés comme « projet inconnu ».
+    from mcp_gateway.atelier.projects import MARQUEUR_AGENT
+
+    dossier = _projet(reglages, "memoire-des-projets")
+    (dossier / MARQUEUR_AGENT).write_text("agent\n", encoding="utf-8")
+    with _client(reglages) as client:
+        r = _lance(client, dossier=str(dossier))
+        assert r.status_code == 202, r.text
+        # Un projet qui n'existe pas, lui, reste refusé.
+        refus = _lancer(client, projet="n-existe-pas")
+        assert refus.status_code == 403

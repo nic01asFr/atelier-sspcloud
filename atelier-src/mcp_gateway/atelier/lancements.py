@@ -469,6 +469,15 @@ class Lanceur:
         if self.projects is not None:
             tous = self.projects.list_projects(include_archived=True)
             connus = {p.slug for p in tous} | {self.settings.default_slug}
+            # Le dossier de travail d'un agent de l'Atelier (marqueur
+            # `.atelier-agent`) n'est pas listé parmi les projets de Code, pour
+            # ne pas encombrer la vue ; c'est pourtant une cible légitime : les
+            # agents planifiés y travaillent. Sans cela, leurs lancements
+            # étaient refusés (« projet inconnu »), constaté sur le pod le 26/09.
+            from mcp_gateway.atelier.projects import MARQUEUR_AGENT
+
+            if (racine / slug / MARQUEUR_AGENT).is_file():
+                connus.add(slug)
             if slug not in connus:
                 raise Refus(f"projet inconnu : {slug}")
             if any(p.slug == slug and getattr(p, "archived", False) for p in tous):
