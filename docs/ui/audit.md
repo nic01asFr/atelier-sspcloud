@@ -193,7 +193,7 @@ Un projet nommé `<img onerror=…>` s'exécutait. *Correctif* : `textContent`.
   **Corrigé.**
 - **G18. Boutons d'action qui ressemblent à du texte** (« Désactiver »,
   « Accorder un secret », « Lancer », « Couper », « Suspendre »),
-  `avant/10`, `avant/12`. *Correctif* : bouton secondaire bordé, destructif au
+  `avant/11`, `avant/21`. *Correctif* : bouton secondaire bordé, destructif au
   mot rouge. **Corrigé.**
 - **G19. Journal : acteurs illisibles** (`automate:wikichat:memoire a utilisé
   « memoire vecteurs »`, répété dix fois), `avant/14`. *Non corrigé* :
