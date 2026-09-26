@@ -183,10 +183,13 @@ export function createPanneauView(ctx) {
     return f;
   }
 
-  function rendreCatalogue(zone) {
+  function rendreCatalogue(zone, { relecture = false } = {}) {
     const slug = state.slug || state.sessions?.find((s) => s.session_id === state.sessionId)?.slug || "";
-    zone.replaceChildren(el("p", "apps-note", "Chargement des créations…"));
-    const recharger = () => rendreCatalogue(zone);
+    // Une relecture (après un geste, ou pendant qu'une création démarre) garde
+    // la liste affichée : la remplacer par « Chargement… » chaque seconde
+    // ferait clignoter le panneau.
+    if (!relecture) zone.replaceChildren(el("p", "apps-note", "Chargement des créations…"));
+    const recharger = () => rendreCatalogue(zone, { relecture: true });
     api
       .listApps(slug)
       .then((etat) =>
