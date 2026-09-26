@@ -702,8 +702,9 @@ sonde réussie les rend.
   - l'app y écrit (`PATCH /v1/sessions/{id}`) et y lit à chaque tour, sous
     l'identifiant du CLI. Un choix fait d'un côté vaut donc de l'autre ;
   - la fiche de la conversation n'en garde qu'une copie de lecture ;
-  - au terminal, l'alias `claude` (posé par `atelier-bashrc`) passe par
-    `atelier-claude-vscode`, qui applique ce choix à `claude --resume <id>`.
+  - au terminal, `claude` (le script `~/work/bin/surfaces/claude`, en tête du
+    PATH par `atelier-bashrc`) passe par `atelier-claude-vscode`, qui applique
+    ce choix à `claude --resume <id>`.
 - Résolution, la même partout (`mode_resolu`) : la conversation, puis le projet,
   puis le service. Un tour sans interlocuteur ne reçoit plus `bypassPermissions`
   par défaut.
@@ -827,3 +828,27 @@ lance depuis un dossier quelconque, sans paquet installé, et obtient le code 2.
    - les fichiers `.atelier/connecteurs-choisis.json` et
      `mcp/sondes-authentification.json` sont ignorés par l'ancien code ;
    - les défauts de mode réécrits restent valides pour le CLI.
+
+### Correctif du 26/09 (branche `correctif-surfaces`), après le premier passage du vérificateur
+
+Le vérificateur réel a relevé 15 écarts (`--rapide`) puis 136 (tous les projets). Leurs causes ont été établies sur le pod :
+
+| Écart | Cause mesurée | Correction |
+|---|---|---|
+| wikichat `failed` partout | le vérificateur coupait le pont (`WIKICHAT_PORT=1`) | le pont se connecte désormais par défaut, sous un seul nom fixe, `verificateur-coherence`. Ainsi, pas une identité par lancement. `--sans-wikichat` coupe le pont, et wikichat est alors rapporté « non mesuré » |
+| mode `default` dans VS Code | avec `CLAUDE_CODE_ENTRYPOINT=claude-vscode`, le CLI ignore `defaultMode`. L'essai a été fait sur le pod : `acceptEdits` au terminal, `default` avec ce point d'entrée | sans choix pour la conversation, l'enveloppeur passe lui-même le défaut du projet (`settings.local.json`, puis `settings.json`) |
+| gitlab `failed` hors de l'app | `Executable not found in $PATH: "npx"` (journal MCP du CLI). Le harnais met `~/work/bin` dans le PATH ; ni code-server, ni le terminal ne le faisaient | l'enveloppeur met `~/work/bin` en tête du PATH ; `atelier-bashrc` aussi |
+| `bash -lc` sans `system/init` | `claude` introuvable : l'alias n'existe qu'en interactif, et `~/work/bin` n'est pas dans le PATH | `atelier-bashrc` pose, avant la garde, `~/work/bin/surfaces` puis `~/work/bin` dans le PATH. Il pose aussi le script `surfaces/claude`, qui passe par l'enveloppeur, et l'alias disparaît |
+| n8n distribué en 401 | pont stdio `mcp-remote`, marqué `stdio-local` et jamais sondé par le pool | `noter_les_sondes` (appelé à la sonde du démarrage) sonde ces ponts en HTTP (`initialize`) ; un 401 ou un 403 les retire. `stdio-local` n'efface plus un échec |
+| sélection différente app / VS Code | le « + » du fil désactivait des connecteurs pour la seule conversation, ce que VS Code, qui lit un `.mcp.json` par dossier, ne peut pas suivre. `settings.local.json` gardait en outre une ancienne `enabledMcpjsonServers` (`Onyxia`, `n8n`) | le « + » règle le choix du dossier : le projet, ou le dossier de la conversation de l'Assistant. C'est la seule façon de garantir l'égalité. `mcp_overlay` est ignoré. L'approbation de `settings.local.json` est réécrite à l'identique du `.mcp.json` |
+| méta-outils absents pour l'Assistant | règle de profil du serveur `atelier` | `X-Atelier-Dossier: <dossier de l'Assistant>` dans l'entrée `atelier` de l'Assistant. Le reste revient à l'équipe A |
+
+Le vérificateur rapporte en notes ce qu'il ne mesure pas : wikichat coupé, et les serveurs encore `pending` à l'init, dont les outils ne sont pas comparés. Il marque « (équipe A) » les écarts qui attendent le filtrage du serveur `atelier`.
+
+Étapes de déploiement en plus de celles ci-dessus :
+- copier `bin/atelier-bashrc` et `bin/atelier-claude-vscode` dans `~/work/bin`
+  (l'Atelier repose l'enveloppeur à son démarrage) ;
+- relancer
+  `sh ~/work/bin/atelier-bashrc ~/.bashrc ~/work/.secrets/claude-env.sh ~/work/bin/atelier-claude-vscode ~/work/bin/claude`.
+  Cette commande crée `~/work/bin/surfaces/claude` et remplace l'alias par le PATH ;
+- redémarrer l'Atelier : la sonde du démarrage retire n8n, et la liaison réécrit les approbations.
