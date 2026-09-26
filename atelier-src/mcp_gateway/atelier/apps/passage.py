@@ -33,6 +33,19 @@ Le navigateur de l'agent le consomme à `/_atelier/entree` et reçoit une
 session d'applications à lui, qui ne s'élargit jamais : ni par un autre code
 d'agent, ni par un code owner. Cette session ne vaut que sur l'hôte des
 applications : l'Atelier ne lit pas ce cookie.
+
+**Deux sortes de portée.** Une portée est :
+
+- un **projet** (`demo`) : ses créations, sous `/<slug>/` ;
+- un **connecteur** (`connecteur:qgis`) : les vues qu'il déclare dans le pool
+  (bureau noVNC, éditeur n8n…), relayées sous `/_services/<connecteur>/` (voir
+  `bureaux`).
+
+Les deux ne se recouvrent jamais : un slug ne porte pas de `:`, et la
+racine d'un connecteur commence par `_`, qu'aucun slug ne peut prendre. Un
+passage ouvert pour le bureau QGIS n'ouvre donc ni un projet, ni un autre
+connecteur. Seule la personne ouvre un connecteur : un code d'agent reste
+borné à un projet.
 """
 
 from __future__ import annotations
@@ -64,21 +77,57 @@ _ACTEUR = re.compile(r"^agent:[A-Za-z0-9._-]{1,120}$")
 
 _CONTROLE = re.compile(r"[\x00-\x1f\x7f\\]")
 
+# La portée d'un connecteur, et la racine de ses vues sur l'hôte.
+PREFIXE_CONNECTEUR = "connecteur:"
+RACINE_SERVICES = "/_services"
+# Le nom d'un connecteur du pool (même forme que `mcp_registry`).
+_NOM_CONNECTEUR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
+
+
+def nom_connecteur_valide(nom: str) -> bool:
+    return bool(_NOM_CONNECTEUR.match(nom or ""))
+
+
+def portee_connecteur(nom: str) -> str:
+    """La portée qui n'ouvre que les vues de ce connecteur."""
+    if not nom_connecteur_valide(nom):
+        raise ValueError(f"connecteur invalide : {nom!r}")
+    return PREFIXE_CONNECTEUR + nom
+
+
+def connecteur_de_portee(portee: str) -> str | None:
+    """Le connecteur d'une portée de connecteur ; None pour un projet."""
+    if not (portee or "").startswith(PREFIXE_CONNECTEUR):
+        return None
+    nom = portee[len(PREFIXE_CONNECTEUR):]
+    return nom if nom_connecteur_valide(nom) else None
+
 
 def portee_valide(portee: str) -> bool:
-    """Une portée est un projet : le slug de ses artefacts sur l'hôte.
+    """Une portée est un projet (son slug) ou un connecteur (`connecteur:<nom>`).
 
     Tous les artefacts d'un même projet sont d'un même domaine de confiance
     (docs/atelier-applications.md, principe 5) ; la portée sépare les
-    projets, et borne la destination d'un code.
+    projets, et borne la destination d'un code. Les vues d'un connecteur
+    forment un domaine à part, que rien d'autre n'ouvre.
     """
-    return slug_valide(portee or "")
+    return slug_valide(portee or "") or connecteur_de_portee(portee or "") is not None
+
+
+def racine_de_portee(portee: str) -> str:
+    """Le chemin, sur l'hôte, sous lequel une portée donne accès."""
+    nom = connecteur_de_portee(portee)
+    return f"{RACINE_SERVICES}/{nom}" if nom is not None else f"/{portee}"
 
 
 def portee_du_chemin(chemin: str) -> str | None:
     """La portée qu'une adresse de l'hôte des applications demande."""
-    tete = chemin.lstrip("/").split("/", 1)[0]
-    return tete if tete and not tete.startswith("_") and portee_valide(tete) else None
+    morceaux = chemin.lstrip("/").split("/", 2)
+    tete = morceaux[0]
+    if "/" + tete == RACINE_SERVICES:
+        nom = morceaux[1] if len(morceaux) > 1 else ""
+        return PREFIXE_CONNECTEUR + nom if nom_connecteur_valide(nom) else None
+    return tete if tete and not tete.startswith("_") and slug_valide(tete) else None
 
 
 def destination_valide(destination: str, portee: str) -> bool:
@@ -98,7 +147,10 @@ def destination_valide(destination: str, portee: str) -> bool:
     segments = [unquote(x) for x in chemin.split("/")]
     if any(x in (".", "..") for x in segments):
         return False
-    return chemin == f"/{portee}" or chemin.startswith(f"/{portee}/")
+    if not portee_valide(portee):
+        return False
+    racine = racine_de_portee(portee)
+    return chemin == racine or chemin.startswith(f"{racine}/")
 
 
 def acteur_valide(acteur: str) -> bool:
@@ -193,8 +245,10 @@ class Passage:
         """
         if not acteur_valide(acteur):
             raise ValueError(f"acteur invalide : {acteur!r}")
-        if not portee_valide(portee):
-            raise ValueError(f"portée invalide : {portee!r}")
+        if not slug_valide(portee or ""):
+            # Un agent agit sur un service par ses outils ; il ne reçoit
+            # jamais le bureau d'un connecteur.
+            raise ValueError(f"portée d'agent invalide (un projet seulement) : {portee!r}")
         if not destination_valide(destination, portee):
             raise ValueError(f"destination invalide : {destination!r}")
         code = secrets.token_urlsafe(32)
