@@ -204,3 +204,30 @@ def test_trois_reparations_par_jour_au_plus(reglages: AtelierSettings) -> None:
             client.app.state.lancements.attendre(r.json()["lancement"]["id"], 20)
         r = _reparer(client, branche="gardien/sante/essai-3", origine="gardien:controle-3")
         assert r.status_code == 403 and "réparations aujourd'hui" in r.json()["erreur"]
+
+
+# --- J-b3 : un agent planifié travaille aussi sur une branche -----------------
+
+
+def test_un_agent_planifie_sur_branche_agent_propose_sa_fusion(reglages: AtelierSettings) -> None:
+    projet, distant = _depot(reglages)
+    main_avant = _sha(projet, "main")
+    agent = _AgentReparateur(distant)
+    with TestClient(build_app(settings=reglages, use_fake=True), base_url=ORIGINE) as client:
+        client.app.state.harness.pendant_le_tour = agent
+        r = _reparer(
+            client, origine="wikichat:routine:nettoyage", nom="nettoyeur",
+            branche="agent/routine-nettoyage/2026-09-26-nettoyeur", reparation=None,
+        )
+        assert r.status_code == 202, r.text
+        ident = r.json()["lancement"]["id"]
+        client.app.state.lancements.attendre(ident, 20)
+        for geste in ("update-ref main", "push main", "push --no-verify"):
+            assert agent.codes[geste] != 0, f"{geste} a abouti"
+        assert _sha(projet, "main") == main_avant
+        (p,) = client.app.state.a_valider.lister()
+        assert p.source == "agent" and p.titre.startswith("Travail à fusionner : nettoyeur")
+        assert p.action["commande"] == "atelier_reparation_fusionner"
+        # Un agent qui n'est pas un gardien ne prend pas une branche gardien/.
+        r = _reparer(client, origine="wikichat:routine:x", branche="gardien/x/y", reparation=None)
+        assert r.status_code == 403 and "agent/" in r.json()["erreur"]

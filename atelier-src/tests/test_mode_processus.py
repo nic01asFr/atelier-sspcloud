@@ -208,3 +208,22 @@ def test_sans_aucune_fiche_le_bypass_reste_signale(tmp_path: Path) -> None:
     ctx.processus = lambda: [Processus(7, ["/x/claude", "--permission-mode", "bypassPermissions"], "/tmp", 1)]
     res = securite.bypass(ctx, _controle())
     assert [c["empreinte"] for c in res["constats"]] == ["securite.bypass:cli-inconnue"]
+
+
+def test_changer_le_defaut_du_projet_previent_les_conversations_qui_le_suivent(
+    reglages: AtelierSettings, cle_du_proprietaire: str
+) -> None:
+    (reglages.projects_dir / "alpha").mkdir(parents=True)
+    with TestClient(build_app(settings=reglages, use_fake=True), base_url="https://testserver") as client:
+        entetes = {"Authorization": f"Bearer {cle_du_proprietaire}"}
+        store = client.app.state.store
+        suit = store.create(slug="alpha")
+        choisit = store.create(slug="alpha")
+        ailleurs = store.create(slug=reglages.default_slug)
+        client.patch(f"/v1/sessions/{choisit.session_id}", headers=entetes, json={"permission_mode": "plan"})
+        client.app.state.harness.modes_changes.clear()
+        r = client.put("/v1/projets/alpha/mode", headers=entetes, json={"mode": "default"})
+        assert r.status_code == 200, r.text
+        assert client.app.state.harness.modes_changes == [(suit.session_id, "default")]
+        assert r.json()["processus_prevenus"] == {suit.session_id: "aucun"}
+        assert ailleurs.session_id not in r.json()["processus_prevenus"]

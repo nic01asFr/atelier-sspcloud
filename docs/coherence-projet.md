@@ -999,9 +999,10 @@ POST /v1/lancements/<id>/arreter
   - `PATCH /v1/sessions/{id}` transmet le mode.
 - **Non vérifié** : que le vrai CLI en mode `-p` stream-json applique `set_permission_mode`. On a
   relevé sa présence et son traitement dans le binaire, sans l'exécuter.
-- **Défaut du projet** : `PUT /v1/projets/{slug}/mode` (`modes_routes.py`, hors de ce lot) ne
-  prévient pas encore les processus gardés des conversations sans choix propre. Ils repartent au
-  tour suivant, par l'empreinte.
+- **Défaut du projet** : `PUT /v1/projets/{slug}/mode` prévient aussi les processus gardés des
+  conversations du projet qui suivent son défaut (`SessionStore.defaut_du_projet_change`). Une
+  conversation qui a son propre choix le garde. La réponse porte `processus_prevenus`
+  (`{conversation: aucun|eteint|envoye}`). **Vérifié** (`test_mode_processus.py`).
 - **Processus VS Code** : l'Atelier ne le pilote pas.
   - `GET /v1/sessions/{id}/processus` (propriétaire) lit `<config>/sessions/<pid>.json` que tient
     Claude Code (`sessionId`, `entrypoint`, `status`), et `/proc/<pid>/cmdline` pour le mode au
@@ -1146,14 +1147,30 @@ ordinaire, avec `lance_par`.
   démarrage du fil. Il échoue sans la correction et passe avec.
 - **Vérifié** : le test visé 20 fois de suite, puis le fichier entier 20 fois de suite, sans échec.
 
+### Branche d'un agent lancé (décision J-b3, adoptée par défaut)
+
+- Un agent lancé pour **modifier du code** (routine, trigger planifié, travail délégué) travaille
+  sur une branche `agent/<origine>/<AAAA-MM-JJ>-<sujet>`. Il reçoit les mêmes gardes que le
+  réparateur : copie de travail, crochets, pas d'envoi, règles refusées. Sa fin de travail va dans
+  « À valider » (source `agent`) :
+  - « Travail à fusionner » avec l'action `atelier_reparation_fusionner` ;
+  - ou « Travail sans modification », sans action.
+- Un **réveil qui répond à un message**, ou un agent qui ne modifie pas de dépôt, travaille dans le
+  projet, avec le mode du projet.
+- La politique se déclare dans la définition wikichat (routine, étape, trigger) :
+  `branche: auto|toujours|jamais`, `auto` par défaut.
+  - `auto` : une branche pour une routine ou un trigger `cron`, pas pour un réveil ni pour un appel
+    ad hoc.
+  - C'est wikichat qui calcule le nom et l'envoie dans `branche`.
+- L'Atelier refuse une branche `gardien/` à un agent qui n'est pas un gardien, et toute branche hors
+  de `agent/` et `gardien/`.
+- Pas de repli local pour un agent sur branche : sans l'Atelier, il n'a pas ses gardes.
+- **Vérifié** : `tests/test_reparateurs.py`, où l'agent planifié garde `main` intact et propose sa
+  fusion ; côté wikichat, `src/lancement-atelier.test.mjs` (§13 de `atelier-coherence.md`).
+
 ### Ce qui reste
 
-- Les agents lancés par wikichat travaillent dans le dossier du projet, comme avant. Le transverse
-  (§1.1) dit « branche seulement » pour un agent lancé. C'est possible dès maintenant par `branche`,
-  mais ce n'est pas imposé : un réveil sur mention qui répond à un message n'a pas à ouvrir une
-  branche. À trancher par le coordinateur.
-- Plafond de jetons non tenu (A10) ; nettoyage des copies de travail refusées ; prévenir les
-  processus gardés quand le **défaut du projet** change (`modes_routes.py`).
+- Plafond de jetons non tenu (A10) ; nettoyage des copies de travail refusées.
 - `sante.ci-main` n'a pas de projet de réparation déclaré.
 - Écran : la note VS Code et la vue des réparateurs (équipe V).
 

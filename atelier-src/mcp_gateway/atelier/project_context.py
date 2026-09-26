@@ -171,8 +171,8 @@ def bloc_contexte(
             "",
             "### Cette copie de travail",
             "",
-            f"Tu es dans une copie du projet, sur la branche `{branche}`, ouverte pour une"
-            " réparation. Travaille et commite ici seulement. Ne change pas de branche,"
+            f"Tu es dans une copie du projet, sur la branche `{branche}`, ouverte pour ton"
+            " travail (réparation d'un gardien ou tâche automatique). Travaille et commite ici seulement. Ne change pas de branche,"
             " ne touche pas à `main`, ne pousse rien : l'Atelier montre ta proposition"
             " à la personne, qui décide de la fusion.",
         ]

@@ -649,6 +649,27 @@ class SessionStore:
                 log.warning("mode de %s non transmis au processus : %s", session_id, exc)
         return rec
 
+    def defaut_du_projet_change(self, slug: str) -> dict[str, str]:
+        """Le défaut d'un projet a changé : prévenir les processus de ses conversations qui le suivent.
+
+        Une conversation qui a son propre choix de mode le garde ; les autres
+        suivent le projet, et leur processus gardé ne doit pas garder l'ancien
+        défaut. Rend `{conversation: aucun|eteint|envoye}`.
+        """
+        from mcp_gateway.atelier.modes_permission import mode_de_la_conversation, mode_resolu
+
+        faits: dict[str, str] = {}
+        for rec in self.list_sessions(slug):
+            cli_id = self._claude_cli_id(rec)
+            if mode_de_la_conversation(cli_id):
+                continue
+            try:
+                nouveau, _source = mode_resolu(self.settings, rec.cwd, cli_id)
+                faits[rec.session_id] = self.harness.changer_de_mode(rec.session_id, nouveau)
+            except (OSError, ValueError) as exc:
+                log.warning("mode de %s non transmis au processus : %s", rec.session_id, exc)
+        return faits
+
     def processus_de_la_conversation(self, session_id: str) -> dict[str, Any]:
         """Les processus `claude` vivants de cette conversation, et ce que vaut un changement de mode.
 

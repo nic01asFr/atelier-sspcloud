@@ -569,6 +569,8 @@ class Lanceur:
             return ""
         if origine.startswith(PREFIXE_GARDIEN) and not branche.startswith("gardien/"):
             raise Refus("la branche d'une réparation commence par gardien/")
+        if not origine.startswith(PREFIXE_GARDIEN) and not branche.startswith("agent/"):
+            raise Refus("la branche d'un agent lancé commence par agent/ (gardien/ est aux réparations)")
         if not branche.startswith(BRANCHES_PERMISES):
             raise Refus(f"branche refusée : {branche} (préfixes permis : {', '.join(BRANCHES_PERMISES)})")
         if not re.fullmatch(r"[A-Za-z0-9._/-]{3,120}", branche) or ".." in branche or branche.endswith((".lock", "/", ".")):
@@ -842,12 +844,18 @@ class Lanceur:
             )
         reparation = lancement.reparation or {}
         titre_constat = str(reparation.get("resume") or reparation.get("titre") or "").strip()
+        gardien = lancement.origine.startswith(PREFIXE_GARDIEN)
+        qui = lancement.nom or lancement.origine
         if not base_intacte:
-            titre = f"Alerte : {lancement.base} a bougé pendant une réparation ({lancement.projet})"
-        elif commits:
+            titre = f"Alerte : {lancement.base} a bougé pendant le travail d'un agent ({lancement.projet})"
+        elif commits and gardien:
             titre = f"Réparation proposée : {titre_constat or lancement.branche}"
-        else:
+        elif commits:
+            titre = f"Travail à fusionner : {qui} ({lancement.branche})"
+        elif gardien:
             titre = f"Diagnostic sans correction : {titre_constat or lancement.branche}"
+        else:
+            titre = f"Travail sans modification : {qui} ({lancement.branche})"
         detail = {
             "lancement": lancement.id,
             "conversation": lancement.conversation,
