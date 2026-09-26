@@ -441,3 +441,33 @@ def test_le_choix_du_fil_vaut_pour_le_dossier_sur_toutes_les_surfaces(reglages: 
     # Une ancienne désactivation propre à la conversation n'a plus d'effet : même ensemble partout.
     assert set(app) == set(vscode)
     assert (store.get(rec.session_id).mcp_overlay or {}) == {}
+
+
+def test_le_reste_au_nom_de_l_assistant_ne_recoit_pas_le_profil_code(reglages: AtelierSettings) -> None:
+    """Essais du 26/09 : `~/work/projects/wikichat-memory` recevait un `.mcp.json` de profil `code`.
+
+    Son projet annoncé (`X-Atelier-Projet: wikichat-memory`) est le slug de
+    l'Assistant : un agent `code` ouvert là (VS Code, terminal) aurait eu le
+    projet de l'Assistant pour « son projet ». Le dossier de l'Assistant, lui,
+    reçoit toujours le profil `assistant`.
+    """
+    _pool_complet(reglages)
+    reste = reglages.projects_dir / reglages.assistant_slug
+    reste.mkdir(parents=True)
+    reglages.assistant_root.mkdir(parents=True, exist_ok=True)
+
+    lier_tous_les_projets(reglages)
+
+    assert not (reste / ".mcp.json").exists(), "le reste n'est pas relié comme un projet"
+    serveurs = _lire(reglages.assistant_root / ".mcp.json")
+    assert serveurs[SERVICE_ATELIER]["headers"][ENTETE_PROFIL] == "assistant"
+
+
+def test_un_agent_code_ne_peut_pas_annoncer_le_slug_de_l_assistant(reglages: AtelierSettings) -> None:
+    from mcp_gateway.atelier.commandes.profils import projet_annonce_valide
+
+    (reglages.projects_dir / reglages.assistant_slug).mkdir(parents=True)
+    (reglages.projects_dir / "vrai-projet").mkdir(parents=True)
+    store = types.SimpleNamespace(settings=reglages)
+    assert projet_annonce_valide(store, "vrai-projet") == "vrai-projet"
+    assert projet_annonce_valide(store, reglages.assistant_slug) == ""

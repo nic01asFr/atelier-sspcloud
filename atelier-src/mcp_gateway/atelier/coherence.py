@@ -319,15 +319,35 @@ class Vu:
 
 
 def dossiers_reels(settings: AtelierSettings) -> list[Dossier]:
-    """Les vrais projets (`projects_dir/*`) et le dossier de l'Assistant."""
+    """Les vrais projets (`projects_dir/*`) et le dossier de l'Assistant.
+
+    `projects/<slug de l'Assistant>` n'est pas un projet : il était vérifié
+    sous le profil `code` (« [wikichat-memory] profil code », 26/09) alors que
+    le dossier de l'Assistant l'est déjà sous `assistant`. Voir
+    `dossiers_masques`.
+    """
     dossiers: list[Dossier] = []
     if settings.projects_dir.is_dir():
         for d in sorted(settings.projects_dir.iterdir()):
             if d.is_dir() and not d.is_symlink() and not d.name.startswith("."):
+                if settings.masque_par_l_assistant(d.name):
+                    continue
                 dossiers.append(Dossier(d.name, d, "code"))
     if settings.assistant_root.is_dir():
         dossiers.append(Dossier("assistant", settings.assistant_root, "assistant"))
     return dossiers
+
+
+def dossiers_masques(settings: AtelierSettings) -> list[str]:
+    """Les dossiers de `projects_dir` masqués par l'Assistant : des restes, à ranger."""
+    racine = settings.projects_dir
+    if not racine.is_dir():
+        return []
+    return [
+        str(d)
+        for d in sorted(racine.iterdir())
+        if d.is_dir() and not d.is_symlink() and settings.masque_par_l_assistant(d.name)
+    ]
 
 
 def echantillon(dossiers: list[Dossier], noms: list[str] | None, rapide: bool) -> list[Dossier]:
@@ -801,7 +821,12 @@ def verifier_reel(
     dossiers = echantillon(dossiers_reels(settings), projets, rapide)
     version = version_de_l_extension()
     racine = Path(_tempfile.mkdtemp(prefix="atelier-coherence-"))
-    rapport: dict[str, Any] = {"version_extension": version, "dossiers": [], "ecarts": 0}
+    rapport: dict[str, Any] = {
+        "version_extension": version,
+        "dossiers": [],
+        "ecarts": 0,
+        "dossiers_masques": dossiers_masques(settings),
+    }
     try:
         config = _config_temporaire(racine)
         manquants = hooks_introuvables()
@@ -838,6 +863,8 @@ def rapport_en_texte(rapport: dict[str, Any]) -> str:
     lignes = [f"Extension Claude Code : {rapport.get('version_extension') or 'introuvable'}"]
     for manque in rapport.get("hooks_introuvables") or []:
         lignes.append(f"  hook introuvable : {manque}")
+    for masque in rapport.get("dossiers_masques") or []:
+        lignes.append(f"  note : {masque} porte le nom de l'Assistant sans être son dossier (reste, à ranger)")
     for d in rapport.get("dossiers") or []:
         lignes.append("")
         lignes.append(f"[{d['slug']}] profil {d['profil']}")

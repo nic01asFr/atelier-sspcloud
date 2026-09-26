@@ -1136,6 +1136,11 @@ def lier_tous_les_projets(settings: AtelierSettings) -> int:
         for dossier in sorted(racine.iterdir()):
             if not dossier.is_dir() or dossier.is_symlink() or dossier.name.startswith("."):
                 continue
+            if settings.masque_par_l_assistant(dossier.name):
+                log.warning(
+                    "%s porte le nom de l'Assistant sans être son dossier : pas relié (à ranger)", dossier
+                )
+                continue
             try:
                 lier_le_projet(settings, dossier)
                 n += 1
