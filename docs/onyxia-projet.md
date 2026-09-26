@@ -2,7 +2,7 @@
 
 Lot « profils », équipe O, 26/09/2026. Ce document applique la section « Onyxia : lié au
 déploiement d'un projet » de `docs/vision/profils-acces.md` et corrige l'écart G3 de
-`docs/coherence-outils-audit.md`.
+`docs/archives/chantiers/coherence-outils-audit.md`.
 
 ## 1. Le serveur Onyxia
 
@@ -195,7 +195,7 @@ Règles du filtre (`filtrer_appel`) :
 - **La clé ouvre les deux portes.** `ATELIER_MCP_KEY` est la clé du propriétaire. Un agent code
   qui la lit peut appeler `/mcp/onyxia` (complet) à la main, comme il peut déjà appeler `/mcp`.
   Le filtre borne ce que l'agent **reçoit**, pas ce qu'il pourrait forger. La fermer demande
-  des capacités courtes par projet (`trousseau-identite-decisions`).
+  des capacités courtes par projet (décision « trousseau », hors de ces vagues).
 - **`exec` donne un shell dans le pod du projet.** Ce que le compte de service de ce pod peut
   faire (kubectl, S3) reste possible. La borne est le pod, pas ses droits.
 - **Les sessions d'Onyxia sont globales.** L'Assistant peut rattacher `proj-<slug>` ailleurs ; le
@@ -203,9 +203,9 @@ Règles du filtre (`filtrer_appel`) :
 - **Le 401 sans lecture du corps** désynchronise les connexions que l'ingress réutilise, tant
   que le correctif serveur n'est pas déployé.
 
-## 7. À trancher avec Nicolas, au regard des usages
+## 7. À trancher par le mainteneur, au regard des usages
 
-1. **Porter le correctif dans `sspcloud_mcp`** (dépôt CEREMA et GitHub) et redéployer
+1. **Porter le correctif dans `sspcloud_mcp`** (ses dépôts GitLab et GitHub) et redéployer
    `passerelle-mcp` : qui, et quand ?
 2. **L'Assistant garde-t-il Onyxia au complet ?** `project_start`, `session_stop(uninstall)`,
    `gpu_switch(preempt)` et `service_deploy` d'un autre service engagent le quota ou suppriment

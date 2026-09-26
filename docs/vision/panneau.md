@@ -21,7 +21,7 @@ Détail, mesures et limites : `docs/navigateur-atelier.md` § 8.
 | **Panneau (J-f2)** | Un outil `new_page`, `navigate_page` ou `select_page` dans le flux ajoute l'onglet « Navigateur de l'agent » : panneau fermé, il s'ouvre dessus ; autre onglet regardé, un signal ; replié par la personne, le signal passe sur le bouton du panneau. Flux vivant (cadre retiré masqué), jamais épinglé ; retrouvé au chargement d'une conversation dont le navigateur est ouvert | `web/js/views/panneau.js` |
 | **Routes de l'Atelier** | `GET /v1/ecran/<id>` (état, sans port), `GET /v1/ecran/<id>/ouvrir` (code de portée `conversation:<id>`), `POST /v1/ecran/<id>/main` | `navigateur_routes.py` ; `app.state.diffusion` (une ligne dans `api.py`) |
 | **J-f3** | Lectures du navigateur autorisées d'office (`permissions.allow`) dans les réglages de chaque tour, de VS Code, du terminal et de wikichat | `navigateur.py` (`OUTILS_EN_LECTURE`, `regles_de_lecture_du_navigateur`) |
-| **Consignes** | `atelier_navigateur_ouvrir`, jamais `file://` ; lectures libres ; main de la personne et note de reprise | `atelier-src/mcp_gateway/atelier/consignes/socle.md`, `docs/consignes/chrome-devtools-atelier.md` |
+| **Consignes** | `atelier_navigateur_ouvrir`, jamais `file://` ; lectures libres ; main de la personne et note de reprise | `atelier-src/mcp_gateway/atelier/consignes/socle.md`, `docs/archives/consignes/chrome-devtools-atelier.md` |
 
 ### Vérifié
 
@@ -62,8 +62,8 @@ Namespace `user-<idep>` (le pod de mesure). L'hôte des applications tourne dans
 
 | Service | Service Kubernetes et ports | Ce qui répond | Authentification |
 |---|---|---|---|
-| Blender (`blender-remote-mcp-0`, StatefulSet, `ghcr.io/nic01asfr/blender-remote-mcp:latest`) | `blender-remote-mcp` (ClusterIP) : **8100**, **6080** | 8100 : API (`/mcp`, `/desktop` = `/canvas`, `/stream/{user_id}`, `/api/session/info`, `/health`). 6080 : websockify avec le noVNC d'origine (`/vnc.html`, WebSocket `/websockify`, sous-protocole `binary`). Ingress `user-<idep>-blender-mcp` (8100) | 8100 : `/desktop` accepte le cookie `blender_token` égal au jeton porteur de l'entrée `blender` du pool (200 ; l'en-tête `Authorization` y est refusé : 401). 6080 : **aucune** (RFB 3.8, type de sécurité 1 « None ») |
-| Bureau QGIS (`qgis-workspace-nic01asfr`) | `qgis-workspace-nic01asfr` (ClusterIP) : 8100, **8080**, **6080** | 8080 : API du bureau (`/api/layers`, `/api/screenshot`…) ; `/vnc` renvoie vers `http://localhost:6080/vnc.html` (inutilisable relayé). 6080 : websockify et noVNC, `/websockify` | 8080 et 6080 : **aucune** dans le cluster (`/api/layers` 200 sans jeton ; RFB type 1) |
+| Blender (`blender-remote-mcp-0`, StatefulSet, `ghcr.io/<compte>/blender-remote-mcp:latest`) | `blender-remote-mcp` (ClusterIP) : **8100**, **6080** | 8100 : API (`/mcp`, `/desktop` = `/canvas`, `/stream/{user_id}`, `/api/session/info`, `/health`). 6080 : websockify avec le noVNC d'origine (`/vnc.html`, WebSocket `/websockify`, sous-protocole `binary`). Ingress `user-<idep>-blender-mcp` (8100) | 8100 : `/desktop` accepte le cookie `blender_token` égal au jeton porteur de l'entrée `blender` du pool (200 ; l'en-tête `Authorization` y est refusé : 401). 6080 : **aucune** (RFB 3.8, type de sécurité 1 « None ») |
+| Bureau QGIS (`qgis-workspace-<idep>`) | `qgis-workspace-<idep>` (ClusterIP) : 8100, **8080**, **6080** | 8080 : API du bureau (`/api/layers`, `/api/screenshot`…) ; `/vnc` renvoie vers `http://localhost:6080/vnc.html` (inutilisable relayé). 6080 : websockify et noVNC, `/websockify` | 8080 et 6080 : **aucune** dans le cluster (`/api/layers` 200 sans jeton ; RFB type 1) |
 | Portail QGIS (`qgis-hub`) | `qgis-hub` (sans IP, headless) : **8888** | `/desk` (bureau noVNC encadré + discussion), `/workspace/vnc/…` et `/workspace/vnc/websockify` (relais vers le bureau). Ingress `user-<idep>-qgis` (http) | cookie `hub_api_key` égal à la clé `qgis_…` de l'entrée `qgis` du pool (`/desk` et `/workspace/vnc/vnc.html` : 200) ; sans : 401 JSON avec `portal_url`. La page `/desk` emploie des chemins **absolus** (`/static`, `/workspace`) |
 | n8n (Deployment `n8n`, `n8nio/n8n:2.38.6` ; conteneurs `n8n`, `mcp`, `portal`, `runners`) | `n8n` (ClusterIP) : **5678**, 3000, 3100 | 5678 : éditeur (`/healthz` 200). 3000 : serveur MCP (`n8n-mcp`). 3100 : portail d'actions. Ingress `user-<idep>-n8n`, `-n8n-mcp`, `-n8n-portail` | éditeur : la connexion utilisateur de n8n (`/rest/login` 401), pas de jeton de service. En interne, l'éditeur envoie `X-Frame-Options: SAMEORIGIN` (la mesure A6, faite par l'Ingress public, n'en voyait aucun) ; le relais le retire. Chemins **absolus** (`/assets`, `/rest`, `/static`) : `N8N_PATH` n'est pas réglé |
 
@@ -77,7 +77,7 @@ Constats de sécurité, à confier aux gardiens (rien n'a été changé) :
 | Connecteur | `atelier.vues` | Statut |
 |---|---|---|
 | `blender` | `[{"nom": "bureau", "genre": "bureau", "amont": "http://blender-remote-mcp:6080", "vnc": "/websockify", "titre": "Bureau Blender"}]` | à poser : noVNC d'origine, chemins relatifs, aucun jeton |
-| `qgis` | `[{"nom": "bureau", "genre": "bureau", "amont": "http://qgis-workspace-nic01asfr:6080", "vnc": "/websockify", "titre": "Bureau QGIS"}]` | à poser : même forme que Blender |
+| `qgis` | `[{"nom": "bureau", "genre": "bureau", "amont": "http://qgis-workspace-<idep>:6080", "vnc": "/websockify", "titre": "Bureau QGIS"}]` | à poser : même forme que Blender |
 | `n8n` | `[{"nom": "editeur", "genre": "application", "amont": "http://n8n:5678", "chemin": "garde", "titre": "Éditeur n8n"}]` | **seulement si** n8n est réglé avec `N8N_PATH=/_services/n8n/editeur/`, ce qui déplace aussi son adresse publique : décision de Nicolas. Sans cela, ses chemins absolus tombent hors du préfixe |
 | `qgis` (`/desk`) | `{"nom": "portail", "genre": "application", "amont": "http://qgis-hub:8888", "accueil": "/desk", "jeton": {"depuis": "entete:Authorization", "pose": "cookie:hub_api_key"}}` | **pas en l'état** : `/desk` charge `/static/…` et `/workspace/…` en absolu. Il faudrait que le portail sache vivre sous un préfixe |
 | `blender` (`/canvas`) | `{"nom": "canvas", "genre": "application", "amont": "http://blender-remote-mcp:8100", "accueil": "/canvas", "jeton": {"depuis": "entete:Authorization", "pose": "cookie:blender_token"}}` | **à essayer** : le cookie est vérifié (200), mais la page n'a pas été lue (lecture refusée pendant la découverte) ; si elle emploie des chemins absolus ou son jeton côté navigateur, elle ne marchera pas relayée (le relais caviarde le jeton) |
@@ -93,7 +93,7 @@ from mcp_gateway.registry import get_registry_server
 VUES = {
     "blender": [{"nom": "bureau", "genre": "bureau", "amont": "http://blender-remote-mcp:6080",
                  "vnc": "/websockify", "titre": "Bureau Blender"}],
-    "qgis": [{"nom": "bureau", "genre": "bureau", "amont": "http://qgis-workspace-nic01asfr:6080",
+    "qgis": [{"nom": "bureau", "genre": "bureau", "amont": "http://qgis-workspace-<idep>:6080",
               "vnc": "/websockify", "titre": "Bureau QGIS"}],
 }
 conn = connect(AtelierSettings().gateway_db_path)

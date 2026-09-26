@@ -10,12 +10,14 @@ commités, documents d'architecture que le code contredit, code qui ne compile
 pas et que rien n'importe.
 
 Ce dossier tient ces consignes sous git, sauf le socle, qui vit avec le code.
+Les consignes de projet sont celles du pod d'origine : ce sont des exemples,
+pas des fichiers à reprendre tels quels.
 Elles se posent sur le pod ainsi :
 
 | Fichier | Destination sur le pod |
 |---|---|
 | [`atelier-src/mcp_gateway/atelier/consignes/socle.md`](../../atelier-src/mcp_gateway/atelier/consignes/socle.md) | `~/work/projects/CLAUDE.md` (lu par tous les projets, en parent), **posé automatiquement** |
-| `chrome-devtools-atelier.md` | `~/work/projects/nouveau-projet/CLAUDE.md` |
+| [`../archives/consignes/chrome-devtools-atelier.md`](../archives/consignes/chrome-devtools-atelier.md) (archivée : le fork qu'elle décrit est abandonné, le navigateur des agents est dans l'Atelier) | `~/work/projects/nouveau-projet/CLAUDE.md` |
 | `stt-tts-atelier.md` | `~/work/projects/nouveau-projet-2/CLAUDE.md` |
 | `creation-agents-atelier.md` | `~/work/projects/nouveau-projet-4/CLAUDE.md` |
 | `transcripts-youtube.md` | `~/work/projects/projet-sans-nom-4/CLAUDE.md` |

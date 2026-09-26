@@ -107,7 +107,7 @@ def test_les_tours_du_projet_la_recoivent(reglages: AtelierSettings) -> None:
     assert harnais._env("agent", racine)["VOICE_TOKEN"] == "jeton-voix"
     # Un autre projet la reçoit aussi : le harnais charge le fichier
     # d'environnement unique, comme VS Code et le shell, qui ne savent pas
-    # d'avance quel projet les attend (docs/coherence-projet.md, lot A). Même
+    # d'avance quel projet les attend (docs/archives/chantiers/coherence-projet.md, lot A). Même
     # environnement sur toutes les surfaces plutôt qu'un cloisonnement que
     # seul l'Atelier tenait.
     autre = reglages.projects_dir / "autre"

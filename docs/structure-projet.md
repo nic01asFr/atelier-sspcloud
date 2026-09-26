@@ -1,5 +1,7 @@
 # Structure d'un projet de l'Atelier
 
+> **État au 26/09/2026.** La structure type et la migration sont implémentées (`atelier_projet_creer`, `atelier_projet_structurer`, `commandes/structure.py`, `commandes/migration.py`). Les commandes `/reprendre`, `/verifier`, `/fin-de-lot` et `/proposer` restent à faire.
+
 Proposition du 25/09/2026, **à valider**, tirée de l'étude du projet Lecteur
 Grist (`~/work/projects/projet-sans-nom-5`, 65 commits, plusieurs agents
 successifs, travail sur le poste et sur le pod). Complète
@@ -241,7 +243,7 @@ fait en un seul commit ; les autres restent aux agents du projet.
 2. Créer `ETAT.md` en fusionnant les quatre états existants (et les retirer
    ailleurs) ; « À décider » (OIDC, hôte des widgets) et « Demandé à l'Atelier ».
 3. `docs/cahier-des-charges.md`, `docs/conception/application.md` (depuis
-   `docs/lecteur-grist-application.md`, version corrigée) et
+   `docs/archives/chantiers/lecteur-grist-application.md`, version corrigée) et
    `docs/conception/lecteur.md`.
 4. Premières décisions : asm.js plutôt que wasm ; serveur Python et moteur
    gristlabs en sous-processus ; moteur recopié sans retouche ; règle non

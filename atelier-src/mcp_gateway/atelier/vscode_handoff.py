@@ -265,7 +265,7 @@ def _merge_claude_settings_file(path: Path, settings: AtelierSettings) -> None:
 def _retirer_l_effort_par_modele(data: dict[str, object]) -> None:
     """Retire `modelSettings.<modèle>.effortLevel` : l'effort n'a qu'une source.
 
-    Mesuré sur le pod le 25/09 (`docs/vision/mesures-vague1.md`) :
+    Mesuré sur le pod le 25/09 (`docs/archives/vision/mesures-vague1.md`) :
     `CLAUDE_CODE_EFFORT_LEVEL` l'emporte sur `modelSettings` et sur `--effort`
     (39 requêtes sur 39 en `medium` malgré un `xhigh` par modèle), et `xhigh`
     n'apporte rien de mieux. Laissé, ce réglage fait croire à un effort qui

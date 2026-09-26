@@ -31,7 +31,7 @@ Elle prime sur tout ce qui suit.
 
 ## Mode application, lots 0 à 5 (25/09/2026)
 
-Conception : `docs/lecteur-grist-application.md` (dépôt de l'Atelier). Code
+Conception : `docs/archives/chantiers/lecteur-grist-application.md` (dépôt de l'Atelier). Code
 dans `serveur/` du projet (paquet `lecteur_grist`), installé par
 `sh serveur/installer.sh` dans `.venv` (Python 3.11 par uv, rangé sous
 `~/work/.tools/uv-python` dans le pod).

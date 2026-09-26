@@ -6,8 +6,8 @@ clé de son propriétaire, et lui donne ses propres verbes : projets, conversati
 **Statut** : **L0 et L1 faits, déployés et mesurés sur le pod le 20 septembre 2026.**
 L2 (portées) et L3 (agents publiés) cadrés, non commencés. Décisions D1–D10 arrêtées le même jour.
 
-**Documents liés** : [`atelier-mcp-unified.md`](./atelier-mcp-unified.md) (le pool, les trois
-niveaux — sens entrant), [`atelier-mcp-implementation-plan.md`](./atelier-mcp-implementation-plan.md)
+**Documents liés** : [`atelier-mcp-unified.md`](archives/mcp/atelier-mcp-unified.md) (le pool, les trois
+niveaux — sens entrant), [`atelier-mcp-implementation-plan.md`](archives/mcp/atelier-mcp-implementation-plan.md)
 (décision D10 : pas de second service).
 
 ---

@@ -1,5 +1,7 @@
 # L'Assistant, pour la personne : rôle et expérience
 
+> **État au 26/09/2026.** L'Assistant est intégré (vague 3) ; ce document garde la réflexion qui l'a préparé et peut différer du code sur des noms d'onglets ou d'outils. Ce qui existe : [`../fonctionnalites.md`](../fonctionnalites.md) §4.
+
 Réflexion du 25/09/2026, équipe « rôle et expérience ». **Rien n'est implémenté.** Le document
 suit `assistant-cadre.md`, y compris les précisions de Nicolas du 25/09 : la porte d'entrée, un
 assistant complet, la voix, et les vues diffusées vues comme un même modèle. Il s'appuie sur

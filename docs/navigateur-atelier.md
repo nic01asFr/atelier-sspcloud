@@ -206,9 +206,9 @@ C'est une instance **unique** pour tous les clients de la passerelle
 la personne elle-même ; si un jour la passerelle sert d'autres comptes, il
 faudra une instance par client.
 
-L'**Assistant** de l'Atelier, à venir, sera une conversation comme les autres :
-il recevra la déclaration stdio (son propre processus, son propre Chrome) par
-le fichier effectif, comme tout tour. Il ne doit pas passer par
+L'**Assistant** de l'Atelier (intégré en vague 3) est une conversation comme
+les autres : il reçoit la déclaration stdio (son propre processus, son propre
+Chrome) par le fichier effectif, comme tout tour. Il ne doit pas passer par
 `gateway_call_tool` pour naviguer.
 
 ## 6. Fonctions web recouvrées
@@ -284,7 +284,7 @@ navigateur sur DuckDuckGo, consigne donnée à chaque agent dans la section
 ## 8. Écran en direct et « Prendre la main » (vague 3, équipe N, 26/09/2026)
 
 Décisions J-f2 et J-f3 (`docs/vision/decisions.md`), U1
-(`docs/vision/coherence-croisee.md` §5.1). Branche `v3-navigateur`.
+(`docs/archives/vision/coherence-croisee.md` §5.1). Branche `v3-navigateur`.
 
 ### 8.1 Le choix : le tube de puppeteer, plus un port en boucle locale
 
@@ -565,7 +565,7 @@ extinction (600 s d'inactivité).
 
 ## 9. Déploiement
 
-Voir `docs/coherence-projet.md`, sections « Navigateur stdio » et
+Voir `docs/archives/chantiers/coherence-projet.md`, sections « Navigateur stdio » et
 « Déploiement du 26/09 ».
 
 ## 9 bis. Chrome durable

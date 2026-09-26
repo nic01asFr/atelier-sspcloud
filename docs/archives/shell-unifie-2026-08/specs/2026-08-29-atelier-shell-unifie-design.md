@@ -1201,8 +1201,8 @@ forks de conversation, une conversation « Rendu — tout le vocabulaire », et 
 mais à trancher.
 
 **L'attribution du clone amont.** `nouveau-projet` porte
-`Onyxia <onyxia@cerema.fr>` dans son `.git/config` local, et trois fiches de
-savoir portent « cerema » jusque dans leur nom de fichier. Rien n'est public,
+l'identité git de l'organisme d'origine dans son `.git/config` local, et trois fiches de
+savoir portent son nom jusque dans leur nom de fichier. Rien n'est public,
 mais l'agent qui tient le savoir commun en reproduira, et la question a été
 soulevée deux fois sans être tranchée.
 

@@ -1,5 +1,7 @@
 # Architecture transverse de l'Atelier
 
+> **État au 26/09/2026.** Document vivant pendant les vagues 1 à 3, aujourd'hui intégrées. Là où il annonce une « page Gardiens » ou un « onglet Automates », la décision J-i l'a remplacé par la vue Agents. Ce qui existe : [`../fonctionnalites.md`](../fonctionnalites.md).
+
 Document vivant, ouvert le 25/09/2026 et tenu à jour à chaque retour d'équipe. **Proposition,
 non implémentée**, sauf mention « existe ».
 
@@ -481,7 +483,7 @@ aucun modèle.
 | `GET /v1/memoire/conversations?repos_min=30` | les conversations : projet, genre (`assistant` ou `code`), état, `au_repos`, `empreinte` (change quand elle grandit). Les lancements de la routine de nuit (`wikichat:memoire:*`) en sont exclus |
 | `GET /v1/memoire/conversations/{id}` | le transcript **filtré et réduit** (lecture seule, par `fondre`, sans l'absorption qui écrit) : paroles de la personne, textes du modèle, outils (nom et quelques champs d'entrée, chemins relatifs), erreurs (300 caractères), fins de tour et leurs jetons. Jamais le contenu d'un résultat d'outil. Accepte l'identifiant du CLI |
 | `POST /v1/memoire/propositions` | une préférence, un trait du profil ou une interprétation proposés par un modèle : « À valider », source `memoire`, action `atelier_memoire_retenir`. Trois par conversation au plus, doublons ignorés, texte filtré |
-| `POST /v1/memoire/resumer` | **clé du lanceur seule** (`memoire_modele.py`, A-7 révisée le 26/09) : `{ conversation }`, jamais un texte. L'Atelier lit, filtre, prépare et borne l'entrée (58 000 caractères consigne comprise), appelle `qwen3-8-27b` par le relais (800 jetons de sortie), rend `{ texte, jetons: { entree, sortie } }`. 20 par jour, un à la fois (429, 409) ; 502 si le modèle manque ; chaque appel au journal unique |
+| `POST /v1/memoire/resumer` | **clé du lanceur seule** (`memoire_modele.py`, A-7 révisée le 26/09) : `{ conversation }`, jamais un texte. L'Atelier lit, filtre, prépare et borne l'entrée (58 000 caractères consigne comprise), appelle `qwen3-8-27b` par le relais (1 200 jetons de sortie au plus), rend `{ texte, jetons: { entree, sortie } }`. 20 par jour, un à la fois (429, 409) ; 502 si le modèle manque ; chaque appel au journal unique |
 | `POST /v1/memoire/vecteurs` | **clé du lanceur seule** (A-9) : `{ textes (≤ 16), usage }` (`fiche` ou `requete`) → vecteurs `qwen3-embedding-8b` ; textes refiltrés, 8 000 caractères chacun, 2 000 par jour ; appels « fiche » au journal |
 
 **Commandes** (`commandes/rappel.py`, une ligne dans `commandes/enregistrer`) :
@@ -1077,7 +1079,7 @@ Le journal consigne, dans l'ordre, ce que chaque retour a changé dans la struct
     (`memoire_modele.py`, clé du lanceur seule) prend un identifiant de conversation ;
     l'Atelier lit le transcript, le filtre (T10), prépare l'entrée (paroles et réponse
     finale de chaque tour), la borne à 58 000 caractères consigne comprise, appelle
-    `qwen3-8-27b` une fois par le relais (non streamé, 800 jetons de sortie) ; 20 résumés
+    `qwen3-8-27b` une fois par le relais (non streamé, 1 200 jetons de sortie au plus) ; 20 résumés
     par jour tous appelants, un à la fois ; chaque appel et chaque refus au journal unique
     (`memoire_resumer`, `cout.entree` et `cout.sortie`) ; aucune commande du catalogue ;
   - mesure sur le pod (44 conversations d'au moins 3 échanges, entrée préparée par le code

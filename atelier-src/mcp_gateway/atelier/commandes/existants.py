@@ -114,7 +114,7 @@ def _decider_allegement(args: dict[str, Any]) -> str:
 
 
 # Le mot « création » de l'interface envoyait le modèle vers les compositions
-# (mesuré : 0 sur 6, `docs/vision/mesures-vague1.md`). Les descriptions de la
+# (mesuré : 0 sur 6, `docs/archives/vision/mesures-vague1.md`). Les descriptions de la
 # famille des artefacts portent donc les mots que la personne emploie, et
 # disent ce qu'une composition n'est pas.
 _PAS_UNE_COMPOSITION = (

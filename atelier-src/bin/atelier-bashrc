@@ -35,7 +35,7 @@ BASHRC=$1
 ENV_SECRETS=$2
 ENVELOPPEUR=${3:-}
 CLAUDE=${4:-}
-MARQUE="# Atelier : valeurs des références \${ATELIER_MCP_...}, avant la garde non interactive (voir docs/coherence-projet.md)"
+MARQUE="# Atelier : valeurs des références \${ATELIER_MCP_...}, avant la garde non interactive (voir docs/archives/chantiers/coherence-projet.md)"
 LIGNE="[ -r \"$ENV_SECRETS\" ] && . \"$ENV_SECRETS\""
 MARQUE_PATH="# Atelier : claude par l'enveloppeur"
 

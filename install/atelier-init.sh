@@ -450,7 +450,7 @@ demarrer_wikichat() {
   fi
   # wikichat hérite du fichier d'environnement unique : les `claude` qu'il
   # lance y trouvent les valeurs des références. Il doit aussi le relire à
-  # chaque lancement (docs/coherence-projet.md) : un jeton renouvelé après son
+  # chaque lancement (docs/archives/chantiers/coherence-projet.md) : un jeton renouvelé après son
   # démarrage ne serait pas dans son environnement.
   (cd "$SRC_WIKICHAT" && { [ -r "$ENV_SECRETS" ] && . "$ENV_SECRETS"; true; } && nohup env PORT="$PORT_WIKICHAT" \
       ANTHROPIC_API_KEY="$(cat "$SECRETS/llm_api_key")" \

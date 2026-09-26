@@ -1,12 +1,14 @@
 # Familles de projets et écosystème
 
+> **État au 26/09/2026.** Les gabarits de projet existent (`atelier_projet_creer`) ; brouillon, installation, partage et registre des promotions (J8), connecteur fait maison (J9) et extensions (J11) ne sont pas construits.
+
 Proposition du 25/09/2026, **à valider**. Équipe « Familles de projets et
 écosystème » de la réflexion sur la vision (`docs/vision/cadre.md`).
 Prolonge `docs/atelier-hebergement.md` (brouillon/production, capacités,
 entretien, service dédié), `docs/structure-projet.md` (structure type,
 `projet.json`, commandes), `docs/atelier-applications.md` (artefacts, hôte des
-applications, superviseur), `docs/coherence-projet.md` (une source par
-information, mécanismes natifs) et `docs/lecteur-grist-application.md`
+applications, superviseur), `docs/archives/chantiers/coherence-projet.md` (une source par
+information, mécanismes natifs) et `docs/archives/chantiers/lecteur-grist-application.md`
 (application témoin).
 
 ## L'idée en une phrase
@@ -70,7 +72,7 @@ projet peut compléter l'Atelier sans le toucher.
 | Agents publiés = promus comme une composition (D9, non commencé) | `docs/atelier-mcp-distant.md` L3 | la famille savoir-faire |
 | Routines et déclencheurs wikichat | coordinateur wikichat | l'entretien et les agents planifiés |
 | Enrichissements de connecteurs (libellés humains, familles d'outils) | `atelier/enrichissements.py` | présenter un connecteur fait maison comme les autres |
-| Application témoin complète (Lecteur Grist : page `lecteur` + service `essai`) | `docs/lecteur-grist-application.md` | preuve qu'un projet mêle plusieurs sortes d'artefacts |
+| Application témoin complète (Lecteur Grist : page `lecteur` + service `essai`) | `docs/archives/chantiers/lecteur-grist-application.md` | preuve qu'un projet mêle plusieurs sortes d'artefacts |
 
 Proposé mais pas construit : brouillon/production par étiquette
 `prod/<nom>/<n>`, capacités consenties et jeton `ATELIER_APP_JETON`,

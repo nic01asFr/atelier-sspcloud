@@ -16,7 +16,7 @@ référencés par les projets). Qui lance un `claude` le charge :
 - code-server : `claudeCode.environmentVariables` est écrit depuis ce fichier ;
 - le shell : `~/.bashrc` le source (ligne posée par `install/atelier-init.sh`) ;
 - wikichat, pour les processus qu'il lance : il source ce fichier au moment de
-  chaque lancement (`docs/coherence-projet.md`, « Secrets pour wikichat »).
+  chaque lancement (`docs/archives/chantiers/coherence-projet.md`, « Secrets pour wikichat »).
 
 Format : une ligne `export NOM='valeur'` par variable, en guillemets simples
 (une apostrophe s'écrit `'\\''`). Lisible par `sh`, `bash`, et par

@@ -9,7 +9,7 @@ retire les valeurs des réglages.
 
 L'essai avec la vraie extension (processus `claude` lancé par VS Code, variables
 vues dans `/proc/<pid>/environ`) est une vérification du déploiement
-(docs/coherence-projet.md, « Déploiement du 26/09 »).
+(docs/archives/chantiers/coherence-projet.md, « Déploiement du 26/09 »).
 """
 
 from __future__ import annotations

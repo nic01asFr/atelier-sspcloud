@@ -1,5 +1,7 @@
 # L'Assistant de l'Atelier — synthèse
 
+> **État au 26/09/2026.** L'Assistant est intégré (vague 3, voir §8). La délégation passe par `atelier_lancer_agent`, commande engageante ; la carte se lit par `GET /v1/carte`. Ce qui existe : [`../fonctionnalites.md`](../fonctionnalites.md) §4.
+
 Synthèse du 25/09/2026. **Proposition, non implémentée** : l'implémentation viendra une fois la
 vision validée. Elle réunit :
 

@@ -1,6 +1,6 @@
 # Profils d'accès : qui reçoit quels outils
 
-Contrat du 26/09/2026, posé avec Nicolas après l'audit `docs/coherence-outils-audit.md`. Il
+Contrat du 26/09/2026, posé avec Nicolas après l'audit `docs/archives/chantiers/coherence-outils-audit.md`. Il
 précise `architecture-transverse.md` §1.1 (acteurs) et §1.5 (outils), et il fait foi pour les
 équipes du lot « profils ».
 

@@ -66,7 +66,7 @@ def test_une_ligne_mal_placee_est_deplacee_avant_la_garde(tmp_path: Path) -> Non
     # Ce que l'ancienne init laissait : la ligne en fin de fichier, après la garde.
     ancien = (
         DEBIAN
-        + "\n# Atelier : valeurs des références ${ATELIER_MCP_...} (voir docs/coherence-projet.md)\n"
+        + "\n# Atelier : valeurs des références ${ATELIER_MCP_...} (voir docs/archives/chantiers/coherence-projet.md)\n"
         + f'[ -r "{env.as_posix()}" ] && . "{env.as_posix()}"\n'
     )
     bashrc.write_text(ancien, encoding="utf-8", newline="\n")

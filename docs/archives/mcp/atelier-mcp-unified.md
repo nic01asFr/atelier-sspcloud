@@ -195,7 +195,7 @@ POST   /v1/agents/proposed-actions/{id}/decide
 | Assistant cwd | ✅ sous-dossier session ; les anciennes fiches migrent au tour suivant, journal compris | sous-dossier session |
 | Agent onglet | ✅ agents systèmes et personnels, discussion, sélection d'outils | profils + pilote |
 | Wikichat `/pilote` | pilote déployé avec le service, `/pilote` encore en place | migré vers onglet Agent |
-| Passage de main VS Code | ✅ dans les deux sens, voir [`atelier-vscode-passage-de-main.md`](./atelier-vscode-passage-de-main.md) | — |
+| Passage de main VS Code | ✅ dans les deux sens, voir [`atelier-vscode-passage-de-main.md`](../../atelier-vscode-passage-de-main.md) | — |
 
 ---
 

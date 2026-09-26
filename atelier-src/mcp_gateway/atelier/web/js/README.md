@@ -50,7 +50,7 @@ js/
 | 2 — Binding | `.mcp.json` projet ou sous-dossier assistant | fichiers git / repo mémoire |
 | 3 — Conversation | composer `+` (Code / Assistant) | `mcp_overlay` session (API, pas git) |
 
-Références : `docs/atelier-mcp-unified.md`, `docs/atelier-wikichat-alignment.md` (§11.2 mobile).
+Références : `docs/archives/mcp/atelier-mcp-unified.md`, `docs/archives/mcp/atelier-wikichat-alignment.md` (§11.2 mobile).
 
 ## Responsive mobile
 
@@ -61,7 +61,7 @@ débordement horizontal ; le bouton « ← Liste » ramène en `shell-mode-list`
 c'est l'inverse.
 
 Reste desktop-first : le composeur, les popovers et les onglets
-d'administration. Cible d'ensemble : `docs/atelier-wikichat-alignment.md`
+d'administration. Cible d'ensemble : `docs/archives/mcp/atelier-wikichat-alignment.md`
 §11.2 et §13.3.
 
 **PJ** : upload → `cwd/.atelier/uploads/` ; le message harness utilise la syntaxe native Claude Code `@chemin/relatif` (pas d’inline custom).

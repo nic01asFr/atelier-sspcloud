@@ -1,5 +1,7 @@
 # Vision de l'Atelier — synthèse
 
+> **État au 26/09/2026.** Les vagues 1 à 3 sont intégrées. Décisions postérieures : pas de page Gardiens, les gardiens sont montrés dans la vue Agents (J-i) ; wikichat ordonne ses automates, l'exécuteur des gardiens ne fait que les siens (J-a). Ce qui existe : [`../fonctionnalites.md`](../fonctionnalites.md).
+
 Synthèse du 25/09/2026 des travaux de réflexion. **Proposition, non implémentée.** Elle s'appuie
 sur :
 

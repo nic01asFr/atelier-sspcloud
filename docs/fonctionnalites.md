@@ -1,6 +1,6 @@
 # Fonctionnalités de l'Atelier : guide de référence
 
-État au 26/09/2026, sur `main` = `20e6235` (vagues 1 à 3 et leurs correctifs). Ce guide dit, pour
+État au 26/09/2026 : vagues 1 à 3 et leurs correctifs, reprise de l'interface (v4) comprise. Ce guide dit, pour
 chaque fonctionnalité, à quoi elle sert, comment s'en servir (la personne, dans l'interface ; un
 agent, par quel outil et avec quel profil), ce qu'elle ne fait pas, où est le code et où est la
 doc détaillée. Il a été vérifié contre le code ; quand un document plus ancien le contredit,
@@ -242,7 +242,7 @@ n'active pas d'agent, n'accorde pas de secret, ne publie pas. Il n'a pas de voix
 (mots d'intention), `lancements.py` ; `web/js/views/assistant*.js`.
 **Doc** : [`vision/assistant-synthese.md`](vision/assistant-synthese.md),
 [`vision/assistant-role.md`](vision/assistant-role.md),
-[`vision/assistant-contexte.md`](vision/assistant-contexte.md).
+[`vision/assistant-contexte.md`](archives/vision/assistant-contexte.md).
 
 ---
 
@@ -493,8 +493,7 @@ sert pas encore du navigateur pour vérifier une création.
 
 **Code** : `bin/atelier-chrome`, `bin/atelier-chrome-onglets.mjs`, `atelier/navigateur.py`,
 `navigateur_routes.py`, `ecran.py`, `apps/page_ecran/`, `web/js/views/panneau.js`.
-**Doc** : [`navigateur-atelier.md`](navigateur-atelier.md) (§8 pour l'écran),
-[`consignes/chrome-devtools-atelier.md`](consignes/chrome-devtools-atelier.md).
+**Doc** : [`navigateur-atelier.md`](navigateur-atelier.md) (§8 pour l'écran).
 
 ---
 
@@ -529,7 +528,7 @@ le pool (J9). Les plugins Claude Code et leurs serveurs MCP sont écartés par
 **Code** : `mcp_gateway/` (`registry.py`, `upstream/`, `mcp/gateway.py`, `tool_search.py`,
 `compositions/`, `oauth.py`), `atelier/mcp_sync.py`, `mcp_registry.py`, `mcp_secrets.py`,
 `accords.py`, `commandes/connecteurs.py` ; `web/js/views/connectors.js`, `composition-builder.js`.
-**Doc** : [`atelier-mcp-unified.md`](atelier-mcp-unified.md),
+**Doc** : [`atelier-mcp-unified.md`](archives/mcp/atelier-mcp-unified.md),
 [`atelier-mcp-distant.md`](atelier-mcp-distant.md).
 
 ---
@@ -581,7 +580,7 @@ plafonds qui bornent.
 `wikichat_pilote_proxy.py`, `pilote_client.py`, `carte.py`, `commandes/carte.py`,
 `commandes/agents.py`, `commandes/liens.py`, `lancements.py`, `automates.py` ;
 `web/js/views/agent.js`, `lancements.js`, `fils.js`.
-**Doc** : [`atelier-wikichat-alignment.md`](atelier-wikichat-alignment.md),
+**Doc** : [`atelier-wikichat-alignment.md`](archives/mcp/atelier-wikichat-alignment.md),
 [`vision/architecture-transverse.md`](vision/architecture-transverse.md) §1.3 et §5.1, et
 `docs/atelier-coherence.md` du dépôt wikichat.
 
@@ -612,10 +611,10 @@ deviennent des empreintes). Les fiches vivent sous
 
 **Résumé des conversations.** Le résumé d'une conversation est un **appel direct** de l'Atelier
 (`POST /v1/memoire/resumer`, clé du lanceur, identifiant de conversation seulement) : l'Atelier
-lit, filtre, borne l'entrée à 58 000 caractères, appelle `qwen3-8-27b` (800 jetons de sortie),
+lit, filtre, borne l'entrée à 58 000 caractères, appelle `qwen3-8-27b` (1 200 jetons de sortie au plus, `SORTIE_MAX_JETONS`),
 20 par jour, un à la fois, chaque appel au journal. La **routine de nuit** de wikichat, qui
 enchaîne ces résumés (20 conversations au plus), **naît désactivée** : son activation attend la
-décision de Nicolas.
+décision du propriétaire.
 
 **Mémoire de la personne.** Les faits extraits par le code sont retenus d'office ; préférences,
 traits et interprétations ne sont que **proposés** (`atelier_memoire_proposer`, Assistant, trois
@@ -765,7 +764,7 @@ plafond atteint est une alerte d'erreur, qui ne ferme rien.
 profil (le plus récemment modifié).
 
 **Code** : `bin/atelier-verifier-coherence`, `atelier/coherence.py`.
-**Doc** : [`coherence-projet.md`](coherence-projet.md), [`coherence-outils-audit.md`](coherence-outils-audit.md).
+**Doc** : [`coherence-projet.md`](archives/chantiers/coherence-projet.md), [`coherence-outils-audit.md`](archives/chantiers/coherence-outils-audit.md).
 
 ---
 
@@ -885,6 +884,7 @@ Scripts posés dans `~/work/bin/` par `install/atelier-init.sh` :
 | `atelier-entetes-mcp` | dit au serveur `atelier` quelle conversation l'appelle |
 | `atelier-bashrc` | charge `claude-env.sh` avant la garde non interactive de `~/.bashrc` |
 | `atelier-figer-le-travail.sh` | hook `SessionEnd` (posé par l'installation) : commite le travail non commité, sans pousser |
+| `node-relais` | lance un serveur MCP en JavaScript avec le `node` épinglé de l'Atelier |
 
 Installation et réglages : [`installer.md`](installer.md). Consignes des agents :
 [`consignes/`](consignes/README.md).

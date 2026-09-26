@@ -19,7 +19,7 @@ connexion à Onyxia (`app.state.pool`, préfixe `onyxia`) :
 Ces deux points d'entrée répondent eux-mêmes à `initialize`, à
 `notifications/initialized` (202, corps vide et délimité) et à `tools/list`
 (depuis la liste que le pool a déjà) : le démarrage d'un tour n'attend plus
-jamais le serveur Onyxia (écart G3 de `docs/coherence-outils-audit.md`).
+jamais le serveur Onyxia (écart G3 de `docs/archives/chantiers/coherence-outils-audit.md`).
 
 Contrat avec la configuration par surface (`mcp_sync`) :
 `onyxia_pour_projet(settings, slug, profil)` rend l'entrée `mcpServers`

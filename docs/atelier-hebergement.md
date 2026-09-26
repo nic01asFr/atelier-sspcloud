@@ -1,8 +1,10 @@
 # L'Atelier comme hébergement de ce que l'on produit
 
+> **État au 26/09/2026.** Non construit (jalon J8) : `atelier_artefact_proposer` et `/v1/capacites` n'existent pas. Ce qui existe des créations : [`atelier-applications.md`](atelier-applications.md) et [`fonctionnalites.md`](fonctionnalites.md) §7.
+
 Proposition du 25/09/2026, **à valider**. Elle prolonge
 `docs/atelier-applications.md` (artefacts autonomes et serveur, déjà en
-service) et `docs/lecteur-grist-application.md` (première application
+service) et `docs/archives/chantiers/lecteur-grist-application.md` (première application
 complète).
 
 ## L'idée en une phrase

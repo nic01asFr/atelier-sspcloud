@@ -1,8 +1,10 @@
 # Les gardiens : garder l'écosystème cohérent et fiable, sans boîte noire
 
+> **État au 26/09/2026.** Exécuteur, contrôles, vue Agents et réparateurs sont intégrés et en service (vagues 1 et 2) ; il n'y a pas de page Gardiens (décision J-i). La déclaration réelle est `atelier-src/mcp_gateway/gardiens/gardiens.json`. Ce qui existe : [`../fonctionnalites.md`](../fonctionnalites.md) §12.
+
 Vision du 25/09/2026, équipe « Agents gardiens et fiabilité continue ».
 **À valider.** S'appuie sur `docs/vision/cadre.md`, `docs/atelier-hebergement.md`
-(§5 Entretien), `docs/coherence-projet.md` (lots A à H),
+(§5 Entretien), `docs/archives/chantiers/coherence-projet.md` (lots A à H),
 `docs/structure-projet.md` (harnais par participant) et sur le coordinateur
 wikichat (branche `atelier-coherence` : `triggers.mjs`, `routines.mjs`,
 `dormant.mjs`, `lancement.mjs`, `lanceur-atelier.mjs`, `repo-audit.mjs`).
