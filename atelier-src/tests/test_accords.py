@@ -111,6 +111,8 @@ def test_la_liste_des_secrets_rend_des_noms_jamais_des_valeurs(atelier: TestClie
     _secret(dossier, "grist_api_key")
     _secret(dossier, "n8n_jeton", 0o644)
     _secret(dossier, "atelier_internal_secret")
+    _secret(dossier, "atelier_lanceur_key")
+    _secret(dossier, "atelier_cle_de_demain")
     _secret(dossier, "claude-env.sh")
     _secret(dossier, ".cache")
     _secret(dossier / "apps", "app_cle")

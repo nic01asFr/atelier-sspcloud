@@ -37,6 +37,7 @@ NOMS_DE_L_ATELIER = frozenset(
     {
         "atelier_owner_key",
         "atelier_internal_secret",
+        "atelier_lanceur_key",
         "llm_api_key",
         "claude-env.sh",
         "atelier-git-askpass.sh",
@@ -52,7 +53,9 @@ def noms_des_secrets(dossier: Path) -> list[dict[str, Any]]:
     sortie = []
     for chemin in dossier.iterdir():
         nom = chemin.name
-        if nom in NOMS_DE_L_ATELIER or nom.startswith(".") or not reference_valide(nom):
+        # Les noms connus, et tout ce que l'Atelier range sous son préfixe : une
+        # clé qu'il ajouterait demain (celle du lanceur l'a montré) reste à lui.
+        if nom in NOMS_DE_L_ATELIER or nom.startswith((".", "atelier_", "atelier-")) or not reference_valide(nom):
             continue
         if nom.endswith((".avant", ".tmp", ".bak")) or ".avant-" in nom:
             continue
