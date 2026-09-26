@@ -1,0 +1,36 @@
+name: Documentation
+
+# Les liens relatifs de la documentation : un fichier déplacé ou un titre
+# renommé casse un lien sans que rien d'autre ne le signale.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**.md'
+      - 'scripts/verifier-liens.mjs'
+      - 'scripts/verifier-liens.test.mjs'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    paths:
+      - '**.md'
+      - 'scripts/verifier-liens.mjs'
+      - 'scripts/verifier-liens.test.mjs'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  liens:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Tester le vérificateur
+        run: node --test scripts/verifier-liens.test.mjs
+      - name: Vérifier les liens relatifs
+        run: node scripts/verifier-liens.mjs

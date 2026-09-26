@@ -8,7 +8,17 @@ on:
       - "install/atelier-init.sh"
       - "deploy/Dockerfile"
       - ".github/workflows/image.yml"
+  pull_request:
+    paths:
+      - "atelier-src/**"
+      - "install/atelier-init.sh"
+      - "deploy/Dockerfile"
+      - ".github/workflows/image.yml"
   workflow_dispatch:
+
+# Par défaut, lecture seule ; seul le pas qui pousse l'image demande plus.
+permissions:
+  contents: read
 
 env:
   IMAGE: ghcr.io/nic01asfr/atelier
@@ -35,8 +45,9 @@ jobs:
   image:
     needs: tests
     # Les étiquettes `latest` et `main` ne viennent que de main : lancé à la
-    # main sur une autre branche, le workflow ne fait que les tests.
-    if: github.ref == 'refs/heads/main'
+    # main sur une autre branche, ou pour une demande de fusion, le workflow ne
+    # fait que les tests.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read

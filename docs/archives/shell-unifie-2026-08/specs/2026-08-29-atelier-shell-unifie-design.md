@@ -122,7 +122,7 @@ dossier sur disque. Renommer est donc sans effet de bord, autant de fois qu'on v
 - ~~**Ouverture VS Code cassée**~~ — réparée, et étendue : l'extension Claude Code
   s'ouvre sur la conversation courante, et une conversation née dans l'extension
   remonte comme session du projet. Mécanisme et faits mesurés dans
-  [`atelier-vscode-passage-de-main.md`](../../atelier-vscode-passage-de-main.md).
+  [`atelier-vscode-passage-de-main.md`](../../../atelier-vscode-passage-de-main.md).
 - **Page projet** — un écran propre au projet lui-même, distinct de la
   conversation : revue de projet, fonctions Wikichat (mémoire, closure,
   capitalisation). À cadrer dans une réflexion plus globale, pas au fil de l'eau.
