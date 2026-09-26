@@ -31,6 +31,18 @@ const COMMANDES = {
   atelier_annuler: ["a annulé une action", "annuler une action"],
   atelier_montrer: ["a montré quelque chose dans le panneau", "montrer quelque chose dans le panneau"],
   atelier_navigateur_ouvrir: ["a ouvert le navigateur", "ouvrir le navigateur"],
+  atelier_agent_creer: ["a créé un agent", "créer un agent"],
+  atelier_agent_modifier: ["a modifié un agent", "modifier un agent"],
+  atelier_agent_supprimer: ["a supprimé un agent", "supprimer un agent"],
+  atelier_agent_activer: ["a activé l’agent", "activer l’agent"],
+  atelier_agent_desactiver: ["a désactivé l’agent", "désactiver l’agent"],
+  atelier_connecteur_ajouter: ["a ajouté le connecteur", "ajouter le connecteur"],
+  atelier_connecteur_retirer: ["a retiré le connecteur", "retirer le connecteur"],
+  atelier_connecteur_choisir: ["a choisi les connecteurs d’un projet", "choisir les connecteurs d’un projet"],
+  atelier_connecteur_accorder: ["a accordé un secret au connecteur", "accorder un secret au connecteur"],
+  atelier_projets_lier: ["a relié des projets", "relier des projets"],
+  atelier_projet_structurer: ["a mis le projet à la structure type", "mettre le projet à la structure type"],
+  atelier_projet_destructurer: ["a remis le projet comme avant", "remettre le projet comme avant"],
   automate_lancer: ["a lancé maintenant", "lancer maintenant"],
   automate_couper: ["a coupé", "couper"],
   automate_reactiver: ["a réactivé", "réactiver"],
@@ -105,6 +117,8 @@ function nomDeLObjet(objet) {
     case "tache":
       return `la tâche automatique « ${id} »`;
     case "projet":
+    case "agent":
+    case "connecteur":
       return `« ${id} »`;
     case "validation":
       return "";

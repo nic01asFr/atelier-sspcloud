@@ -24,6 +24,8 @@ import { createConnectorActions } from "./controllers/connectors.js?v=modal";
 import { createAgentActions } from "./controllers/agent.js?v=vague2";
 import { createAutomatesActions } from "./controllers/automates.js";
 import { createValidationActions } from "./controllers/validation.js";
+import { createAccordsActions } from "./controllers/accords.js";
+import { openModal } from "./ui/modal.js?v=modal2";
 import { createComposerMcpController } from "./controllers/composer-mcp.js";
 import { createComposerInputController } from "./controllers/composer-input.js";
 import { createAuthController } from "./controllers/auth.js";
@@ -116,6 +118,7 @@ function createApp() {
     logout: (msg) => logout(msg),
   });
   Object.assign(connectorActionsHolder, connectorActions);
+  connectorActionsHolder.accorderSecret = (entry) => accords.accorderSecret(entry);
 
   const agentActionsHolder = {};
   const automatesHolder = {};
@@ -145,6 +148,23 @@ function createApp() {
   });
 
   agentActionsHolder.ouvrirAValider = () => navigateView("a-valider");
+  // Les accords réservés à la personne : activer un agent, accorder un secret.
+  const accords = createAccordsActions({
+    state,
+    api,
+    render,
+    openModal,
+    logout: (msg) => logout(msg),
+    apresAgent: async () => {
+      try {
+        await refreshPiloteOverview(state);
+      } catch {
+        /* le pilote absent : l'erreur de la commande est déjà affichée */
+      }
+      await automatesActions.rafraichir();
+    },
+    apresConnecteur: () => refreshMcpOverview(state).catch(() => {}),
+  });
   const agentActions = createAgentActions({
     state,
     render,
@@ -152,6 +172,7 @@ function createApp() {
     logout: (msg) => logout(msg),
     rafraichirAutomates: () => automatesActions.rafraichir(),
     apresDecision: () => validation.rafraichirCompte(),
+    accords,
   });
   Object.assign(agentActionsHolder, agentActions);
 

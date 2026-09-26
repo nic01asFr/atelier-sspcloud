@@ -513,8 +513,15 @@ export function createAgentActions(ctx) {
   /** @deprecated alias */
   const openCreateModal = openCreate;
 
+  // Activer un agent est réservé à la personne (J-b2) : la commande de
+  // l'équipe K le vérifie. Les deux gestes passent par elle, au journal.
+  const activer = (agentId) => ctx.accords?.activerAgent(agentId);
+  const desactiver = (agentId) => ctx.accords?.desactiverAgent(agentId);
+
   return {
     select,
+    activer,
+    desactiver,
     clearSelection,
     showAgentList,
     showAgentHome,

@@ -84,7 +84,7 @@ function renderAgentCard(agent, selected, daemon, actions, panel, state) {
       { label: "Modifier l’agent", action: () => actions.openEdit(agent) },
       {
         label: agent.enabled ? "Désactiver" : "Activer",
-        action: () => actions.toggle(agent.id),
+        action: () => (agent.enabled ? actions.desactiver(agent.id) : actions.activer(agent.id)),
       },
       {
         label: "Supprimer l’agent",
@@ -728,9 +728,12 @@ function renderSettingsTab(agent, actions, state) {
   fire.addEventListener("click", () => actions.fire(agent.id));
   const toggle = document.createElement("button");
   toggle.type = "button";
-  toggle.className = "ghost btn-sm";
+  toggle.className = agent.enabled ? "ghost btn-sm" : "primary btn-sm";
   toggle.textContent = agent.enabled ? "Désactiver" : "Activer";
-  toggle.addEventListener("click", () => actions.toggle(agent.id));
+  if (!agent.enabled) toggle.title = "Réservé à vous : un agent ne peut pas en activer un autre.";
+  toggle.addEventListener("click", () =>
+    agent.enabled ? actions.desactiver(agent.id) : actions.activer(agent.id)
+  );
   const del = document.createElement("button");
   del.type = "button";
   del.className = "ghost btn-sm agent-profile-del";
@@ -825,6 +828,27 @@ function renderDetail(agent, state, actions) {
   lead.textContent = agent.desc || "";
   head.appendChild(titleRow);
   head.appendChild(lead);
+  if (!agent.enabled) {
+    // Un agent créé par un modèle naît désactivé (J-b) : l'activer revient à
+    // la personne (J-b2), par la commande réservée.
+    const bandeau = document.createElement("div");
+    bandeau.className = "agent-daemon-bar agent-a-activer";
+    const inner = document.createElement("div");
+    inner.className = "agent-daemon-bar-inner";
+    const texte = document.createElement("span");
+    texte.className = "agent-daemon-info";
+    texte.textContent = "Cet agent est désactivé : il ne partira pas seul tant que vous ne l’activez pas.";
+    const activer = document.createElement("button");
+    activer.type = "button";
+    activer.className = "primary btn-sm";
+    activer.textContent = "Activer";
+    activer.title = "Réservé à vous : un agent ne peut pas en activer un autre.";
+    activer.addEventListener("click", () => actions.activer(agent.id));
+    inner.appendChild(texte);
+    inner.appendChild(activer);
+    bandeau.appendChild(inner);
+    head.appendChild(bandeau);
+  }
   body.appendChild(head);
 
   body.appendChild(renderTabs(agent, state, actions));

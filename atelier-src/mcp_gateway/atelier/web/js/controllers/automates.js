@@ -63,7 +63,14 @@ export function createAutomatesActions(ctx) {
     state.automateEnCours = id;
     renderAgent();
     try {
-      await api.agirSurAutomate(id, geste);
+      const fiche = (state.automates?.automates || []).find((a) => a.id === id);
+      if (geste === "activer" && fiche?.agent && api.executerCommande) {
+        // Un agent du Pilote s'active par la commande réservée : elle vérifie
+        // aussi qu'il a un budget lisible avant de le laisser partir seul.
+        await api.executerCommande("atelier_agent_activer", { agent: id.replace(/^trigger\./, "") });
+      } else {
+        await api.agirSurAutomate(id, geste);
+      }
       S.setError(state, "");
       await rafraichir();
     } catch (err) {

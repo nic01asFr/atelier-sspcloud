@@ -331,8 +331,15 @@ sortie, pas la vue d'ensemble.
   tranchées depuis sa fiche, passent aussi par `/v1/a-valider/<id>/decision`. L'inventaire des
   automates n'est plus une page : c'est la liste « Tâches automatiques » de la vue Agents
   (`GET /v1/automates`, `mcp_gateway/atelier/automates.py`) ; activer une tâche y est réservé à la
-  personne (J-b2), côté serveur. Reste : faire converger ces gestes vers le catalogue de
-  commandes quand les commandes d'agents de l'équipe K existeront.
+  personne (J-b2), côté serveur. Les accords réservés de l'équipe K ont leur écran : « Activer »
+  sur un agent désactivé (fiche, menu, liste des tâches) appelle `atelier_agent_activer`, et
+  « Désactiver » son inverse ; « Accorder un secret » (vue Connecteurs) liste les noms de
+  `GET /v1/secrets/noms` (`accords.py` : la personne seule, jamais une valeur, ni les secrets de
+  l'Atelier lui-même) et appelle `atelier_connecteur_accorder` ; une proposition qui porte l'une
+  d'elles s'accepte par « À valider ». Écrit et testé contre le contrat, avec de fausses
+  commandes au même nom et à la même classe, avant la fusion de `v2-creations`. Reste : les
+  gestes des gardiens et des tâches de la plateforme passent encore par
+  `POST /v1/automates/action`, hors catalogue.
 
 ### 1.8 Les commandes de l'Atelier
 

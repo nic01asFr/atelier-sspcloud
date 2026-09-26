@@ -1280,3 +1280,47 @@ export async function lireJournal({ source = "", acteur = "", limite = 300 } = {
   if (!res.ok) await parseError(res);
   return res.json();
 }
+
+/**
+ * Une commande du catalogue, appelée par la personne (`POST /v1/commandes/<nom>`).
+ *
+ * Les réservées (activer un agent, accorder un secret) ne passent que par
+ * ici : la session de l'interface vaut « la personne ». Un refus ou un échec
+ * lève une erreur qui porte la raison du service.
+ */
+export async function executerCommande(nom, args = {}) {
+  const res = await fetch(`/v1/commandes/${encodeURIComponent(nom)}`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ arguments: args }),
+  });
+  let corps = null;
+  try {
+    corps = await res.clone().json();
+  } catch {
+    corps = null;
+  }
+  if (res.status === 404) {
+    const err = new Error(`Cette action n’est pas encore disponible ici (${nom}).`);
+    err.status = 404;
+    throw err;
+  }
+  if (!corps || !corps.statut) {
+    if (!res.ok) await parseError(res);
+    return corps;
+  }
+  if (corps.statut !== "fait") {
+    const raison = corps?.resultat?.erreur || corps?.resultat?.detail || corps.statut;
+    const err = new Error(typeof raison === "string" ? raison : JSON.stringify(raison));
+    err.status = res.status;
+    throw err;
+  }
+  return corps;
+}
+
+/** Les noms des secrets qu'on peut accorder, jamais leurs valeurs. */
+export async function listerNomsDesSecrets() {
+  const res = await fetch("/v1/secrets/noms", { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
