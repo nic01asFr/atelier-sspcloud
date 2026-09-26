@@ -2189,6 +2189,8 @@ def build_app(
         if app.state.use_fake or not hasattr(app.state, "pool"):
             raise HTTPException(503, "gateway not available")
         app.state.upstream_status = await app.state.pool.startup()
+        from mcp_gateway.atelier.mcp_sync import noter_les_sondes
+        await asyncio.to_thread(noter_les_sondes, settings, app.state.upstream_status)
 
         # Le pool ne connecte pas les serveurs lancés en local : sans ce
         # passage, leurs outils resteraient inconnus et on ne pourrait

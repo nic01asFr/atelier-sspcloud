@@ -28,12 +28,12 @@ from mcp_gateway.atelier.env_secrets import (
 )
 from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
 from mcp_gateway.atelier.harness import ClaudeHarness
-from mcp_gateway.atelier.mcp_sync import materialize_mcp_config, materialize_session_mcp
+from mcp_gateway.atelier.mcp_sync import lier_le_projet, materialize_mcp_config, materialize_session_mcp
 from mcp_gateway.atelier.vscode_handoff import environnement_du_claude_vscode
 from mcp_gateway.db import connect
 
 JETON = "jeton-onyxia-0123456789abcdef"
-VARIABLE = "ATELIER_MCP_ONYXIA_AUTHORIZATION"
+VARIABLE = "ATELIER_MCP_PASSERELLE_AUTHORIZATION"
 CLE = "cle-proprietaire-0123456789"
 
 
@@ -41,7 +41,7 @@ def _preparer(reglages: AtelierSettings) -> None:
     conn = connect(reglages.gateway_db_path)
     try:
         IntegratedMcpStore(conn).upsert(
-            "Onyxia",
+            "passerelle",
             {
                 "type": "http",
                 "url": "https://passerelle.exemple/mcp",
@@ -90,13 +90,20 @@ def test_le_fichier_effectif_ne_porte_que_des_references(reglages: AtelierSettin
     texte = chemin.read_text(encoding="utf-8")
     assert JETON not in texte and CLE not in texte
     serveurs = json.loads(texte)["mcpServers"]
-    assert serveurs["Onyxia"]["headers"]["Authorization"] == f"Bearer ${{{VARIABLE}}}"
+    assert serveurs["passerelle"]["headers"]["Authorization"] == f"Bearer ${{{VARIABLE}}}"
 
 
-def test_un_jeton_propre_au_projet_n_est_pas_remplace_par_celui_du_pool(
+def test_un_jeton_propre_au_projet_suit_la_meme_regle_sur_toutes_les_surfaces(
     reglages: AtelierSettings, tmp_path: Path
 ) -> None:
-    """Deux valeurs différentes : on ne substitue pas en silence celle du pool."""
+    """Le tour de l'Atelier et le `.mcp.json` (VS Code, terminal) disent la même chose.
+
+    Avant les profils, le tour gardait le jeton du projet quand le `.mcp.json`
+    le remplaçait par la référence du pool : deux jetons pour une conversation
+    selon la surface. Une seule fonction les écrit désormais : l'en-tête que
+    le pool connaît devient sa référence partout, et aucun secret en clair
+    ne reste dans le dossier du projet.
+    """
     _preparer(reglages)
     projet = tmp_path / "projet"
     projet.mkdir()
@@ -104,7 +111,7 @@ def test_un_jeton_propre_au_projet_n_est_pas_remplace_par_celui_du_pool(
         json.dumps(
             {
                 "mcpServers": {
-                    "Onyxia": {
+                    "passerelle": {
                         "type": "http",
                         "url": "https://passerelle.exemple/mcp",
                         "headers": {"Authorization": "Bearer autre-jeton-du-projet"},
@@ -116,7 +123,11 @@ def test_un_jeton_propre_au_projet_n_est_pas_remplace_par_celui_du_pool(
     )
     chemin = materialize_session_mcp(reglages, "conv-2", kind="code", cwd=projet)
     serveurs = json.loads(chemin.read_text(encoding="utf-8"))["mcpServers"]
-    assert serveurs["Onyxia"]["headers"]["Authorization"] == "Bearer autre-jeton-du-projet"
+    lier_le_projet(reglages, projet)
+    du_projet = json.loads((projet / ".mcp.json").read_text(encoding="utf-8"))["mcpServers"]
+    assert serveurs["passerelle"] == du_projet["passerelle"]
+    assert serveurs["passerelle"]["headers"]["Authorization"] == f"Bearer ${{{VARIABLE}}}"
+    assert "autre-jeton-du-projet" not in (projet / ".mcp.json").read_text(encoding="utf-8")
 
 
 def test_la_portee_utilisateur_ne_porte_aucun_secret(reglages: AtelierSettings) -> None:
@@ -131,7 +142,7 @@ def test_la_portee_utilisateur_ne_porte_aucun_secret(reglages: AtelierSettings) 
         texte = chemin.read_text(encoding="utf-8")
         assert JETON not in texte and CLE not in texte, chemin
     pont = json.loads(reglages.mcp_config_path.read_text(encoding="utf-8"))["mcpServers"]
-    assert pont["Onyxia"]["headers"]["Authorization"] == f"Bearer ${{{VARIABLE}}}"
+    assert pont["passerelle"]["headers"]["Authorization"] == f"Bearer ${{{VARIABLE}}}"
 
 
 def test_harnais_vscode_et_shell_ont_les_memes_valeurs(reglages: AtelierSettings) -> None:

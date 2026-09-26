@@ -64,8 +64,12 @@ def test_le_fichier_effectif_d_un_tour_nomme_la_conversation(
     assert atelier["headers"]["Authorization"] == "Bearer ${ATELIER_MCP_KEY}"
 
 
-def test_un_ancien_mcp_json_recoit_l_en_tete_au_tour(reglages: AtelierSettings, tmp_path: Path) -> None:
-    """Écrit avant l'en-tête : le binding prime, on complète sans réécrire le projet."""
+def test_un_ancien_mcp_json_recoit_la_declaration_du_profil(reglages: AtelierSettings, tmp_path: Path) -> None:
+    """Écrit avant les en-têtes : l'entrée `atelier` devient celle du profil, partout.
+
+    Le serveur `atelier` n'est pas un choix du projet : son adresse suit le port
+    du service, et ses en-têtes (conversation, profil) sont ceux du contrat.
+    """
     projet = _projet(tmp_path)
     ancien = {
         "mcpServers": {
@@ -80,8 +84,8 @@ def test_un_ancien_mcp_json_recoit_l_en_tete_au_tour(reglages: AtelierSettings, 
     chemin = materialize_session_mcp(reglages, "conv-ancienne", kind="code", cwd=projet)
     atelier = _effectif(chemin)[SERVICE_ATELIER]
     assert atelier["headers"][ENTETE] == "conv-ancienne"
-    assert atelier["url"] == "http://127.0.0.1:9999/mcp", "le reste de la déclaration du projet prime"
-    assert json.loads((projet / ".mcp.json").read_text(encoding="utf-8")) == ancien
+    assert atelier["headers"]["X-Atelier-Profil"] == "code"
+    assert atelier["url"] == f"http://127.0.0.1:{reglages.port}/mcp"
 
 
 def test_un_en_tete_deja_ecrit_n_est_pas_double(reglages: AtelierSettings, tmp_path: Path) -> None:
@@ -97,7 +101,9 @@ def test_un_en_tete_deja_ecrit_n_est_pas_double(reglages: AtelierSettings, tmp_p
     }
     (projet / ".mcp.json").write_text(json.dumps(ecrit), encoding="utf-8")
     chemin = materialize_session_mcp(reglages, "conv-7", kind="code", cwd=projet)
-    assert _effectif(chemin)[SERVICE_ATELIER]["headers"] == {"x-atelier-conversation": "conv-7"}
+    entetes = _effectif(chemin)[SERVICE_ATELIER]["headers"]
+    assert [k for k in entetes if k.lower() == ENTETE.lower()] == [ENTETE]
+    assert entetes[ENTETE] == "conv-7"
 
 
 def test_l_environnement_du_tour_porte_la_conversation(reglages: AtelierSettings) -> None:
