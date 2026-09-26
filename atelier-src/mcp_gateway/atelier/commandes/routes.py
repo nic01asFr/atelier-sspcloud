@@ -20,7 +20,7 @@ from mcp_gateway.atelier.auth import ENTETE_INTERFACE
 from mcp_gateway.atelier.commandes.a_valider import ErreurAValider
 from mcp_gateway.atelier.commandes.catalogue import APERCU, ERREUR, FAIT, REFUSE, Catalogue, Reponse
 from mcp_gateway.atelier.commandes.modele import ORIGINE_CLE, ORIGINE_INTERFACE, Contexte
-from mcp_gateway.atelier.commandes.profils import ENTETE_PROFIL, PROFIL_APPELANT, lire_profil, outil_permis
+from mcp_gateway.atelier.commandes.profils import ENTETE_PROFIL, PROFIL_APPELANT, outil_permis, profil_effectif
 from mcp_gateway.atelier.vscode_bridge import COOKIE_NAME
 from mcp_gateway.auth import bearer_from_header
 
@@ -59,7 +59,7 @@ def _rendre(reponse: Reponse) -> JSONResponse:
 
 @contextmanager
 def _appel_de(request: Request, ctx: Contexte) -> Iterator[None]:
-    """La conversation et le profil annoncés, pour la durée de l'appel.
+    """La conversation et son profil (déduit par le serveur), pour la durée de l'appel.
 
     Les mêmes que la porte `/mcp` : une commande appelée ici par un agent
     (`atelier-app`) passe par les mêmes gardes que son outil. La personne,
@@ -72,7 +72,8 @@ def _appel_de(request: Request, ctx: Contexte) -> Iterator[None]:
         return
     conversation = (request.headers.get("x-atelier-conversation") or "").strip()[:200]
     jeton = CONVERSATION_APPELANTE.set(conversation)
-    jeton_profil = PROFIL_APPELANT.set(lire_profil(request.headers.get(ENTETE_PROFIL)))
+    store = getattr(request.app.state, "store", None)
+    jeton_profil = PROFIL_APPELANT.set(profil_effectif(request.headers.get(ENTETE_PROFIL), conversation, store))
     try:
         yield
     finally:

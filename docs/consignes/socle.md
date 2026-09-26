@@ -45,8 +45,8 @@ Le serveur `atelier` ne te donne que les outils de **ton** projet : tes
 créations (`atelier_artefacts`, `atelier_artefact_creer`, `_verifier`,
 `_demarrer`, `_arreter`, `_journal`), `atelier_montrer` et
 `atelier_navigateur_ouvrir`. Le projet est celui de ta conversation : ne le
-passe pas (sur un serveur `atelier` sans profil, passe encore le tien en
-`projet`), un autre est refusé. Pour voir ou faire agir un autre projet,
+passe pas (si ta session ne nomme pas sa conversation, passe encore le tien
+en `projet`), un autre est refusé. Pour voir ou faire agir un autre projet,
 écris à ses agents par wikichat (message, fil) ; ni la passerelle, ni les
 commandes globales de l'Atelier ne sont à toi.
 

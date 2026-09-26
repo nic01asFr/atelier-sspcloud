@@ -1,34 +1,36 @@
 """Les profils d'accès de la porte `atelier` : qui reçoit quels outils.
 
-Contrat : `docs/vision/profils-acces.md`. La porte `/mcp` (et `/v1/commandes`)
-lit l'en-tête `X-Atelier-Profil`, posé par la déclaration du serveur `atelier`
-(équipe S, `mcp_sync.py`) :
+Contrat : `docs/vision/profils-acces.md`. Deux profils :
 
 - `code` : un agent code. Il ne reçoit que les outils de **son** projet : ses
   créations (`atelier_artefact*`), `atelier_montrer` et
   `atelier_navigateur_ouvrir`. Ni méta-outils de la passerelle, ni
   compositions, ni commandes globales, ni « À valider », ni journal, ni suivi
-  d'une autre conversation. Le projet vient de la conversation
-  (`X-Atelier-Conversation`), jamais d'un argument : un `projet` différent est
-  refusé, un `projet` absent est rempli ;
-- `assistant` : tout l'Atelier, plus les méta-outils de la passerelle ;
-- **sans en-tête** : le comportement d'avant les profils (tout), pour les
-  déclarations pas encore réécrites. C'est journalisé, une fois par
-  conversation.
+  d'une autre conversation. Le projet vient de la conversation, jamais d'un
+  argument : un `projet` différent est refusé, un `projet` absent est rempli ;
+- `assistant` : tout l'Atelier, plus les méta-outils de la passerelle.
 
-Une valeur inconnue vaut `code` : le profil le plus étroit, jamais le plus
-large.
+**Le profil se déduit de la conversation, côté serveur** (`profil_effectif`) :
+la porte `/mcp` et `/v1/commandes` lisent `X-Atelier-Conversation`, trouvent
+sa fiche, et c'est elle qui décide : une conversation de l'Assistant
+(`kind = assistant`, ou un dossier sous celui de l'Assistant) donne
+`assistant`, toute autre, connue ou non, donne `code`. L'en-tête
+`X-Atelier-Profil` (posé par la déclaration, équipe S) ne peut que
+**restreindre** : `code` restreint l'Assistant, `assistant` n'élargit personne.
+Une valeur inconnue vaut `code`.
+
+Une requête **sans conversation** garde le comportement d'avant (tout, sauf si
+elle annonce `code`) : la passerelle et claude.ai entrent par là. Elle est
+journalisée (`noter_un_appel_sans_profil`).
 
 Le filtre s'applique à la liste **et** à l'appel : un nom hors profil est
-refusé même s'il est connu. Ce module ne dépend que des magasins de
-conversations ; la porte et le catalogue l'appliquent (`mcp_endpoint.py`,
-`catalogue.py`, `mcp/gateway.py`).
+refusé même s'il est connu. La porte et le catalogue l'appliquent
+(`mcp_endpoint.py`, `commandes/routes.py`, `catalogue.py`, `mcp/gateway.py`).
 
-Un en-tête n'est pas une preuve : la clé du propriétaire, que portent tous les
-agents du pod, ouvre la porte sans lui. Le profil est une règle de voisinage
-entre agents du même propriétaire, tenue par le serveur plutôt que par une
-consigne au modèle ; ce n'est pas une frontière contre un agent qui forgerait
-ses en-têtes.
+Limite : la clé de la porte est celle du propriétaire, que lisent tous les
+agents du pod. Un agent qui omet l'en-tête de conversation garde l'accès
+complet. Le fermer demande des capacités courtes par conversation, hors de ce
+lot.
 """
 
 from __future__ import annotations
@@ -92,6 +94,46 @@ def lire_profil(valeur: str | None) -> str:
         return brut
     log.warning("profil inconnu %r : traité comme %s", brut[:40], PROFIL_CODE)
     return PROFIL_CODE
+
+
+def _est_de_l_assistant(store: Any, fiche: Any) -> bool:
+    if str(getattr(fiche, "kind", "") or "") == "assistant":
+        return True
+    racine = getattr(getattr(store, "settings", None), "assistant_root", None)
+    cwd = str(getattr(fiche, "cwd", "") or "")
+    if not racine or not cwd:
+        return False
+    try:
+        from pathlib import Path
+
+        Path(cwd).resolve().relative_to(Path(racine).resolve())
+    except (ValueError, OSError):
+        return False
+    return True
+
+
+def profil_effectif(entete: str | None, conversation: str | None, store: Any) -> str:
+    """Le profil de l'appel, décidé par le serveur.
+
+    Avec une conversation, c'est sa fiche qui décide (`assistant` pour une
+    conversation de l'Assistant, `code` pour toute autre, connue ou non) ;
+    l'en-tête ne peut que restreindre. Sans conversation : l'en-tête seul, et
+    son absence vaut le comportement d'avant (vide).
+    """
+    annonce = lire_profil(entete)
+    c = (conversation or "").strip()
+    if not c:
+        return PROFIL_CODE if annonce == PROFIL_CODE else ""
+    fiche = fiche_de_la_conversation(store, c)
+    deduit = PROFIL_ASSISTANT if fiche is not None and _est_de_l_assistant(store, fiche) else PROFIL_CODE
+    if annonce == PROFIL_CODE:
+        return PROFIL_CODE
+    if annonce == PROFIL_ASSISTANT and deduit != PROFIL_ASSISTANT:
+        log.warning(
+            "conversation %s : profil %s annoncé, %s retenu (l'en-tête ne peut pas élargir)",
+            c[:60], annonce, deduit,
+        )
+    return deduit
 
 
 def profil_courant() -> str:
@@ -248,30 +290,42 @@ def cadrer_les_arguments(
 
 # ── Journal de compatibilité ──────────────────────────────────────────────
 
-_SANS_PROFIL_VUS: set[str] = set()
+_SANS_PROFIL_VUS: dict[str, float] = {}
 _VERROU = threading.Lock()
 _SANS_PROFIL_MAX = 2000
+_SANS_PROFIL_RAPPEL_S = 600.0
 
 
-def noter_un_appel_sans_profil(conversation: str, methode: str) -> bool:
-    """Journalise, une fois par conversation, un appel qui n'annonce pas de profil.
+def noter_un_appel_sans_profil(conversation: str, methode: str, *, profil: str = "") -> bool:
+    """Journalise un appel qui garde l'accès d'avant les profils.
 
-    Rend vrai si la ligne a été écrite. Le comportement reste celui d'avant
-    (tout), le temps que toutes les déclarations portent l'en-tête.
+    Deux cas : un appel sans conversation (tout, par compatibilité : la
+    passerelle, claude.ai), ou une conversation qui n'annonce pas encore son
+    profil (le profil déduit s'applique quand même). Une ligne par cas et par
+    conversation, rappelée au plus toutes les dix minutes. Rend vrai si la
+    ligne a été écrite.
     """
-    cle = conversation or "(sans conversation)"
+    import time
+
+    cle = f"{conversation or '(sans conversation)'}|{profil}"
+    maintenant = time.monotonic()
     with _VERROU:
-        if cle in _SANS_PROFIL_VUS:
+        derniere = _SANS_PROFIL_VUS.get(cle)
+        if derniere is not None and maintenant - derniere < _SANS_PROFIL_RAPPEL_S:
             return False
         if len(_SANS_PROFIL_VUS) >= _SANS_PROFIL_MAX:
             _SANS_PROFIL_VUS.clear()
-        _SANS_PROFIL_VUS.add(cle)
-    log.warning(
-        "porte atelier sans %s (conversation %s, %s) : tous les outils, par compatibilité",
-        ENTETE_PROFIL,
-        cle[:60],
-        methode or "?",
-    )
+        _SANS_PROFIL_VUS[cle] = maintenant
+    if conversation:
+        log.warning(
+            "porte atelier sans %s (conversation %s, %s) : profil déduit %s",
+            ENTETE_PROFIL, conversation[:60], methode or "?", profil or "?",
+        )
+    else:
+        log.warning(
+            "porte atelier sans X-Atelier-Conversation (%s) : tous les outils, par compatibilité",
+            methode or "?",
+        )
     return True
 
 
@@ -292,5 +346,6 @@ __all__ = [
     "noter_un_appel_sans_profil",
     "outil_permis",
     "profil_courant",
+    "profil_effectif",
     "projet_de_la_conversation",
 ]

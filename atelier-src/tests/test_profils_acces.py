@@ -1,11 +1,12 @@
 """Les profils de la porte `atelier` : ce que voit et peut appeler chaque acteur.
 
-Contrat : `docs/vision/profils-acces.md`. Un agent code (`X-Atelier-Profil:
-code`) ne reçoit que les outils de son projet — ses créations,
-`atelier_montrer`, `atelier_navigateur_ouvrir` — et le projet vient de sa
-conversation, jamais d'un argument. L'Assistant (`assistant`) reçoit tout, et
-trouve les commandes de l'Atelier par `gateway_find_tools` (audit M7). Sans
-en-tête, rien ne change, et c'est noté.
+Contrat : `docs/vision/profils-acces.md`. Le profil se déduit de la
+conversation (`X-Atelier-Conversation`) : un agent code ne reçoit que les outils
+de son projet — ses créations, `atelier_montrer`, `atelier_navigateur_ouvrir` —
+et le projet vient de sa conversation, jamais d'un argument ; l'Assistant
+reçoit tout, et trouve les commandes de l'Atelier par `gateway_find_tools`
+(audit M7). `X-Atelier-Profil` ne peut que restreindre. Sans conversation,
+rien ne change, et c'est noté.
 
 Les appels passent par la vraie porte `/mcp` (`register_mcp_endpoint`), la
 vraie passerelle (`McpGateway`) et le vrai catalogue de commandes d'un Atelier
@@ -176,7 +177,9 @@ def test_le_profil_code_ne_demande_ni_projet_ni_auteur(porte: Porte) -> None:
 
 
 def test_une_valeur_de_profil_inconnue_vaut_le_profil_code(porte: Porte) -> None:
-    assert porte.noms(profil="administrateur", conv=conversation(porte.atelier)) == OUTILS_CODE
+    assistant = porte.atelier.app.state.store.create(kind="assistant").session_id
+    assert porte.noms(profil="administrateur", conv=assistant) == OUTILS_CODE
+    assert porte.noms(profil="administrateur") == OUTILS_CODE
 
 
 def test_le_profil_code_a_ses_propres_consignes_et_rien_de_la_passerelle(porte: Porte) -> None:
@@ -299,17 +302,71 @@ def test_le_profil_assistant_voit_tout_l_atelier_et_la_passerelle(porte: Porte) 
     assert "atelier_a_valider_accepter" not in noms, "une commande réservée n'est jamais exposée"
 
 
-def test_sans_en_tete_rien_ne_change_et_c_est_note(
+def test_sans_conversation_rien_ne_change_et_c_est_note(
     porte: Porte, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """La passerelle et claude.ai n'ont pas de conversation : l'accès d'avant, noté."""
     profils._SANS_PROFIL_VUS.clear()
     with caplog.at_level(logging.WARNING, logger="atelier.profils"):
-        sans = porte.noms(conv="conv-ancienne")
-        porte.noms(conv="conv-ancienne")
-    assert sans == porte.noms(profil="assistant")
-    notes = [r for r in caplog.records if "X-Atelier-Profil" in r.getMessage()]
-    assert len(notes) == 1, "une fois par conversation"
-    assert "conv-ancienne" in notes[0].getMessage()
+        sans = porte.noms()
+        porte.noms()
+    assert "gateway_find_tools" in sans and "atelier_decider" in sans
+    notes = [r for r in caplog.records if "sans X-Atelier-Conversation" in r.getMessage()]
+    assert len(notes) == 1, "une ligne, pas une par requête"
+
+
+def test_sans_conversation_l_en_tete_code_restreint_encore(porte: Porte) -> None:
+    assert porte.noms(profil="code") == OUTILS_CODE
+
+
+# ── Le profil se déduit de la conversation ─────────────────────────────
+
+
+def _conversation_de_l_assistant(atelier: TestClient) -> str:
+    return atelier.app.state.store.create(kind="assistant").session_id
+
+
+def test_un_agent_code_qui_annonce_assistant_reste_en_code(porte: Porte) -> None:
+    conv = conversation(porte.atelier, "demo")
+    assert porte.noms(profil="assistant", conv=conv) == OUTILS_CODE
+    charge, erreur = porte.appeler("atelier_journal", {}, profil="assistant", conv=conv)
+    assert erreur and "profil code" in charge["erreur"]
+    charge, erreur = porte.appeler("gateway_find_tools", {"query": "x"}, profil="assistant", conv=conv)
+    assert erreur
+
+
+def test_un_agent_code_sans_en_tete_est_en_code(porte: Porte) -> None:
+    conv = conversation(porte.atelier, "demo")
+    assert porte.noms(conv=conv) == OUTILS_CODE
+
+
+def test_une_conversation_inconnue_est_en_code(porte: Porte) -> None:
+    assert porte.noms(profil="assistant", conv="inventee-7") == OUTILS_CODE
+
+
+def test_la_conversation_de_l_assistant_a_tout(porte: Porte) -> None:
+    conv = _conversation_de_l_assistant(porte.atelier)
+    for annonce in ("assistant", None):
+        noms = porte.noms(profil=annonce, conv=conv)
+        assert {"atelier_decider", "atelier_journal", "gateway_find_tools"} <= noms, annonce
+
+
+def test_la_conversation_de_l_assistant_qui_annonce_code_est_restreinte(porte: Porte) -> None:
+    conv = _conversation_de_l_assistant(porte.atelier)
+    assert porte.noms(profil="code", conv=conv) == OUTILS_CODE
+    charge, erreur = porte.appeler("atelier_decider", {}, profil="code", conv=conv)
+    assert erreur
+
+
+def test_v1_commandes_deduit_aussi_le_profil(atelier: TestClient) -> None:
+    conv = conversation(atelier, "demo")
+    entetes = {**porteur(atelier), "X-Atelier-Profil": "assistant", "X-Atelier-Conversation": conv}
+    r = atelier.post("/v1/commandes/atelier_journal", json={"arguments": {}}, headers=entetes)
+    assert r.status_code == 403
+    assistant = _conversation_de_l_assistant(atelier)
+    entetes["X-Atelier-Conversation"] = assistant
+    r = atelier.post("/v1/commandes/atelier_journal", json={"arguments": {}}, headers=entetes)
+    assert r.status_code == 200
 
 
 def test_le_profil_ne_survit_pas_a_l_appel(porte: Porte) -> None:

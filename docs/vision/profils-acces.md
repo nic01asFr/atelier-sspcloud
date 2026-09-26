@@ -96,8 +96,22 @@ catalogue (`commandes/catalogue.py`).
 |---|---|
 | `code` | exactement 8 : `atelier_artefacts`, `atelier_artefact_creer`, `atelier_artefact_verifier`, `atelier_artefact_demarrer`, `atelier_artefact_arreter`, `atelier_artefact_journal`, `atelier_montrer`, `atelier_navigateur_ouvrir`. Schémas adaptés : `projet` facultatif, `auteur` retiré. Consignes d'initialisation propres ; `prompts` et `resources` de la passerelle vides |
 | `assistant` | les 27 commandes exposées (`atelier_a_valider`, `_a_valider_refuser`, `_a_valider_rouvrir`, `atelier_annuler`, les 6 des créations, `atelier_conversation_ranger`, `_ressortir`, `atelier_conversations`, `atelier_decider`, `atelier_envoyer`, `atelier_interrompre`, `atelier_journal`, `atelier_montrer`, `atelier_navigateur_ouvrir`, `atelier_ouvrir`, `atelier_projet_creer`, `_modifier`, `_ranger`, `_ressortir`, `atelier_projets`, `atelier_suivre`, `atelier_transcript`), plus ce que le profil de la passerelle expose (méta-outils `gateway_*`, compositions). `atelier_projet_publier` et `atelier_a_valider_accepter` restent `reservee`, jamais exposées |
-| sans en-tête | comme `assistant` (comportement d'avant), avec une ligne d'avertissement `atelier.profils` par conversation |
-| valeur inconnue | comme `code` |
+
+**Qui décide du profil : la conversation, côté serveur**
+(`profils.profil_effectif`). La porte lit `X-Atelier-Conversation` et sa fiche :
+
+| Requête | Profil retenu |
+|---|---|
+| conversation de l'Assistant (`kind = assistant`, ou dossier sous `assistant_root`) | `assistant` ; `code` si l'en-tête annonce `code` |
+| toute autre conversation, connue ou non (`poste` compris) | `code`, quel que soit l'en-tête |
+| sans conversation (passerelle, claude.ai, ancien client) | comportement d'avant (tout), sauf en-tête `code` ; journalisé |
+| en-tête de valeur inconnue | `code` |
+
+`X-Atelier-Profil` ne peut que restreindre. Une conversation sans en-tête ou
+sans conversation est notée dans le journal `atelier.profils` (une ligne par
+conversation, rappelée au plus toutes les dix minutes). L'équipe O peut
+reprendre `profil_effectif` pour son mandataire Onyxia : la conversation
+décide, l'en-tête restreint.
 
 - **Vérifié** (`tests/test_profils_acces.py`, par la vraie porte `/mcp`, la vraie
   passerelle et le vrai catalogue ; seul le pool amont est simulé) : liste
@@ -111,7 +125,11 @@ catalogue (`commandes/catalogue.py`).
   refusé) ; refus sans conversation, avec `poste`, une conversation inconnue
   ou un identifiant forgé (`../..`) ; conversation retrouvée par
   `claude_session_id` (reprise dans VS Code) ; mêmes gardes par
-  `/v1/commandes` ; compatibilité sans en-tête et sa ligne de journal unique.
+  `/v1/commandes` ; profil déduit : un agent code qui annonce `assistant`
+  reste en `code` (liste et appel, par `/mcp` et `/v1/commandes`), une
+  conversation inconnue est en `code`, la conversation de l'Assistant a tout,
+  et restreinte si elle annonce `code` ; compatibilité sans conversation et sa
+  ligne de journal.
 - **Recherche de l'Assistant (audit M7)** : `gateway_find_tools` cherche aussi
   dans les commandes `atelier_*` (`kind` et `server` = `atelier`), avec des mots
   d'intention pour chacune (`tool_search.MOTS_CLES_PAR_OUTIL`). Un refus d'une
@@ -123,17 +141,26 @@ catalogue (`commandes/catalogue.py`).
   déclaration qui pose `X-Atelier-Profil` est à l'équipe S) ; le nombre réel
   d'outils `gateway_*` et `composition_*` que verra l'Assistant dépend du
   profil de passerelle actif (7 et 2 mesurés par l'audit).
-- **Limite** : l'en-tête n'est pas une preuve. La clé du propriétaire, lue par
-  tous les agents du pod, ouvre la porte sans lui ou avec `assistant`. Le
-  profil tient les agents honnêtes et les consignes à la source ; il ne
-  résiste pas à un agent qui forge ses en-têtes.
+- **Limite connue** : la clé de la porte, `ATELIER_MCP_KEY`, est celle du
+  propriétaire. Un agent qui la lit et **omet l'en-tête de conversation** garde
+  un accès complet (cas « sans conversation »). Il peut aussi nommer la
+  conversation d'un autre. Fermer ce trou demande des capacités courtes par
+  conversation, émises par l'Atelier et vérifiées par la porte : hors de ce
+  lot.
+- **Changement visible dès maintenant** : VS Code et le terminal envoient
+  aujourd'hui `X-Atelier-Conversation: poste`. Ils passent donc en `code`, et
+  comme `poste` ne nomme aucun projet, leurs 8 outils répondent « le projet ne
+  peut pas être établi ». `atelier-app` (qui prend `CLAUDE_CODE_SESSION_ID`)
+  marche pour une conversation reprise de l'Atelier.
 - **À la charge de S** : écrire `X-Atelier-Profil: code` dans la déclaration
   `atelier` des projets de code (`.mcp.json` et fichier effectif) et
   `assistant` pour l'Assistant ; hors de l'Atelier, faire porter à
   `X-Atelier-Conversation` l'identifiant du CLI plutôt que `poste`
   (`${ATELIER_SESSION:-${CLAUDE_CODE_SESSION_ID}}`, si Claude Code développe
-  cette variable dans les en-têtes : à vérifier). Avec `poste`, le profil
-  `code` refuse tous ses outils, faute de projet.
+  cette variable dans les en-têtes : à vérifier). Une conversation ouverte
+  directement dans VS Code, jamais vue par l'Atelier, restera inconnue : le
+  profil `code` n'y trouve pas de projet tant que l'Atelier n'adopte pas la
+  conversation.
 
 ### Navigateur
 
