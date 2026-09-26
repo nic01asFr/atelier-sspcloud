@@ -36,6 +36,8 @@ Statut :
 | J-e | Vues épinglées : au projet dans `projet.json` (`vues_epinglees`), à la conversation dans sa fiche | D | 5.2-e |
 | J-f | Le panneau s'ouvre seul pour une interface rendue par un outil et pour « Montrer », jamais pour un flux vivant | D | 5.2-f |
 | J-i | Pas de page Gardiens : les gardiens sont des agents spécifiques, dans la vue Agents ; leurs réparations sont proposées par des agents dédiés | N (26/09) | Nicolas |
+| J-f2 | Quand un agent ouvre ou change de page dans son navigateur, le panneau ajoute l'onglet « Navigateur de l'agent » en direct, sans voler l'attention (signal si un autre onglet est regardé ; ouverture du panneau s'il est fermé). « Prendre la main » met l'agent en pause | N (26/09) | Nicolas |
+| J-f3 | Les outils du navigateur qui ne font que lire (lister les pages, capture, snapshot, attendre) sont autorisés d'office ; naviguer, cliquer, remplir restent soumis au mode | D | essai du 26/09 |
 | J-g | `atelier-gardiens` est un projet système, avec la structure type | D | 5.3-m |
 | J-h | Le navigateur d'un agent ouvre les créations de son projet par un code de passage d'agent, jamais avec le cookie de l'Atelier | D | `synthese.md` §2 (navigateur) |
 

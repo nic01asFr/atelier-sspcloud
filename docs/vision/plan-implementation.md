@@ -67,7 +67,9 @@ réparations sont proposées par des agents dédiés, lancés par l'Atelier.
 | **K : commandes de création** | `atelier_agent_creer` et `atelier_agent_activer`, `atelier_connecteur_ajouter` et `atelier_connecteur_retirer`, liens entre projets (vers les relations de wikichat) ; migration du Lecteur Grist et des autres projets vers la structure type |
 | **B : bureaux** | services du namespace (QGIS, Blender, n8n) relayés par l'hôte des applications (J-d), jeton ajouté côté serveur, `frame-ancestors` restreint ; vue « bureau » dans le panneau ; portée de session par connecteur |
 
-### Vague 3 : l'Assistant et le navigateur en direct
+### Vague 3 : l'Assistant et le navigateur en direct (lancée le 26/09)
+
+Équipes : **N** (navigateur en direct, J-f2, J-f3), **A** (Assistant, A4), **M** (mémoire et capitalisation, A5, W8, T10). Brouillon, installation et partage (J8) viendront ensuite.
 
 - **Assistant (A4)** :
   - profil `assistant` ;
