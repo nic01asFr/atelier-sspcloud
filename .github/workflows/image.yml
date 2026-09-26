@@ -5,7 +5,7 @@ on:
     branches: [main]
     paths:
       - "atelier-src/**"
-      - "install/**"
+      - "install/atelier-init.sh"
       - "deploy/Dockerfile"
       - ".github/workflows/image.yml"
   workflow_dispatch:

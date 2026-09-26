@@ -10,13 +10,13 @@ on:
     paths:
       - 'charts/**'
       - 'site/**'
-      - 'install.sh'
+      - 'install/install.sh'
       - '.github/workflows/release.yml'
   pull_request:
     paths:
       - 'charts/**'
       - 'site/**'
-      - 'install.sh'
+      - 'install/install.sh'
       - '.github/workflows/release.yml'
   workflow_dispatch:
 
@@ -168,8 +168,8 @@ jobs:
           absent 'Applications des projets' /tmp/notes.txt
           bouton_ouvrir
 
-      - name: install.sh
-        run: bash -n install.sh
+      - name: install/install.sh
+        run: bash -n install/install.sh
 
       - name: Tester la vitrine
         run: node --test site/generate.test.mjs
@@ -217,7 +217,7 @@ jobs:
           cp helm-repo/*.tgz site/dist/ 2>/dev/null || true
           helm package charts/atelier -d site/dist/
           helm repo index site/dist --url "$PAGES_URL"
-          install -m 0755 install.sh site/dist/install.sh
+          install -m 0755 install/install.sh site/dist/install.sh
 
       # Miroir de transition : l'ancienne adresse raw.githubusercontent.com
       # reste servie pendant une version, le temps que les catalogues Onyxia
