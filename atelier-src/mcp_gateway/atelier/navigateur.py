@@ -4,8 +4,11 @@ Le navigateur est un serveur MCP **stdio**, `chrome-devtools-mcp` (le serveur
 officiel de l'équipe Chrome DevTools, Apache-2.0), lancé par le lanceur
 `~/work/bin/atelier-chrome`. Chaque client qui le déclare — une conversation
 de l'Atelier, VS Code, le terminal, un agent wikichat — lance le sien, avec un
-Chrome sans écran à lui : profil jetable, aucun port ouvert, tout s'arrête
-avec le client (mesures et choix : `docs/navigateur-atelier.md`).
+Chrome sans écran à lui, piloté par un tube, qui s'arrête avec le client
+(mesures et choix : `docs/navigateur-atelier.md`). Le Chrome d'une
+conversation garde le profil de la conversation et ouvre en plus un port de
+débogage en boucle locale, par lequel l'Atelier montre sa page en direct dans
+le panneau (`ecran`) ; ailleurs, profil jetable et aucun port.
 
 La passerelle en lance une instance à part pour ses propres clients
 (`gateway_find_tools` / `gateway_call_tool`, compositions), en portée
@@ -140,7 +143,14 @@ def _verifier_le_lanceur(lanceur: Path) -> dict[str, Any]:
 
 
 def racine_des_navigateurs() -> Path:
-    """Le dossier où les lanceurs de ce compte rangent profils et comptage."""
+    """Le dossier où les lanceurs de ce compte rangent profils, comptage et écrans.
+
+    Le même que celui du lanceur : `ATELIER_CHROME_RACINE`, sinon
+    `$TMPDIR/atelier-chrome-<uid>`.
+    """
+    reglee = os.environ.get("ATELIER_CHROME_RACINE")
+    if reglee:
+        return Path(reglee)
     uid = os.getuid() if hasattr(os, "getuid") else 0
     return Path(os.environ.get("TMPDIR") or "/tmp") / f"atelier-chrome-{uid}"
 
@@ -233,11 +243,72 @@ def plafond_d_onglets() -> int:
 # simple) ou par un connecteur de recherche du pool.
 OUTILS_REFUSES = ("WebSearch",)
 
+# -- J-f3 : les outils du navigateur qui ne font que lire ---------------------
 
-def refuser_les_outils_simules(reglages: dict[str, Any], settings: AtelierSettings) -> dict[str, Any]:
-    """Ajoute (ou retire si `websearch_natif`) WebSearch de `permissions.deny`.
+# Autorisés d'office : lister les pages, capturer, lire l'arbre, attendre,
+# lire la console et le réseau. Naviguer, cliquer, remplir, exécuter un script
+# restent soumis au mode de la conversation. Noms de chrome-devtools-mcp 1.10.1
+# (jeu « courant », plus les `get_*` du jeu complet), relevés par `tools/list`
+# le 26/09 ; `select_page` change la page de l'agent : il n'y est pas.
+OUTILS_EN_LECTURE = (
+    "list_pages",
+    "take_snapshot",
+    "take_screenshot",
+    "wait_for",
+    "list_console_messages",
+    "get_console_message",
+    "list_network_requests",
+    "get_network_request",
+    "get_css_styles",
+)
+
+
+def regles_de_lecture_du_navigateur() -> list[str]:
+    """Les règles `permissions.allow` des outils du navigateur qui ne font que lire.
+
+    La syntaxe est celle des réglages du CLI pour un outil MCP :
+    `mcp__<serveur>__<outil>`.
+    """
+    return [f"mcp__{SERVICE_CHROME}__{outil}" for outil in OUTILS_EN_LECTURE]
+
+
+def autoriser_les_lectures_du_navigateur(reglages: dict[str, Any], settings: AtelierSettings) -> dict[str, Any]:
+    """Ajoute à `permissions.allow` les lectures du navigateur (retirées s'il est éteint).
 
     Le reste de la liste est à la personne : on n'y touche pas.
+    """
+    regles = regles_de_lecture_du_navigateur()
+    permissions = reglages.get("permissions")
+    permissions = dict(permissions) if isinstance(permissions, dict) else {}
+    permises = permissions.get("allow")
+    permises = [r for r in permises if isinstance(r, str)] if isinstance(permises, list) else []
+    if navigateur_configure(settings):
+        permises += [r for r in regles if r not in permises]
+    else:
+        permises = [r for r in permises if r not in regles]
+    if permises:
+        permissions["allow"] = permises
+    else:
+        permissions.pop("allow", None)
+    sortie = dict(reglages)
+    if permissions:
+        sortie["permissions"] = permissions
+    else:
+        sortie.pop("permissions", None)
+    return sortie
+
+
+def refuser_les_outils_simules(reglages: dict[str, Any], settings: AtelierSettings) -> dict[str, Any]:
+    """Les règles du navigateur dans des réglages du CLI, pour toutes les surfaces.
+
+    - ajoute (ou retire si `websearch_natif`) WebSearch de `permissions.deny` ;
+    - autorise d'office les outils du navigateur qui ne font que lire (J-f3,
+      `autoriser_les_lectures_du_navigateur`).
+
+    C'est la fonction que passent les réglages de chaque tour de l'Atelier
+    (`harness`), ceux de VS Code, du terminal et de wikichat
+    (`vscode_handoff`) et le vérificateur de cohérence : une règle posée ici
+    vaut partout. Le reste des listes est à la personne : on n'y touche pas.
     """
     permissions = reglages.get("permissions")
     permissions = dict(permissions) if isinstance(permissions, dict) else {}
@@ -256,4 +327,4 @@ def refuser_les_outils_simules(reglages: dict[str, Any], settings: AtelierSettin
         sortie["permissions"] = permissions
     else:
         sortie.pop("permissions", None)
-    return sortie
+    return autoriser_les_lectures_du_navigateur(sortie, settings)

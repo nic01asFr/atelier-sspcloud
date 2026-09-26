@@ -4,10 +4,32 @@
 # Chaque client MCP qui déclare ce navigateur (une conversation de l'Atelier,
 # VS Code, le terminal, un agent wikichat, la passerelle) lance ce script. Il
 # démarre `chrome-devtools-mcp` (serveur officiel, Apache-2.0) avec un Chrome
-# sans écran à lui : un profil jetable par processus, jamais celui de la
-# personne, aucun port réseau ouvert (Chrome parle au serveur par un tube).
-# Chrome n'est lancé qu'au premier outil qui en a besoin ; tant que l'agent ne
-# navigue pas, seul le serveur tourne (environ 120 Mo).
+# sans écran à lui, jamais le profil de la personne. Chrome parle au serveur
+# par un tube, et meurt avec lui. Chrome n'est lancé qu'au premier outil qui
+# en a besoin ; tant que l'agent ne navigue pas, seul le serveur tourne
+# (environ 120 Mo).
+#
+# L'écran d'une conversation (docs/navigateur-atelier.md, « Écran en
+# direct »). Quand le processus appartient à une conversation (ATELIER_SESSION,
+# sinon CLAUDE_CODE_SESSION_ID), le lanceur :
+#
+# - garde un profil par conversation, $RACINE/conversation.<id>, tant que la
+#   conversation vit : les sessions des sites (connexions) survivent à la fin
+#   du processus et au tour suivant. Un verrou (flock) le réserve au processus
+#   qui l'utilise ; un second processus de la même conversation reçoit un
+#   profil jetable, sans écran. Un profil de conversation qu'aucun lanceur
+#   n'a ouvert depuis ATELIER_CHROME_PROFIL_JOURS jours (défaut 14) est
+#   balayé ;
+# - fait ouvrir à Chrome, en plus du tube, un port de débogage sur 127.0.0.1
+#   seulement, choisi par le système (--remote-debugging-port=0), que Chrome
+#   écrit dans <profil>/DevToolsActivePort ;
+# - place toujours le filtre atelier-chrome-onglets.mjs devant le serveur :
+#   c'est lui qui publie l'association conversation -> port dans
+#   $RACINE/ecrans/<id>.json (0600), et qui retient les actions de l'agent
+#   pendant que la personne a la main ($RACINE/main/<id>.json).
+#
+# À la sortie, tout est rangé : fiche de l'écran, port (Chrome meurt avec son
+# tube), profil jetable. Seul le profil de la conversation reste.
 #
 # Deux rôles, selon la variable ATELIER_CHROME_ROLE :
 #
@@ -39,6 +61,10 @@
 #   ATELIER_CHROME_RACINE    dossier des profils et du comptage
 #   ATELIER_CHROME_WS / ATELIER_CHROME_URL  se rattacher à un Chrome existant
 #                            (ws://… ou http://…) au lieu d'en lancer un
+#   ATELIER_CHROME_ECRAN     1 (défaut en conversation) | 0 : écran en direct
+#                            et profil gardé par conversation
+#   ATELIER_CHROME_PROFIL_JOURS  jours avant de balayer un profil de
+#                            conversation inutilisé (défaut 14)
 #   ATELIER_CHROME_VERIFIER=1  vérifie l'installation, n'ouvre rien, sort.
 #
 # Le plafond de navigateurs atteint, Chrome refuse de démarrer : l'agent reçoit alors de
@@ -155,6 +181,15 @@ if [ "${ATELIER_CHROME_ROLE:-serveur}" = "navigateur" ]; then
   : > "$RACINE/navigateurs/$$"
   exec 9>&-
   unset ATELIER_CHROME_ROLE
+  # L'écran : en plus du tube de puppeteer, un port de débogage en boucle
+  # locale, choisi par le système. Chrome l'écrit dans DevToolsActivePort, que
+  # le filtre publie pour l'Atelier. Ajouté ici, après que puppeteer a posé
+  # --remote-debugging-pipe : lui passer un --remote-debugging-* lui aurait
+  # fait retirer son tube.
+  if [ "${ATELIER_CHROME_ECRAN_PORT:-0}" = "1" ]; then
+    set -- "$@" --remote-debugging-port=0 --remote-debugging-address=127.0.0.1
+  fi
+  unset ATELIER_CHROME_ECRAN_PORT
   # chrome-headless-shell est toujours sans écran et ne connaît pas le mode
   # « new » que demande puppeteer (--headless=new) : on lui passe --headless.
   if [ "${CHROME##*/}" = "chrome-headless-shell" ]; then
@@ -178,22 +213,52 @@ SERVEUR="$(trouver_serveur)" || {
 }
 trouver_chrome >/dev/null || { dire "aucun Chrome sur cette machine (ATELIER_CHROME_BIN)"; exit 127; }
 
+portee="${ATELIER_CHROME_PORTEE:-conversation}"
+reseau="${ATELIER_CHROME_RESEAU:-}"
+[ -n "$reseau" ] || { [ "$portee" = "passerelle" ] && reseau=public || reseau=tout; }
+
+# Rattachement à un Chrome qu'on possède déjà : une adresse donnée par
+# l'environnement, ou écrite pour cette conversation dans
+# $RACINE/attache/<ATELIER_SESSION>. Sinon, le serveur lance son propre
+# Chrome, par un tube.
+attache="${ATELIER_CHROME_WS:-${ATELIER_CHROME_URL:-}}"
+if [ -z "$attache" ] && [ -n "${ATELIER_SESSION:-}" ] && [ -r "$RACINE/attache/$ATELIER_SESSION" ]; then
+  attache="$(head -n1 "$RACINE/attache/$ATELIER_SESSION")"
+fi
+
+# La conversation de ce processus : celle de l'Atelier, sinon celle du CLI
+# (VS Code, terminal). Même forme que dans l'Atelier (apps/passage.py).
+CONV="${ATELIER_SESSION:-${CLAUDE_CODE_SESSION_ID:-}}"
+case "$CONV" in
+  "" | [!A-Za-z0-9]* | *[!A-Za-z0-9_.-]*) CONV="" ;;
+esac
+[ "${#CONV}" -le 120 ] || CONV=""
+ECRAN="${ATELIER_CHROME_ECRAN:-1}"
+[ "$ECRAN" = "1" ] || ECRAN=0
+# La passerelle sert d'autres clients qu'une conversation ; un Chrome rattaché
+# n'est pas le nôtre : ni l'un ni l'autre n'a d'écran.
+if [ -z "$CONV" ] || [ "$portee" = "passerelle" ] || [ -n "$attache" ]; then
+  ECRAN=0
+fi
+
 ONGLETS="${ATELIER_CHROME_ONGLETS_MAX:-8}"
 FILTRE=""
-if [ "$ONGLETS" != "0" ]; then
+if [ "$ONGLETS" != "0" ] || [ "$ECRAN" = "1" ]; then
   FILTRE="$(trouver_filtre)" || {
     FILTRE=""
-    dire "filtre d'onglets introuvable (atelier-chrome-onglets.mjs) : pas de plafond d'onglets"
+    dire "filtre du navigateur introuvable (atelier-chrome-onglets.mjs) : ni plafond d'onglets, ni écran"
+    ECRAN=0
   }
 fi
 
 if [ "${ATELIER_CHROME_VERIFIER:-}" = "1" ]; then
-  printf 'node=%s\nserveur=%s\nchrome=%s\nonglets=%s\nfiltre=%s\n' \
-    "$NODE" "$SERVEUR" "$(trouver_chrome)" "$ONGLETS" "${FILTRE:-aucun}"
+  printf 'node=%s\nserveur=%s\nchrome=%s\nonglets=%s\nfiltre=%s\necran=%s\n' \
+    "$NODE" "$SERVEUR" "$(trouver_chrome)" "$ONGLETS" "${FILTRE:-aucun}" "$ECRAN"
   exit 0
 fi
 
 mkdir -p "$RACINE" && chmod 700 "$RACINE"
+mkdir -p -m 700 "$RACINE/ecrans" "$RACINE/main"
 # Les profils d'un lanceur tué sans pouvoir ranger (SIGKILL, OOM). Le lanceur
 # mort ne suffit pas : son serveur et son Chrome lui survivent jusqu'à ce que
 # leur client ferme le tube. On n'efface donc qu'un profil qu'aucun processus
@@ -203,21 +268,49 @@ for d in "$RACINE"/profil.*; do
   kill -0 "${d##*.}" 2>/dev/null && continue
   grep -qsF -- "$d" /proc/[0-9]*/cmdline || rm -rf "$d"
 done
-PROFIL="$RACINE/profil.$$"
-mkdir -m 700 "$PROFIL"
+# Les fiches d'écran d'un filtre mort (tué sans pouvoir ranger).
+for f in "$RACINE"/ecrans/*.json; do
+  [ -e "$f" ] || continue
+  p="$(sed -n 's/.*"pid":\([0-9][0-9]*\).*/\1/p' "$f" 2>/dev/null)"
+  if [ -z "$p" ] || ! kill -0 "$p" 2>/dev/null; then
+    rm -f "$f"
+  fi
+done
+# Les profils de conversation qu'aucun lanceur n'a ouverts depuis longtemps,
+# et que personne ne tient (verrou libre). Le verrou est touché à chaque
+# ouverture : sa date est celle du dernier usage.
+JOURS="${ATELIER_CHROME_PROFIL_JOURS:-14}"
+if command -v flock >/dev/null 2>&1; then
+  for d in "$RACINE"/conversation.*; do
+    [ -d "$d" ] || continue
+    [ -n "$(find "$d.verrou" -maxdepth 0 -mtime +"$JOURS" 2>/dev/null)" ] || continue
+    ( flock -n 7 || exit 0; rm -rf "$d"; rm -f "$d.verrou" ) 7>>"$d.verrou" 2>/dev/null
+  done
+fi
 
-portee="${ATELIER_CHROME_PORTEE:-conversation}"
-reseau="${ATELIER_CHROME_RESEAU:-}"
-[ -n "$reseau" ] || { [ "$portee" = "passerelle" ] && reseau=public || reseau=tout; }
-
-# Rattachement à un Chrome que l'Atelier possède déjà (vue en direct du
-# panneau par screencast DevTools, docs/navigateur-atelier.md §8) : une adresse
-# donnée par l'environnement, ou écrite par le superviseur pour cette
-# conversation dans $RACINE/attache/<ATELIER_SESSION>. Sinon, le serveur lance
-# son propre Chrome, comme aujourd'hui.
-attache="${ATELIER_CHROME_WS:-${ATELIER_CHROME_URL:-}}"
-if [ -z "$attache" ] && [ -n "${ATELIER_SESSION:-}" ] && [ -r "$RACINE/attache/$ATELIER_SESSION" ]; then
-  attache="$(head -n1 "$RACINE/attache/$ATELIER_SESSION")"
+PROFIL=""
+JETABLE=1
+if [ "$ECRAN" = "1" ]; then
+  PROFIL="$RACINE/conversation.$CONV"
+  mkdir -p -m 700 "$PROFIL"
+  # Le verrou est hérité par le serveur et par Chrome : il tient tant que l'un
+  # d'eux vit, même si ce lanceur est tué.
+  exec 8>"$PROFIL.verrou"
+  if command -v flock >/dev/null 2>&1 && ! flock -n 8; then
+    dire "le navigateur de cette conversation est déjà ouvert par un autre processus :" \
+      "profil jetable, sans écran"
+    exec 8>&-
+    PROFIL=""
+    ECRAN=0
+  else
+    JETABLE=0
+    # Un port d'une vie antérieure ne doit pas être publié.
+    rm -f "$PROFIL/DevToolsActivePort"
+  fi
+fi
+if [ -z "$PROFIL" ]; then
+  PROFIL="$RACINE/profil.$$"
+  mkdir -m 700 "$PROFIL"
 fi
 case "$attache" in
   ws://*|wss://*) args=(--wsEndpoint "$attache") ;;
@@ -265,9 +358,28 @@ export ATELIER_CHROME_ROLE=navigateur
 export ATELIER_CHROME_RACINE="$RACINE"
 export ATELIER_CHROME_MAX="$MAX"
 export ATELIER_CHROME_ONGLETS_MAX="$ONGLETS"
+if [ "$ECRAN" = "1" ]; then
+  export ATELIER_CHROME_ECRAN_PORT=1
+  export ATELIER_CHROME_CONVERSATION="$CONV"
+  export ATELIER_CHROME_PROFIL="$PROFIL"
+else
+  unset ATELIER_CHROME_ECRAN_PORT ATELIER_CHROME_CONVERSATION ATELIER_CHROME_PROFIL
+fi
 
 enfant=""
-ranger() { rm -rf "$PROFIL"; }
+filtre_pid=""
+ranger() {
+  if [ "$JETABLE" = "1" ]; then
+    rm -rf "$PROFIL"
+    return
+  fi
+  rm -f "$PROFIL/DevToolsActivePort"
+  # La fiche de l'écran, si le filtre n'a pas pu la retirer lui-même.
+  fiche="$RACINE/ecrans/$CONV.json"
+  if [ -n "$filtre_pid" ] && grep -qs "\"pid\":$filtre_pid[,}]" "$fiche"; then
+    rm -f "$fiche"
+  fi
+}
 arreter() {
   [ -n "$enfant" ] && kill -TERM "$enfant" 2>/dev/null
   [ -n "$enfant" ] && wait "$enfant" 2>/dev/null
@@ -285,6 +397,7 @@ else
   "$NODE" "$SERVEUR" "${args[@]}" <&0 &
 fi
 enfant=$!
+[ -n "$FILTRE" ] && filtre_pid="$enfant"
 wait "$enfant"
 code=$?
 enfant=""

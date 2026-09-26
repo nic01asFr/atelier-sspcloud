@@ -118,9 +118,10 @@ def test_sans_serveur_installe_le_message_dit_quoi_faire(banc: dict[str, Path]) 
 
 
 def test_une_conversation_a_son_profil_jetable_range_a_la_fin(banc: dict[str, Path], tmp_path: Path) -> None:
+    """Écran coupé : le profil jetable d'avant, rangé à la fin."""
     projet = tmp_path / "projet"
     projet.mkdir()
-    p = _lancer(banc, cwd=projet, ATELIER_SESSION="conv-1")
+    p = _lancer(banc, cwd=projet, ATELIER_SESSION="conv-1", ATELIER_CHROME_ECRAN="0")
     args = _args(banc)
     profil = Path(args[args.index("--userDataDir") + 1])
     assert profil.parent == banc["racine"] and profil.is_dir()
@@ -275,3 +276,121 @@ def test_verifier_dit_le_plafond_d_onglets(banc: dict[str, Path]) -> None:
     r = subprocess.run([str(LANCEUR)], env=_env(banc, ATELIER_CHROME_VERIFIER="1"), capture_output=True, text=True)
     assert "onglets=8" in r.stdout
     assert "filtre=" + str(LANCEUR.parent / "atelier-chrome-onglets.mjs") in r.stdout
+
+
+# --- Écran en direct (docs/navigateur-atelier.md, « Écran en direct ») -------
+
+
+def test_une_conversation_garde_son_profil_et_publie_son_ecran(banc: dict[str, Path]) -> None:
+    p = _lancer(banc, ATELIER_SESSION="conv-1", ATELIER_CHROME_ONGLETS_MAX="0")
+    args = _args(banc)
+    profil = Path(args[args.index("--userDataDir") + 1])
+    assert profil == banc["racine"] / "conversation.conv-1"
+    assert oct(profil.stat().st_mode & 0o777) == "0o700"
+    # Le filtre est toujours là quand il y a un écran, même sans plafond d'onglets.
+    assert args[0] == str(LANCEUR.parent / "atelier-chrome-onglets.mjs")
+    env = (banc["notes"] / "env").read_text(encoding="utf-8")
+    assert "ATELIER_CHROME_ECRAN_PORT=1" in env and "ATELIER_CHROME_CONVERSATION=conv-1" in env
+    assert f"ATELIER_CHROME_PROFIL={profil}" in env
+    for dossier in ("ecrans", "main"):
+        assert oct((banc["racine"] / dossier).stat().st_mode & 0o777) == "0o700"
+    (profil / "Cookies").write_text("session du site", encoding="utf-8")
+    (profil / "DevToolsActivePort").write_text("9\n/devtools/browser/x\n", encoding="utf-8")
+    p.stdin.close()
+    assert p.wait(10) == 0
+    # La conversation vit encore : son profil (et ses connexions) reste ; le port, non.
+    assert (profil / "Cookies").exists()
+    assert not (profil / "DevToolsActivePort").exists()
+
+
+def test_la_conversation_du_cli_sert_hors_de_l_atelier(banc: dict[str, Path]) -> None:
+    p = _lancer(banc, CLAUDE_CODE_SESSION_ID="cli-42")
+    args = _args(banc)
+    assert args[args.index("--userDataDir") + 1] == str(banc["racine"] / "conversation.cli-42")
+    p.stdin.close()
+    p.wait(10)
+
+
+@pytest.mark.parametrize("extra", [
+    {"ATELIER_SESSION": "../evasion"},
+    {"ATELIER_SESSION": "conv-1", "ATELIER_CHROME_PORTEE": "passerelle"},
+    {"ATELIER_SESSION": "conv-1", "ATELIER_CHROME_ECRAN": "0"},
+    {},
+])
+def test_sans_conversation_sure_ni_ecran_ni_profil_garde(banc: dict[str, Path], extra: dict[str, str]) -> None:
+    p = _lancer(banc, **extra)
+    args = _args(banc)
+    profil = Path(args[args.index("--userDataDir") + 1])
+    assert profil.name.startswith("profil."), profil
+    env = (banc["notes"] / "env").read_text(encoding="utf-8")
+    assert "ATELIER_CHROME_ECRAN_PORT" not in env and "ATELIER_CHROME_CONVERSATION" not in env
+    p.stdin.close()
+    p.wait(10)
+    assert not profil.exists()
+
+
+def test_un_second_processus_de_la_meme_conversation_a_un_profil_jetable(banc: dict[str, Path], tmp_path: Path) -> None:
+    if shutil.which("flock") is None:
+        pytest.skip("flock absent")
+    premier = _lancer(banc, ATELIER_SESSION="conv-1")
+    _args(banc)
+    (banc["notes"] / "args").unlink()
+    second = _lancer(banc, ATELIER_SESSION="conv-1")
+    try:
+        args = _args(banc)
+        assert Path(args[args.index("--userDataDir") + 1]).name.startswith("profil.")
+        second.stdin.close()
+        second.wait(10)
+        assert "déjà ouvert par un autre processus" in second.stderr.read().decode()
+    finally:
+        premier.stdin.close()
+        premier.wait(10)
+
+
+def test_le_role_navigateur_ouvre_un_port_en_boucle_locale(banc: dict[str, Path], tmp_path: Path) -> None:
+    notes = tmp_path / "notes-chrome"
+    chrome = _executable(tmp_path / "vrai" / "chrome", '#!/bin/bash\nprintf "%s\\n" "$@" > "$NOTES_CHROME"\n')
+    env = _env(banc, ATELIER_CHROME_ROLE="navigateur", ATELIER_CHROME_BIN=str(chrome), NOTES_CHROME=str(notes),
+               ATELIER_CHROME_ECRAN_PORT="1")
+    r = subprocess.run([str(LANCEUR), "--remote-debugging-pipe", "--user-data-dir=/tmp/x"], env=env, timeout=10)
+    assert r.returncode == 0
+    assert notes.read_text(encoding="utf-8").splitlines() == [
+        "--remote-debugging-pipe", "--user-data-dir=/tmp/x",
+        "--remote-debugging-port=0", "--remote-debugging-address=127.0.0.1",
+    ], "le tube de puppeteer reste, le port s'ajoute, en boucle locale"
+    env.pop("ATELIER_CHROME_ECRAN_PORT")
+    subprocess.run([str(LANCEUR), "--remote-debugging-pipe"], env=env, timeout=10)
+    assert notes.read_text(encoding="utf-8").splitlines() == ["--remote-debugging-pipe"], "sans écran, aucun port"
+
+
+def test_la_fiche_d_un_filtre_mort_et_un_vieux_profil_sont_balayes(banc: dict[str, Path]) -> None:
+    racine = banc["racine"]
+    (racine / "ecrans").mkdir(parents=True)
+    morte = racine / "ecrans" / "conv-morte.json"
+    morte.write_text('{"version":1,"pid":999999,"port":9}', encoding="utf-8")
+    vivante = racine / "ecrans" / "conv-vivante.json"
+    vivante.write_text(f'{{"version":1,"pid":{os.getpid()},"port":9}}', encoding="utf-8")
+    vieux = racine / "conversation.ancienne"
+    vieux.mkdir()
+    (racine / "conversation.ancienne.verrou").write_text("", encoding="utf-8")
+    il_y_a_un_mois = time.time() - 30 * 86400
+    os.utime(racine / "conversation.ancienne.verrou", (il_y_a_un_mois, il_y_a_un_mois))
+    recent = racine / "conversation.recente"
+    recent.mkdir()
+    (racine / "conversation.recente.verrou").write_text("", encoding="utf-8")
+    p = _lancer(banc)
+    _args(banc)
+    assert not morte.exists() and vivante.exists()
+    if shutil.which("flock"):
+        assert not vieux.exists(), "inutilisé depuis plus de 14 jours et libre : balayé"
+    assert recent.exists()
+    p.stdin.close()
+    p.wait(10)
+
+
+def test_verifier_dit_l_ecran(banc: dict[str, Path]) -> None:
+    r = subprocess.run([str(LANCEUR)], env=_env(banc, ATELIER_CHROME_VERIFIER="1", ATELIER_SESSION="conv-1"),
+                       capture_output=True, text=True)
+    assert "ecran=1" in r.stdout
+    r = subprocess.run([str(LANCEUR)], env=_env(banc, ATELIER_CHROME_VERIFIER="1"), capture_output=True, text=True)
+    assert "ecran=0" in r.stdout

@@ -41,11 +41,16 @@ applications : l'Atelier ne lit pas ce cookie.
   (bureau noVNC, éditeur n8n…), relayées sous `/_services/<connecteur>/` (voir
   `bureaux`).
 
-Les deux ne se recouvrent jamais : un slug ne porte pas de `:`, et la
-racine d'un connecteur commence par `_`, qu'aucun slug ne peut prendre. Un
-passage ouvert pour le bureau QGIS n'ouvre donc ni un projet, ni un autre
-connecteur. Seule la personne ouvre un connecteur : un code d'agent reste
-borné à un projet.
+- une **conversation** (`conversation:<id>`) : l'écran en direct du
+  navigateur de cet agent, sous `/_ecran/<id>/` (voir `ecran`). Une session
+  ouverte pour regarder la conversation X n'ouvre ni la conversation Y, ni un
+  projet, ni un connecteur.
+
+Les portées ne se recouvrent jamais : un slug ne porte pas de `:`, et les
+racines d'un connecteur et d'une conversation commencent par `_`, qu'aucun
+slug ne peut prendre. Un passage ouvert pour le bureau QGIS n'ouvre donc ni un
+projet, ni un autre connecteur. Seule la personne ouvre un connecteur ou
+l'écran d'une conversation : un code d'agent reste borné à un projet.
 """
 
 from __future__ import annotations
@@ -83,6 +88,13 @@ RACINE_SERVICES = "/_services"
 # Le nom d'un connecteur du pool (même forme que `mcp_registry`).
 _NOM_CONNECTEUR = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")
 
+# La portée de l'écran d'une conversation, et la racine de ses pages sur l'hôte.
+PREFIXE_CONVERSATION = "conversation:"
+RACINE_ECRANS = "/_ecran"
+# L'identifiant d'une conversation (un uuid pour l'Atelier, celui du CLI
+# ailleurs) : jamais `.` ni `..`, puisqu'il commence par un caractère plein.
+_ID_CONVERSATION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$")
+
 
 def nom_connecteur_valide(nom: str) -> bool:
     return bool(_NOM_CONNECTEUR.match(nom or ""))
@@ -103,21 +115,51 @@ def connecteur_de_portee(portee: str) -> str | None:
     return nom if nom_connecteur_valide(nom) else None
 
 
+def conversation_valide(identifiant: str) -> bool:
+    return bool(_ID_CONVERSATION.match(identifiant or ""))
+
+
+def portee_conversation(identifiant: str) -> str:
+    """La portée qui n'ouvre que l'écran de cette conversation."""
+    if not conversation_valide(identifiant):
+        raise ValueError(f"conversation invalide : {identifiant!r}")
+    return PREFIXE_CONVERSATION + identifiant
+
+
+def conversation_de_portee(portee: str) -> str | None:
+    """La conversation d'une portée d'écran ; None pour toute autre portée."""
+    if not (portee or "").startswith(PREFIXE_CONVERSATION):
+        return None
+    identifiant = portee[len(PREFIXE_CONVERSATION):]
+    return identifiant if conversation_valide(identifiant) else None
+
+
 def portee_valide(portee: str) -> bool:
-    """Une portée est un projet (son slug) ou un connecteur (`connecteur:<nom>`).
+    """Une portée est un projet (son slug), un connecteur ou une conversation.
 
     Tous les artefacts d'un même projet sont d'un même domaine de confiance
     (docs/atelier-applications.md, principe 5) ; la portée sépare les
     projets, et borne la destination d'un code. Les vues d'un connecteur
-    forment un domaine à part, que rien d'autre n'ouvre.
+    forment un domaine à part, que rien d'autre n'ouvre ; l'écran d'une
+    conversation aussi.
     """
-    return slug_valide(portee or "") or connecteur_de_portee(portee or "") is not None
+    portee = portee or ""
+    return (
+        slug_valide(portee)
+        or connecteur_de_portee(portee) is not None
+        or conversation_de_portee(portee) is not None
+    )
 
 
 def racine_de_portee(portee: str) -> str:
     """Le chemin, sur l'hôte, sous lequel une portée donne accès."""
     nom = connecteur_de_portee(portee)
-    return f"{RACINE_SERVICES}/{nom}" if nom is not None else f"/{portee}"
+    if nom is not None:
+        return f"{RACINE_SERVICES}/{nom}"
+    conversation = conversation_de_portee(portee)
+    if conversation is not None:
+        return f"{RACINE_ECRANS}/{conversation}"
+    return f"/{portee}"
 
 
 def portee_du_chemin(chemin: str) -> str | None:
@@ -127,6 +169,9 @@ def portee_du_chemin(chemin: str) -> str | None:
     if "/" + tete == RACINE_SERVICES:
         nom = morceaux[1] if len(morceaux) > 1 else ""
         return PREFIXE_CONNECTEUR + nom if nom_connecteur_valide(nom) else None
+    if "/" + tete == RACINE_ECRANS:
+        identifiant = morceaux[1] if len(morceaux) > 1 else ""
+        return PREFIXE_CONVERSATION + identifiant if conversation_valide(identifiant) else None
     return tete if tete and not tete.startswith("_") and slug_valide(tete) else None
 
 

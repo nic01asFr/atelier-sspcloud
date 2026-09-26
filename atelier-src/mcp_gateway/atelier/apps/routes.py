@@ -13,6 +13,8 @@ L'interface agit pour le propriétaire, sans cette règle.
 Les routes `/v1/bureaux` font de même pour les services du namespace que
 déclarent les connecteurs (voir `bureaux`) : le catalogue (ni amont ni
 jeton), et « ouvrir », qui émet un code de portée `connecteur:<nom>`.
+L'écran du navigateur d'une conversation s'ouvre par `/v1/ecran/<id>/ouvrir`
+(voir `navigateur_routes`), en portée `conversation:<id>`.
 """
 
 from __future__ import annotations
@@ -25,7 +27,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 
 from mcp_gateway.atelier.apps.manifeste import ManifesteInvalide
-from mcp_gateway.atelier.apps.passage import connecteur_de_portee, destination_valide, portee_du_chemin
+from mcp_gateway.atelier.apps.passage import (
+    connecteur_de_portee,
+    conversation_de_portee,
+    destination_valide,
+    portee_du_chemin,
+)
 from mcp_gateway.atelier.apps.service import ApplicationInconnue, AutreAuteur, ServiceApps
 from mcp_gateway.atelier.apps.superviseur import ErreurApplication, PlafondAtteint
 
@@ -98,6 +105,10 @@ def enregistrer_routes_apps(
         if connecteur_de_portee(portee) is not None and service.bureaux.vue_du_chemin(destination) is None:
             # Un code ne s'émet que pour une vue que le pool déclare.
             return HTMLResponse("<p>Service inconnu.</p>", status_code=404, headers=ENTETES_PASSAGE)
+        conversation = conversation_de_portee(portee)
+        if conversation is not None and not service.ecrans.connue(conversation):
+            # L'écran d'une conversation que l'Atelier ne connaît pas ne s'ouvre pas.
+            return HTMLResponse("<p>Conversation inconnue.</p>", status_code=404, headers=ENTETES_PASSAGE)
         return renvoi_par_code(service, sid_ou_refus(request), portee, destination)
 
     # ── Les services du namespace (bureaux, éditeurs) ─────────────────

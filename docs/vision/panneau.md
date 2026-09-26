@@ -4,6 +4,42 @@
 25/09/2026. Suit le format de `docs/vision/cadre.md`. **Proposition, à
 valider.** Aucun code n'a été modifié pour l'écrire.
 
+## État (vague 3, équipe N, 26/09/2026, branche `v3-navigateur`) : P5, le navigateur de l'agent en direct
+
+Détail, mesures et limites : `docs/navigateur-atelier.md` § 8.
+
+### Fait
+
+| Quoi | Ce qui existe | Où |
+|---|---|---|
+| **Chrome visible par l'Atelier (U1)** | Le Chrome de chaque conversation reste lancé par `chrome-devtools-mcp` par son tube (démarrage au premier outil, mort avec le tube) ; le rôle « navigateur » du lanceur lui ajoute un port de débogage **sur 127.0.0.1**, port 0, lu dans `DevToolsActivePort`. Mesuré : Chrome et chrome-headless-shell acceptent tube et port ensemble (Windows et Linux). Profil **par conversation** (`conversation.<id>`, verrou `flock`), gardé tant qu'elle vit : les connexions aux sites survivent au processus | `bin/atelier-chrome` |
+| **Association conversation -> écran** | Le filtre publie `ecrans/<conversation>.json` (0600) : port, page sélectionnée par l'agent (ligne `[selected]` des réponses du serveur), actions en attente ; retirée à la sortie | `bin/atelier-chrome-onglets.mjs` |
+| **Écran en direct** | Rattachement CDP en boucle locale, suivi de la page sélectionnée (`Target.*`), screencast JPEG (8 images/s au plus, par l'acquittement), **rien tant que personne ne regarde** | `ecran.py` |
+| **Portée `conversation`** | `conversation:<id>`, racine `/_ecran/<id>/`, sur le modèle de la portée « connecteur » : une session ouverte pour l'écran de la conversation X n'ouvre ni Y, ni un projet, ni un connecteur ; jamais par un code d'agent | `apps/passage.py`, `apps/serveur.py`, `apps/routes.py` |
+| **Page de l'écran** | Sur l'hôte des applications : image, adresse courante, « Prendre la main » / « Rendre la main », bandeau « l'agent est en pause (n actions en attente) » ; ne reçoit que des images et un état, n'envoie que des gestes (jamais le protocole DevTools, jamais le port) | `apps/page_ecran/` |
+| **Prendre la main** | Clics, molette, clavier, collage, adresse (`http`/`https`) par `Input.dispatch*` / `Page.navigate`, seulement main prise. L'agent est **mis en pause par blocage** : ses actions sur le navigateur attendent dans le filtre (une interruption tuerait son CLI, donc Chrome et la page). « Rendre la main » les libère, la première avec une note qui dit ce qui a changé ; sans action ni tour en cours, un message relance l'agent. Main abandonnée : rendue après 5 min sans spectateur | `ecran.py`, filtre |
+| **Panneau (J-f2)** | Un outil `new_page`, `navigate_page` ou `select_page` dans le flux ajoute l'onglet « Navigateur de l'agent » : panneau fermé, il s'ouvre dessus ; autre onglet regardé, un signal ; replié par la personne, le signal passe sur le bouton du panneau. Flux vivant (cadre retiré masqué), jamais épinglé ; retrouvé au chargement d'une conversation dont le navigateur est ouvert | `web/js/views/panneau.js` |
+| **Routes de l'Atelier** | `GET /v1/ecran/<id>` (état, sans port), `GET /v1/ecran/<id>/ouvrir` (code de portée `conversation:<id>`), `POST /v1/ecran/<id>/main` | `navigateur_routes.py` ; `app.state.diffusion` (une ligne dans `api.py`) |
+| **J-f3** | Lectures du navigateur autorisées d'office (`permissions.allow`) dans les réglages de chaque tour, de VS Code, du terminal et de wikichat | `navigateur.py` (`OUTILS_EN_LECTURE`, `regles_de_lecture_du_navigateur`) |
+| **Consignes** | `atelier_navigateur_ouvrir`, jamais `file://` ; lectures libres ; main de la personne et note de reprise | `docs/consignes/socle.md`, `docs/consignes/chrome-devtools-atelier.md` |
+
+### Vérifié
+
+- `tests/test_ecran.py`, `tests/test_filtre_ecran.py`, `tests/test_lanceur_chrome.py` (sous Linux, dans un conteneur de l'image de l'Atelier), suites JS `panneau` et `ecran` : portée qui refuse une autre conversation ; ni jeton ni port côté navigateur ; suivi de la page sélectionnée ; pause et reprise de l'agent ; plafond d'onglets tenu ; rien ne tourne sans spectateur.
+- `tests/test_ecran_chrome_reel.py` contre un **vrai Chrome** et le vrai `chrome-devtools-mcp` 1.10.1 : sous Windows (Chrome 153), et sous Linux **par le vrai lanceur** (chrome-headless-shell 154) : images JPEG, suivi de `new_page` et `select_page`, clic de la personne qui agit dans la page, action de l'agent retenue puis rendue avec la note, port en boucle locale seulement, tout rangé à la fin (profil gardé).
+
+### Non vérifié (ne se voit que sur le pod)
+
+- Une vraie conversation `claude` du pod : noms d'outils dans le flux, panneau qui s'ouvre, image dans l'iframe sur `https` à travers l'Ingress, relance réelle après « Rendre la main ».
+- `CLAUDE_CODE_SESSION_ID` transmis aux serveurs MCP par VS Code et le terminal (sans lui : pas d'écran sur ces surfaces, profil jetable comme avant).
+- L'effet des règles J-f3 dans le CLI 2.1.281.
+
+### Reste
+
+- Deux flux vivants au plus, vignettes (P4/P5).
+- Boîtes de dialogue et choix de fichier : hors du screencast.
+- Liseré « l'agent agit » sur l'onglet pendant un outil du navigateur.
+
 ## État (vague 2, équipe B, 26/09/2026, branche `v2-bureaux`) : P4, les bureaux
 
 ### Fait

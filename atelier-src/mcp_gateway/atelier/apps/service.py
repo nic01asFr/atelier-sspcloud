@@ -66,6 +66,7 @@ class ServiceApps:
         self.superviseur = superviseur or Superviseur(settings)
         self.passage = passage or Passage(settings.gateway_db_path)
         self._bureaux: Any = None
+        self._ecrans: Any = None
 
     # ── Les services du namespace (voir `bureaux`) ────────────────────
 
@@ -98,6 +99,21 @@ class ServiceApps:
     @bureaux.setter
     def bureaux(self, valeur: Any) -> None:
         self._bureaux = valeur
+
+    # ── L'écran du navigateur des conversations (voir `ecran`) ────────
+
+    @property
+    def ecrans(self) -> Any:
+        """Les écrans en direct des navigateurs des agents, et la main de la personne."""
+        if self._ecrans is None:
+            from mcp_gateway.atelier.ecran import Ecrans
+
+            self._ecrans = Ecrans()
+        return self._ecrans
+
+    @ecrans.setter
+    def ecrans(self, valeur: Any) -> None:
+        self._ecrans = valeur
 
     # ── Le second hôte ────────────────────────────────────────────────
 
