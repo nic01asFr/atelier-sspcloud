@@ -37,6 +37,7 @@ from mcp_gateway.atelier.navigateur import (
     declaration_du_pool,
     lanceur_chrome,
     refuser_les_outils_simules,
+    regles_de_lecture_du_navigateur,
     stdio_de_la_passerelle,
 )
 from mcp_gateway.atelier.vscode_bridge import COOKIE_NAME
@@ -219,16 +220,18 @@ def test_l_ancienne_declaration_http_est_migree_sans_son_jeton(tmp_path: Path) -
 
 def test_websearch_est_refuse_sans_toucher_au_reste(tmp_path: Path) -> None:
     s = _reglages(tmp_path)
-    assert refuser_les_outils_simules({}, s) == {"permissions": {"deny": ["WebSearch"]}}
+    # Les lectures du navigateur sont autorisées d'office en même temps (J-f3).
+    lectures = regles_de_lecture_du_navigateur()
+    assert refuser_les_outils_simules({}, s) == {"permissions": {"deny": ["WebSearch"], "allow": lectures}}
     perso = {"permissions": {"deny": ["Bash(rm:*)"], "allow": ["Read"]}, "model": "m"}
     sortie = refuser_les_outils_simules(perso, s)
-    assert sortie["permissions"] == {"deny": ["Bash(rm:*)", "WebSearch"], "allow": ["Read"]}
+    assert sortie["permissions"] == {"deny": ["Bash(rm:*)", "WebSearch"], "allow": ["Read", *lectures]}
     assert sortie["model"] == "m"
     assert refuser_les_outils_simules(sortie, s) == sortie, "idempotent"
 
 
 def test_websearch_natif_retire_seulement_notre_refus(tmp_path: Path) -> None:
-    s = _reglages(tmp_path, websearch_natif=True)
+    s = _reglages(tmp_path, websearch_natif=True, navigateur=False)
     reglages = {"permissions": {"deny": ["WebSearch", "Bash(rm:*)"]}}
     assert refuser_les_outils_simules(reglages, s) == {"permissions": {"deny": ["Bash(rm:*)"]}}
     assert refuser_les_outils_simules({"permissions": {"deny": ["WebSearch"]}}, s) == {}
