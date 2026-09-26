@@ -2,14 +2,20 @@
 
 Ce journal suit les étapes du projet plutôt que des versions : le service est
 publié en continu (image `ghcr.io/nic01asfr/atelier:latest`, tirée à chaque
-démarrage du pod), et seul le chart Helm porte un numéro. Chaque étape
-renvoie au chart qui l'a accompagnée quand il y en a un. Le détail des vagues
+démarrage du pod). Depuis la 0.3.0, le service (`/v1/health`), le paquet
+Python et le chart Helm portent le même numéro, écrit à un seul endroit
+(`atelier-src/mcp_gateway/atelier/__init__.py`) ; jusque-là, seul le chart en
+avait un. Chaque étape renvoie au chart qui l'a accompagnée quand il y en a un. Le détail des vagues
 est dans [`docs/archives/vision/plan-implementation.md`](docs/archives/vision/plan-implementation.md)
 §5 ; celui de chaque fonctionnalité, dans [`docs/fonctionnalites.md`](docs/fonctionnalites.md).
 
 Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
-## Non publié
+## Version 0.3.0 : publication (non publiée)
+
+- une seule version pour le service, le paquet et le chart (0.3.0) ;
+- retrait de `deploy-patches/`, `wikichat-atelier/` et du miroir de transition
+  `helm-repo/` : le dépôt Helm n'est plus servi que par GitHub Pages.
 
 Préparation de la publication du dépôt :
 

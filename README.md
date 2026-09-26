@@ -126,7 +126,6 @@ boucle locale.
 | [`site/`](site/) | la vitrine bilingue, générée par `site/generate.mjs` |
 | [`scripts/`](scripts/) | le vérificateur des liens de la documentation |
 | [`docs/`](docs/README.md) | la documentation, rangée par usage |
-| [`wikichat-atelier/`](wikichat-atelier/README.md), [`deploy-patches/`](deploy-patches/), [`helm-repo/`](helm-repo/) | hérités : pilote wikichat de travail, outil de déploiement de l'auteur, miroir de transition du dépôt Helm ; leur retrait est proposé dans [`docs/publication/audit.md`](docs/publication/audit.md) |
 
 ## État et limites
 

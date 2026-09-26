@@ -193,7 +193,7 @@ jobs:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
-      contents: write # miroir helm-repo/ poussé sur main
+      contents: read
       pages: write
       id-token: write
     concurrency:
@@ -217,33 +217,23 @@ jobs:
         run: node site/generate.mjs
 
       # GitHub Pages remplace tout le site à chaque déploiement : les paquets
-      # déjà publiés sont repris de helm-repo/ pour que les versions installées
-      # restent téléchargeables.
+      # déjà publiés sont repris du site en ligne, pour que les versions
+      # installées restent téléchargeables. Le premier déploiement (site
+      # absent) ne publie que la version courante. Le miroir de transition
+      # helm-repo/ (raw.githubusercontent.com) est retiré depuis le chart 0.3.0.
       - name: Dépôt Helm sur Pages
         run: |
           set -euo pipefail
-          cp helm-repo/*.tgz site/dist/ 2>/dev/null || true
+          if curl -fsSL "$PAGES_URL/index.yaml" -o /tmp/index-publie.yaml; then
+            grep -oE "$PAGES_URL/atelier-[0-9][0-9A-Za-z.+-]*\.tgz" /tmp/index-publie.yaml | sort -u               | while read -r url; do
+                  curl -fsSL "$url" -o "site/dist/${url##*/}" || echo "paquet non repris : $url"
+                done
+          else
+            echo "aucun dépôt Helm publié : premier déploiement"
+          fi
           helm package charts/atelier -d site/dist/
           helm repo index site/dist --url "$PAGES_URL"
           install -m 0755 install/install.sh site/dist/install.sh
-
-      # Miroir de transition : l'ancienne adresse raw.githubusercontent.com
-      # reste servie pendant une version, le temps que les catalogues Onyxia
-      # passent à GitHub Pages. À retirer à la version suivante, avec ce pas
-      # et le dossier helm-repo/.
-      - name: Miroir helm-repo/ (transition)
-        run: |
-          set -euo pipefail
-          helm package charts/atelier -d helm-repo/
-          helm repo index helm-repo/ --url "https://raw.githubusercontent.com/nic01asFr/atelier-sspcloud/main/helm-repo"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add helm-repo/
-          if ! git diff --staged --quiet; then
-            git commit -m "Publier le chart atelier"
-            git pull --rebase origin main
-            git push origin HEAD:main
-          fi
 
       - uses: actions/configure-pages@v5
 

@@ -12,10 +12,9 @@ la clé du modèle et l'identité git viennent de son profil.
    Git* : nom et courriel — ce sont eux qui signeront les commits des projets.
 2. **Le catalogue.** Ajoutez, une fois, le dépôt de charts de l'Atelier :
    `https://nic01asfr.github.io/atelier-sspcloud`.
-   L'ancienne adresse,
-   `https://raw.githubusercontent.com/nic01asFr/atelier-sspcloud/main/helm-repo`,
-   est dépréciée : elle reste servie pendant une version de transition, puis
-   sera retirée.
+   L'ancienne adresse (`…/main/helm-repo` sur `raw.githubusercontent.com`)
+   n'est plus servie depuis le chart 0.3.0 : un catalogue qui la porte
+   encore doit passer à celle-ci.
 3. **Lancer « Atelier ».** Le formulaire est pré-rempli ; la taille du volume
    (10 Go) et les ressources (2 à 8 Go de mémoire) suffisent d'ordinaire.
 4. **Ouvrir.** L'adresse est `https://user-<idep>-atelier.user.lab.sspcloud.fr`.

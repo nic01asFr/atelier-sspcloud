@@ -1,6 +1,6 @@
 [project]
 name = "mcp-gateway-atelier"
-version = "0.2.0"
+dynamic = ["version"]
 description = "Atelier : Claude Code sur un pod SSPCloud, avec ses projets, ses connecteurs et VS Code"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
@@ -24,6 +24,10 @@ Documentation = "https://github.com/nic01asFr/atelier-sspcloud/blob/main/docs/RE
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+# Une seule source de vérité pour la version : mcp_gateway/atelier/__init__.py.
+[tool.setuptools.dynamic]
+version = { attr = "mcp_gateway.atelier.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -32,7 +32,6 @@ document le contredit, c'est le document qui a tort, et
 | [`onyxia-projet.md`](onyxia-projet.md) | Onyxia lié au déploiement d'un projet, et le mandataire qui borne ses outils |
 | [`atelier-mcp-distant.md`](atelier-mcp-distant.md) | l'Atelier comme connecteur MCP d'un client distant : décisions D1 à D10, lots livrés |
 | [`consignes/`](consignes/README.md) | les consignes des agents : le socle commun (dans le code) et des exemples de consignes de projet |
-| [`../wikichat-atelier/README.md`](../wikichat-atelier/README.md) | la version de travail du pilote wikichat tenue avec le service |
 
 ## Conception et vision
 

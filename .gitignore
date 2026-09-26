@@ -15,10 +15,8 @@ __pycache__/
 .exec_deploy_*
 .mcp_write_*
 
-# Scripts de déploiement jetables. Seul deploy_agent_ui.py est suivi
-# (voir la négation plus bas) : c'est celui qui pousse l'UI sur le pod.
-deploy-patches/*
-!deploy-patches/deploy_agent_ui.py
+# Scripts de déploiement jetables : l'installation passe par l'image.
+deploy-patches/
 
 # Réglages Claude Code propres à la machine : ni suivis, ni ignorés jusqu'ici.
 .claude/settings.local.json
