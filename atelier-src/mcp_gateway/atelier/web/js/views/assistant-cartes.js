@@ -234,6 +234,23 @@ export function carteDAction(sortie) {
 }
 
 /**
+ * Cette sortie porte-t-elle une carte d'action ? Même critère que
+ * `carteDAction`, sans rien construire : le fil le demande à chaque image
+ * pendant un tour.
+ *
+ * @param {string | object} sortie
+ */
+export function aUneCarte(sortie) {
+  if (!sortie) return false;
+  if (typeof sortie === "string" && !sortie.trimStart().startsWith("{")) return false;
+  const donnees = lire(sortie);
+  if (!donnees || typeof donnees !== "object") return false;
+  if (donnees.confirmation_requise === true && donnees.confirmation) return true;
+  const c = donnees.carte;
+  return !!(c && typeof c === "object" && c.titre);
+}
+
+/**
  * Les gestes des cartes : « Annuler » et « Oui », au nom de la personne.
  *
  * @param {object} ctx

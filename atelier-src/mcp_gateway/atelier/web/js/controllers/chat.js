@@ -25,6 +25,25 @@ function findStreamTool(stream, toolId) {
   return stream.tools[stream.tools.length - 1];
 }
 
+/**
+ * La cause d'une fin de tour, dite en français.
+ *
+ * Le service transmet le code de sortie du CLI tel quel : arrêter un tour
+ * affichait « exit_143 » en bandeau d'erreur, comme une panne.
+ */
+export function causeLisible(cause) {
+  const c = String(cause || "").trim();
+  const code = /^exit_(\d+)$/.exec(c);
+  if (!code) return c || "erreur";
+  if (["130", "137", "143"].includes(code[1])) return "Tour arrêté.";
+  return `Le tour s’est arrêté sur une erreur (code ${code[1]}).`;
+}
+
+/** Un arrêt demandé n'est pas une panne : il ne s'annonce pas en bandeau. */
+export function estUnArret(cause) {
+  return /^exit_(130|137|143)$/.test(String(cause || "").trim());
+}
+
 /** Le dernier bloc du fil, s'il est bien du type voulu — pour y coller la suite. */
 export function blocCourant(stream, type) {
   const dernier = stream.blocs[stream.blocs.length - 1];
@@ -442,9 +461,9 @@ function appliquerEvenement(ctx, stream, ev) {
   } else if (ev.kind === "erreur") {
       S.appendMessage(state, {
         role: "error",
-        text: ev.cause || "erreur",
+        text: causeLisible(ev.cause),
       });
-      S.setError(state, ev.cause || "erreur");
+      if (!estUnArret(ev.cause)) S.setError(state, causeLisible(ev.cause));
       render();
     }
 }
