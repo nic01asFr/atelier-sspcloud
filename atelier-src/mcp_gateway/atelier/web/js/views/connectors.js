@@ -796,7 +796,15 @@ function renderDetail(entry, kind, state, actions) {
         actions.deleteMcp(entry.id);
       }
     });
+    // Un secret se donne par son nom : la valeur ne passe jamais par l'écran
+    // (commande réservée `atelier_connecteur_accorder`).
+    const accorder = document.createElement("button");
+    accorder.type = "button";
+    accorder.className = "ghost btn-sm";
+    accorder.textContent = "Accorder un secret";
+    accorder.addEventListener("click", () => actions.accorderSecret?.(entry));
     toolbar.appendChild(toggle);
+    toolbar.appendChild(accorder);
     toolbar.appendChild(del);
     head.appendChild(toolbar);
   }

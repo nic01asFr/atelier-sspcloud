@@ -53,6 +53,8 @@ export function createAuthController(ctx) {
       await refreshProjects(state);
       await refreshSessions(state);
       veillerLesSessions(state, render);
+      // Ce qui se lit partout : le badge « À valider », et la vue d'arrivée.
+      ctx.apresEntree?.();
       if (state.view === "connecteurs") {
         await refreshMcp(state);
         await refreshMcpOverview(state);

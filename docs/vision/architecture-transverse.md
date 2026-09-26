@@ -468,8 +468,29 @@ sortie, pas la vue d'ensemble.
 - **Une file « À valider »** : propositions des gardiens, des agents et des créations, et
   décisions en attente de l'Assistant.
 - **État (vague 1)** : le journal et la file existent, avec leur API ; leurs contrats sont
-  au §1.8 (« Commandes : ce qui existe »). L'écran « À valider » et la page du journal restent à
-  faire (équipe P).
+  au §1.8 (« Commandes : ce qui existe »).
+- **État (vague 2, équipe V)** : l'écran « À valider » (onglet de la navigation, badge du
+  nombre en attente relu toutes les 30 s ; détail, ce qu'accepter fera, précisions demandées
+  par un agent du pilote ; Accepter, réservé à la personne par le catalogue ; Refuser en un
+  clic, motif facultatif) et le journal (onglet, phrases en langage humain, filtres projet,
+  acteur, source) existent, sur les API ci-dessus. Les propositions d'un agent du pilote,
+  tranchées depuis sa fiche, passent aussi par `/v1/a-valider/<id>/decision`. L'inventaire des
+  automates n'est plus une page : c'est la liste « Tâches automatiques » de la vue Agents
+  (`GET /v1/automates`, `mcp_gateway/atelier/automates.py`) ; activer une tâche y est réservé à la
+  personne (J-b2), côté serveur. Les accords réservés de l'équipe K ont leur écran : « Activer »
+  sur un agent désactivé (fiche, menu, liste des tâches) appelle `atelier_agent_activer`, et
+  « Désactiver » son inverse ; « Accorder un secret » (vue Connecteurs) liste les noms de
+  `GET /v1/secrets/noms` (`accords.py` : la personne seule, jamais une valeur, ni les secrets de
+  l'Atelier lui-même) et appelle `atelier_connecteur_accorder` ; une proposition qui porte l'une
+  d'elles s'accepte par « À valider ». Les agents lancés par l'Atelier (équipe L) ont leur
+  section « En cours et récents » dans la vue Agents (`GET /v1/lancements`) : origine en mots
+  (réveil, tâche automatique, gardien réparateur), projet, état, durée, branche, « Arrêter »
+  (`POST /v1/lancements/<id>/arreter`) et, pour un réparateur, « Voir sa proposition ». Après un
+  changement de mode, la note de `GET /v1/sessions/{id}/processus` s'affiche sous la saisie,
+  avec l'écart si l'onglet VS Code vivant est plus permissif. Écrit et testé contre le contrat, avec de fausses
+  commandes au même nom et à la même classe, avant la fusion de `v2-creations`. Reste : les
+  gestes des gardiens et des tâches de la plateforme passent encore par
+  `POST /v1/automates/action`, hors catalogue.
 
 ### 1.8 Les commandes de l'Atelier
 

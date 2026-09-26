@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Atelier</title>
-  <link rel="stylesheet" href="/css/app.css?v=20260925-panneau1" />
+  <link rel="stylesheet" href="/css/app.css?v=20260926-vague2" />
 </head>
 <body>
   <div id="login" class="screen login hidden" aria-live="polite">
@@ -29,6 +29,8 @@
           <button type="button" class="nav-tab" data-view="assistant">Assistant</button>
           <button type="button" class="nav-tab" data-view="connecteurs">Connecteurs</button>
           <button type="button" class="nav-tab" data-view="agent">Agents</button>
+          <button type="button" class="nav-tab nav-tab-a-valider" data-view="a-valider">À valider <span id="nav-badge-a-valider" class="nav-badge" hidden></span></button>
+          <button type="button" class="nav-tab" data-view="journal">Journal</button>
         </nav>
         <button type="button" id="btn-logout" class="ghost">Quitter</button>
       </div>
@@ -89,6 +91,7 @@
                   <button type="button" id="btn-stop" class="composer-stop" hidden>Arrêter</button>
                 </div>
               </div>
+              <p id="composer-mode-note" class="composer-mode-note" role="status" hidden></p>
             </div>
           </div>
         </form>
@@ -140,7 +143,7 @@
     </div>
 
     <div id="view-agent" class="view view-shell view-agent shell-mode-detail hidden" hidden>
-      <aside class="agent-sidebar shell-sidebar" aria-label="Agents planifiés">
+      <aside class="agent-sidebar shell-sidebar" aria-label="Agents, gardiens et tâches automatiques">
         <header class="agent-sidebar-head">
           <button type="button" id="btn-agent-to-home" class="ghost shell-back shell-back-list" hidden>← Accueil</button>
           <h2 class="connectors-title" id="agent-sidebar-title" role="button" tabindex="0" title="Vue d’ensemble">Agents</h2>
@@ -156,6 +159,14 @@
         </div>
         <div id="agent-detail-body" class="agent-detail-body"></div>
       </main>
+    </div>
+
+    <div id="view-a-valider" class="view view-panel view-page hidden" hidden>
+      <div id="a-valider-corps" class="vue-page" aria-live="polite"></div>
+    </div>
+
+    <div id="view-journal" class="view view-panel view-page hidden" hidden>
+      <div id="journal-corps" class="vue-page"></div>
     </div>
   </div>
 
@@ -181,6 +192,6 @@
     </div>
   </div>
 
-  <script type="module" src="/js/app.js?v=20260925-panneau1"></script>
+  <script type="module" src="/js/app.js?v=20260926-vague2"></script>
 </body>
 </html>

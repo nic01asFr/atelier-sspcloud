@@ -38,8 +38,19 @@ horodatages ISO UTC `…Z`, aucune valeur secrète) :
 | `GET /resultats/<id>` | `{controle, resultat: {etat, constats, donnees?}}` (le dernier, complet) |
 | `GET /automates` | `{controle, lu_a, automates: [Automate], par_etat}` ; Automate au schéma de `coherence-croisee.md` §1.2, `etat` ∈ `actif\|coupe\|sans_declaration\|absent` (`absent` : démon connu qui n'écoute pas) ; champs en plus selon le genre : `titre`, `action`, `plafond_par_jour`, `lancements`, `etapes`, `dernier_resultat`, `ports`, `pid` |
 
-Toute autre méthode : 405. L'API n'écoute qu'en `127.0.0.1` ; la page de
-l'Atelier la lira côté serveur.
+Toute autre méthode : 405, sauf `POST /pilotage` (vague 2, ci-dessous). L'API
+n'écoute qu'en `127.0.0.1` ; l'Atelier la lit côté serveur.
+
+**Vague 2 (équipe V, branche `v2-vue-agents`) : les gardiens dans la vue Agents.**
+Décision J-i : pas de page Gardiens. Chaque gardien est un agent spécifique de
+la vue Agents (section « Gardiens » de la liste, fiche au clic) :
+
+| Pièce | Où | État |
+|---|---|---|
+| Pilotage à chaud : lancer maintenant, couper, réactiver (un gardien entier ou un contrôle) ; une coupure survit au redémarrage (`coupes.json`) et ferme l'homme mort du contrôle ; un contrôle déclaré `"actif": false` ne se réactive pas d'ici | `executeur.py` (`lancer_maintenant`, `couper`, `reactiver`), `GET /etat` rend `actif` (effectif), `actif_declare`, `coupe` | testé |
+| `POST /pilotage` `{action: lancer\|couper\|reactiver, gardien?\|controle?, par?}` : jeton `Authorization: Bearer` écrit par l'exécuteur à son démarrage (`<état>/pilotage.jeton`, 0600) ; refusé avec un `Origin` (navigateur) ou un `Host` non local ; 503 sans jeton (à blanc) | `api.py`, `__main__.py` | testé |
+| Relais de l'Atelier : `GET /v1/gardiens` (un agent par gardien : état, contrôles, alertes ouvertes, derniers constats, échéances, gestes récents lus au journal unique), `GET /v1/automates` (gardiens, triggers et routines de wikichat, créations servies : dernière, prochaine, plafond, état), `POST /v1/automates/action` `{id, geste}` | `mcp_gateway/atelier/automates.py` | testé, vérifié dans Chrome contre un exécuteur factice |
+| Droits : couper un gardien et activer une tâche automatique sont réservés à la personne (session de l'interface) ; lancer et réactiver, non ; chaque geste va au journal unique (`source: automate`) avec son acteur, refus compris | `automates.py` | testé |
 
 **Exécution à blanc sur le pod (25/09, 20 h UTC, lecture seule).** L'exécuteur
 n'est pas sur le pod ; les mêmes lectures ont été faites par des commandes
@@ -67,11 +78,13 @@ n'est pas sur le pod ; les mêmes lectures ont été faites par des commandes
   bypass (une session `acceptEdits`, avec fiche).
 
 **Reste** : G3 (cohérence), G4 (coût, origine au relais), G5 (propositions,
-après le lot D), G6 (amélioration) ; la page Gardiens et l'onglet Automates
-(équipe P, vague 2) ; le projet système `atelier-gardiens` (J-g) qui portera la
+après le lot D), G6 (amélioration) ; le projet système `atelier-gardiens` (J-g) qui portera la
 déclaration ; la routine « homme mort » côté wikichat (l'exécuteur vérifie
 wikichat, pas encore l'inverse) ; les gestes « régénérer une configuration »
-et « couper un automate » ; le recopiage de `routine-runs.jsonl` dans le
+et « couper un automate » (côté gardien ; la personne le fait depuis la vue
+Agents) ; fermer ou marquer les alertes d'un contrôle coupé (elles restent
+ouvertes, figées) ; un geste « retenu » (gestes coupés) est journalisé à chaque
+passage, ce qui charge le journal unique ; le recopiage de `routine-runs.jsonl` dans le
 journal unique (§2 de `coherence-croisee.md`) ; les sondes `initialize` des
 connecteurs, la tendance des fils, Ingress du namespace ; hooks git
 pre-commit et pre-push.

@@ -3,6 +3,8 @@
 import { $, rendreActivable } from "../core/dom.js";
 import { showContextMenu } from "../ui/context-menu.js";
 import { renderToolPicker } from "../ui/tool-picker.js";
+import { carteGardien, ficheGardien, listeAutomates } from "./gardiens.js";
+import { listeLancements } from "./lancements.js";
 
 const FREQ_PRESETS = [
   { value: "0 8 * * *", label: "Chaque jour à 8h" },
@@ -83,7 +85,7 @@ function renderAgentCard(agent, selected, daemon, actions, panel, state) {
       { label: "Modifier l’agent", action: () => actions.openEdit(agent) },
       {
         label: agent.enabled ? "Désactiver" : "Activer",
-        action: () => actions.toggle(agent.id),
+        action: () => (agent.enabled ? actions.desactiver(agent.id) : actions.activer(agent.id)),
       },
       {
         label: "Supprimer l’agent",
@@ -155,7 +157,7 @@ function renderQueueItem(agentId, item, actions, { showAgent } = {}) {
     const ok = document.createElement("button");
     ok.type = "button";
     ok.className = "primary btn-sm";
-    ok.textContent = "Approuver";
+    ok.textContent = "Accepter";
     ok.addEventListener("click", (e) => {
       e.stopPropagation();
       actions.decide(agentId, item.id, "approve");
@@ -163,7 +165,7 @@ function renderQueueItem(agentId, item, actions, { showAgent } = {}) {
     const no = document.createElement("button");
     no.type = "button";
     no.className = "ghost btn-sm";
-    no.textContent = "Rejeter";
+    no.textContent = "Refuser";
     no.addEventListener("click", (e) => {
       e.stopPropagation();
       actions.decide(agentId, item.id, "reject");
@@ -268,7 +270,8 @@ function renderMecanismes(ov, actions, into) {
   }
 }
 
-function renderHome(ov, actions) {
+function renderHome(state, actions, automates) {
+  const ov = state.piloteOverview;
   const body = $("agent-detail-body");
   if (!body) return;
   body.innerHTML = "";
@@ -277,7 +280,7 @@ function renderHome(ov, actions) {
   head.className = "agent-detail-head";
   head.innerHTML = `
     <h2 class="connectors-title">Vue d’ensemble</h2>
-    <p class="connectors-lead">Outils planifiés qui travaillent à votre rythme, puis vous proposent des actions à valider.</p>
+    <p class="connectors-lead">Tout ce qui agit seul : vos agents planifiés, les gardiens et les tâches automatiques. Ce qu’ils proposent attend dans « À valider ».</p>
   `;
   const actionsRow = document.createElement("div");
   actionsRow.className = "agent-head-actions";
@@ -290,47 +293,78 @@ function renderHome(ov, actions) {
   head.appendChild(actionsRow);
   body.appendChild(head);
 
-  renderDaemonBar(ov?.daemon || {}, actions, body);
-  renderMecanismes(ov, actions, body);
+  if (ov) {
+    renderDaemonBar(ov.daemon || {}, actions, body);
+    renderMecanismes(ov, actions, body);
+  }
 
-  const agents = ov?.agents || [];
-
+  // Une seule file (S3) : l'accueil y renvoie au lieu d'en tenir une copie.
   const queueSec = document.createElement("section");
-  queueSec.className = "agent-section";
+  queueSec.className = "agent-section agent-a-valider";
   const h = document.createElement("h3");
   h.className = "connectors-sub";
-  h.textContent = "À valider (tous les agents)";
+  h.textContent = "À valider";
   queueSec.appendChild(h);
-
-  const qUl = document.createElement("ul");
-  qUl.className = "agent-queue";
-  let any = false;
-  for (const agent of agents) {
-    const pending = (agent.queue || []).filter(
-      (a) => (a.status || "pending") === "pending"
-    );
-    for (const item of pending) {
-      any = true;
-      qUl.appendChild(
-        renderQueueItem(
-          agent.id,
-          { ...item, _agentName: agent.name || agent.id },
-          actions,
-          { showAgent: true }
-        )
-      );
-    }
-  }
-  if (!any) {
-    const li = document.createElement("li");
-    li.className = "mcp-empty";
-    li.textContent = agents.length
-      ? "Aucune proposition en attente."
-      : "Créez un agent avec + pour commencer.";
-    qUl.appendChild(li);
-  }
-  queueSec.appendChild(qUl);
+  const rang = document.createElement("div");
+  rang.className = "agent-daemon-bar-inner";
+  const n = state.aValiderCompte || 0;
+  const texte = document.createElement("span");
+  texte.className = "agent-daemon-info";
+  texte.textContent = n
+    ? `${n} proposition${n > 1 ? "s" : ""} attend${n > 1 ? "ent" : ""} votre accord.`
+    : "Rien n’attend votre accord.";
+  const ouvrir = document.createElement("button");
+  ouvrir.type = "button";
+  ouvrir.className = n ? "primary btn-sm" : "ghost btn-sm";
+  ouvrir.textContent = "Ouvrir « À valider »";
+  ouvrir.addEventListener("click", () => actions.ouvrirAValider?.());
+  rang.appendChild(texte);
+  rang.appendChild(ouvrir);
+  queueSec.appendChild(rang);
   body.appendChild(queueSec);
+
+  // Les agents lancés par wikichat et par les gardiens (réparateurs).
+  const lanceSec = document.createElement("section");
+  lanceSec.className = "agent-section agent-lancements";
+  const hl = document.createElement("h3");
+  hl.className = "connectors-sub";
+  hl.textContent = "En cours et récents";
+  lanceSec.appendChild(hl);
+  const conteneurL = document.createElement("div");
+  if (state.lancements) {
+    listeLancements(conteneurL, state.lancements, { actions: automates, enCours: state.lancementEnCours });
+  } else {
+    const p = document.createElement("p");
+    p.className = "agent-note";
+    p.textContent = "Lecture des agents lancés…";
+    conteneurL.appendChild(p);
+  }
+  lanceSec.appendChild(conteneurL);
+  body.appendChild(lanceSec);
+
+  // Toutes les tâches automatiques, une seule liste.
+  const autoSec = document.createElement("section");
+  autoSec.className = "agent-section agent-automates";
+  const h2 = document.createElement("h3");
+  h2.className = "connectors-sub";
+  h2.textContent = "Tâches automatiques";
+  autoSec.appendChild(h2);
+  const lead = document.createElement("p");
+  lead.className = "agent-note";
+  lead.textContent =
+    "Tout ce qui se lance seul, avec sa dernière et sa prochaine exécution et sa limite. Activer une tâche reste réservé à vous.";
+  autoSec.appendChild(lead);
+  const conteneur = document.createElement("div");
+  if (state.automates) {
+    listeAutomates(conteneur, state.automates, { actions: automates, enCours: state.automateEnCours });
+  } else {
+    const p = document.createElement("p");
+    p.className = "empty-hint";
+    p.textContent = "Lecture des tâches automatiques…";
+    conteneur.appendChild(p);
+  }
+  autoSec.appendChild(conteneur);
+  body.appendChild(autoSec);
 }
 
 function fieldRow(label, control, hint) {
@@ -714,9 +748,12 @@ function renderSettingsTab(agent, actions, state) {
   fire.addEventListener("click", () => actions.fire(agent.id));
   const toggle = document.createElement("button");
   toggle.type = "button";
-  toggle.className = "ghost btn-sm";
+  toggle.className = agent.enabled ? "ghost btn-sm" : "primary btn-sm";
   toggle.textContent = agent.enabled ? "Désactiver" : "Activer";
-  toggle.addEventListener("click", () => actions.toggle(agent.id));
+  if (!agent.enabled) toggle.title = "Réservé à vous : un agent ne peut pas en activer un autre.";
+  toggle.addEventListener("click", () =>
+    agent.enabled ? actions.desactiver(agent.id) : actions.activer(agent.id)
+  );
   const del = document.createElement("button");
   del.type = "button";
   del.className = "ghost btn-sm agent-profile-del";
@@ -811,6 +848,27 @@ function renderDetail(agent, state, actions) {
   lead.textContent = agent.desc || "";
   head.appendChild(titleRow);
   head.appendChild(lead);
+  if (!agent.enabled) {
+    // Un agent créé par un modèle naît désactivé (J-b) : l'activer revient à
+    // la personne (J-b2), par la commande réservée.
+    const bandeau = document.createElement("div");
+    bandeau.className = "agent-daemon-bar agent-a-activer";
+    const inner = document.createElement("div");
+    inner.className = "agent-daemon-bar-inner";
+    const texte = document.createElement("span");
+    texte.className = "agent-daemon-info";
+    texte.textContent = "Cet agent est désactivé : il ne partira pas seul tant que vous ne l’activez pas.";
+    const activer = document.createElement("button");
+    activer.type = "button";
+    activer.className = "primary btn-sm";
+    activer.textContent = "Activer";
+    activer.title = "Réservé à vous : un agent ne peut pas en activer un autre.";
+    activer.addEventListener("click", () => actions.activer(agent.id));
+    inner.appendChild(texte);
+    inner.appendChild(activer);
+    bandeau.appendChild(inner);
+    head.appendChild(bandeau);
+  }
   body.appendChild(head);
 
   body.appendChild(renderTabs(agent, state, actions));
@@ -829,6 +887,8 @@ function renderDetail(agent, state, actions) {
  */
 export function createAgentView(ctx) {
   const { state, actions } = ctx;
+  // Gestes sur les gardiens et les tâches automatiques (controllers/automates.js).
+  const automates = ctx.automates || {};
 
   function renderAgentList() {
     const ul = $("agent-list");
@@ -874,6 +934,33 @@ export function createAgentView(ctx) {
       ul.appendChild(
         renderAgentCard(agent, state.selectedAgentId, daemon, actions, panel, state)
       );
+    }
+
+    // Les gardiens : des agents spécifiques (J-i), sans IA, qui surveillent.
+    const vueGardiens = state.gardiens;
+    if (vueGardiens) {
+      const titre = document.createElement("li");
+      titre.className = "agent-list-section";
+      titre.textContent = "Gardiens";
+      titre.title = "Des vérifications automatiques, sans IA, qui surveillent l’Atelier et vous préviennent.";
+      ul.appendChild(titre);
+      const gardiens = vueGardiens.gardiens || [];
+      if (!gardiens.length) {
+        const li = document.createElement("li");
+        li.className = "mcp-empty";
+        li.textContent = vueGardiens.joignable === false
+          ? "Les gardiens ne répondent pas."
+          : "Aucun gardien déclaré.";
+        ul.appendChild(li);
+      }
+      for (const g of gardiens) {
+        ul.appendChild(
+          carteGardien(g, {
+            choisi: panel === "gardien" && state.selectedGardienId === g.id,
+            onChoisir: (id) => automates.choisirGardien?.(id),
+          })
+        );
+      }
     }
 
     if (entretien.length) {
@@ -937,7 +1024,7 @@ export function createAgentView(ctx) {
       if (panel === "create") {
         back.hidden = false;
         back.textContent = "← Annuler";
-      } else if (panel === "detail") {
+      } else if (panel === "detail" || panel === "gardien") {
         back.hidden = false;
         back.textContent = "← Liste";
       } else {
@@ -952,12 +1039,20 @@ export function createAgentView(ctx) {
       renderCreate(state, actions);
       return;
     }
+    if (panel === "gardien") {
+      const g = (state.gardiens?.gardiens || []).find((x) => x.id === state.selectedGardienId);
+      const body = $("agent-detail-body");
+      if (g && body) {
+        ficheGardien(body, g, { actions: automates, enCours: state.automateEnCours });
+        return;
+      }
+    }
     const agent = selectedAgent();
     if (panel === "detail" && agent) {
       renderDetail(agent, state, actions);
       return;
     }
-    renderHome(state.piloteOverview, actions);
+    renderHome(state, actions, automates);
   }
 
   return { renderAgent };

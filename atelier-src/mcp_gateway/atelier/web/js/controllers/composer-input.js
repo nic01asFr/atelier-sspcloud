@@ -4,6 +4,7 @@ import * as api from "../api.js";
 import * as S from "../state.js";
 import { $ } from "../core/dom.js";
 import { bindAutoGrowTextarea, syncAutoGrowTextarea } from "../ui/auto-grow-textarea.js";
+import { noteDuMode } from "../ui/mode-processus.js";
 
 const MAX_TEXTAREA_PX = 160;
 const MAX_ATTACHMENTS = 8;
@@ -165,10 +166,25 @@ export function createComposerInputController(ctx) {
       const i = (state.sessions || []).findIndex((x) => x.session_id === rec.session_id);
       if (i >= 0) state.sessions[i] = rec;
       render();
+      await direCeQueVautLeMode(rec.session_id);
     } catch (err) {
       S.setError(state, `Mode non appliqué : ${err.message}`);
       render();
     }
+  }
+
+  /**
+   * Un onglet VS Code ouvert garde son mode jusqu'à sa fermeture : on le dit
+   * près du sélecteur, et l'écart s'il agit plus librement que le choix.
+   */
+  async function direCeQueVautLeMode(sessionId) {
+    try {
+      const processus = await api.processusDeLaConversation(sessionId);
+      state.modeProcessus = { sessionId, note: noteDuMode(processus) };
+    } catch {
+      state.modeProcessus = null;
+    }
+    render();
   }
 
   /** Le mode affiché devient le défaut du projet (conversations sans choix propre). */

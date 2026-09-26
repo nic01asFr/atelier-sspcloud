@@ -62,7 +62,7 @@ export function saveTurns(sessionId, messages) {
 }
 
 /** Vues shell Atelier — alignées avec atelier-wikichat-alignment.md */
-export const VIEWS = ["code", "assistant", "connecteurs", "agent"];
+export const VIEWS = ["code", "assistant", "connecteurs", "agent", "a-valider", "journal"];
 
 export function normalizeView(view) {
   const v = (view || "").trim().toLowerCase();
@@ -96,6 +96,40 @@ export function createState() {
     mcpProfiles: null,
     piloteOverview: null,
     selectedAgentId: null,
+    // Les gardiens, un agent chacun (`GET /v1/gardiens`), et toutes les
+    // tâches automatiques dans une liste (`GET /v1/automates`).
+    gardiens: null,
+    automates: null,
+    selectedGardienId: null,
+    // Un geste en cours sur un gardien ou une tâche : son id, pour griser.
+    automateEnCours: "",
+    // Les agents lancés par l'Atelier (`GET /v1/lancements`), et celui
+    // qu'on est en train d'arrêter.
+    lancements: null,
+    lancementEnCours: "",
+    // Ce que vaut le dernier changement de mode : `{sessionId, note}`.
+    modeProcessus: null,
+    // La file « À valider » : une seule, pour tout ce qui attend la personne.
+    aValider: {
+      statut: "en_attente",
+      propositions: [],
+      note: "",
+      charge: false,
+      ouverte: null,
+      motifs: {},
+      completes: {},
+      enCours: "",
+      erreur: "",
+    },
+    // Le nombre en attente, pour le badge de la navigation.
+    aValiderCompte: 0,
+    // Le journal unique, lu en langage humain.
+    journal: {
+      filtres: { projet: "", acteur: "", source: "" },
+      evenements: [],
+      charge: false,
+      erreur: "",
+    },
     selectedConnectorId: null,
     // Conversation neuve en cours de redaction :
     //   null   = aucune, la liste est a l'ecran
@@ -134,6 +168,8 @@ export function createState() {
       assistant: "list",
       connecteurs: "detail",
       agent: "detail",
+      "a-valider": "detail",
+      journal: "detail",
     },
     sessionMcp: null,
     meta: {
@@ -246,9 +282,34 @@ export function setSelectedAgentId(state, id) {
   state.selectedAgentId = id || null;
 }
 
+export function setGardiens(state, vue) {
+  state.gardiens = vue || null;
+}
+
+export function setAutomates(state, liste) {
+  state.automates = liste || null;
+}
+
+export function setSelectedGardienId(state, id) {
+  state.selectedGardienId = id || null;
+}
+
+/** Fusionne dans l'état de l'écran « À valider ». */
+export function patchAValider(state, partiel) {
+  state.aValider = { ...state.aValider, ...(partiel || {}) };
+}
+
+export function setAValiderCompte(state, n) {
+  state.aValiderCompte = Math.max(0, Number(n) || 0);
+}
+
+export function patchJournal(state, partiel) {
+  state.journal = { ...state.journal, ...(partiel || {}) };
+}
+
 export function setAgentPanel(state, panel) {
   const p = (panel || "").toLowerCase();
-  state.agentPanel = ["home", "create", "detail"].includes(p) ? p : "home";
+  state.agentPanel = ["home", "create", "detail", "gardien"].includes(p) ? p : "home";
 }
 
 export function setAgentCreateForm(state, form) {
@@ -325,7 +386,11 @@ export function syncShellModeFromSelection(state) {
     const enPanneau = !!state.sessionId || state.pendingProjectSlug != null;
     setShellMode(state, "code", enPanneau ? "detail" : "list");
   } else if (state.view === "agent") {
-    if (state.agentPanel === "create" || state.agentPanel === "detail") {
+    if (
+      state.agentPanel === "create" ||
+      state.agentPanel === "detail" ||
+      state.agentPanel === "gardien"
+    ) {
       setShellMode(state, "agent", "detail");
     } else if (state.selectedAgentId) {
       setShellMode(state, "agent", "detail");

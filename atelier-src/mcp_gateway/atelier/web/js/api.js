@@ -1204,3 +1204,161 @@ export async function filsDeLaConversation(sessionId, statut = "ouvert") {
   if (!res.ok) await parseError(res);
   return res.json();
 }
+
+// ── Ce qui agit seul, « À valider » et le journal (vague 2, vue Agents) ───
+
+/** Un agent par gardien : contrôles, alertes, constats, échéance, gestes. */
+export async function getGardiens() {
+  const res = await fetch("/v1/gardiens", { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Toutes les tâches automatiques : gardiens, triggers, routines, créations. */
+export async function getAutomates() {
+  const res = await fetch("/v1/automates", { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/**
+ * Lancer, couper, réactiver ou activer (`id` : `gardien.<nom>`,
+ * `controle.<id>` ou `trigger.<id>`). Le service tranche qui en a le droit.
+ */
+export async function agirSurAutomate(id, geste) {
+  const res = await fetch("/v1/automates/action", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ id, geste }),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** La file « À valider » : `{statut, action, resultat: {propositions, nombre, note?}}`. */
+export async function listerAValider({ statut = "en_attente" } = {}) {
+  const q = new URLSearchParams({ statut });
+  const res = await fetch(`/v1/a-valider?${q}`, { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Accepter ou refuser une proposition ; `complete` : les réponses qu'elle attend. */
+export async function deciderAValider(id, decision, { motif = "", complete = null } = {}) {
+  const corps = { decision, motif };
+  if (complete && Object.keys(complete).length) corps.complete = complete;
+  const res = await fetch(`/v1/a-valider/${encodeURIComponent(id)}/decision`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(corps),
+  });
+  // Un refus du catalogue (403, 422) porte sa raison dans `resultat.erreur`.
+  let reponse = null;
+  try {
+    reponse = await res.clone().json();
+  } catch {
+    reponse = null;
+  }
+  if (!reponse || !reponse.statut) {
+    if (!res.ok) await parseError(res);
+    return reponse;
+  }
+  if (reponse.statut !== "fait") {
+    const err = new Error(reponse?.resultat?.erreur || "La décision n'a pas abouti.");
+    err.status = res.status;
+    throw err;
+  }
+  return reponse;
+}
+
+/** Le journal unique, le plus récent d'abord. */
+export async function lireJournal({ source = "", acteur = "", limite = 300 } = {}) {
+  const q = new URLSearchParams({ limite: String(limite) });
+  if (source) q.set("source", source);
+  if (acteur) q.set("acteur", acteur);
+  const res = await fetch(`/v1/journal?${q}`, { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/**
+ * Une commande du catalogue, appelée par la personne (`POST /v1/commandes/<nom>`).
+ *
+ * Les réservées (activer un agent, accorder un secret) ne passent que par
+ * ici : la session de l'interface vaut « la personne ». Un refus ou un échec
+ * lève une erreur qui porte la raison du service.
+ */
+export async function executerCommande(nom, args = {}) {
+  const res = await fetch(`/v1/commandes/${encodeURIComponent(nom)}`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ arguments: args }),
+  });
+  let corps = null;
+  try {
+    corps = await res.clone().json();
+  } catch {
+    corps = null;
+  }
+  if (res.status === 404) {
+    const err = new Error(`Cette action n’est pas encore disponible ici (${nom}).`);
+    err.status = 404;
+    throw err;
+  }
+  if (!corps || !corps.statut) {
+    if (!res.ok) await parseError(res);
+    return corps;
+  }
+  if (corps.statut !== "fait") {
+    const raison = corps?.resultat?.erreur || corps?.resultat?.detail || corps.statut;
+    const err = new Error(typeof raison === "string" ? raison : JSON.stringify(raison));
+    err.status = res.status;
+    throw err;
+  }
+  return corps;
+}
+
+/** Les noms des secrets qu'on peut accorder, jamais leurs valeurs. */
+export async function listerNomsDesSecrets() {
+  const res = await fetch("/v1/secrets/noms", { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+// ── Lancements et processus vivants (équipe L, branche v2-lancements) ─────
+
+/**
+ * Les processus vivants d'une conversation et ce que vaut un changement de
+ * mode : `{mode_choisi, processus, vscode_vivant, note?, ecart?}`. Rend null
+ * si le service ne sert pas encore cette route.
+ */
+export async function processusDeLaConversation(sessionId) {
+  const res = await fetch(`/v1/sessions/${encodeURIComponent(sessionId)}/processus`, {
+    headers: jsonHeaders(),
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Les agents lancés par l'Atelier (wikichat, gardiens) : `{lancements, nombre}`. */
+export async function listerLancements({ etat = "", origine = "", projet = "", limite = 30 } = {}) {
+  const q = new URLSearchParams({ limite: String(limite) });
+  if (etat) q.set("etat", etat);
+  if (origine) q.set("origine", origine);
+  if (projet) q.set("projet", projet);
+  const res = await fetch(`/v1/lancements?${q}`, { headers: jsonHeaders() });
+  if (res.status === 404) return { lancements: [], nombre: 0, absent: true };
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+export async function arreterLancement(id) {
+  const res = await fetch(`/v1/lancements/${encodeURIComponent(id)}/arreter`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: "{}",
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}

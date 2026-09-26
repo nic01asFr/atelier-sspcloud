@@ -38,7 +38,9 @@ js/
 | `code` (défaut) | Projets `kind=code`, chat Claude Code |
 | `assistant` | Panneau d'attente — la vue reste à écrire |
 | `connecteurs` | Admin pool MCP (niveau 1 — catalogue, perso, compositions) |
-| `agent` | Profils gateway + agents planifiés (pilote) |
+| `agent` | Tout ce qui agit seul : agents planifiés (pilote), gardiens (`views/gardiens.js`), tâches automatiques |
+| `a-valider` | La file unique « À valider » (`views/a-valider.js`, `controllers/validation.js`) ; badge dans la navigation |
+| `journal` | Le journal unique en phrases, filtres projet, acteur, source (`views/journal.js`) |
 
 ## MCP (trois niveaux)
 

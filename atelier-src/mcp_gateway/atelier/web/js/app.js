@@ -7,11 +7,13 @@ import { readQuery, writeQuery as writeQueryState } from "./core/router.js";
 import { bindContextMenu } from "./ui/context-menu.js";
 import { bindModal } from "./ui/modal.js?v=modal2";
 import { refreshMcpOverview, refreshPiloteOverview } from "./services/catalog.js";
-import { createShellView } from "./views/shell.js?v=modal";
+import { createShellView } from "./views/shell.js?v=vague2";
 import { createCodeTreeView } from "./views/code-tree.js";
 import { createCodeChatView } from "./views/code-chat.js";
 import { createConnectorsView } from "./views/connectors.js?v=modal";
-import { createAgentView } from "./views/agent.js?v=shell6";
+import { createAgentView } from "./views/agent.js?v=vague2";
+import { rendreAValider } from "./views/a-valider.js";
+import { rendreJournal } from "./views/journal.js";
 import { createComposerMcpView } from "./views/composer-mcp.js";
 import { createPanneauView } from "./views/panneau.js";
 import { createFilsView } from "./views/fils.js";
@@ -19,7 +21,11 @@ import { createProjectActions } from "./controllers/projects.js";
 import { createSessionActions } from "./controllers/sessions.js";
 import { createChatController } from "./controllers/chat.js";
 import { createConnectorActions } from "./controllers/connectors.js?v=modal";
-import { createAgentActions } from "./controllers/agent.js?v=shell6";
+import { createAgentActions } from "./controllers/agent.js?v=vague2";
+import { createAutomatesActions } from "./controllers/automates.js";
+import { createValidationActions } from "./controllers/validation.js";
+import { createAccordsActions } from "./controllers/accords.js";
+import { openModal } from "./ui/modal.js?v=modal2";
 import { createComposerMcpController } from "./controllers/composer-mcp.js";
 import { createComposerInputController } from "./controllers/composer-input.js";
 import { createAuthController } from "./controllers/auth.js";
@@ -112,18 +118,71 @@ function createApp() {
     logout: (msg) => logout(msg),
   });
   Object.assign(connectorActionsHolder, connectorActions);
+  connectorActionsHolder.accorderSecret = (entry) => accords.accorderSecret(entry);
 
   const agentActionsHolder = {};
+  const automatesHolder = {};
   const agent = createAgentView({
     state,
     actions: agentActionsHolder,
+    automates: automatesHolder,
   });
 
+  // Gardiens et tâches automatiques (vue Agents), « À valider » et journal.
+  const automatesActions = createAutomatesActions({
+    state,
+    api,
+    render,
+    renderAgent: () => {
+      if (state.view === "agent") agent.renderAgent();
+    },
+    logout: (msg) => logout(msg),
+    // Un réparateur a déposé sa proposition : on l'ouvre dans la file.
+    ouvrirProposition: (id) => {
+      S.patchAValider(state, { statut: "en_attente", ouverte: id });
+      navigateView("a-valider");
+    },
+    ouvrirConversation: (projet, id) => {
+      if (projet) S.setSlug(state, projet);
+      navigateView("code");
+      sessionActions.selectSession(id);
+    },
+  });
+  Object.assign(automatesHolder, automatesActions);
+  const validation = createValidationActions({
+    state,
+    api,
+    render,
+    renderBadge: () => shell.renderBadge(),
+    logout: (msg) => logout(msg),
+  });
+
+  agentActionsHolder.ouvrirAValider = () => navigateView("a-valider");
+  // Les accords réservés à la personne : activer un agent, accorder un secret.
+  const accords = createAccordsActions({
+    state,
+    api,
+    render,
+    openModal,
+    logout: (msg) => logout(msg),
+    apresAgent: async () => {
+      try {
+        await refreshPiloteOverview(state);
+      } catch {
+        /* le pilote absent : l'erreur de la commande est déjà affichée */
+      }
+      await automatesActions.rafraichir();
+    },
+    apresConnecteur: () => refreshMcpOverview(state).catch(() => {}),
+  });
   const agentActions = createAgentActions({
     state,
     render,
     renderAgent: () => agent.renderAgent(),
     logout: (msg) => logout(msg),
+    rafraichirAutomates: () => automatesActions.rafraichir(),
+    apresDecision: () => validation.rafraichirCompte(),
+    accords,
   });
   Object.assign(agentActionsHolder, agentActions);
 
@@ -148,7 +207,9 @@ function createApp() {
 
   const panneau = createPanneauView({ state, api, render });
   const fils = createFilsView({ state, api });
-  ctx.views = { codeTree, codeChat, connectors, composerMcp, agent, panneau, fils };
+  const aValider = { render: () => rendreAValider($("a-valider-corps"), state, validation) };
+  const journal = { render: () => rendreJournal($("journal-corps"), state, validation) };
+  ctx.views = { codeTree, codeChat, connectors, composerMcp, agent, panneau, fils, aValider, journal };
 
   const auth = createAuthController({
     state,
@@ -156,6 +217,12 @@ function createApp() {
     writeQuery,
     sessionActions,
     connectorActions,
+    apresEntree: () => {
+      validation.rafraichirCompte();
+      validation.veiller();
+      chargerLaVue(state.view);
+      veillerLesGardiens();
+    },
   });
   logout = auth.logout;
 
@@ -167,10 +234,38 @@ function createApp() {
     writeQuery,
   });
 
+  /**
+   * Les gardiens tournent chaque minute : leur fiche et la liste des tâches
+   * se relisent toutes les trente secondes tant qu'on les regarde. Jamais
+   * pendant la création d'un agent, dont le formulaire perdrait sa saisie.
+   */
+  let veilleGardiens = null;
+  function veillerLesGardiens() {
+    if (veilleGardiens) return;
+    veilleGardiens = setInterval(() => {
+      if (document.visibilityState !== "visible" || !state.token) return;
+      if (state.view !== "agent" || !["home", "gardien"].includes(state.agentPanel)) return;
+      automatesActions.rafraichirEtRendre();
+    }, 30000);
+  }
+
+  /** Ce que chaque vue relit en arrivant (hors Code et Connecteurs). */
+  function chargerLaVue(view) {
+    if (view === "agent") {
+      automatesActions.rafraichirEtRendre();
+      validation.rafraichirCompte();
+    } else if (view === "a-valider") {
+      validation.charger();
+    } else if (view === "journal") {
+      validation.chargerJournal();
+    }
+  }
+
   function navigateView(view) {
     S.setView(state, S.normalizeView(view));
     writeQuery();
     render();
+    if (state.token) chargerLaVue(state.view);
     if (state.view === "connecteurs" && state.token) {
       connectorActions.chargerCompositions().then(render);
       refreshMcpOverview(state).then(() => {
@@ -181,13 +276,17 @@ function createApp() {
       });
     }
     if (state.view === "agent" && state.token) {
-      refreshPiloteOverview(state).then(() => {
-        if (!state.selectedAgentId) {
-          S.setShellMode(state, "agent", "detail");
-        }
-        S.syncShellModeFromSelection(state);
-        render();
-      });
+      refreshPiloteOverview(state)
+        .catch(() => {
+          /* pilote absent : gardiens et tâches se lisent quand même */
+        })
+        .then(() => {
+          if (!state.selectedAgentId && !state.selectedGardienId) {
+            S.setShellMode(state, "agent", "detail");
+          }
+          S.syncShellModeFromSelection(state);
+          render();
+        });
     }
   }
 
