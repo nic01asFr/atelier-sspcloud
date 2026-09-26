@@ -336,7 +336,12 @@ sortie, pas la vue d'ensemble.
   « Désactiver » son inverse ; « Accorder un secret » (vue Connecteurs) liste les noms de
   `GET /v1/secrets/noms` (`accords.py` : la personne seule, jamais une valeur, ni les secrets de
   l'Atelier lui-même) et appelle `atelier_connecteur_accorder` ; une proposition qui porte l'une
-  d'elles s'accepte par « À valider ». Écrit et testé contre le contrat, avec de fausses
+  d'elles s'accepte par « À valider ». Les agents lancés par l'Atelier (équipe L) ont leur
+  section « En cours et récents » dans la vue Agents (`GET /v1/lancements`) : origine en mots
+  (réveil, tâche automatique, gardien réparateur), projet, état, durée, branche, « Arrêter »
+  (`POST /v1/lancements/<id>/arreter`) et, pour un réparateur, « Voir sa proposition ». Après un
+  changement de mode, la note de `GET /v1/sessions/{id}/processus` s'affiche sous la saisie,
+  avec l'écart si l'onglet VS Code vivant est plus permissif. Écrit et testé contre le contrat, avec de fausses
   commandes au même nom et à la même classe, avant la fusion de `v2-creations`. Reste : les
   gestes des gardiens et des tâches de la plateforme passent encore par
   `POST /v1/automates/action`, hors catalogue.

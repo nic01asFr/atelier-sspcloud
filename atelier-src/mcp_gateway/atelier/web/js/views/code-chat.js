@@ -1,5 +1,6 @@
 /** Vue Code — barre session, fil de chat, composer. */
 
+import { rendreNoteDuMode } from "../ui/mode-processus.js";
 import * as api from "../api.js";
 import * as S from "../state.js";
 import { $ } from "../core/dom.js";
@@ -488,6 +489,13 @@ const BAS_DU_FIL = 1e9;
           : "Comment l’agent travaille dans ce fil — le même mode dans VS Code et au terminal. S’applique aux tours à venir.";
       mode.classList.toggle("composer-mode-danger", valeur === "bypassPermissions");
     }
+    // Ce que vaut le changement de mode : n'est dit que pour la conversation
+    // où on l'a fait, et tant qu'on y reste.
+    const mp = state.modeProcessus;
+    rendreNoteDuMode(
+      $("composer-mode-note"),
+      sessionReady && mp && mp.sessionId === state.sessionId ? mp.note : null
+    );
     const modeProjet = $("btn-mode-projet");
     if (modeProjet) {
       const valeurMode = $("composer-mode")?.value || "";

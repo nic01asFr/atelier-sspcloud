@@ -103,6 +103,12 @@ export function createState() {
     selectedGardienId: null,
     // Un geste en cours sur un gardien ou une tâche : son id, pour griser.
     automateEnCours: "",
+    // Les agents lancés par l'Atelier (`GET /v1/lancements`), et celui
+    // qu'on est en train d'arrêter.
+    lancements: null,
+    lancementEnCours: "",
+    // Ce que vaut le dernier changement de mode : `{sessionId, note}`.
+    modeProcessus: null,
     // La file « À valider » : une seule, pour tout ce qui attend la personne.
     aValider: {
       statut: "en_attente",

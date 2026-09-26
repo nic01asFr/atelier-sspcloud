@@ -1324,3 +1324,41 @@ export async function listerNomsDesSecrets() {
   if (!res.ok) await parseError(res);
   return res.json();
 }
+
+// ── Lancements et processus vivants (équipe L, branche v2-lancements) ─────
+
+/**
+ * Les processus vivants d'une conversation et ce que vaut un changement de
+ * mode : `{mode_choisi, processus, vscode_vivant, note?, ecart?}`. Rend null
+ * si le service ne sert pas encore cette route.
+ */
+export async function processusDeLaConversation(sessionId) {
+  const res = await fetch(`/v1/sessions/${encodeURIComponent(sessionId)}/processus`, {
+    headers: jsonHeaders(),
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Les agents lancés par l'Atelier (wikichat, gardiens) : `{lancements, nombre}`. */
+export async function listerLancements({ etat = "", origine = "", projet = "", limite = 30 } = {}) {
+  const q = new URLSearchParams({ limite: String(limite) });
+  if (etat) q.set("etat", etat);
+  if (origine) q.set("origine", origine);
+  if (projet) q.set("projet", projet);
+  const res = await fetch(`/v1/lancements?${q}`, { headers: jsonHeaders() });
+  if (res.status === 404) return { lancements: [], nombre: 0, absent: true };
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+export async function arreterLancement(id) {
+  const res = await fetch(`/v1/lancements/${encodeURIComponent(id)}/arreter`, {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: "{}",
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}

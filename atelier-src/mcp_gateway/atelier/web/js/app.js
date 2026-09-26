@@ -137,6 +137,16 @@ function createApp() {
       if (state.view === "agent") agent.renderAgent();
     },
     logout: (msg) => logout(msg),
+    // Un réparateur a déposé sa proposition : on l'ouvre dans la file.
+    ouvrirProposition: (id) => {
+      S.patchAValider(state, { statut: "en_attente", ouverte: id });
+      navigateView("a-valider");
+    },
+    ouvrirConversation: (projet, id) => {
+      if (projet) S.setSlug(state, projet);
+      navigateView("code");
+      sessionActions.selectSession(id);
+    },
   });
   Object.assign(automatesHolder, automatesActions);
   const validation = createValidationActions({

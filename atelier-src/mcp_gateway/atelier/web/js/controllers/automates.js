@@ -28,12 +28,17 @@ export function createAutomatesActions(ctx) {
     render();
   }
 
-  /** Relit gardiens et tâches ; une source absente n'empêche pas l'autre. */
+  /** Relit gardiens, tâches et lancements ; une source absente n'empêche pas les autres. */
   async function rafraichir() {
-    const [gardiens, automates] = await Promise.allSettled([api.getGardiens(), api.getAutomates()]);
+    const [gardiens, automates, lancements] = await Promise.allSettled([
+      api.getGardiens(),
+      api.getAutomates(),
+      api.listerLancements ? api.listerLancements({ limite: 30 }) : Promise.resolve(null),
+    ]);
     if (gardiens.status === "fulfilled") S.setGardiens(state, gardiens.value);
     else if (gardiens.reason?.status === 401) return erreur(gardiens.reason);
     if (automates.status === "fulfilled") S.setAutomates(state, automates.value);
+    if (lancements.status === "fulfilled" && lancements.value) state.lancements = lancements.value;
     if (
       state.selectedGardienId &&
       state.gardiens?.gardiens &&
@@ -91,5 +96,37 @@ export function createAutomatesActions(ctx) {
     await agir(id, "couper");
   }
 
-  return { rafraichir, rafraichirEtRendre, choisirGardien, agir, couper };
+  /** Arrêter un agent lancé : ce qu'il a déjà fait reste. */
+  async function arreter(id) {
+    const ok = confirmer(
+      "Arrêter cet agent ? Ce qu’il a déjà fait reste ; une réparation sur branche ne sera pas proposée."
+    );
+    if (!ok) return;
+    state.lancementEnCours = id;
+    renderAgent();
+    try {
+      await api.arreterLancement(id);
+      S.setError(state, "");
+      await rafraichir();
+    } catch (err) {
+      erreur(err);
+    } finally {
+      state.lancementEnCours = "";
+      renderAgent();
+    }
+  }
+
+  const ouvrirProposition = (id) => ctx.ouvrirProposition?.(id);
+  const ouvrirConversation = (projet, id) => ctx.ouvrirConversation?.(projet, id);
+
+  return {
+    rafraichir,
+    rafraichirEtRendre,
+    choisirGardien,
+    agir,
+    couper,
+    arreter,
+    ouvrirProposition,
+    ouvrirConversation,
+  };
 }

@@ -4,6 +4,7 @@ import { $, rendreActivable } from "../core/dom.js";
 import { showContextMenu } from "../ui/context-menu.js";
 import { renderToolPicker } from "../ui/tool-picker.js";
 import { carteGardien, ficheGardien, listeAutomates } from "./gardiens.js";
+import { listeLancements } from "./lancements.js";
 
 const FREQ_PRESETS = [
   { value: "0 8 * * *", label: "Chaque jour à 8h" },
@@ -321,6 +322,25 @@ function renderHome(state, actions, automates) {
   rang.appendChild(ouvrir);
   queueSec.appendChild(rang);
   body.appendChild(queueSec);
+
+  // Les agents lancés par wikichat et par les gardiens (réparateurs).
+  const lanceSec = document.createElement("section");
+  lanceSec.className = "agent-section agent-lancements";
+  const hl = document.createElement("h3");
+  hl.className = "connectors-sub";
+  hl.textContent = "En cours et récents";
+  lanceSec.appendChild(hl);
+  const conteneurL = document.createElement("div");
+  if (state.lancements) {
+    listeLancements(conteneurL, state.lancements, { actions: automates, enCours: state.lancementEnCours });
+  } else {
+    const p = document.createElement("p");
+    p.className = "agent-note";
+    p.textContent = "Lecture des agents lancés…";
+    conteneurL.appendChild(p);
+  }
+  lanceSec.appendChild(conteneurL);
+  body.appendChild(lanceSec);
 
   // Toutes les tâches automatiques, une seule liste.
   const autoSec = document.createElement("section");

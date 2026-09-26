@@ -4274,3 +4274,36 @@ button.session-face-link {
     flex-basis: 100%;
   }
 }
+
+/* Ce que vaut un changement de mode (processus vivants, équipe L) : une
+   ligne sobre sous la saisie ; l'écart plus permissif se marque. */
+.composer-mode-note {
+  margin: 0.3rem 0 0;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.composer-mode-note-alerte {
+  color: #e0b25a;
+}
+
+.composer-mode-note[hidden] {
+  display: none;
+}
+
+/* Sur mobile, la navigation défile : « À valider » et son badge restent
+   collés à droite, visibles sans défiler. */
+@media (max-width: 720px) {
+  .nav-tab-a-valider {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    order: 99;
+    background: var(--bg-sidebar);
+    box-shadow: -0.6rem 0 0.6rem var(--bg-sidebar);
+  }
+
+  .nav-tab-a-valider.active {
+    background: var(--bg-elev);
+  }
+}
