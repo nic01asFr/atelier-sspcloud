@@ -128,7 +128,7 @@ def test_resume_direct_sans_secret_ni_resultat_d_outil(atelier: TestClient, mode
     sans_secret(tout)
     assert "jamais rendu" not in tout, "le contenu d'un résultat d'outil ne part jamais au modèle"
     assert envoye["modele"] == "qwen3-8-27b"
-    assert envoye["max_tokens"] == 800
+    assert envoye["max_tokens"] == 1200
     assert "<<<CONVERSATION" in envoye["message"] and "Crée le projet marchés publics" in envoye["message"]
     assert "projet alpha" in envoye["message"] and "objets : projet créé : Marchés publics" in envoye["message"]
     # La réponse repasse aussi par le filtre avant de sortir.
