@@ -39,3 +39,34 @@ def test_les_creations_ne_menent_pas_aux_compositions() -> None:
     assert search_tools(outils, query="mes créations")[0]["name"] == "atelier_artefacts"
 
 
+
+
+# ── Les commandes de création (vague 2) ─────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "demande, attendu",
+    [
+        ("créer un agent", "atelier_agent_creer"),
+        ("create a scheduled agent", "atelier_agent_creer"),
+        ("désactiver l'agent", "atelier_agent_desactiver"),
+        ("ajouter un connecteur", "atelier_connecteur_ajouter"),
+        ("add a connector", "atelier_connecteur_ajouter"),
+        ("retirer le connecteur", "atelier_connecteur_retirer"),
+        ("choisir les connecteurs du projet", "atelier_connecteur_choisir"),
+        ("lier des projets", "atelier_projets_lier"),
+        ("link projects", "atelier_projets_lier"),
+        ("structurer le projet", "atelier_projet_structurer"),
+        ("migrate the project structure", "atelier_projet_structurer"),
+    ],
+)
+def test_les_commandes_de_creation_se_trouvent_par_l_intention(atelier, demande: str, attendu: str) -> None:  # noqa: ANN001
+    """Les vraies déclarations du catalogue, parmi les autres commandes et quelques outils du pool."""
+    from mcp_gateway.tool_search import search_tools
+
+    outils = [
+        {"name": d["name"], "description": d["description"], "server": "atelier"}
+        for d in atelier.app.state.commandes._definitions_completes()  # noqa: SLF001
+    ] + OUTILS
+    trouves = [t["name"] for t in search_tools(outils, query=demande, limit=3)]
+    assert trouves and trouves[0] == attendu, trouves

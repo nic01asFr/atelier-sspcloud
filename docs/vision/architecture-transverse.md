@@ -512,6 +512,11 @@ la commande prend la liste fermée directement. Le Pilote ne connaissant que l'h
 la demande y a l'horaire `0 0 31 2 *` (jamais) et ne part que par « Lancer ». La bascule du Pilote
 est un `toggle` : `activer` et `desactiver` relisent l'état avant et après.
 
+**Recherche.** Leurs mots d'intention, en français et en anglais, sont dans
+`tool_search.MOTS_CLES_PAR_OUTIL` (« créer un agent », « ajouter un connecteur », « lier des
+projets », « structurer le projet », « create a scheduled agent », « link projects »…) ; vérifié
+par 11 requêtes contre les vraies déclarations du catalogue (`test_recherche_intention.py`).
+
 **Profil.** Aucune n'est dans la liste du profil `code` (refus à la liste et à l'appel, testé) ;
 le profil `assistant` voit les exposées, jamais les deux réservées.
 
@@ -542,8 +547,7 @@ réécriture (le nombre est rendu dans la preuve).
 
 **Ce qui reste** : recalcul de la carte après commande (le crochet `apres_commande` existe, la carte
 non) ; « plus de trois actions à la suite » comme engageant ; coût en part du forfait dans
-l'aperçu ; inverses de `atelier_artefact_creer` et `atelier_interrompre` ; mots d'intention des
-commandes K dans `tool_search.MOTS_CLES_PAR_OUTIL` ; l'écran d'accord qui appelle
+l'aperçu ; inverses de `atelier_artefact_creer` et `atelier_interrompre` ; l'écran d'accord qui appelle
 `atelier_agent_activer` et `atelier_connecteur_accorder` ; l'écran « À valider » (équipe P).
 
 ## 2. Projets système

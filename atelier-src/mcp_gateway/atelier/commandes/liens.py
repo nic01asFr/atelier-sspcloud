@@ -175,7 +175,7 @@ def inscrire_les_liens(app: Any, catalogue: Catalogue) -> None:
         Commande(
             nom=LIER,
             description=(
-                "Lie deux projets (depends-on, provides-to, sibling-of, superseded-by, fork-of), ou "
+                "Lier deux projets (depends-on, provides-to, sibling-of, superseded-by, fork-of), ou "
                 "retire ce lien (retirer=true). Écrit les relations du projet dans wikichat : elles "
                 "apparaissent dans la carte. Annuler remet les relations d'avant."
             ),
