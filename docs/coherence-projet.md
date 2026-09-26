@@ -265,7 +265,7 @@ opus = qwen3-6-35b-moe, repli = qwen3-8-27b (`ATELIER_MODELE_OPUS`,
 | Serveur `atelier` partout | fait : fichier effectif de tout tour, portée utilisateur (seule entrée de `~/.claude.json`), tout `.mcp.json` ; une conversation ne peut plus s'en priver ; l'interface lit sa présence là où l'agent la reçoit, sans case à décocher |
 | Fin de l'écrasement des réglages globaux | fait : `sync_claude_home` ne copie plus le `.claude/settings.json` d'un projet |
 | Sélection des connecteurs dans `.mcp.json` | fait : avant chaque tour, à l'ouverture VS Code et au démarrage, l'Atelier écrit dans le `.mcp.json` du dossier ce que le tour reçoit et l'approuve (`enabledMcpjsonServers`) ; plus de `disabledMcpServers` figé ; un projet qui n'a pas choisi suit le pool (`.atelier/connecteurs-herites`) |
-| wikichat ne crée plus de `.mcp.json` | **non fait** (dépôt wikichat, lot D) |
+| wikichat ne crée plus de `.mcp.json` | fait (wikichat, `atelier-coherence` §2) ; ses lancements passent par l'Atelier (vague 2, lot D, plus bas) |
 | Test de cohérence | fait : `tests/test_coherence_surfaces.py` ; `bin/atelier-verifier-coherence` (vrai binaire, dossier jetable) exécuté sur un poste local (2.1.86) sans écart, **pas encore sur le pod** |
 | `atelier_envoyer` sans interlocuteur | fait : `mode` et `peut_attendre` ; défaut « refus d'office » pour la clé du propriétaire ; bypass seulement s'il est déjà accordé |
 
@@ -852,3 +852,331 @@ Le vérificateur rapporte en notes ce qu'il ne mesure pas : wikichat coupé, et 
   `sh ~/work/bin/atelier-bashrc ~/.bashrc ~/work/.secrets/claude-env.sh ~/work/bin/atelier-claude-vscode ~/work/bin/claude`.
   Cette commande crée `~/work/bin/surfaces/claude` et remplace l'alias par le PATH ;
 - redémarrer l'Atelier : la sonde du démarrage retire n8n, et la liaison réécrit les approbations.
+
+## Vague 2, équipe L : contexte, lancements, réparateurs (branche `v2-lancements`)
+
+Lots B et D de ce document, G5 de `docs/vision/gardiens.md`, décisions J-a, J-b, J-b2, J-c et
+J-i. « Vérifié » veut dire exécuté par un test de comportement, sous Windows ; rien n'a été
+lancé sur le pod.
+
+### Lot B : le même contexte partout
+
+**Ce qui existe.**
+
+- `.atelier/contexte.md` est écrit par une seule fonction, `project_context.contexte_attendu`.
+  Rien n'y dépend de la surface ni de la conversation. Il porte :
+  - le profil `code` ;
+  - les outils `atelier_*` du projet, lus dans `commandes/profils.OUTILS_DU_PROFIL_CODE`, la
+    source du filtre ;
+  - wikichat borné au projet ;
+  - la ligne Onyxia, tirée du bloc `deploiement` de `projet.json` ;
+  - où exposer (créations, `atelier_montrer`) ;
+  - comment joindre les autres projets (`list_sessions`, `contact_agent`, `send_message`) ;
+  - le web.
+- Une copie de travail sur branche (voir plus bas) reçoit en plus la section « Cette copie de
+  travail » : sa branche, et l'interdit de `main` et de l'envoi. La branche est lue dans le
+  `HEAD` de la copie, sans lancer git.
+- Le `CLAUDE.md` du gabarit l'importe en première ligne (`@.atelier/contexte.md`). Claude Code le
+  charge donc sur toutes les surfaces, et le relit après compaction. L'Assistant a sa variante
+  courte.
+- **Pas de doublon du briefing.** Le fichier ne porte ni briefing, ni courrier, ni présents : le
+  hook `SessionStart` de wikichat en reste l'unique canal. L'Atelier n'ajoute **aucun** hook
+  `SessionStart`, parce que le contenu est stable et que le fichier est déjà à jour sur le disque.
+- Il est écrit :
+  - avant chaque tour de l'Atelier (existant) ;
+  - au démarrage du service, pour chaque projet à la structure type (`ecrire_tous_les_contextes`).
+    Un projet d'avant la structure garde sa section de `CLAUDE.md`, réécrite à son prochain tour :
+    la réécrire au démarrage salirait tous les `CLAUDE.md` suivis ;
+  - après `atelier_projet_creer`, `_modifier` et `_deployer_declarer` (crochet `apres_commande`).
+    VS Code peut donc ouvrir un projet neuf avant tout tour de l'Atelier ;
+  - avant le tour d'un agent lancé, et dans sa copie de travail.
+
+**Vérifié** (`tests/test_contexte_surfaces.py`, `tests/test_contexte_projet.py`,
+`tests/test_reparateurs.py`) :
+- le démarrage, un tour de l'Atelier et un agent lancé écrivent le même octet ;
+- les 8 outils du profil `code` y sont, et aucun méta-outil ni commande globale ;
+- aucune ligne de briefing ou de courrier ;
+- un projet créé reçoit son contexte aussitôt ;
+- un projet ancien n'est pas touché au démarrage ;
+- la copie d'un réparateur dit sa branche.
+
+**Non vérifié** : la lecture réelle par Claude Code de l'import dans VS Code et au terminal du pod.
+Le mécanisme est natif, et le fichier est le même.
+
+### Lot D : les agents lancés par wikichat passent par l'Atelier
+
+**Ce qui existe** (`mcp_gateway/atelier/lancements.py`, une ligne dans `api.py`).
+
+- Un lancement :
+  - crée une **fiche** (donc une identité) dans le projet visé, ou reprend celle que l'agent tenait
+    déjà (`conversation`) ;
+  - pose `lance_par` (l'origine) sur la fiche, et `nom_wikichat` quand l'agent a un nom. Un agent
+    nommé de wikichat garde son nom, et son courrier le trouve.
+- **Profil `code`** : le serveur `atelier` et wikichat le déduisent de la fiche. Le dossier de
+  l'Assistant est refusé.
+- **Mode** :
+  - celui demandé, sinon le défaut du projet, sinon le service ;
+  - `bypassPermissions` seulement si la demande vient d'une **définition** (routine, trigger)
+    **et** que le projet l'accorde lui-même ;
+  - jamais pour un gardien ;
+  - `dontAsk` (wikichat) devient `default`, qui refuse sans interlocuteur ;
+  - le tour part avec `peut_attendre=False` : personne ne répondrait à une question.
+- **Plafonds** (réglables par l'environnement) :
+
+  | Plafond | Défaut | Variable |
+  |---|---|---|
+  | lancements simultanés | 3 | `ATELIER_LANCEMENTS_SIMULTANES` |
+  | lancements par jour | 100 | `ATELIER_LANCEMENTS_PAR_JOUR` |
+  | lancements par jour et par origine (J-b) | 24 | `ATELIER_LANCEMENTS_PAR_ORIGINE` |
+  | durée par défaut | 900 s | `ATELIER_LANCEMENTS_DUREE_S` |
+  | durée maximale (au-delà, ramenée) | 1 800 s | `ATELIER_LANCEMENTS_DUREE_MAX_S` |
+  | réparations par jour | 3 | `ATELIER_REPARATIONS_PAR_JOUR` |
+
+  La durée est **obligatoire** sur la route interne (J-b, budget obligatoire). Elle est tenue par le
+  harnais (`timeout_s`), avec en filet une interruption par l'Atelier 30 s après. Un plafond de
+  jetons est accepté et noté, mais pas tenu : le coût par acteur au relais n'existe pas encore (A10).
+- **Visible** : la fiche apparaît dans la liste des conversations, `GET /v1/lancements` liste les
+  lancements, et le journal unique porte `source: automate`, `lance` puis l'état final, sous
+  l'acteur `automate:<origine>`.
+- Au démarrage de l'Atelier, un lancement resté « en cours » passe en `interrompu`.
+
+**Contrat de la route de lancement** (consommé par wikichat et par l'exécuteur des gardiens) :
+
+```
+POST /v1/lancements            en-tête X-Atelier-Lanceur: <~/work/.secrets/atelier_lanceur_key>
+{ "origine": "wikichat:trigger:evt-wake-any:mention",   // obligatoire
+  "projet": "slug" | "dossier": "/chemin/sous/projects",
+  "message": "…",                                         // obligatoire
+  "plafonds": {"duree_s": 300, "jetons": 150000},         // duree_s obligatoire
+  "nom": "Librarian", "titre": "…", "mode": "plan", "mode_de_la_definition": true,
+  "modele": "…", "conversation": "<fiche à reprendre>", "outils": ["mcp__wikichat", "Read"],
+  "branche": "gardien/…" | "agent/…", "reparation": {controle, empreinte, resume, preuve, verification} }
+→ 202 {statut: "fait", action, lancement: {id, conversation, projet, nom, mode, avertissements,
+                                            plafonds, etat: "en_cours", branche, …}}
+→ 403 {statut: "refus", erreur}      plafond, projet inconnu ou rangé, branche refusée, durée absente
+→ 401                                 toute autre clé (la clé du propriétaire comprise)
+GET  /v1/lancements[?etat&origine&projet&limite]   clé du lanceur, ou propriétaire (clé, session)
+GET  /v1/lancements/<id>   → {lancement: {etat: en_cours|fini|echec|delai|arrete|interrompu,
+                                          texte, erreur, proposition, conclusion, …}}
+POST /v1/lancements/<id>/arreter
+```
+
+- La clé du lanceur est posée (0600) au démarrage de l'Atelier. Elle est distincte de la clé du
+  propriétaire, et n'ouvre que la route de lancement. Elle a le même niveau de confiance que les
+  autres secrets du pod : un agent qui la lit peut demander un lancement, **dans les plafonds**.
+- La route passe par la commande `atelier_lancer_agent` du catalogue, en contexte `automate`
+  confirmé. L'accord de la personne a été donné quand elle a activé le trigger ou la routine
+  (J-b2).
+- **Commande `atelier_lancer_agent`** (`engageante`). Un modèle reçoit un aperçu et un jeton, et
+  rien ne part avant le « Oui ». Elle n'est pas dans le profil `code`. Pour un modèle, les champs
+  d'automate sont retirés : `conversation`, `outils`, `reparation`, `mode_de_la_definition`.
+- Commande `atelier_lancements` : lecture.
+- **Vérifié** (`tests/test_lancements.py`, par la vraie route et le vrai catalogue) :
+  - seule la clé du lanceur ouvre la route ;
+  - fiche, profil `code`, mode du projet, durée, `peut_attendre` faux, nom wikichat ;
+  - reprise de la même conversation ;
+  - bypass ni obtenu en le demandant, ni sans un projet qui l'accorde ;
+  - plafonds simultanés, par origine et de durée ;
+  - durée obligatoire ;
+  - projet inconnu et dossier de l'Assistant refusés ;
+  - aperçu puis lancement après le « Oui » ;
+  - commande absente du profil `code` ;
+  - journal.
+
+**Mode d'une conversation et processus déjà lancés** (demande du coordinateur, 26/09).
+
+- `ClaudeHarness.changer_de_mode` est appelé par `SessionStore.patch` dès que le mode d'une
+  conversation change :
+  - un processus gardé **au repos** est éteint, et le tour suivant reprend la conversation avec le
+    bon mode ;
+  - **en plein tour**, le nouveau mode est envoyé au CLI par un `control_request`
+    `set_permission_mode`. La présence de ce sous-type a été relevée dans le binaire 2.1.282 du
+    poste (le schéma `{subtype: "set_permission_mode", mode}`, et son traitement). Au tour suivant,
+    le processus repart de toute façon, puisque son empreinte garde l'ancien mode.
+- **Vérifié** (`tests/test_mode_processus.py`, vrai harnais, faux `claude` qui tient son mode) :
+  - le processus au repos est éteint puis repart avec le nouveau mode ;
+  - en plein tour, le contrôle arrive au CLI, et le tour finit bien ;
+  - `PATCH /v1/sessions/{id}` transmet le mode.
+- **Non vérifié** : que le vrai CLI en mode `-p` stream-json applique `set_permission_mode`. On a
+  relevé sa présence et son traitement dans le binaire, sans l'exécuter.
+- **Défaut du projet** : `PUT /v1/projets/{slug}/mode` (`modes_routes.py`, hors de ce lot) ne
+  prévient pas encore les processus gardés des conversations sans choix propre. Ils repartent au
+  tour suivant, par l'empreinte.
+- **Processus VS Code** : l'Atelier ne le pilote pas.
+  - `GET /v1/sessions/{id}/processus` (propriétaire) lit `<config>/sessions/<pid>.json` que tient
+    Claude Code (`sessionId`, `entrypoint`, `status`), et `/proc/<pid>/cmdline` pour le mode au
+    lancement.
+  - Elle rend `{mode_choisi, source_du_mode, processus: [{pid, surface: vscode|terminal|atelier,
+    statut, mode_au_lancement}], vscode_vivant, note?, ecart?}`.
+  - Avec un onglet VS Code vivant, la `note` dit « s'applique à la prochaine ouverture dans
+    VS Code ». **À l'équipe V** : afficher cette note près du sélecteur de mode après un changement,
+    et `ecart` s'il y en a un.
+- **Gardien de sécurité** (`securite.bypass`) :
+  - un processus se rattache à sa fiche par `--resume`, `--session-id` **ou** `sessions/<pid>.json`,
+    et par `claude_session_id`. Cela supprime le faux positif du processus VS Code dont la fiche
+    existait ;
+  - nouveau constat : un processus **plus permissif** que le mode choisi par sa conversation. Le
+    mode choisi se lit dans le magasin de l'extension, puis la fiche, le projet et le service. Le
+    constat est une `alerte` si le processus est en bypass, `attention` sinon ;
+  - un processus moins permissif n'est pas signalé ;
+  - limite : le mode au lancement se lit sur la ligne de commande. Un changement fait dans l'onglet
+    VS Code lui-même, que l'extension transmet au CLI en cours de route, n'y paraît pas : c'est un
+    faux positif possible, de niveau `attention`, sauf en bypass.
+
+### G5 : agents réparateurs des gardiens
+
+**Ce qui existe.**
+
+- **Déclaration** : le bloc `proposer` d'un contrôle est validé au chargement
+  (`gardiens/reparations.valider_proposer`) :
+  - le seuil : `apres_h` (le constat est ouvert depuis N heures) ou `apres_occurrences` (vu N fois) ;
+  - `projet` : le slug où réparer ;
+  - `delai_min` (20 par défaut, 30 au plus) ;
+  - `budget_jetons` (150 000 par défaut) ;
+  - `verification` : la commande de vérification.
+
+  Sans `projet`, le constat reste un signalement : un gardien ne devine pas où réparer.
+  `sante.ci-main` garde son `apres_h: 24` sans projet, faute d'un slug connu pour le dépôt de
+  l'Atelier sur le pod.
+- **Exécuteur** : après chaque passage, une alerte ouverte qui a passé son seuil demande **une**
+  réparation.
+  - La demande part par la route de lancement, avec la clé du lanceur. Elle porte :
+    - l'origine `gardien:<contrôle>` ;
+    - la branche `gardien/<gardien>/<AAAA-MM-JJ>-<sujet>` ;
+    - un brief court et filtré des secrets (constat, preuve, attendu, vérification, arrêt) ;
+    - les plafonds et le constat.
+  - L'alerte garde `reparation` (lancement, branche, conversation). Un refus n'est pas répété à
+    chaque passage. Si l'Atelier est injoignable, on redemande au passage suivant.
+  - Registre durable : `~/work/.atelier-etat/gardiens/reparations.json`, lisible par
+    `GET /reparations` sur l'API des gardiens. `interrupteurs.reparations` s'ajoute à `/sante` et
+    `/etat`.
+  - Le journal unique porte `source: automate`.
+- **Interrupteurs** : `ATELIER_GARDIENS_GESTES=0` ou `ATELIER_GARDIENS_REPARATIONS=0` coupent toute
+  demande, et l'exécution à blanc n'en fait aucune. Plafond : 3 par jour, compté par l'exécuteur
+  **et** par l'Atelier, et une copie de travail à la fois par projet.
+- **Côté Atelier**, un lancement qui porte `branche` :
+  - **Copie de travail** : `git worktree add -b <branche> <projet>/.atelier/reparations/<id>`
+    depuis le commit de la branche courante. Le dossier est ignoré par le gabarit, ou par
+    `info/exclude` pour un projet ancien. Les fichiers de liaison non versionnés y sont recopiés
+    (`.mcp.json`, choix des connecteurs, `settings.local.json`), pour que l'agent y reçoive les
+    mêmes connecteurs.
+  - **Gardes**, sans rien écrire dans la configuration du dépôt, par l'environnement du tour :
+    - `GIT_CONFIG_*` pose `core.hooksPath` vers les crochets de l'Atelier :
+      - `reference-transaction` refuse tout déplacement d'une branche autre que la sienne, `main`
+        compris, même par `git update-ref`, ainsi que les étiquettes ;
+      - `pre-push` refuse l'envoi ;
+      - les autres crochets du dépôt restent relayés ;
+    - `url.<nulle part>.pushInsteadOf` couvre les adresses des remotes du projet et les schémas
+      courants : même `--no-verify` n'envoie rien ;
+    - des règles `deny` sont passées au CLI (`git push`, `merge`, `rebase`, `update-ref`,
+      `worktree`…) ;
+    - mode `acceptEdits` au plus.
+  - **Fin du tour** : l'Atelier vérifie que la branche de base n'a pas bougé. Puis il dépose dans
+    « À valider » (source `gardien`, ou `agent` pour une autre origine) :
+    - l'avant : constat, preuve, contrôle, base et son commit ;
+    - l'après : commits, écart (`--stat`), extrait du diff filtré des secrets, conclusion de
+      l'agent ;
+    - la vérification ;
+    - l'action `atelier_reparation_fusionner`.
+
+    Sans commit, c'est un « Diagnostic sans correction », sans action. Si la base a bougé, c'est une
+    alerte, sans action de fusion.
+  - **Commande `atelier_reparation_fusionner`** (`reservee`, non exposée en MCP : seule la personne,
+    par « Accepter ») :
+    - `git merge --no-ff` dans la base ;
+    - refusée si le projet a changé de branche ou a des modifications non commitées, avec
+      `merge --abort` en cas de conflit ;
+    - la copie de travail est retirée et la branche gardée ;
+    - **jamais d'envoi**.
+
+**Contrat de la proposition du réparateur** (file « À valider », `FileAValider.deposer`) :
+
+```json
+{"source": "gardien", "titre": "Réparation proposée : <constat>", "resume": "<conclusion de l'agent>",
+ "acteur": "conversation:<id>", "projet": "<slug>",
+ "detail": {"lancement": "lc-…", "conversation": "…", "branche": "gardien/sante/2026-09-26-ci-main",
+            "copie": "…/.atelier/reparations/lc-…",
+            "avant": {"constat", "preuve", "controle", "base": "main", "commit": "<sha>"},
+            "apres": {"etat_du_tour", "commits": ["<sha court> <message>"], "ecart", "extrait",
+                      "non_commite", "conclusion_de_l_agent", "base_apres"},
+            "verification": "…", "fusion": "git merge --no-ff … dans main, sans envoi"},
+ "action": {"commande": "atelier_reparation_fusionner", "arguments": {"lancement": "lc-…"}},
+ "empreinte": "<empreinte de l'alerte>|<lancement>"}
+```
+
+La vue Agents (équipe V) lit les réparateurs par `GET /v1/lancements?origine=gardien:`, et
+`GET /reparations` sur l'API des gardiens. La conversation de chacun est une conversation
+ordinaire, avec `lance_par`.
+
+**Vérifié** :
+- `tests/test_reparateurs.py`, avec un vrai git et un vrai dépôt nu comme remote :
+  - l'agent commite sur sa branche ;
+  - `update-ref main`, étiquette, autre branche, `push`, `push --no-verify` et push par adresse
+    échouent tous ;
+  - les mêmes gestes réussissent sans les gardes (constaté à la main) ;
+  - `main` et le remote sont intacts, et le projet reste propre ;
+  - le contexte de la copie dit sa branche ;
+  - la proposition est complète ;
+  - un modèle ne peut pas fusionner ;
+  - la personne fusionne, et rien n'est envoyé ;
+  - diagnostic sans commit ;
+  - branche `gardien/` obligatoire, pas de bypass ;
+  - 3 par jour.
+- `tests/test_gardiens_reparations.py` :
+  - seuil, une seule demande par alerte, brief sans secret ;
+  - interrupteurs, exécution à blanc ;
+  - signalement sans projet, 3 par jour, Atelier injoignable ;
+  - validation de `proposer` ;
+  - bout en bout, de l'exécuteur à la route de l'Atelier puis à « À valider ».
+
+**Non vérifié** :
+- un vrai agent sur le pod ;
+- le crochet `reference-transaction` avec la version de git du pod (il faut git 2.28 ou plus) ;
+- le coût réel en jetons.
+
+### Test instable `test_deux_onglets_ne_font_qu_une_veille`
+
+- **Cause** : le fil de `VeilleDesJournaux` relevait lui-même l'état de départ du journal. S'il
+  démarrait après l'écriture faite juste après `surveiller`, ce qui arrive sur une CI chargée, il la
+  prenait pour l'état de départ et ne la signalait jamais.
+- **Correction dans le produit** : l'état est relevé dans `surveiller`, avant de rendre la main.
+  C'est un changement de 10 lignes dans la classe `VeilleDesJournaux` de `api.py`, signalé au
+  coordinateur.
+- **Test de régression** : `test_un_fil_lent_a_demarrer_ne_perd_pas_l_ecriture_qui_suit` retarde le
+  démarrage du fil. Il échoue sans la correction et passe avec.
+- **Vérifié** : le test visé 20 fois de suite, puis le fichier entier 20 fois de suite, sans échec.
+
+### Ce qui reste
+
+- Les agents lancés par wikichat travaillent dans le dossier du projet, comme avant. Le transverse
+  (§1.1) dit « branche seulement » pour un agent lancé. C'est possible dès maintenant par `branche`,
+  mais ce n'est pas imposé : un réveil sur mention qui répond à un message n'a pas à ouvrir une
+  branche. À trancher par le coordinateur.
+- Plafond de jetons non tenu (A10) ; nettoyage des copies de travail refusées ; prévenir les
+  processus gardés quand le **défaut du projet** change (`modes_routes.py`).
+- `sante.ci-main` n'a pas de projet de réparation déclaré.
+- Écran : la note VS Code et la vue des réparateurs (équipe V).
+
+### Déploiement sur le pod (avec le go de Nicolas pour les redémarrages)
+
+1. Code de l'Atelier à jour (branche intégrée) ; wikichat à jour (`v2-lancements`).
+2. Redémarrer l'Atelier (`~/work/bin/atelier-relancer`). Au démarrage, il :
+   - pose `~/work/.secrets/atelier_lanceur_key` (0600) ;
+   - réconcilie les lancements ;
+   - régénère `.atelier/contexte.md` des projets à la structure type.
+3. Vérifier, sans afficher la clé :
+   `stat -c %a ~/work/.secrets/atelier_lanceur_key` doit rendre `600`, puis
+   `curl -s -o /dev/null -w '%{http_code}\n' -X POST 127.0.0.1:8787/v1/lancements` doit rendre `401`.
+4. Redémarrer wikichat depuis `~/work/wikichat/src`. `WIKICHAT_LANCEUR` vaut `auto` et la clé
+   existe : les lancements passent par l'Atelier. `WIKICHAT_LANCEUR=claude` revient à l'ancien
+   comportement.
+5. Redémarrer l'exécuteur des gardiens. Les réparations restent inertes tant qu'aucun contrôle ne
+   déclare `proposer.projet`. `ATELIER_GARDIENS_REPARATIONS=0` les coupe.
+6. Constater :
+   - un réveil sur mention (`@<agent>` dans un canal) fait apparaître une conversation `lance_par`
+     `wikichat:trigger:evt-wake-any:…` dans l'Atelier ;
+   - `curl -s -H "Authorization: Bearer …" 127.0.0.1:8787/v1/lancements | jq '.lancements[0] | {etat, mode, projet}'` ;
+   - `GET /v1/sessions/<id>/processus` sur une conversation ouverte dans VS Code.
+7. Retour arrière : revenir au commit précédent et redémarrer ; `WIKICHAT_LANCEUR=claude` côté
+   wikichat. Les fichiers `~/work/.atelier-etat/lancements/` et la clé du lanceur sont ignorés par
+   l'ancien code.

@@ -2,7 +2,7 @@
 
 Schéma d'un contrôle (`coherence-croisee.md` §1.2) :
 `id, gardien, portee, quand, commande, delai_s, si_constat, geste`, plus
-`proposer` (lu, pas encore servi : G5), `params` (réglages propres au contrôle)
+`proposer` (G5 : seuil et projet d'un agent réparateur, `reparations.py`), `params` (réglages propres au contrôle)
 et `actif` (couper un contrôle sans le retirer).
 
 `quand` a une seule forme (M6) : `{"toutes_les_min": N}` ou
@@ -100,6 +100,12 @@ def _controle(brut: Any, gestes_connus: frozenset[str]) -> Controle:
     delai = brut.get("delai_s", 30)
     if not isinstance(delai, (int, float)) or delai <= 0 or delai > 600:
         raise DeclarationInvalide(f"{ident} : `delai_s` hors de ]0, 600]")
+    from mcp_gateway.gardiens.reparations import valider_proposer
+
+    try:
+        proposer = valider_proposer(ident, brut.get("proposer"))
+    except ValueError as exc:
+        raise DeclarationInvalide(str(exc)) from None
     params = brut.get("params") or {}
     if not isinstance(params, dict):
         raise DeclarationInvalide(f"{ident} : `params` doit être un objet")
@@ -112,7 +118,7 @@ def _controle(brut: Any, gestes_connus: frozenset[str]) -> Controle:
         delai_s=float(delai),
         si_constat=si_constat,
         geste=geste,
-        proposer=brut.get("proposer"),
+        proposer=proposer,
         params=params,
         actif=bool(brut.get("actif", True)),
     )

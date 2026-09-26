@@ -251,35 +251,129 @@ def fiches_de_l_atelier(ctx: Contexte) -> dict[str, dict[str, Any]]:
     return fiches
 
 
+# Du moins au plus permissif : un processus plus permissif que ce que sa
+# conversation a choisi est un constat ; moins permissif, non.
+ORDRE_DES_MODES = {"plan": 0, "default": 1, "acceptEdits": 2, "bypassPermissions": 3}
+_ALIAS_DES_MODES = {"manual": "default", "auto": "default"}
+
+
+def _mode(texte: Any) -> str:
+    valeur = _ALIAS_DES_MODES.get(str(texte or ""), str(texte or ""))
+    return valeur if valeur in ORDRE_DES_MODES else ""
+
+
+def _mode_vivant(argv: list[str]) -> str:
+    """Le mode qu'un `claude` a reçu à son lancement, lu sur sa ligne de commande."""
+    if "--dangerously-skip-permissions" in argv:
+        return "bypassPermissions"
+    for a, b in zip(argv, argv[1:]):
+        if a == "--permission-mode":
+            return _mode(b)
+    for a in argv:
+        if a.startswith("--permission-mode="):
+            return _mode(a.split("=", 1)[1])
+    return ""
+
+
+def fichiers_de_processus(ctx: Contexte) -> dict[int, dict[str, Any]]:
+    """`<config>/sessions/<pid>.json`, que Claude Code tient pour chaque processus.
+
+    C'est par là qu'un processus VS Code se rattache à sa conversation : sa
+    ligne de commande ne porte pas toujours `--resume <id>`.
+    """
+    dossiers = []
+    if (ctx.env or {}).get("CLAUDE_CONFIG_DIR"):
+        dossiers.append(Path(ctx.env["CLAUDE_CONFIG_DIR"]))
+    dossiers += [ctx.home / ".claude", ctx.work / ".claude"]
+    sortie: dict[int, dict[str, Any]] = {}
+    for dossier in dossiers:
+        repertoire = dossier / "sessions"
+        if not repertoire.is_dir():
+            continue
+        for f in repertoire.glob("*.json"):
+            d = lire_json(f)
+            if not isinstance(d, dict):
+                continue
+            try:
+                pid = int(d.get("pid") or f.stem)
+            except (TypeError, ValueError):
+                continue
+            sortie.setdefault(pid, d)
+    return sortie
+
+
+def mode_choisi(ctx: Contexte, identifiant: str, fiche: dict[str, Any], cwd: str) -> str:
+    """Le mode que la conversation a choisi : son choix, puis le défaut du projet, puis celui du service.
+
+    La même règle que l'Atelier (`modes_permission.mode_resolu`) : le magasin
+    de l'extension VS Code d'abord (sous l'identifiant du CLI), la copie de la
+    fiche ensuite, le `defaultMode` du projet, et `acceptEdits`.
+    """
+    magasin = (
+        ctx.code_server_dir / "User" / "globalStorage" / "anthropic.claude-code"
+        / "session-permission-modes" / f"{identifiant}.json"
+    )
+    choix = lire_json(magasin) if identifiant else None
+    if isinstance(choix, dict) and _mode(choix.get("mode")):
+        return _mode(choix.get("mode"))
+    if _mode(fiche.get("permission_mode")):
+        return _mode(fiche.get("permission_mode"))
+    dossier = str(fiche.get("cwd") or cwd or "")
+    if dossier:
+        reglages = lire_json(Path(dossier) / ".claude" / "settings.local.json")
+        permissions = reglages.get("permissions") if isinstance(reglages, dict) else None
+        if isinstance(permissions, dict) and _mode(permissions.get("defaultMode")):
+            return _mode(permissions.get("defaultMode"))
+    return "acceptEdits"
+
+
 def bypass(ctx: Contexte, c: Any) -> dict[str, Any]:
-    """Un `claude` en bypassPermissions sans fiche de l'Atelier est un constat."""
+    """Deux constats sur les processus `claude` :
+
+    - un processus en bypassPermissions qui n'a **aucune** fiche de l'Atelier.
+      Le rapprochement se fait par l'identifiant du CLI (`--resume`,
+      `--session-id`, ou `sessions/<pid>.json`) et par `claude_session_id` :
+      le 26/09, un processus VS Code dont la fiche existait était signalé ;
+    - un processus plus permissif que le mode que sa conversation a choisi
+      (le mode a changé après son lancement : il le garde jusqu'à sa fin).
+    """
     tous = ctx.processus()
     par_pid = {p.pid: p for p in tous}
     fiches = None
+    fichiers = None
     constats = []
     en_bypass = 0
     for p in tous:
-        if not _est_claude(p.argv) or not _en_bypass(p.argv):
+        if not _est_claude(p.argv):
             continue
-        en_bypass += 1
+        vivant = _mode_vivant(p.argv)
+        if not vivant:
+            continue
+        if vivant == "bypassPermissions":
+            en_bypass += 1
         if fiches is None:
             fiches = fiches_de_l_atelier(ctx)
-        sid = _session(p.argv)
+            fichiers = fichiers_de_processus(ctx)
+        sid = _session(p.argv) or str((fichiers or {}).get(p.pid, {}).get("sessionId") or "")
         fiche = fiches.get(sid) if sid else None
         parent = par_pid.get(p.ppid) if p.ppid else None
         preuve = f"cwd {p.cwd or '?'} ; lancé par pid {p.ppid} ({' '.join(parent.argv)[:80] if parent else '?'})"
         if fiche is None:
-            constats.append(
-                constat(f"{c.id}:{sid or p.pid}", f"pid {p.pid}", "session claude en bypassPermissions sans fiche de l'Atelier", preuve)
-            )
-        elif fiche.get("permission_mode") not in ("", None, "bypassPermissions"):
+            if vivant == "bypassPermissions":
+                constats.append(
+                    constat(f"{c.id}:{sid or p.pid}", f"pid {p.pid}", "session claude en bypassPermissions sans fiche de l'Atelier", preuve)
+                )
+            continue
+        choisi = mode_choisi(ctx, sid, fiche, p.cwd)
+        if ORDRE_DES_MODES[vivant] > ORDRE_DES_MODES[choisi]:
+            surface = str((fichiers or {}).get(p.pid, {}).get("entrypoint") or "")
             constats.append(
                 constat(
                     f"{c.id}:{sid}:mode",
                     f"pid {p.pid}",
-                    f"session en bypassPermissions alors que sa fiche dit {fiche.get('permission_mode')}",
-                    preuve,
-                    "attention",
+                    f"session lancée en {vivant} alors que sa conversation a choisi {choisi} : elle le garde jusqu'à sa fermeture",
+                    preuve + (f" ; surface {surface}" if surface else ""),
+                    "alerte" if vivant == "bypassPermissions" else "attention",
                 )
             )
     return resultat(constats, claude_en_bypass=en_bypass)

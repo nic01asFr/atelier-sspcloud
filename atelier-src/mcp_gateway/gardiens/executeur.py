@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Callable, Any
 
 from mcp_gateway.gardiens import gestes as gestes_mod
+from mcp_gateway.gardiens import reparations as reparations_mod
 from mcp_gateway.gardiens.controles import REGISTRE
 from mcp_gateway.gardiens.controles.commun import NIVEAUX, Contexte
 from mcp_gateway.gardiens.declaration import Controle, Declaration, periode_attendue, prochaine_echeance
@@ -121,6 +122,7 @@ class Executeur:
         horloge=time.time,
         attente_apres_geste_s: float | None = None,
         publier: Callable[[dict[str, Any]], None] | None = None,
+        reparations: "reparations_mod.Reparations | None" = None,
     ) -> None:
         self.declaration = declaration
         self.controles = {c.id: c for c in declaration.controles}
@@ -136,6 +138,8 @@ class Executeur:
         # de chaque exécution ; seuls les ouvertures et fermetures d'alertes et
         # les gestes passent ici.
         self.publier = None if a_blanc else publier
+        # G5 : les demandes d'agents réparateurs. Jamais à blanc.
+        self.reparations = None if a_blanc else (reparations or self._reparations_par_defaut())
         self.demarre_a = horloge()
         self.etats: dict[str, EtatControle] = {c.id: EtatControle() for c in declaration.controles}
         self.alertes: dict[str, dict[str, Any]] = {}
@@ -145,6 +149,24 @@ class Executeur:
         self._occupes: set[str] = set()
         ctx.etat_executeur = self.etat_des_controles
         self._reprendre()
+
+    def _reparations_par_defaut(self) -> "reparations_mod.Reparations":
+        ctx = self.ctx
+
+        def cle() -> str:
+            try:
+                return (Path(ctx.secrets_dir) / "atelier_lanceur_key").read_text(encoding="utf-8").strip()
+            except OSError:
+                return ""
+
+        return reparations_mod.Reparations(
+            dossier_etat=self.dossier_etat,
+            cle=cle,
+            poster=reparations_mod.poster_par_http(ctx.port_atelier),
+            env=ctx.env,
+            par_jour=int((ctx.env or {}).get("ATELIER_REPARATIONS_PAR_JOUR") or reparations_mod.PAR_JOUR_DEFAUT),
+            nettoyer=self.journal.filtre.nettoyer,
+        )
 
     # --- état durable -------------------------------------------------------
 
@@ -261,6 +283,7 @@ class Executeur:
             nouvelles, resolues = self._alertes(c, res, maintenant)
             self._fermer(f"{HOMME_MORT}:{c.id}", maintenant, resolues)
         action = self._geste(c, res, maintenant)
+        reparations = self._proposer(c, maintenant)
         ligne: dict[str, Any] = {
             "gardien": c.gardien,
             "controle": c.id,
@@ -276,8 +299,11 @@ class Executeur:
             ligne["donnees"] = donnees if len(texte) <= 2000 else {"taille": len(texte)}
         if action is not None:
             ligne["action"] = action
+        if reparations:
+            ligne["reparations"] = reparations
         self.journal.ecrire(ligne)
         self._publier_les_evenements(c, nouvelles, resolues, action)
+        self._publier_les_reparations(c, reparations)
         self._sauver()
         return ligne
 
@@ -319,6 +345,34 @@ class Executeur:
         for e in evenements:
             try:
                 self.publier(e)
+            except Exception:  # noqa: BLE001 — le journal unique ne doit jamais arrêter un contrôle
+                pass
+
+    def _proposer(self, c: Controle, maintenant: float) -> list[dict[str, Any]]:
+        """G5 : un constat qui persiste au-delà du seuil déclaré demande un réparateur."""
+        if self.reparations is None or not c.proposer:
+            return []
+        try:
+            return self.reparations.examiner(c, self.alertes, maintenant)
+        except Exception as exc:  # noqa: BLE001 — une demande ratée ne casse pas le contrôle
+            log.exception("réparation pour %s", c.id)
+            return [{"type": "reparation", "controle": c.id, "echec": f"{type(exc).__name__}: {exc}"[:300]}]
+
+    def _publier_les_reparations(self, c: Controle, reparations: list[dict[str, Any]]) -> None:
+        if self.publier is None:
+            return
+        for r in reparations:
+            demandee = r.get("demandee") or {}
+            try:
+                self.publier({
+                    "source": "automate",
+                    "objet": {"type": "projet", "id": demandee.get("projet") or ""},
+                    "action": {"commande": "reparation", "classe": "engageante", "origine": c.gardien,
+                               "avant": {"alerte": r.get("empreinte")},
+                               "apres": demandee or {"refuse": r.get("refuse") or r.get("echec")}},
+                    "resultat": "demandee" if demandee else ("refuse" if r.get("refuse") else "echec"),
+                    "empreinte": r.get("empreinte") or "",
+                })
             except Exception:  # noqa: BLE001 — le journal unique ne doit jamais arrêter un contrôle
                 pass
 
