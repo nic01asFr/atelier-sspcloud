@@ -24,7 +24,8 @@ Posé par l'équipe des fondations (branche `fondations`), dans
   `docs/decisions/0001-structure-type.md`, `.gitignore`.
 - **`.gitignore`** (`git_repos.py`) : `.atelier/*` sauf `!.atelier/projet.json` et
   `!.atelier/env.json`. Un `.gitignore` ancien qui ignore `.atelier/` entier n'est pas complété
-  (git ne ré-inclut rien sous un dossier exclu) : ces projets se migrent en vague 2.
+  (git ne ré-inclut rien sous un dossier exclu) : ces projets se migrent par
+  `atelier_projet_structurer` (ci-dessous).
 - **`atelier_projet_creer`** (réversible, inverse `atelier_projet_ranger`) : `titre`, `objectif`,
   `gabarit` (`application`, `donnees`, `service-mcp`, `document`, `vide`), `connecteurs[]`,
   `slug?`. Slug unique dérivé du titre (même règle que wikichat), dépôt git sur `main` avec un
@@ -41,10 +42,64 @@ Posé par l'équipe des fondations (branche `fondations`), dans
   s'écrit plus que dans `~/work/projects/<slug>` (ou le dossier de l'Assistant) : jamais dans le
   `cwd` d'une conversation qui serait ailleurs (le `/tmp/CLAUDE.md` du 24/09).
 
+## Ce qui existe (vague 2, 26/09) : la migration
+
+Posé par l'équipe K (branche `v2-creations`), `commandes/migration.py` :
+
+- **`atelier_projet_structurer`** (engageante ; `a_blanc=true` la rend `lecture` : le plan, rien
+  d'écrit). Arguments : `projet`, `titre?` (défaut : le titre affiché), `description?`. Elle pose
+  ce qui manque, **sans rien remplacer** (casse ignorée : `readme.md` vaut `README.md`) :
+  `.atelier/projet.json` ; un `ETAT.md` « reprise » (qui dit que l'état d'avant reste à y
+  rassembler, et où il se trouve) ; `docs/cahier-des-charges.md` ;
+  `docs/decisions/NNNN-structure-type.md` (numéro suivant s'il y a déjà des décisions) ;
+  `README.md` s'il n'y en a aucun. Le `.gitignore` ancien est **complété** : la ligne `.atelier/`
+  devient `.atelier/*`, `!.atelier/projet.json`, `!.atelier/env.json`, et les lignes de l'Atelier
+  qui manquent s'ajoutent. Le `CLAUDE.md` existant est **gardé** : l'import `@.atelier/contexte.md`
+  passe en première ligne, et la section que l'Atelier y tenait (`<!-- atelier:contexte -->`) en
+  sort, puisqu'elle vit désormais dans `.atelier/contexte.md` (D7), écrit aussitôt. Un
+  `CLAUDE.md` non suivi le devient (D1). Tout part dans **un seul commit** (« Poser la structure
+  type », avec `Atelier-Commande:` et `Par:`), qui ne contient que ces fichiers : le travail en
+  cours n'est pas emporté.
+- **`atelier_projet_destructurer`** (réversible), l'inverse : l'état d'avant est gardé dans
+  `.atelier/avant-structure/<id>/` (ignoré par git) ; elle retire ce qui a été posé, remet ce qui a
+  été complété, rend non suivi ce qui ne l'était pas, et commite « Défaire la structure type ».
+  Elle refuse si l'un de ces fichiers a changé depuis, ou si des changements sont déjà indexés.
+- Ce que la migration **ne fait pas**, et qui reste aux agents du projet : fusionner les états
+  dans `ETAT.md`, alléger `CLAUDE.md` (100 lignes au plus, sans état ni adresse), ranger le code,
+  renommer le slug (étapes 2 à 12 ci-dessous).
+
+**Vérifié** (`tests/test_commandes_migration.py`) sur une copie du Lecteur Grist relevée en
+lecture seule sur le pod (`tests/fixtures/lecteur_grist/` : `CLAUDE.md` et `.gitignore` aux mêmes
+empreintes sha256 que sur le pod, arborescence réduite) : aperçu à blanc sans écriture ni commit
+ni ligne au journal ; aperçu de l'engageante identique ; migration confirmée (commit unique,
+`readme.md` intact, pas de second README, `projet.json` suivi, reste de `.atelier/` ignoré, travail
+en cours non emporté) ; seconde passe sans rien à faire ; « Annuler » qui rend les fichiers à
+l'octet près et `CLAUDE.md` à nouveau non suivi ; refus de l'inverse après une retouche ; ETAT et
+décisions existants gardés. **Non fait** : aucune migration sur le pod.
+
+### Aperçu à blanc du Lecteur Grist (copie du 26/09)
+
+`atelier_projet_structurer {projet: "projet-sans-nom-5", titre: "Lecteur Grist", a_blanc: true}` :
+
+| | Chemin | Détail |
+|---|---|---|
+| créer | `.atelier/projet.json` | `slug` `projet-sans-nom-5`, `titre` « Lecteur Grist » |
+| créer | `ETAT.md` | « reprise dans la structure type » ; l'état d'avant est dans `CLAUDE.md` et `readme.md` |
+| créer | `docs/cahier-des-charges.md` | |
+| créer | `docs/decisions/0001-structure-type.md` | |
+| compléter | `.gitignore` | `.atelier/` → `.atelier/*`, `!.atelier/projet.json`, `!.atelier/env.json` ; rien d'autre ne manque |
+| compléter | `CLAUDE.md` | `@.atelier/contexte.md` en tête ; section générée (24 lignes) retirée ; le reste (`<!-- consignes:projet -->`) intact |
+| garder | `readme.md` | tient lieu de `README.md` |
+| suivre par git | `CLAUDE.md` (non suivi jusqu'ici) et les quatre fichiers créés | un commit, ces fichiers seuls |
+
+Remarques rendues : `CLAUDE.md` garde 194 lignes (cible : 100), à alléger par un agent du projet ;
+`.atelier/projet.json` sera suivi, le reste de `.atelier/` (dont `connecteurs-herites` et
+`OPEN_CLAUDE_SESSION.md`) reste ignoré.
+
 Reste : `/reprendre`, `/verifier`, `/fin-de-lot` et `.claude/settings.json` du gabarit ; le hook
 `SessionStart` et l'enrichissement de `contexte.md` (lot B) ; renommer un slug avec alias ; la
-migration du Lecteur Grist ; `apps/manifeste.py` (`racine`, `donnees`, `preparer`, `entretien`,
-`capacites`).
+migration réelle du Lecteur Grist et des autres projets sur le pod (commande prête, geste de la
+personne) ; `apps/manifeste.py` (`racine`, `donnees`, `preparer`, `entretien`, `capacites`).
 
 ## Diagnostic (Lecteur Grist)
 
@@ -178,6 +233,9 @@ ouvre une conversation sur une branche → un autre agent reprend par
 - Étiquettes : `prod/<artefact>/<n>`, `jalon/<lot>`.
 
 ## Migration du Lecteur Grist (un commit par étape)
+
+Les étapes 1 et 9 (en partie : `projet.json`) sont celles de `atelier_projet_structurer`, qui les
+fait en un seul commit ; les autres restent aux agents du projet.
 
 1. Suivre `CLAUDE.md` tel quel.
 2. Créer `ETAT.md` en fusionnant les quatre états existants (et les retirer

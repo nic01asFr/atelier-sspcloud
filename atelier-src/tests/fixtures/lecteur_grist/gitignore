@@ -1,0 +1,36 @@
+# Écrit par l'Atelier.
+
+# Ce qu'il dépose lui-même : état de session, réglages de la machine.
+.claude/settings.local.json
+.claude/projects/
+.atelier/
+.wikichat/
+.vscode/
+
+# Ce qui ne doit jamais partir. Un projet du pod porte souvent un .env
+# d'amorçage — on en a trouvé un qui disait « ne pas committer » sur sa
+# première ligne, et qui l'a été.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*_token
+*_secret
+.secrets/
+credentials*
+
+node_modules/
+__pycache__/
+*.pyc
+
+# Porte des en-têtes Authorization recopiés par l'Atelier : jamais commité.
+.mcp.json
+
+# Copie générée par outils/publier.sh depuis index.html (seule source).
+artifacts/lecteur/index.html
+
+.pytest_cache/
+
+# Environnement Python du serveur (serveur/installer.sh).
+.venv/
