@@ -98,7 +98,7 @@ export function presentation(etat) {
   };
 }
 
-function demarrer(doc, fen) {
+export function demarrer(doc, fen) {
   const image = doc.getElementById("image");
   const scene = doc.getElementById("scene");
   const champ = doc.getElementById("adresse-champ");
@@ -113,7 +113,13 @@ function demarrer(doc, fen) {
   let urlImage = "";
   let attenteReconnexion = 500;
   let dernierMouvement = 0;
+  // Le champ d'adresse appartient à la personne tant qu'elle y tape (focus)
+  // ou qu'elle l'a modifié sans le soumettre (brouillon) : un état venu du
+  // serveur ne l'écrase pas. Un clic sur « Aller » retire le focus du champ
+  // avant la soumission : si le blur remettait l'adresse du serveur, c'est
+  // elle qui partait (essais du 26/09).
   let saisie = false;
+  let brouillon = false;
 
   const naturelle = () => ({ largeur: image.naturalWidth, hauteur: image.naturalHeight });
 
@@ -123,7 +129,7 @@ function demarrer(doc, fen) {
 
   function rendre() {
     const vue = presentation(etat);
-    if (!saisie) champ.value = vue.adresse;
+    if (!saisie && !brouillon) champ.value = vue.adresse;
     champ.readOnly = !etat.main;
     champ.title = vue.titre;
     aller.hidden = !etat.main;
@@ -160,6 +166,8 @@ function demarrer(doc, fen) {
       }
       if (recu.type === "etat") {
         etat = recu;
+        // Main rendue : plus rien à soumettre, la barre suit la page.
+        if (!etat.main) brouillon = false;
         rendre();
       } else if (recu.type === "refus" && recu.raison) {
         message.textContent = recu.raison;
@@ -193,10 +201,20 @@ function demarrer(doc, fen) {
     if (url && !/^[a-z][a-z0-9+.-]*:/i.test(url)) url = `https://${url}`;
     if (url) envoyer({ type: "aller", url });
     saisie = false;
+    brouillon = false;
     scene.focus();
   });
   champ.addEventListener("focus", () => {
     saisie = etat.main;
+  });
+  champ.addEventListener("input", () => {
+    if (etat.main) brouillon = true;
+  });
+  champ.addEventListener("keydown", (ev) => {
+    // Échap abandonne le brouillon : la barre reprend l'adresse de la page.
+    if (ev.key !== "Escape" || !brouillon) return;
+    brouillon = false;
+    champ.value = presentation(etat).adresse;
   });
   champ.addEventListener("blur", () => {
     saisie = false;
