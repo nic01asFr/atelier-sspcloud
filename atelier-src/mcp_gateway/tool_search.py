@@ -136,6 +136,7 @@ MOTS_CLES_PAR_OUTIL: dict[str, str] = {
     "atelier_a_valider_refuser": "valider proposition refuser rejeter",
     "atelier_a_valider_rouvrir": "valider proposition rouvrir reprendre",
     "atelier_journal": "journal historique fait aujourd hui actions",
+    "atelier_carte": "carte vue ensemble etat situation projets liens quoi de neuf alertes inventaire",
     "atelier_annuler": "annuler defaire revenir inverse",
     "atelier_projet_creer": "projet nouveau creer ouvrir",
     "atelier_projet_modifier": "projet renommer modifier titre description",
