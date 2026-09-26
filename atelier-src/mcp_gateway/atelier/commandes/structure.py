@@ -99,6 +99,45 @@ class VueEpinglee(_Strict):
         return self
 
 
+_NOM_K8S = re.compile(r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$")
+
+
+class Deploiement(_Strict):
+    """Où le projet se déploie (`docs/onyxia-projet.md`) : un pod ou un service, exactement.
+
+    `pod` est un pod Onyxia existant, auquel les agents du projet sont bornés ;
+    `service` est le chemin d'un `<nom>.service.yml` dans le dossier de travail
+    du pod Onyxia. Ce bloc borne ce qu'Onyxia donne aux agents code du projet.
+    """
+
+    pod: str | None = Field(default=None, max_length=253)
+    service: str | None = Field(default=None, min_length=1, max_length=300)
+    namespace: str | None = Field(default=None, max_length=63)
+    gpu: bool = False
+    commande: str | None = Field(default=None, min_length=1, max_length=500)
+    port: int | None = Field(default=None, ge=1, le=65535)
+
+    @field_validator("pod", "namespace")
+    @classmethod
+    def _nom_k8s(cls, v: str | None) -> str | None:
+        if v is not None and not _NOM_K8S.match(v):
+            raise ValueError(f"nom Kubernetes invalide : {v!r}")
+        return v
+
+    @field_validator("service")
+    @classmethod
+    def _yaml_de_service(cls, v: str | None) -> str | None:
+        if v is not None and not v.endswith((".service.yml", ".service.yaml")):
+            raise ValueError("service : le chemin d'un <nom>.service.yml")
+        return v
+
+    @model_validator(mode="after")
+    def _pod_ou_service(self) -> "Deploiement":
+        if (self.pod is None) == (self.service is None):
+            raise ValueError("un déploiement vise un pod ou un service, exactement")
+        return self
+
+
 class ProjetJson(_Strict):
     """`.atelier/projet.json` : la déclaration machine du projet."""
 
@@ -113,6 +152,7 @@ class ProjetJson(_Strict):
     chemins_proteges: list[str] = Field(default_factory=list)
     vues_epinglees: list[VueEpinglee] = Field(default_factory=list)
     creation: Creation | None = None
+    deploiement: Deploiement | None = None
 
     @field_validator("slug")
     @classmethod
@@ -383,6 +423,7 @@ def verifier_la_structure(racine: Path) -> dict[str, Any]:
 
 __all__ = [
     "CHEMIN",
+    "Deploiement",
     "ErreurProjetJson",
     "GABARITS",
     "ProjetJson",

@@ -124,9 +124,11 @@ def construire(app: Any) -> Catalogue:
 
 def enregistrer(app: Any) -> Catalogue:
     """La ligne que `api.py` appelle : catalogue, routes, adresses."""
+    from mcp_gateway.atelier.commandes.deploiement import inscrire_le_deploiement
     from mcp_gateway.atelier.commandes.routes import construire_le_routeur
 
     catalogue = construire(app)
+    inscrire_le_deploiement(app, catalogue)
     app.include_router(construire_le_routeur(app))
     try:
         noter_les_adresses(app.state.settings)
