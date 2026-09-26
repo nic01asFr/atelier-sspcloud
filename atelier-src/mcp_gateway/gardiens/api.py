@@ -190,6 +190,13 @@ def serveur(executeur: Any, port: int = PORT_PAR_DEFAUT, jeton: str = "") -> Thr
             self._repondre(405, {"erreur": "lecture seule"})
 
         def do_POST(self) -> None:  # noqa: N802
+            # Le corps d'abord, borné : répondre sans l'avoir lu ferme la
+            # connexion sous un client qui écrit encore (connexion abandonnée).
+            try:
+                taille = min(int(self.headers.get("Content-Length") or 0), 10_000)
+                brut = self.rfile.read(taille) if taille > 0 else b""
+            except (ValueError, OSError):
+                return self._repondre(400, {"erreur": "corps illisible"})
             if urlparse(self.path).path.rstrip("/") != "/pilotage":
                 return self._refuser()
             if self.headers.get("Origin") is not None:
@@ -204,9 +211,8 @@ def serveur(executeur: Any, port: int = PORT_PAR_DEFAUT, jeton: str = "") -> Thr
             if not donne or not hmac.compare_digest(donne.encode(), jeton.encode()):
                 return self._repondre(401, {"erreur": "jeton de pilotage requis"})
             try:
-                taille = min(int(self.headers.get("Content-Length") or 0), 10_000)
-                corps = json.loads(self.rfile.read(taille) or b"{}")
-            except (ValueError, OSError):
+                corps = json.loads(brut or b"{}")
+            except ValueError:
                 return self._repondre(400, {"erreur": "corps JSON attendu"})
             try:
                 statut, reponse = piloter(executeur, corps)
