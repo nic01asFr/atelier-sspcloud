@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from mcp_gateway.atelier import __version__, git_repos
+from mcp_gateway.atelier.apps.cadrage import politique_interface
 from mcp_gateway.atelier.auth import (
     ENTETE_INTERFACE,
     GardeDesCookies,
@@ -2661,18 +2662,16 @@ def build_app(
 
         @app.get("/")
         def ui_index() -> FileResponse:
-            # `frame-src` autorise le widget Atlas servi par GitHub Pages dans
-            # le panneau. `frame-ancestors` répond à l'autre sens de la
-            # relation : l'interface ne se laisse encadrer que par elle-même.
+            # `frame-src` nomme ce que le panneau encadre : l'hôte des
+            # applications (créations, écran du navigateur) et le widget Atlas.
+            # `frame-ancestors` répond à l'autre sens de la relation :
+            # l'interface ne se laisse encadrer que par elle-même.
             return FileResponse(
                 WEB_DIR / "index.html",
                 media_type="text/html; charset=utf-8",
                 headers={
                     "Cache-Control": "no-store",
-                    "Content-Security-Policy": (
-                        "frame-src 'self' https://nic01asfr.github.io; "
-                        "frame-ancestors 'self'"
-                    ),
+                    "Content-Security-Policy": politique_interface(settings.apps_public_url),
                 },
             )
 

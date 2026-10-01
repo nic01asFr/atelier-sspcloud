@@ -17,6 +17,26 @@ def test_sans_atelier_connu_rien_n_encadre() -> None:
     assert cadrage.politique("javascript:alert(1)") == "frame-ancestors 'none'"
 
 
+def test_l_interface_encadre_l_hote_des_applications_et_le_widget_atlas() -> None:
+    """Sans l'hôte des applications dans `frame-src`, le panneau reste vide : le
+    302 de `/v1/apps/…/ouvrir` y mène, et le navigateur le refuse."""
+    assert cadrage.politique_interface("https://atelier-apps.test/chemin/") == (
+        "frame-src 'self' https://atelier-apps.test https://nic01asfr.github.io; frame-ancestors 'self'"
+    )
+
+
+def test_l_interface_sans_hote_d_applications_garde_la_liste_d_avant() -> None:
+    attendu = "frame-src 'self' https://nic01asfr.github.io; frame-ancestors 'self'"
+    assert cadrage.politique_interface("") == attendu
+    # Une adresse qui glisserait une directive n'est pas une origine : elle n'entre pas.
+    assert cadrage.politique_interface("https://a.test; script-src *") == attendu
+
+
+def test_l_interface_ne_nomme_pas_deux_fois_la_meme_origine() -> None:
+    csp = cadrage.politique_interface(cadrage.WIDGET_ATLAS)
+    assert csp.count(cadrage.WIDGET_ATLAS) == 1
+
+
 def test_imposer_retire_x_frame_options_et_tout_autre_frame_ancestors() -> None:
     sortie = cadrage.imposer(
         [

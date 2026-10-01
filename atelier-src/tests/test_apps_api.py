@@ -127,6 +127,30 @@ def test_ouvrir_exige_une_session_de_navigateur(atelier_apps: TestClient) -> Non
     assert atelier_apps.get("/v1/apps/demo/site/ouvrir", follow_redirects=False).status_code == 401
 
 
+def test_l_hote_vers_lequel_ouvrir_renvoie_est_encadrable_par_l_interface(atelier_apps: TestClient) -> None:
+    """Le panneau ouvre une création par un 302 vers l'hôte des applications. Si
+    la CSP de l'interface ne nomme pas cet hôte dans `frame-src`, le navigateur
+    refuse le cadre : il reste vide, alors que le service répond."""
+    connecter(atelier_apps)
+    renvoi = atelier_apps.get("/v1/apps/demo/site/ouvrir", follow_redirects=False)
+    assert renvoi.status_code == 302
+    adresse = urlsplit(renvoi.headers["location"])
+    hote = f"{adresse.scheme}://{adresse.netloc}"
+    assert hote == APPS
+    csp = atelier_apps.get("/").headers["content-security-policy"]
+    directives = dict(d.strip().split(None, 1) for d in csp.split(";") if d.strip())
+    assert hote in directives["frame-src"].split()
+    assert directives["frame-ancestors"] == "'self'"
+
+
+def test_sans_second_hote_la_csp_de_l_interface_ne_nomme_aucun_hote_d_applications(
+    atelier_seul: TestClient,
+) -> None:
+    csp = atelier_seul.get("/").headers["content-security-policy"]
+    assert "apps.test" not in csp
+    assert "frame-src 'self' https://nic01asfr.github.io" in csp
+
+
 def test_sans_second_hote(atelier_seul: TestClient) -> None:
     connecter(atelier_seul)
     # Un artefact autonome s'ouvre sur l'adresse de secours ; un serveur, non.
