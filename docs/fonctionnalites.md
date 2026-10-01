@@ -431,7 +431,19 @@ redessine). Une vue est épinglée à la conversation (`~/work/panneau/<conversa
 « Épingler au projet », au projet (`vues_epinglees` de `projet.json`).
 
 - *Un agent code* : `atelier_montrer(nom, chemin?, titre?)` épingle la création à la conversation
-  et **ouvre le panneau** chez la personne (décision J-f).
+  et **ouvre le panneau** chez la personne (décision J-f), sans geste de sa part : il n'existe aucun
+  bouton « Exposer ». Il ne montre que les créations de son projet.
+- *L'Assistant* : `atelier_montrer(projet, nom, …)` montre la création **d'un autre projet** dans le
+  panneau de sa conversation, sans rien écrire dans ce projet. Il n'a pas de projet à lui et n'écrit
+  que dans `notes/` : `atelier_artefact_creer` et `atelier_navigateur_ouvrir` lui sont refusés, avec
+  la voie à suivre (déléguer à un agent code par `atelier_lancer_agent`, puis montrer).
+- *Avant d'annoncer qu'une page est prête* : `atelier_artefact_verifier` (avec `nom`) et
+  `atelier_montrer` rendent des `avertissements` pour une page autonome : `index.html` absent ou
+  dossier vide, fichier référencé introuvable, chemin absolu, ressource externe (une page autonome
+  n'a pas accès au réseau). Ils n'empêchent rien : le panneau s'ouvre quand même.
+- *Le cadre du panneau* : la CSP de l'interface nomme l'hôte des applications dans `frame-src`
+  (`apps/cadrage.py`, `politique_interface`) ; sans lui le navigateur refuse la redirection de
+  `/v1/apps/…/ouvrir` et le cadre reste vide.
 - *La personne* : le catalogue du panneau (créations du projet, onglet « Bureaux ») ; onglet
   « Navigateur de l'agent » (§8).
 - Un flux vivant (bureau, navigateur) ne s'ouvre que sur un geste ou un événement de navigation,

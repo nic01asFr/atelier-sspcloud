@@ -136,6 +136,11 @@ def _est_de_l_assistant(store: Any, fiche: Any) -> bool:
     return True
 
 
+def est_de_l_assistant(store: Any, fiche: Any) -> bool:
+    """Vrai pour la fiche d'une conversation de l'Assistant (le profil `assistant`)."""
+    return _est_de_l_assistant(store, fiche)
+
+
 ENTETE_DOSSIER = "X-Atelier-Dossier"
 
 

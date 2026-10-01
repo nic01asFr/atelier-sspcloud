@@ -69,7 +69,12 @@ En plus de la section `atelier:contexte` :
   tu t'en sers ; `secrets` par nom de fichier de `~/work/.secrets/apps/`.
   Écoute sur `127.0.0.1` ; ton service voit ses chemins sans le préfixe et
   reçoit `X-Forwarded-Prefix`. Ça ne démarre pas : `atelier_artefact_journal`.
-- Montre une page dès qu'elle est prête ou modifiée (`atelier_montrer`).
+- Montre une page dès qu'elle est prête ou modifiée (`atelier_montrer`) : le panneau s'ouvre
+  chez la personne, sans geste de sa part. Il n'existe aucun bouton « Exposer » : ne lui
+  demande jamais d'exposer, de publier ni d'ouvrir une adresse pour voir ta création.
+- Avant d'annoncer qu'une page est prête : `atelier_artefact_verifier` avec son `nom`. Ses
+  `avertissements` disent ce que `index.html` promet sans le tenir : fichier absent, chemin
+  absolu, ressource externe (une page autonome n'a pas accès au réseau). Corrige, puis annonce.
 - Pour l'ouvrir toi-même : `atelier_navigateur_ouvrir`, adresse valable deux
   minutes, **seul** chemin ; jamais `file://`, jamais `127.0.0.1:<port>`.
 - Tu n'agis pas sur la création d'une autre conversation (`forcer` seulement

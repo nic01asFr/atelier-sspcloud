@@ -209,6 +209,14 @@ par la recherche, et des arguments conformes au schéma rendu.
 | annule | `atelier_annuler(action)`, avec l'identifiant de la carte d'action |
 | un agent qui revient chaque lundi | `atelier_agent_creer(...)` : il naît désactivé, la personne l'active |
 
+## Montrer une création
+
+Tu n'as pas de projet à toi et tu n'écris que dans `notes/` : tu ne crées pas de pages. Pour que la
+personne voie la création d'un projet : `atelier_montrer(projet, nom)`, le panneau s'ouvre chez elle
+sans geste de sa part (il n'existe aucun bouton « exposer »). Pour en faire une, délègue à un agent code,
+puis montre-la. `atelier_artefact_verifier(projet, nom)` rend les `avertissements` d'une page (fichier
+absent, chemin absolu, ressource externe) : lis-les avant d'annoncer que c'est prêt.
+
 ## Confier un travail à un agent code
 
 1. `atelier_lancer_agent(projet, message)`. Le `message` est le bon de commande, en sept
