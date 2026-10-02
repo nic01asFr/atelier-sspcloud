@@ -92,3 +92,40 @@ def test_une_conversation_de_la_personne_n_est_pas_concernee(racine: Path) -> No
     outils = _outils(SimpleNamespace(supervise=False, slug=racine.name), racine)
     outils._garder_le_perimetre_du_lanceur(_d("Bash", command="git push"))
     _outils(None, racine)._garder_le_perimetre_du_lanceur(_d("Bash", command="git push"))
+
+
+def _outils_avec_registre(rec: Any, racine: Path, demande: Demande | None) -> OutilsAtelier:
+    outils = _outils(rec, racine)
+    registre = SimpleNamespace(
+        demande=lambda _id: demande,
+        demande_tracee=lambda _id: None,
+    )
+    outils.harness = SimpleNamespace(decisions=registre)
+    return outils
+
+
+def test_une_autorisation_du_lanceur_dans_son_perimetre_se_passe_de_confirmation(racine: Path) -> None:
+    supervise = SimpleNamespace(supervise=True, slug=racine.name)
+    dedans = _d("Write", file_path="nouveau.txt")
+    dehors = _d("Bash", command="curl http://exemple.fr")
+    args = {"demande": "r1", "decision": "allow"}
+    assert _outils_avec_registre(supervise, racine, dedans).decision_du_lanceur_sans_confirmation(args) is True
+    assert _outils_avec_registre(supervise, racine, dehors).decision_du_lanceur_sans_confirmation(args) is False
+    # Une règle retenue pour toujours reste le geste de la personne.
+    assert _outils_avec_registre(supervise, racine, dedans).decision_du_lanceur_sans_confirmation({**args, "portee": "toujours"}) is False
+    # Une conversation de la personne, ou une demande inconnue : jamais.
+    ordinaire = SimpleNamespace(supervise=False, slug=racine.name)
+    assert _outils_avec_registre(ordinaire, racine, dedans).decision_du_lanceur_sans_confirmation(args) is False
+    assert _outils_avec_registre(supervise, racine, None).decision_du_lanceur_sans_confirmation(args) is False
+
+
+def test_l_allegement_de_atelier_decider_suit_le_perimetre(racine: Path) -> None:
+    from mcp_gateway.atelier.commandes.existants import _decider_allegement_du_lanceur
+    from mcp_gateway.atelier.commandes.modele import ENGAGEANTE, REVERSIBLE
+
+    supervise = SimpleNamespace(supervise=True, slug=racine.name)
+    outils = _outils_avec_registre(supervise, racine, _d("Edit", file_path="a.py"))
+    allegement = _decider_allegement_du_lanceur(SimpleNamespace(outils=outils))
+    assert allegement({"demande": "r1", "decision": "allow"}) == REVERSIBLE
+    assert allegement({"demande": "r1", "decision": "deny"}) == REVERSIBLE
+    assert _decider_allegement_du_lanceur(SimpleNamespace(outils=None))({"decision": "allow"}) == ENGAGEANTE
