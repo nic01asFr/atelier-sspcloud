@@ -549,7 +549,10 @@ class Lanceur:
     @staticmethod
     def _supervise(demande: dict[str, Any], origine: str) -> bool:
         """Une réparation de gardien n'a personne pour répondre : jamais supervisée."""
-        return demande.get("supervise") is True and not origine.startswith(PREFIXE_GARDIEN)
+        brut = demande.get("supervise")
+        # Un client qui n'a pas le schéma envoie volontiers « true » en texte.
+        voulu = brut is True or (isinstance(brut, str) and brut.strip().lower() in ("true", "1", "oui"))
+        return voulu and not origine.startswith(PREFIXE_GARDIEN)
 
     def _duree(self, demande: dict[str, Any], exiger: bool, avertissements: list[str]) -> int:
         plafonds = demande.get("plafonds") if isinstance(demande.get("plafonds"), dict) else {}
