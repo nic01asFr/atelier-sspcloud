@@ -40,6 +40,7 @@
  * et son cadre (donc le screencast) n'existe que tant qu'il est affiché.
  */
 
+import * as S from "../state.js";
 import { rendrePanneauApplications } from "./applications.js";
 
 const BAC_A_SABLE =
@@ -128,6 +129,28 @@ export function libelleEpingle(vue) {
     : { texte: "Épingler au projet", titre: "Montrer dans toutes les conversations du projet", suivante: "projet" };
 }
 
+/**
+ * Le titre d'un onglet. L'Assistant n'a pas de projet à lui : il montre les
+ * créations de n'importe lequel, et deux projets peuvent avoir une création du
+ * même nom. Une création d'un autre projet que celui de la conversation dit
+ * donc son projet.
+ */
+export function titreDeLOnglet(vue, projetDeLaConversation) {
+  const base = vue?.titre || vue?.nom || "";
+  if (!vue?.projet || estUnService(vue) || estLeNavigateur(vue)) return base;
+  if (!projetDeLaConversation || vue.projet === projetDeLaConversation) return base;
+  return `${vue.projet} · ${base}`;
+}
+
+/**
+ * Une création ne s'épingle au projet que dans le projet de sa conversation :
+ * celle d'un autre projet (montrée par l'Assistant) reste à la conversation.
+ */
+export function sEpingleAuProjet(vue, projetDeLaConversation) {
+  if (!vue || estUnService(vue) || estLeNavigateur(vue)) return false;
+  return !vue.projet || !projetDeLaConversation || vue.projet === projetDeLaConversation;
+}
+
 /** L'état de l'écran d'une conversation (repli si `api` ne le porte pas). */
 async function lireEcran(sessionId) {
   const res = await fetch(`/v1/ecran/${encodeURIComponent(sessionId)}`, {
@@ -191,6 +214,11 @@ export function createPanneauView(ctx) {
 
   const racine = () => document.getElementById("panneau");
   const vueCode = () => document.getElementById("view-code");
+  // Le projet de la conversation ouverte, par sa fiche d'abord (le projet
+  // sélectionné dans l'arbre peut être un autre).
+  const projetDeLaConversation = () =>
+    state.sessions?.find((s) => s.session_id === state.sessionId)?.slug || state.slug || "";
+  const dansLAssistant = () => S.estAssistant(state);
 
   function ouvrir(oui) {
     local.ouvert = !!oui;
@@ -210,6 +238,13 @@ export function createPanneauView(ctx) {
     local.signal = false;
     local.replie = false;
     appelsDeNavigation.clear();
+    // Le catalogue dessiné pour une conversation n'est pas celui de la suivante
+    // (autre projet, ou l'Assistant) : il se redessine à l'ouverture.
+    const cat = document.getElementById("panneau-catalogue");
+    if (cat) {
+      cat.replaceChildren();
+      cat.hidden = true;
+    }
     if (!sessionId) {
       local.ouvert = false;
       rendre();
@@ -263,6 +298,7 @@ export function createPanneauView(ctx) {
     local.actif = vue.id;
     local.ouvert = true;
     local.catalogue = false;
+    local.erreur = "";
     // Montrée à nouveau après une modification : on la recharge.
     const cadre = iframes.get(vue.id);
     if (deja && recharger && cadre) cadre.src = adresseDeLaVue(vue);
@@ -312,6 +348,7 @@ export function createPanneauView(ctx) {
   }
 
   async function fermerOnglet(vue) {
+    local.erreur = "";
     local.vues = local.vues.filter((v) => v.id !== vue.id);
     iframes.get(vue.id)?.remove();
     iframes.delete(vue.id);
@@ -406,6 +443,7 @@ export function createPanneauView(ctx) {
   }
 
   function rendreCreations(zone, { relecture = false } = {}) {
+    if (dansLAssistant()) return rendreCreationsDeTous(zone, { relecture });
     const slug = state.slug || state.sessions?.find((s) => s.session_id === state.sessionId)?.slug || "";
     // Une relecture (après un geste, ou pendant qu'une création démarre) garde
     // la liste affichée : la remplacer par « Chargement… » chaque seconde
@@ -429,6 +467,50 @@ export function createPanneauView(ctx) {
           },
         ),
       )
+      .catch((err) => zone.replaceChildren(el("p", "apps-note", `Créations illisibles : ${err.message}`)));
+  }
+
+  /**
+   * Le catalogue de l'Assistant : il n'a pas de projet à lui, la personne
+   * choisit parmi les créations de tous, rangées par projet.
+   */
+  function rendreCreationsDeTous(zone, { relecture = false } = {}) {
+    if (!relecture) zone.replaceChildren(el("p", "apps-note", "Chargement des créations…"));
+    const recharger = () => rendreCreationsDeTous(zone, { relecture: true });
+    api
+      .listApps("")
+      .then((etat) => {
+        const parProjet = new Map();
+        for (const f of etat.artefacts || []) {
+          const projet = f.slug || "";
+          if (!parProjet.has(projet)) parProjet.set(projet, []);
+          parProjet.get(projet).push(f);
+        }
+        if (!parProjet.size) {
+          zone.replaceChildren(
+            el("p", "apps-note", "Aucune création dans vos projets pour l'instant. Confiez une page à un agent, puis montrez-la ici."),
+          );
+          return;
+        }
+        const blocs = [...parProjet].map(([slug, artefacts]) => {
+          const bloc = el("div", "panneau-projet");
+          bloc.dataset.projet = slug;
+          rendrePanneauApplications(
+            bloc,
+            { slug, expose: etat.expose, artefacts, artefactsUrl: api.artifactsUrl(slug), titre: `Créations · ${slug}` },
+            {
+              demarrer: (nom) => api.startApp(slug, nom),
+              arreter: (nom) => api.stopApp(slug, nom),
+              journal: (nom) => api.appJournal(slug, nom, 200),
+              copier: (texte) => (navigator.clipboard ? navigator.clipboard.writeText(texte) : Promise.resolve()),
+              montrer: (f) => enregistrer({ projet: slug, nom: f.nom, titre: f.titre || f.nom, epingle: "conversation" }),
+              recharger,
+            },
+          );
+          return bloc;
+        });
+        zone.replaceChildren(...blocs);
+      })
       .catch((err) => zone.replaceChildren(el("p", "apps-note", `Créations illisibles : ${err.message}`)));
   }
 
@@ -463,11 +545,12 @@ export function createPanneauView(ctx) {
     onglets.replaceChildren(
       ...local.vues.map((v) => {
         const signal = estLeNavigateur(v) && local.signal && !(v.id === local.actif && !local.catalogue);
-        const b = el("button", "panneau-onglet", signal ? `● ${v.titre || v.nom}` : v.titre || v.nom);
+        const titreOnglet = titreDeLOnglet(v, projetDeLaConversation());
+        const b = el("button", "panneau-onglet", signal ? `● ${titreOnglet}` : titreOnglet);
         b.type = "button";
         b.setAttribute("role", "tab");
         b.setAttribute("aria-selected", v.id === local.actif ? "true" : "false");
-        b.title = v.epingle === "projet" ? `${v.titre} — épinglée au projet` : v.titre;
+        b.title = v.epingle === "projet" ? `${titreOnglet} — épinglée au projet` : titreOnglet;
         if (signal) {
           b.dataset.signal = "1";
           b.title = "L'agent a changé de page";
@@ -477,6 +560,7 @@ export function createPanneauView(ctx) {
         b.addEventListener("click", () => {
           local.actif = v.id;
           local.catalogue = false;
+          local.erreur = "";
           if (estLeNavigateur(v)) local.signal = false;
           rendre();
         });
@@ -490,7 +574,8 @@ export function createPanneauView(ctx) {
       const epingle = libelleEpingle(active);
       const gestes = [];
       // Un service ou le navigateur ne s'épinglent pas : ils ne reviennent pas seuls (J-f).
-      if (!estUnService(active) && !estLeNavigateur(active)) {
+      // Ni la création d'un autre projet que celui de la conversation (l'Assistant).
+      if (sEpingleAuProjet(active, projetDeLaConversation())) {
         gestes.push(
           bouton(epingle.texte, epingle.titre, () => enregistrer({ ...active, epingle: epingle.suivante }),
             `ghost panneau-btn${active.epingle === "projet" ? " panneau-btn-actif" : ""}`),
@@ -511,6 +596,12 @@ export function createPanneauView(ctx) {
       outils.hidden = true;
     }
 
+    const ajouter = document.getElementById("panneau-ajouter");
+    if (ajouter) {
+      const libelle = dansLAssistant() ? "Montrer une création d'un projet" : "Montrer une création du projet";
+      ajouter.title = libelle;
+      ajouter.setAttribute("aria-label", libelle);
+    }
     const catalogue = document.getElementById("panneau-catalogue");
     const montrerCatalogue = local.catalogue || !local.vues.length;
     if (montrerCatalogue && catalogue.hidden) rendreCatalogue(catalogue);

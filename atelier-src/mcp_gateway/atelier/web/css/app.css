@@ -3756,6 +3756,11 @@ button.session-face-link {
   }
 }
 
+/* Le catalogue de l'Assistant : un bloc par projet, séparés. */
+.panneau-projet + .panneau-projet {
+  margin-top: var(--esp-4, 1rem);
+}
+
 .panneau {
   display: flex;
   flex-direction: column;

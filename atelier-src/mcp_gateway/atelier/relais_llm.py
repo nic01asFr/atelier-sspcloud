@@ -51,10 +51,26 @@ from typing import Any, Awaitable, Callable
 import httpx
 
 from mcp_gateway.atelier.config import AtelierSettings, fenetre_du_modele, get_settings
+from mcp_gateway.atelier.models_catalog import est_un_modele_de_conversation
+from mcp_gateway.atelier.fournisseurs import (
+    Fournisseur,
+    charger_fournisseurs,
+    fournisseur_du_modele,
+    identifiant_sspcloud,
+    modele_sspcloud_nu,
+)
+from mcp_gateway.atelier.traduction_openai import (
+    TraducteurDeFlux,
+    flux_depuis_message,
+    reponse_vers_anthropic,
+    vers_openai,
+)
 
 log = logging.getLogger("atelier.relais_llm")
 
 HOTE = "127.0.0.1"
+DUREE_DE_LA_LISTE_S = 300
+DELAI_DE_LA_LISTE_S = 5.0
 CHEMIN_SANTE = "/_relais/sante"
 
 # Ce qui ne traverse pas un relais : les en-têtes de la connexion elle-même.
@@ -303,10 +319,15 @@ class RelaisLLM:
         *,
         ratio: float = 3.4,
         client: httpx.AsyncClient | None = None,
+        fournisseurs: Callable[[], list[Fournisseur]] | None = None,
     ) -> None:
         self.amont = amont.rstrip("/")
         self.ratio = ratio
         self._client = client
+        # Relus à chaque requête : déposer une clé suffit, sans redémarrage.
+        self._fournisseurs = fournisseurs or (lambda: [])
+        # (instant, entrées) de la dernière liste lue, par source.
+        self._listes: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -354,6 +375,10 @@ class RelaisLLM:
             await _repondre_json(send, 200, {"ok": True, "amont": self.amont})
             return
 
+        if methode == "GET" and chemin.rstrip("/") in ("/v1/models", "/models"):
+            await self._catalogue(scope, send)
+            return
+
         messages = methode == "POST" and chemin.rstrip("/") in ("/v1/messages", "/v1/messages/count_tokens")
         corps: dict[str, Any] = {}
         if messages:
@@ -364,6 +389,12 @@ class RelaisLLM:
                 corps = {}
         entree = estimer(caracteres_de_la_requete(corps), self.ratio) if messages else 0
         modele = str(corps.get("model") or "")
+        nu = modele_sspcloud_nu(modele)
+        if messages and nu != modele:
+            # `claude-ssp-<modèle>` : l'identifiant public du catalogue ; l'amont
+            # ne connaît que le nom nu.
+            corps["model"] = modele = nu
+            brut = json.dumps(corps, ensure_ascii=False).encode("utf-8")
         fenetre = fenetre_du_modele(modele)
 
         if messages and chemin.rstrip("/").endswith("/count_tokens"):
@@ -372,6 +403,11 @@ class RelaisLLM:
             # avec l'usage qu'on rapporte en flux.
             await _repondre_json(send, 200, {"input_tokens": entree})
             self._noter(methode, chemin, modele, None, 200, entree, None, debut)
+            return
+
+        cible = fournisseur_du_modele(self._fournisseurs(), modele) if messages else None
+        if cible is not None:
+            await self._via_fournisseur(send, corps, cible, entree, fenetre, debut)
             return
 
         if messages:
@@ -407,6 +443,170 @@ class RelaisLLM:
                 await self._transparent(reponse, send)
         finally:
             await reponse.aclose()
+
+    async def _lire_liste(self, source: str, url: str, entetes: list[tuple[str, str]]) -> list[dict[str, Any]]:
+        """Les modèles de conversation d'une source, en cache 5 min ; périmé plutôt que rien."""
+        connu = self._listes.get(source)
+        if connu and time.monotonic() - connu[0] < DUREE_DE_LA_LISTE_S:
+            return connu[1]
+        try:
+            reponse = await self.client.get(url, headers=entetes, timeout=DELAI_DE_LA_LISTE_S)
+            donnees = reponse.json() if reponse.status_code == 200 else None
+        except (httpx.HTTPError, ValueError):
+            donnees = None
+        if not isinstance(donnees, dict) or not isinstance(donnees.get("data"), list):
+            return connu[1] if connu else []
+        entrees = [e for e in donnees["data"] if isinstance(e, dict) and est_un_modele_de_conversation(e)]
+        self._listes[source] = (time.monotonic(), entrees)
+        return entrees
+
+    async def _catalogue(self, scope: dict[str, Any], send: Envoyer) -> None:
+        """`GET /v1/models` : les modèles de l'amont et des fournisseurs, en un seul catalogue.
+
+        Claude Code lit cette liste (`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`)
+        pour remplir son sélecteur `/model`. Filtrée, pour qu'il ne propose ni
+        embeddings, ni lecture de documents, ni modèle écarté ; préfixée
+        (`albert/…`) pour les fournisseurs, dont la clé reste ici.
+        """
+        elements: list[dict[str, Any]] = []
+        for e in await self._lire_liste("amont", f"{self.amont}/v1/models", _entetes_pour_l_amont(scope)):
+            elements.append({"id": identifiant_sspcloud(str(e["id"])), "display_name": str(e.get("name") or e["id"]), "description": "SSP Cloud"})
+        for f in self._fournisseurs():
+            entetes = [("authorization", f"Bearer {f.cle}"), ("accept-encoding", "identity")]
+            for e in await self._lire_liste(f.id, f"{f.base_url}/models", entetes):
+                natif = str(e["id"]) in f.outils_natifs
+                elements.append(
+                    {
+                        "id": f.identifiant_public(str(e["id"])),
+                        "display_name": f"{f.nom} · {e['id']}",
+                        "description": f.nom + ("" if natif else " (outils imposés par l'Atelier)"),
+                    }
+                )
+        donnees = [
+            {"type": "model", "id": x["id"], "display_name": x["display_name"], "description": x["description"], "created_at": "1970-01-01T00:00:00Z"}
+            for x in elements
+        ]
+        await _repondre_json(
+            send,
+            200,
+            {"data": donnees, "has_more": False, "first_id": donnees[0]["id"] if donnees else None, "last_id": donnees[-1]["id"] if donnees else None},
+        )
+
+    async def _via_fournisseur(
+        self,
+        send: Envoyer,
+        corps: dict[str, Any],
+        cible: tuple[Fournisseur, str],
+        entree: int,
+        fenetre: int,
+        debut: float,
+    ) -> None:
+        """Un modèle d'un fournisseur OpenAI : on traduit, on appelle avec SA clé.
+
+        La clé que le CLI envoie est celle de SSPCloud : elle ne part jamais
+        chez un autre fournisseur.
+        """
+        fournisseur, modele_amont = cible
+        # Un modèle dont l'analyse native des appels d'outils échoue chez le
+        # fournisseur est contraint ; son flux est alors rejoué, pas diffusé.
+        contraint = modele_amont not in fournisseur.outils_natifs
+        charge = vers_openai(corps, modele_amont, contraint=contraint)
+        flux_demande = bool(corps.get("stream"))
+        modele = str(corps.get("model") or "")
+        try:
+            demande = self.client.build_request(
+                "POST",
+                f"{fournisseur.base_url}/chat/completions",
+                headers={
+                    "authorization": f"Bearer {fournisseur.cle}",
+                    "content-type": "application/json",
+                    "accept-encoding": "identity",
+                },
+                content=json.dumps(charge, ensure_ascii=False).encode("utf-8"),
+            )
+            reponse = await self.client.send(demande, stream=True)
+        except httpx.HTTPError as exc:
+            log.warning("fournisseur %s injoignable : %s", fournisseur.id, type(exc).__name__)
+            await _repondre_json(
+                send,
+                502,
+                {"type": "error", "error": {"type": "api_error", "message": f"{fournisseur.nom} injoignable"}},
+            )
+            return
+        try:
+            if reponse.status_code >= 400:
+                texte = (await reponse.aread()).decode("utf-8", "replace")
+                reecrite = erreur_trop_long(texte, fenetre)
+                if reecrite is not None:
+                    await _repondre_json(send, 400, reecrite)
+                else:
+                    message = f"{fournisseur.nom} : HTTP {reponse.status_code} — {texte[:300]}"
+                    await _repondre_json(
+                        send, reponse.status_code, {"type": "error", "error": {"type": "api_error", "message": message}}
+                    )
+                self._noter("POST", "/v1/messages", modele, flux_demande, reponse.status_code, entree, None, debut)
+            elif charge.get("stream"):
+                sortie = await self._flux_traduit(reponse, send, modele, entree, fenetre)
+                self._noter("POST", "/v1/messages", modele, True, 200, entree, sortie, debut)
+            else:
+                try:
+                    donnees = json.loads(await reponse.aread())
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    donnees = None
+                if not isinstance(donnees, dict):
+                    await _repondre_json(
+                        send, 502, {"type": "error", "error": {"type": "api_error", "message": f"{fournisseur.nom} : réponse illisible"}}
+                    )
+                else:
+                    message = corriger_reponse_entiere(reponse_vers_anthropic(donnees, modele), entree, self.ratio)
+                    if flux_demande:
+                        await self._rejouer(send, message, entree, fenetre)
+                    else:
+                        await _repondre_json(send, 200, message)
+                self._noter("POST", "/v1/messages", modele, flux_demande, reponse.status_code, entree, None, debut)
+        finally:
+            await reponse.aclose()
+
+    async def _rejouer(self, send: Envoyer, message: dict[str, Any], entree: int, fenetre: int) -> None:
+        """Un message entier, rendu comme un flux SSE."""
+        correcteur = CorrecteurDuFlux(entree, self.ratio, fenetre)
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"text/event-stream"), (b"cache-control", b"no-cache")],
+            }
+        )
+        for ev in flux_depuis_message(message):
+            data = correcteur.ligne("data: " + json.dumps(ev, ensure_ascii=False))
+            texte = f"event: {ev['type']}\n{data}\n\n"
+            await send({"type": "http.response.body", "body": texte.encode("utf-8"), "more_body": True})
+        await send({"type": "http.response.body", "body": b""})
+
+    async def _flux_traduit(
+        self, reponse: httpx.Response, send: Envoyer, modele: str, entree: int, fenetre: int
+    ) -> int:
+        traducteur = TraducteurDeFlux(modele)
+        correcteur = CorrecteurDuFlux(entree, self.ratio, fenetre)
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"text/event-stream"), (b"cache-control", b"no-cache")],
+            }
+        )
+
+        async def emettre(evenements: list[dict[str, Any]]) -> None:
+            for ev in evenements:
+                data = correcteur.ligne("data: " + json.dumps(ev, ensure_ascii=False))
+                texte = f"event: {ev['type']}\n{data}\n\n"
+                await send({"type": "http.response.body", "body": texte.encode("utf-8"), "more_body": True})
+
+        async for ligne in reponse.aiter_lines():
+            await emettre(traducteur.ligne(ligne))
+        await emettre(traducteur.fin())
+        await send({"type": "http.response.body", "body": b""})
+        return estimer(correcteur.caracteres_sortie, self.ratio)
 
     async def _flux(
         self, reponse: httpx.Response, send: Envoyer, entree: int, fenetre: int
@@ -588,7 +788,11 @@ def main() -> None:
     # Boucle locale seulement, sans option pour en sortir : le relais porte
     # les clés des appelants vers la passerelle.
     uvicorn.run(
-        RelaisLLM(args.amont, ratio=args.ratio),
+        RelaisLLM(
+            args.amont,
+            ratio=args.ratio,
+            fournisseurs=lambda: charger_fournisseurs(get_settings()),
+        ),
         host=HOTE,
         port=args.port,
         log_level="warning",

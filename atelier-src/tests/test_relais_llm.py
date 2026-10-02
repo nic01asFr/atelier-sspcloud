@@ -271,8 +271,10 @@ def test_une_reponse_non_streamee_est_completee(relais: str) -> None:
 
 
 def test_le_reste_passe_tel_quel(relais: str) -> None:
+    # La liste des modèles n'est plus transmise brute : c'est le catalogue du
+    # relais (identifiants `claude-ssp-…` que Claude Code retient).
     r = httpx.get(relais + "/v1/models", timeout=10)
-    assert r.status_code == 200 and r.json()["data"][0]["id"] == "qwen3-6-35b-moe"
+    assert r.status_code == 200 and r.json()["data"][0]["id"] == "claude-ssp-qwen3-6-35b-moe"
     r = httpx.post(relais + "/v1/autre", json={}, timeout=10)
     assert r.status_code == 404
 

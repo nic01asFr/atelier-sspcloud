@@ -37,7 +37,38 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
   vide ; `atelier_artefact_verifier` et `atelier_montrer` rendent des
   `avertissements` pour une page autonome (index absent, fichier introuvable,
   chemin absolu, ressource externe bloquée) ; les consignes disent qu'il n'y a
-  aucun bouton « Exposer ».
+  aucun bouton « Exposer » ;
+- panneau de l'Assistant : son catalogue (« + ») liste les créations de tous les
+  projets, rangées par projet, au lieu d'échouer sur « projet inconnu :
+  wikichat-memory » ; la personne peut en montrer une, comme l'agent ; les onglets
+  d'un autre projet disent leur projet ; l'épingle « au projet » n'est plus
+  proposée pour eux (elle échouait avec un message obscur) ; le catalogue d'une
+  conversation ne reste plus affiché dans la suivante, et une note d'erreur ne
+  survit plus à une action réussie ;
+- VS Code : l'extension `atelier-ouvre-claude`, qui ouvre la conversation courante, n'était
+  posée par rien depuis le retrait de `deploy-patches/` : le lien « VS Code » rouvrait la
+  dernière conversation. Le script de démarrage l'installe désormais à chaque démarrage ;
+  la consigne porte sa date et l'extension jette une consigne de plus d'une demi-heure ;
+  le lien existe aussi dans l'Assistant, pour sa conversation.
+- choix du modèle : la liste ajoute les modèles que l'API du modèle annonce
+  (`/v1/models`, cache de 5 min, panne tolérée), après les créneaux des
+  réglages ; les préréglages, plongements et modèles écartés n'y figurent pas.
+- fournisseurs OpenAI : Albert API (et d'autres, déclarés dans
+  `fournisseurs.json`) s'utilisent comme SSPCloud. Le relais LLM traduit
+  Anthropic ⇄ OpenAI (messages, outils, flux), appelle le fournisseur avec sa
+  propre clé, et le choix du modèle les liste (`albert/<modèle>`). Il suffit
+  de déposer `~/work/.secrets/albert_api_key`.
+  Les modèles d'Albert qui n'analysent pas bien les appels d'outils (deepseek,
+  gemma, qwen3-coder, mistral : réponse vide ou appel écrit en texte) sont
+  contraints : le relais leur impose d'appeler un outil, avec un outil
+  `repondre` qu'il reconvertit en texte ; gpt-oss-120b reste en direct.
+- sélecteur `/model` de Claude Code : le relais sert `GET /v1/models`, le catalogue
+  filtré (sans embeddings, lecture de documents ni modèles écartés) des modèles
+  SSPCloud et des fournisseurs, et Claude Code le lit
+  (`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`, posé pour l'Atelier, VS Code et
+  le terminal). Claude Code ne retient que les identifiants contenant `claude` ou
+  `anthropic` : le relais publie `claude-ssp-<modèle>` et `claude-albert-<modèle>`
+  et retire le préfixe en transmettant ; les noms nus restent valables.
 
 Préparation de la publication du dépôt :
 

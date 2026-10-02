@@ -471,3 +471,26 @@ def test_la_liste_des_creations_dit_quoi_faire_de_leurs_adresses(atelier: TestCl
     conv = conversation(atelier, "demo")
     charge, erreur = appeler(outils(atelier), "atelier_artefacts", conv, projet="demo")
     assert not erreur and "atelier_montrer" in charge["pour_toi"]
+
+
+def test_la_personne_choisit_dans_tous_les_projets_pour_l_assistant(atelier: TestClient) -> None:
+    """Son catalogue range les créations de tous les projets : le choix de la
+    personne s'enregistre, à la conversation (l'épingle « au projet » n'a pas de sens)."""
+    conv = conversation_assistant(atelier)
+    r = atelier.put(
+        f"/v1/panneau/{conv}/vues",
+        json={"projet": "autre", "nom": "secret", "epingle": "projet"},
+        headers=porteur(atelier),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["projet"] == "autre" and r.json()["epingle"] == "conversation"
+    vues = atelier.get(f"/v1/panneau/{conv}", headers=porteur(atelier)).json()["vues"]
+    assert [(v["projet"], v["nom"]) for v in vues] == [("autre", "secret")]
+
+
+def test_dans_un_projet_la_personne_ne_montre_que_les_creations_du_projet(atelier: TestClient) -> None:
+    conv = conversation(atelier, "demo")
+    r = atelier.put(f"/v1/panneau/{conv}/vues", json={"projet": "autre", "nom": "secret"}, headers=porteur(atelier))
+    assert r.status_code == 400 and "ne montre que" in r.json()["detail"]
+    r = atelier.put(f"/v1/panneau/{conv}/vues", json={"projet": "demo", "nom": "site", "epingle": "projet"}, headers=porteur(atelier))
+    assert r.status_code == 200 and r.json()["epingle"] == "projet"

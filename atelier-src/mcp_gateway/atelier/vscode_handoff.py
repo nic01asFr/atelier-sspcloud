@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 import logging
 import re
 import shutil
@@ -114,6 +115,8 @@ def claude_extension_env(settings: AtelierSettings) -> list[dict[str, str]]:
     env: list[dict[str, str]] = [
         {"name": "ANTHROPIC_BASE_URL", "value": base_url_des_surfaces(settings)},
     ]
+    if settings.relais_llm:
+        env.append({"name": "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "value": "1"})
     model = (settings.default_model or "").strip()
     if model:
         env.append({"name": "ANTHROPIC_MODEL", "value": model})
@@ -243,6 +246,10 @@ def _merge_claude_settings_file(path: Path, settings: AtelierSettings) -> None:
     for ancien in OBSOLETES:
         env.pop(ancien, None)
     env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(fenetre_minimale())
+    # Le sélecteur `/model` de Claude Code liste les modèles que le relais
+    # annonce (SSPCloud et fournisseurs), sur toutes les surfaces.
+    if settings.relais_llm:
+        env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] = "1"
     # L'effort, pour tout ce qui lance `claude` sans passer par nos tours :
     # l'extension VS Code, le terminal, les agents de wikichat. Notre harnais
     # le fixait pour lui seul ; le 16 septembre, les erreurs « Unexpected
@@ -607,8 +614,12 @@ def write_resume_sidecar(
     dossier = cwd or settings.projects_dir / slug
     root = dossier / ".atelier"
     root.mkdir(parents=True, exist_ok=True)
+    # `ecrit_le` : la consigne vaut pour une ouverture, tout de suite. L'extension
+    # ignore celle qu'un dossier garde depuis des heures (jamais lue, parce que
+    # code-server n'avait pas ouvert ce dossier) plutôt que d'y ouvrir une
+    # conversation d'hier.
     (root / "session.json").write_text(
-        json.dumps({"session_id": session_id, "slug": slug}, indent=2) + "\n",
+        json.dumps({"session_id": session_id, "slug": slug, "ecrit_le": int(time.time())}, indent=2) + "\n",
         encoding="utf-8",
     )
     path = root / "OPEN_CLAUDE_SESSION.md"

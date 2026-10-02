@@ -328,8 +328,14 @@ def enregistrer_panneau(
     def panneau_enregistrer(
         session_id: str, vue: dict[str, Any] = Body(...), _owner: str = Depends(require_owner)
     ) -> dict[str, Any]:
+        from mcp_gateway.atelier.commandes.profils import est_de_l_assistant
+
+        # Dans une conversation de l'Assistant, la personne choisit dans les
+        # créations de tous les projets ; ailleurs, dans celles de son projet.
+        rec = store.get(session_id)
+        tout_projet = rec is not None and est_de_l_assistant(store, rec)
         try:
-            return panneau.enregistrer(session_id, vue)
+            return panneau.enregistrer(session_id, vue, tout_projet=tout_projet)
         except (KeyError, VueInvalide) as exc:
             raise _erreur(exc) from None
 

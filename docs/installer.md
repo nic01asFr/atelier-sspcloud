@@ -101,6 +101,31 @@ applications, et « Ouvrir » reste grisé pour les créations et les bureaux.
 | `ATELIER_MODELE`, `ATELIER_MODELE_OPUS`, `ATELIER_MODELES_DE_REPLI` | modèle principal, créneau opus, replis (le dernier sert aussi haiku) | `qwen3-6-35b-moe` ; `qwen3-6-35b-moe` ; `qwen3-8-27b` |
 | `CODE_SERVER_VERSION`, `NODE_VERSION` | versions épinglées | `4.135.0`, `22.23.2` |
 
+### Albert API et autres fournisseurs OpenAI
+
+L'API SSPCloud parle le format Anthropic ; Albert, non. Le relais LLM traduit
+au passage (requête, réponse, flux, appels d'outils) pour les modèles d'un
+fournisseur déclaré. Déposer la clé suffit :
+
+```bash
+printf '%s' "<clé Albert>" > ~/work/.secrets/albert_api_key && chmod 600 ~/work/.secrets/albert_api_key
+```
+
+Les modèles d'Albert apparaissent alors dans le sélecteur `/model` de Claude
+Code (Atelier, VS Code, terminal) et dans le choix du modèle d'un agent, sous
+le nom `claude-albert-<modèle>` : Claude Code ne retient que les identifiants
+contenant « claude » ou « anthropic », le relais retire le préfixe en
+transmettant. Les modèles SSPCloud y figurent aussi (`claude-ssp-<modèle>`). La clé de SSPCloud n'est jamais envoyée à Albert : le
+relais utilise la clé du fournisseur. Pas de redémarrage. Un autre fournisseur
+au format OpenAI se déclare dans `~/work/.secrets/fournisseurs.json`
+(`{"mon-id": {"nom": "…", "base_url": "https://…/v1"}}`, clé dans
+`mon-id_api_key`). Pour les modèles dont le fournisseur ne rend pas les appels d'outils en mode
+automatique, le relais impose un appel d'outil et reconvertit en texte l'outil
+factice `repondre` ; ces réponses arrivent d'un bloc, pas mot à mot. Les
+modèles sûrs se listent dans `outils_natifs` (par défaut `gpt-oss-120b`).
+Cette voie ne passe pas par les fournisseurs d'Onyxia : leur
+clé n'arrive à l'Atelier qu'à l'installation, et un seul modèle avec elle.
+
 `gemma4-26b-moe` n'est plus proposé à Claude Code (ni créneau opus, ni repli) :
 mesuré le 25/09/2026, il échoue dès le premier tour (`'None' has no attribute
 'split'`). Un pod installé avant garde son `settings.json` ; l'Atelier l'en

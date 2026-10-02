@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
-from mcp_gateway.atelier.config import AtelierSettings
+from mcp_gateway.atelier.config import MODELES_ECARTES, AtelierSettings
 
 
 def _settings_paths(settings: AtelierSettings) -> list[Path]:
@@ -27,8 +31,87 @@ def _load_claude_settings(settings: AtelierSettings) -> dict[str, Any]:
     return {}
 
 
-def list_available_models(settings: AtelierSettings) -> dict[str, Any]:
-    """Modèles exposés à l'UI (select), dérivés de ~/.claude/settings.json."""
+DUREE_DU_CACHE_S = 300
+DELAI_AMONT_S = 3.0
+# (instant, ids) de la dernière lecture réussie, par adresse d'API.
+_cache: dict[str, tuple[float, list[str]]] = {}
+
+
+def _cle(settings: AtelierSettings) -> str:
+    depuis_env = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if depuis_env:
+        return depuis_env
+    try:
+        return settings.llm_key_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+_TYPES_DE_CONVERSATION = {"text-generation", "image-text-to-text"}
+
+
+def est_un_modele_de_conversation(entree: dict[str, Any]) -> bool:
+    """Écarte les préréglages, les plongements, la voix et les modèles sans identifiant."""
+    mid = str(entree.get("id") or "")
+    bas = mid.lower()
+    if not mid or entree.get("preset") or any(m in bas for m in ("embed", "whisper", "ocr", "rerank")):
+        return False
+    # Albert type ses modèles ; SSPCloud non.
+    if entree.get("type") and entree["type"] not in _TYPES_DE_CONVERSATION:
+        return False
+    return mid not in MODELES_ECARTES
+
+
+def _lire_modeles(base: str, cle: str, *, en_direct: bool) -> list[str]:
+    """Identifiants annoncés par `GET <base>/models`, avec cache.
+
+    `en_direct=False` ne lit que le cache : l'appelant n'attend jamais le
+    réseau. Toute panne rend la dernière liste connue, ou rien.
+    """
+    connu = _cache.get(base)
+    if connu and (not en_direct or time.monotonic() - connu[0] < DUREE_DU_CACHE_S):
+        return list(connu[1])
+    if not en_direct or not cle:
+        return []
+    requete = urllib.request.Request(
+        f"{base}/models", headers={"Authorization": f"Bearer {cle}", "x-api-key": cle}
+    )
+    try:
+        with urllib.request.urlopen(requete, timeout=DELAI_AMONT_S) as reponse:
+            data = json.loads(reponse.read().decode("utf-8"))
+        entrees = data.get("data") if isinstance(data, dict) else None
+        ids = [
+            str(e["id"]) for e in entrees or [] if isinstance(e, dict) and est_un_modele_de_conversation(e)
+        ]
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError):
+        return list(connu[1]) if connu else []
+    _cache[base] = (time.monotonic(), ids)
+    return ids
+
+
+def modeles_de_l_api(settings: AtelierSettings, *, en_direct: bool) -> list[str]:
+    """Modèles de l'API SSPCloud (format Anthropic)."""
+    return _lire_modeles(settings.anthropic_base_url.rstrip("/"), _cle(settings), en_direct=en_direct)
+
+
+def modeles_des_fournisseurs(settings: AtelierSettings, *, en_direct: bool) -> list[tuple[str, str]]:
+    """(id préfixé, libellé) des modèles des fournisseurs OpenAI, Albert compris."""
+    from mcp_gateway.atelier.fournisseurs import charger_fournisseurs
+
+    sortie: list[tuple[str, str]] = []
+    for f in charger_fournisseurs(settings):
+        for mid in _lire_modeles(f.base_url, f.cle, en_direct=en_direct):
+            sortie.append((f.identifiant_public(mid), f"{f.nom} · {mid}"))
+    return sortie
+
+
+def list_available_models(settings: AtelierSettings, *, en_direct: bool = False) -> dict[str, Any]:
+    """Modèles exposés à l'UI (select) : ~/.claude/settings.json, puis l'API.
+
+    Les créneaux des réglages passent en premier (le défaut y est choisi) ;
+    les autres modèles que l'API annonce s'y ajoutent, Albert compris dès
+    qu'elle les expose.
+    """
     raw = _load_claude_settings(settings)
     env = raw.get("env") if isinstance(raw.get("env"), dict) else {}
 
@@ -70,15 +153,10 @@ def list_available_models(settings: AtelierSettings) -> dict[str, Any]:
     elif isinstance(fallback, str) and fallback.strip():
         add(fallback.strip(), None)
 
-    # Alias symboliques utiles si le CLI les accepte encore
-    for alias, target, label in (
-        ("sonnet", sonnet or default, "Équilibré (alias)"),
-        ("opus", opus or default, "Plus capable (alias)"),
-        ("haiku", haiku or default, "Plus rapide (alias)"),
-    ):
-        if target and alias not in ordered:
-            # n'ajoute les alias que s'ils pointent vers un id réel distinct
-            pass
+    for mid in modeles_de_l_api(settings, en_direct=en_direct):
+        add(mid, None)
+    for mid, libelle in modeles_des_fournisseurs(settings, en_direct=en_direct):
+        add(mid, libelle)
 
     models = [
         {
