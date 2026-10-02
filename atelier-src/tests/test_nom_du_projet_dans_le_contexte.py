@@ -70,3 +70,10 @@ def test_le_contexte_d_une_ancienne_installation_est_reecrit_a_l_identique_ensui
     dossier = reglages.projects_dir / "demo"
     assert ecrire_contexte(dossier, "demo", reglages) is True
     assert ecrire_contexte(dossier, "demo", reglages) is False
+
+
+def test_le_contexte_demande_de_dire_ce_qu_on_fait_entre_les_actions(tmp_path) -> None:
+    """Constat du 02/10 : un agent (deepseek via Albert) enchaînait 22 outils sans un mot ;
+    la personne ne voyait que des étapes, sans savoir ce qu'il pensait."""
+    texte = bloc_contexte("demo", tmp_path / "demo", titre="Démo")
+    assert "Te faire suivre" in texte and "dis en une phrase ce que tu fais" in texte
