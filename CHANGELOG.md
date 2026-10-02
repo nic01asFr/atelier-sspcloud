@@ -13,6 +13,12 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- création d'artefact sans erreur inutile : `atelier_artefact_creer` sur un
+  nom pris rend l'artefact existant (`existe_deja`) ; « projet requis » dit
+  quoi passer ; l'Assistant ne voit plus l'outil qu'il se verrait refuser ;
+- gardes : `~/work/.secrets/` est refusé aux commandes des agents, et
+  `expose_public` / `unexpose_public` ne passent plus par `gateway_call_tool`
+  (gestes de la personne) ;
 - une seule version pour le service, le paquet et le chart (0.3.0) ;
 - image redistribuable : le navigateur sans écran et l'extension Claude Code
   sont téléchargés depuis leur source au premier démarrage, puis gardés sur
@@ -94,6 +100,13 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
   collé aux onglets, la barre d'outils a des icônes (Épingler, Recharger, Détacher ; seules
   sur téléphone) et se masque dans le catalogue, qui dit d'où l'on vient (« Retour à … »)
   et présente chaque création en fiche (nom, mode, boutons) au lieu de colonnes brutes.
+- agents : ils se disent sous le nom que la personne a donné au projet. Un projet créé sans
+  titre (dossier `projet-sans-nom-2`) puis renommé « BigStarter » s'affichait ainsi dans
+  l'Atelier, mais l'agent répondait « sur le projet projet-sans-nom-2 » : son contexte
+  (`CLAUDE.md`) ne portait que le nom du dossier. Il porte maintenant le titre, avec le
+  dossier dit à part (« identifiant `projet-sans-nom-2` »), et se régénère au renommage au
+  lieu d'attendre le prochain tour. Le dossier ne change jamais : il est la clé du projet et
+  de ses conversations.
 
 Préparation de la publication du dépôt :
 

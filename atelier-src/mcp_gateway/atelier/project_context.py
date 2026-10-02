@@ -92,8 +92,13 @@ def bloc_contexte(
     *,
     branche: str = "",
     assistant: bool = False,
+    titre: str = "",
 ) -> str:
     """Le contexte de l'Atelier pour ce dossier, tel qu'il doit apparaître.
+
+    `titre` : le nom que la personne a donné au projet. L'agent doit se dire sous
+    ce nom, pas sous celui du dossier (`projet-sans-nom-2` pour un projet créé
+    sans titre puis renommé « BigStarter »).
 
     Une seule fonction, et rien qui dépende de la surface : l'Atelier, VS Code,
     le terminal et un agent lancé lisent le même fichier, écrit par elle. Il
@@ -105,11 +110,16 @@ def bloc_contexte(
     if assistant:
         return "\n".join(_bloc_assistant(chemin))
     outils = ", ".join(f"`{o}`" for o in _outils_du_profil_code()) or "(liste indisponible)"
+    titre = (titre or "").strip()
+    nom = titre if titre and titre != slug else slug
+    # Sous son titre, avec le dossier dit à part : c'est le titre qu'on lit dans
+    # l'Atelier, et l'identifiant du dossier ne change jamais.
+    ou = f"dossier `{chemin}`" if nom == slug else f"dossier `{chemin}`, identifiant `{slug}`"
     lignes = [
         DEBUT,
         "## Ce projet dans l'Atelier",
         "",
-        f"Tu travailles sur le projet **{slug}**, dossier `{chemin}`. Ce texte est le même"
+        f"Tu travailles sur le projet **{nom}**, {ou}. Ce texte est le même"
         " dans l'Atelier, dans VS Code et au terminal ; l'Atelier le régénère.",
         "",
         "### Ton profil : agent code",
@@ -130,7 +140,7 @@ def bloc_contexte(
         " message ; ils ne sont pas répétés ici.",
         "- Ce que tu retiens avec `remember` n'appartient qu'à toi.",
         f"- Ce que tu écris avec `add_project_note` est partagé par toutes les"
-        f" conversations de **{slug}**.",
+        f" conversations de **{nom}**.",
         "",
         "### Joindre les autres projets",
         "",
@@ -259,11 +269,20 @@ def contexte_attendu(settings: Any, cwd: Path, slug: str) -> tuple[Path, str] | 
     if dossier is None:
         return None
     assistant = slug == settings.assistant_slug
+    titre = ""
+    if not assistant:
+        try:
+            from mcp_gateway.atelier.projects import ProjectStore
+
+            titre = ProjectStore(settings).titre_choisi(slug)
+        except Exception:  # noqa: BLE001 — le contexte s'écrit sans titre plutôt que de ne pas s'écrire
+            titre = ""
     bloc = bloc_contexte(
         slug,
         dossier,
         branche="" if assistant else branche_de_la_copie(dossier),
         assistant=assistant,
+        titre=titre,
     )
     return dossier, bloc
 

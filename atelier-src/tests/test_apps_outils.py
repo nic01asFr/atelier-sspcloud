@@ -89,13 +89,15 @@ def test_lister_et_verifier(service: ServiceApps) -> None:
     assert "commande" in vu["erreurs"]["casse"]
 
 
-def test_creer_refuse_un_nom_pris(service: ServiceApps) -> None:
+def test_creer_un_nom_pris_rend_l_existant(service: ServiceApps) -> None:
     outils = OutilsAtelier(store=None, projects=None, harness=None, apps=service)
     vu, erreur = appeler(outils, "atelier_artefact_creer", projet="demo", nom="carte", mode="serveur", auteur="conv-a")
     assert not erreur, vu
     assert vu["mode"] == "serveur" and vu["auteur"] == "conv-a" and "artefact.json" in vu["suite"]
     vu, erreur = appeler(outils, "atelier_artefact_creer", projet="demo", nom="carte", auteur="conv-b")
-    assert erreur and "existe déjà" in vu["erreur"]
+    assert not erreur and vu["existe_deja"] is True and vu["auteur"] == "conv-a"
+    vu, erreur = appeler(outils, "atelier_artefact_creer", projet="demo")
+    assert erreur and "nom requis" in vu["erreur"] and "atelier_projets" in vu["erreur"]
     vu, erreur = appeler(outils, "atelier_artefact_creer", projet="demo", nom="Pas_Un_Nom")
     assert erreur
 

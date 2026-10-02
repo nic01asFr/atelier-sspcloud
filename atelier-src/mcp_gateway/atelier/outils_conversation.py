@@ -860,7 +860,12 @@ class OutilsAtelier:
         projet = (args.get("projet") or "").strip()
         nom = (args.get("nom") or "").strip()
         if not projet or not nom:
-            raise _Refus("projet et nom requis")
+            manque = " et ".join(c for c, v in (("projet", projet), ("nom", nom)) if not v)
+            raise _Refus(
+                f"{manque} requis : atelier_artefact_*(projet=\"<identifiant du projet>\", "
+                "nom=\"<nom-de-l-artefact>\"). Le projet est celui de la conversation "
+                "(atelier_projets les liste)."
+            )
         return projet, nom
 
     @staticmethod
@@ -901,6 +906,15 @@ class OutilsAtelier:
             )
         try:
             fiche = service.creer(projet, nom, (args.get("mode") or "autonome").strip(), self._auteur(args))
+        except FileExistsError:
+            # Créer ce qui existe déjà n'est pas une faute : l'agent poursuit avec.
+            existant = service.fiche(projet, nom, service._manifeste_ou_none(projet, nom))
+            existant["existe_deja"] = True
+            existant["suite"] = (
+                f"artifacts/{nom}/ existait déjà : il est inchangé. Complétez-le, puis "
+                "atelier_artefact_verifier."
+            )
+            return existant
         except (LookupError, ValueError, OSError) as exc:
             raise _Refus(str(exc)) from None
         fiche["suite"] = (

@@ -44,6 +44,13 @@ RAISON_ECOUTE = (
     "déclare-le comme artefact serveur : c'est l'Atelier qui le lance et le sert."
 )
 
+RAISON_SECRETS = (
+    "Refusé par le socle de l'Atelier : ~/work/.secrets/ garde les clés du pod (modèles, passerelle, "
+    "lanceur) ; aucun agent n'a à les lire. Si une commande a besoin d'une clé, elle la reçoit de "
+    "l'Atelier par son environnement."
+)
+_SECRETS = re.compile(r"(?:^|[\s'\"=/:~])(?:[\w./~$-]*/)?\.secrets(?:/|[\s'\"]|$)")
+
 _SEPARATEURS = re.compile(r"\|\||&&|[;|&\n]|\$\(|`|\)")
 _TOUTES_INTERFACES = re.compile(r"(?<![\w.:])(?:0\.0\.0\.0(?![\w.])|\[::\]|::(?![\w.:]))")
 _OPTIONS_HOTE = re.compile(
@@ -102,6 +109,8 @@ def _pidfile(mots: list[str]) -> bool:
 
 def raison_de_refus(commande: str) -> str | None:
     """La raison du refus, ou None si la commande passe."""
+    if _SECRETS.search(commande):
+        return RAISON_SECRETS
     segments = _segments(commande)
     tue = any(os.path.basename(s[0]) in ("kill", "xargs") and (os.path.basename(s[0]) == "kill" or "kill" in s) for s in segments)
     for mots in segments:
