@@ -201,8 +201,14 @@ class Panneau:
             raise VueInvalide(str(exc)) from None
         _ecrire_json(chemin, donnees)
 
-    def enregistrer(self, session_id: str, vue: dict[str, Any]) -> dict[str, Any]:
-        """Épingle une vue, à la conversation ou au projet ; la retire de l'autre."""
+    def enregistrer(self, session_id: str, vue: dict[str, Any], *, tout_projet: bool = False) -> dict[str, Any]:
+        """Épingle une vue, à la conversation ou au projet ; la retire de l'autre.
+
+        Une conversation ne montre que les créations de son projet. Seule
+        l'Assistant, qui n'a pas de projet à lui et orchestre ceux des autres,
+        passe `tout_projet` : montrer n'écrit rien dans le projet montré, et la
+        vue reste épinglée à sa conversation.
+        """
         rec = self.store.get(session_id)
         if rec is None:
             raise KeyError(session_id)
@@ -212,7 +218,9 @@ class Panneau:
             epingle=str(vue.get("epingle") or "conversation"), par=str(vue.get("par") or "personne"),
         )
         if propre["projet"] != rec.slug:
-            raise VueInvalide("une conversation ne montre que les créations de son projet")
+            if not tout_projet:
+                raise VueInvalide("une conversation ne montre que les créations de son projet")
+            propre["epingle"] = "conversation"
         with self._verrou:
             conv = [v for v in self.vues_de_la_conversation(session_id) if v["id"] != propre["id"]]
             projet = [v for v in self.vues_du_projet(rec.slug) if v["id"] != propre["id"]]
@@ -244,12 +252,13 @@ class Panneau:
             return len(reste_conv) != len(conv) or len(reste_projet) != len(projet)
 
     def montrer(
-        self, session_id: str, *, projet: str, nom: str, chemin: str = "", titre: str = ""
+        self, session_id: str, *, projet: str, nom: str, chemin: str = "", titre: str = "", tout_projet: bool = False
     ) -> dict[str, Any]:
         """Ce que fait l'agent : épingler à la conversation, et ouvrir le panneau."""
         vue = self.enregistrer(
             session_id,
             {"projet": projet, "nom": nom, "chemin": chemin, "titre": titre, "epingle": "conversation", "par": "agent"},
+            tout_projet=tout_projet,
         )
         if self.publier is not None:
             try:

@@ -25,7 +25,19 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
   disponible sous « Détails techniques » ;
 - panneau : la politique CSP autorise le widget Atlas servi par
   `https://nic01asfr.github.io` dans une iframe, tout en continuant d'interdire
-  l'encapsulation de l'Atelier par un autre site.
+  l'encapsulation de l'Atelier par un autre site ;
+- panneau : la même politique nomme aussi l'hôte des applications dans
+  `frame-src`. Sans lui, le navigateur refusait le 302 de `/v1/apps/…/ouvrir`
+  et le cadre des créations et de l'écran du navigateur restait vide, alors
+  que le service répondait ;
+- agents et créations : l'Assistant montre la création d'un autre projet
+  (`atelier_montrer(projet, nom)`) ; il n'écrit pas de fichiers, donc
+  `atelier_artefact_creer` et `atelier_navigateur_ouvrir` lui sont refusés avec
+  la voie à suivre (déléguer à un agent code), au lieu de laisser un dossier
+  vide ; `atelier_artefact_verifier` et `atelier_montrer` rendent des
+  `avertissements` pour une page autonome (index absent, fichier introuvable,
+  chemin absolu, ressource externe bloquée) ; les consignes disent qu'il n'y a
+  aucun bouton « Exposer ».
 
 Préparation de la publication du dépôt :
 

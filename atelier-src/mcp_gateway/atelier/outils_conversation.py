@@ -390,7 +390,9 @@ class OutilsAtelier:
                     "Crée artifacts/<nom>/ d'un seul geste et refuse un nom déjà pris : aucune "
                     "conversation n'écrit par-dessus une autre. `mode` : autonome (défaut ; déposez-y "
                     "vos fichiers) ou serveur (un artefact.json à compléter est posé : commande avec "
-                    "{port}, sante, protocoles)."
+                    "{port}, sante, protocoles). Crée le dossier, rien de plus : tes fichiers, c'est "
+                    "à toi de les écrire. L'Assistant n'écrit pas de fichiers : il délègue à un "
+                    "agent code (atelier_lancer_agent)."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -438,7 +440,8 @@ class OutilsAtelier:
                 "description": (
                     "Vérifie les artefact.json d'un projet sans rien lancer : ce qui est valide, ce qui "
                     "ne l'est pas et pourquoi. Avec `nom`, dit aussi si l'artefact tourne et répond à "
-                    "sa sonde."
+                    "sa sonde ; pour une page autonome, `avertissements` dit ce que index.html "
+                    "promet sans le tenir (fichier absent, chemin absolu, ressource externe bloquée)."
                 ),
                 "inputSchema": {"type": "object", "properties": artefact, "required": ["projet"]},
             },
@@ -448,10 +451,12 @@ class OutilsAtelier:
                 "name": "atelier_montrer",
                 "description": (
                     "Montre une création de ton projet dans le panneau de ta conversation, à côté "
-                    "du fil : le panneau s'ouvre seul chez la personne. À appeler dès qu'une page "
-                    "ou une application est prête, ou après l'avoir modifiée, au lieu de demander "
-                    "d'ouvrir un onglet. `nom` : le dossier artifacts/<nom>/ ; `chemin` : une page "
-                    "sous elle (facultatif)."
+                    "du fil : le panneau s'ouvre seul chez la personne, sans geste de sa part (il n'y "
+                    "a aucun bouton « exposer »). À appeler dès qu'une page ou une application est "
+                    "prête, ou après l'avoir modifiée, au lieu de demander d'ouvrir un onglet. "
+                    "`nom` : le dossier artifacts/<nom>/ ; `chemin` : une page sous elle (facultatif). "
+                    "L'Assistant n'a pas de projet à lui : il passe `projet` et montre la création "
+                    "d'un projet sans y écrire."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -461,7 +466,10 @@ class OutilsAtelier:
                         "titre": {"type": "string", "description": "Titre de l'onglet (défaut : le nom)."},
                         "projet": {
                             "type": "string",
-                            "description": "Slug du projet ; défaut et seule valeur admise : celui de ta conversation.",
+                            "description": (
+                                "Slug du projet ; défaut : celui de ta conversation, seule valeur admise "
+                                "pour un agent de projet. L'Assistant le précise."
+                            ),
                         },
                     },
                     "required": ["nom"],
@@ -867,11 +875,30 @@ class OutilsAtelier:
             fiches = service.lister(projet) if projet else service.lister_tout()
         except LookupError as exc:
             raise _Refus(str(exc)) from None
-        return {"hote": service.origine or None, "artefacts": fiches}
+        return {
+            "hote": service.origine or None,
+            "artefacts": fiches,
+            "pour_toi": (
+                "Les adresses (`url`) sont pour la personne : sans session de navigateur elles "
+                "renvoient vers l'Atelier. Pour que la personne voie une création, atelier_montrer ; "
+                "pour l'ouvrir toi-même, atelier_navigateur_ouvrir."
+            ),
+        }
 
     def _outil_artefact_creer(self, args: dict[str, Any]) -> Any:
         service = self._service_apps()
         projet, nom = self._artefact(args)
+        if self._appelant_est_assistant():
+            # Il n'écrit que dans notes/ : le dossier créé resterait vide, et la
+            # personne ouvrirait une page sans rien (vu en production).
+            raise _Refus(
+                "L'Assistant ne dépose pas de fichiers (il n'écrit que dans notes/) : créer le dossier "
+                "laisserait une création vide. Délègue à un agent code du projet avec "
+                f"atelier_lancer_agent(projet=\"{projet}\", message=…) : « crée artifacts/{nom}/ avec "
+                "index.html et ses fichiers, vérifie avec atelier_artefact_verifier, puis montre-la "
+                "avec atelier_montrer ». Une fois prête, montre-la toi-même : "
+                f"atelier_montrer(projet=\"{projet}\", nom=\"{nom}\")."
+            )
         try:
             fiche = service.creer(projet, nom, (args.get("mode") or "autonome").strip(), self._auteur(args))
         except (LookupError, ValueError, OSError) as exc:
@@ -925,7 +952,8 @@ class OutilsAtelier:
     async def _outil_artefact_verifier(self, args: dict[str, Any]) -> Any:
         import httpx
 
-        from mcp_gateway.atelier.apps.manifeste import lister_artefacts
+        from mcp_gateway.atelier.apps.manifeste import dossier_artefact, lister_artefacts
+        from mcp_gateway.atelier.apps.verification import verifier_references
 
         service = self._service_apps()
         projet = (args.get("projet") or "").strip()
@@ -946,6 +974,10 @@ class OutilsAtelier:
             fiche = service.fiche(projet, nom, valides.get(nom), erreurs.get(nom, ""))
             cible = service.superviseur.cible(projet, nom)
             m = valides.get(nom)
+            if not erreurs.get(nom) and (m is None or not m.service):
+                avertissements = verifier_references(dossier_artefact(racine, nom), nom=nom)
+                if avertissements:
+                    fiche["avertissements"] = avertissements
             if cible is not None and cible.port and m is not None:
                 chemin = m.sante or "/"
                 try:
@@ -984,11 +1016,29 @@ class OutilsAtelier:
         if projet != rec.slug:
             raise _Refus(
                 f"projet refusé : {projet}. Ta conversation appartient au projet {rec.slug}, "
-                "et n'agit que sur lui."
+                "et n'agit que sur lui. Pour qu'une création d'un autre projet soit vue, "
+                "l'Assistant peut la montrer (atelier_montrer) ; sinon écris à ses agents par wikichat."
             )
         return projet
 
+    def _est_assistant(self, rec: Any) -> bool:
+        from mcp_gateway.atelier.commandes.profils import est_de_l_assistant
+
+        return est_de_l_assistant(self.store, rec)
+
+    def _appelant_est_assistant(self) -> bool:
+        """Vrai si la conversation qui appelle est celle de l'Assistant ; faux sans conversation connue."""
+        conversation = CONVERSATION_APPELANTE.get()
+        if not conversation:
+            return False
+        from mcp_gateway.atelier.commandes.profils import fiche_de_la_conversation
+
+        rec = fiche_de_la_conversation(self.store, conversation)
+        return rec is not None and self._est_assistant(rec)
+
     def _outil_montrer(self, args: dict[str, Any]) -> Any:
+        from mcp_gateway.atelier.apps.manifeste import dossier_artefact
+        from mcp_gateway.atelier.apps.verification import verifier_references
         from mcp_gateway.atelier.panneau import VueInvalide
 
         service = self._service_apps()
@@ -996,14 +1046,27 @@ class OutilsAtelier:
         if panneau is None:
             raise _Refus("le panneau n'est pas disponible ici")
         rec = self._conversation_appelante()
-        projet = self._projet_de(rec, args)
+        assistant = self._est_assistant(rec)
+        if assistant:
+            # Il n'a pas de projet à lui : il montre celui qu'il nomme, sans y écrire.
+            projet = (args.get("projet") or "").strip()
+            if not projet:
+                raise _Refus(
+                    "précise `projet` : tu es l'Assistant, tu n'as pas de projet à toi. "
+                    "atelier_projets liste les projets, atelier_artefacts(projet) leurs créations."
+                )
+        else:
+            projet = self._projet_de(rec, args)
         nom = (args.get("nom") or "").strip()
+        manifeste = None
         try:
             # Une création qui n'existe pas ne s'ouvre pas : on le dit à l'agent
             # plutôt que d'ouvrir chez la personne un onglet sur une page 404.
-            service.manifeste(projet, nom)
+            manifeste = service.manifeste(projet, nom)
         except LookupError as exc:
-            raise _Refus(str(exc)) from None
+            raise _Refus(
+                f"{exc}. atelier_artefacts{'(projet)' if assistant else ''} liste les créations qui existent."
+            ) from None
         except ValueError:
             pass  # un manifeste invalide se montre quand même : la page le dira
         try:
@@ -1013,11 +1076,26 @@ class OutilsAtelier:
                 nom=nom,
                 chemin=str(args.get("chemin") or ""),
                 titre=str(args.get("titre") or ""),
+                tout_projet=assistant,
             )
         except VueInvalide as exc:
             raise _Refus(str(exc)) from None
         log.info("montrer : agent:%s montre %s/%s", rec.session_id, projet, nom)
-        return {"vue": vue, "suite": "Le panneau de la conversation s'ouvre sur cette création."}
+        retour: dict[str, Any] = {"vue": vue, "suite": "Le panneau de la conversation s'ouvre sur cette création."}
+        if manifeste is None or not manifeste.service:
+            # Le panneau est ouvert quoi qu'il arrive ; l'agent apprend ce que la
+            # personne va voir, avant de lui annoncer que c'est prêt.
+            try:
+                avertissements = verifier_references(dossier_artefact(service.racine_projet(projet), nom), nom=nom)
+            except (LookupError, OSError):
+                avertissements = []
+            if avertissements:
+                retour["avertissements"] = avertissements
+                retour["suite"] += (
+                    " Mais la page promet ce qu'elle ne tient pas (voir avertissements) : corrige avant "
+                    "d'annoncer que c'est prêt."
+                )
+        return retour
 
     def _outil_navigateur_ouvrir(self, args: dict[str, Any]) -> Any:
         from urllib.parse import quote
@@ -1029,6 +1107,13 @@ class OutilsAtelier:
         if not service.expose:
             raise _Refus("pas d'hôte des applications sur cette installation")
         rec = self._conversation_appelante()
+        if self._est_assistant(rec):
+            raise _Refus(
+                "Tu es l'Assistant : ton navigateur n'ouvre que les créations du projet de ta conversation, "
+                "et tu n'en as pas. Pour que la personne voie une création : "
+                "atelier_montrer(projet, nom). Pour la vérifier : atelier_artefact_verifier(projet, nom), "
+                "ou délègue à un agent code du projet (atelier_lancer_agent)."
+            )
         projet = self._projet_de(rec, args)
         try:
             chemin = chemin_valide(str(args.get("chemin") or ""))

@@ -51,6 +51,29 @@ def politique(origine_atelier: str) -> str:
     return f"frame-ancestors {origine}" if origine else "frame-ancestors 'none'"
 
 
+# Le widget Atlas, servi par GitHub Pages, que le panneau encadre.
+WIDGET_ATLAS = "https://nic01asfr.github.io"
+
+
+def politique_interface(adresse_apps: str) -> str:
+    """La CSP de l'interface : ce qu'elle encadre, et qui peut l'encadrer.
+
+    `frame-src` est la seule directive de cadre (pas de `default-src`) : tout ce
+    qu'elle ne nomme pas est refusé, redirections comprises. Le panneau et
+    l'écran du navigateur ouvrent `/v1/apps/…/ouvrir` sur l'Atelier, qui répond
+    par un 302 vers l'hôte des applications : cet hôte doit donc y figurer, sans
+    quoi le cadre reste vide alors que le service répond. Sans adresse
+    d'applications, il n'y a pas d'hôte à nommer et la liste reste celle d'avant.
+    """
+    sources = ["'self'"]
+    origine = origine_normalisee(adresse_apps)
+    if origine:
+        sources.append(origine)
+    if WIDGET_ATLAS not in sources:
+        sources.append(WIDGET_ATLAS)
+    return f"frame-src {' '.join(sources)}; frame-ancestors 'self'"
+
+
 def sans_frame_ancestors(csp: str) -> str:
     """La CSP sans aucune directive `frame-ancestors`."""
     gardees = []

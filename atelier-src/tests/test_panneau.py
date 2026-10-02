@@ -378,3 +378,96 @@ def test_un_projet_json_invalide_n_est_jamais_reecrit(atelier: TestClient) -> No
     )
     assert r.status_code >= 400
     assert chemin.read_text(encoding="utf-8") == avant
+
+
+# ── Les créations selon l'agent : l'Assistant orchestre, l'agent de projet fabrique ──
+
+
+def conversation_assistant(client: TestClient) -> str:
+    etat = client.app.state
+    return etat.store.create(slug=etat.settings.assistant_slug, kind="assistant").session_id
+
+
+def test_l_assistant_montre_la_creation_d_un_autre_projet(atelier: TestClient) -> None:
+    conv = conversation_assistant(atelier)
+    charge, erreur = appeler(outils(atelier), "atelier_montrer", conv, projet="demo", nom="site")
+    assert not erreur, charge
+    assert charge["vue"]["projet"] == "demo" and charge["vue"]["epingle"] == "conversation"
+    vues = atelier.get(f"/v1/panneau/{conv}", headers=porteur(atelier)).json()["vues"]
+    assert [(v["projet"], v["nom"]) for v in vues] == [("demo", "site")]
+    # Montrer n'écrit rien dans le projet montré.
+    assert not (atelier.app.state.settings.projects_dir / "demo" / ".atelier" / "projet.json").exists()
+
+
+def test_l_assistant_doit_nommer_le_projet_qu_il_montre(atelier: TestClient) -> None:
+    conv = conversation_assistant(atelier)
+    charge, erreur = appeler(outils(atelier), "atelier_montrer", conv, nom="site")
+    assert erreur and "précise `projet`" in charge["erreur"] and "atelier_projets" in charge["erreur"]
+
+
+def test_une_creation_inconnue_dit_comment_la_retrouver(atelier: TestClient) -> None:
+    conv = conversation_assistant(atelier)
+    charge, erreur = appeler(outils(atelier), "atelier_montrer", conv, projet="demo", nom="fantome")
+    assert erreur and "atelier_artefacts" in charge["erreur"]
+
+
+def test_l_agent_de_projet_ne_montre_toujours_que_son_projet(atelier: TestClient) -> None:
+    conv = conversation(atelier, "demo")
+    charge, erreur = appeler(outils(atelier), "atelier_montrer", conv, projet="autre", nom="secret")
+    assert erreur and "projet refusé" in charge["erreur"] and "l'Assistant peut la montrer" in charge["erreur"]
+    charge, erreur = appeler(outils(atelier), "atelier_montrer", conv, nom="site")
+    assert not erreur and charge["vue"]["projet"] == "demo"
+
+
+def test_l_assistant_ne_cree_pas_de_dossier_vide(atelier: TestClient) -> None:
+    """Il n'écrit que dans notes/ : `depth-visualizer` est resté un dossier vide."""
+    conv = conversation_assistant(atelier)
+    charge, erreur = appeler(outils(atelier), "atelier_artefact_creer", conv, projet="demo", nom="neuf")
+    assert erreur
+    assert "ne dépose pas de fichiers" in charge["erreur"] and "atelier_lancer_agent" in charge["erreur"]
+    assert not (atelier.app.state.settings.projects_dir / "demo" / "artifacts" / "neuf").exists()
+
+
+def test_l_agent_de_projet_cree_toujours_sa_creation(atelier: TestClient) -> None:
+    conv = conversation(atelier, "demo")
+    charge, erreur = appeler(outils(atelier), "atelier_artefact_creer", conv, projet="demo", nom="neuf")
+    assert not erreur, charge
+    assert (atelier.app.state.settings.projects_dir / "demo" / "artifacts" / "neuf").is_dir()
+
+
+def test_le_navigateur_de_l_assistant_est_refuse_avec_la_voie_a_suivre(atelier: TestClient) -> None:
+    conv = conversation_assistant(atelier)
+    charge, erreur = appeler(outils(atelier), "atelier_navigateur_ouvrir", conv, projet="demo")
+    assert erreur and "atelier_montrer" in charge["erreur"] and "atelier_lancer_agent" in charge["erreur"]
+
+
+def test_montrer_dit_ce_que_la_page_ne_tient_pas(atelier: TestClient) -> None:
+    racine = atelier.app.state.settings.projects_dir / "demo" / "artifacts"
+    (racine / "casse").mkdir()
+    (racine / "casse" / "index.html").write_text(
+        '<img src="dav2_depth.png"><script src="https://cdn.exemple.fr/x.js"></script>', encoding="utf-8"
+    )
+    conv = conversation(atelier, "demo")
+    charge, erreur = appeler(outils(atelier), "atelier_montrer", conv, nom="casse")
+    assert not erreur, charge  # le panneau s'ouvre quand même
+    assert len(charge["avertissements"]) == 2
+    assert "corrige avant d'annoncer" in charge["suite"]
+    charge, erreur = appeler(outils(atelier), "atelier_montrer", conv, nom="site")
+    assert not erreur and "avertissements" not in charge
+
+
+def test_verifier_une_creation_rend_ses_avertissements(atelier: TestClient) -> None:
+    racine = atelier.app.state.settings.projects_dir / "demo" / "artifacts"
+    (racine / "vide").mkdir()
+    conv = conversation(atelier, "demo")
+    charge, erreur = appeler(outils(atelier), "atelier_artefact_verifier", conv, projet="demo", nom="vide")
+    assert not erreur, charge
+    assert "est vide" in charge["artefact"]["avertissements"][0]
+    charge, erreur = appeler(outils(atelier), "atelier_artefact_verifier", conv, projet="demo", nom="site")
+    assert not erreur and "avertissements" not in charge["artefact"]
+
+
+def test_la_liste_des_creations_dit_quoi_faire_de_leurs_adresses(atelier: TestClient) -> None:
+    conv = conversation(atelier, "demo")
+    charge, erreur = appeler(outils(atelier), "atelier_artefacts", conv, projet="demo")
+    assert not erreur and "atelier_montrer" in charge["pour_toi"]
