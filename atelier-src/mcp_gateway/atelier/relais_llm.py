@@ -51,7 +51,14 @@ from typing import Any, Awaitable, Callable
 import httpx
 
 from mcp_gateway.atelier.config import AtelierSettings, fenetre_du_modele, get_settings
-from mcp_gateway.atelier.fournisseurs import Fournisseur, charger_fournisseurs, fournisseur_du_modele
+from mcp_gateway.atelier.models_catalog import est_un_modele_de_conversation
+from mcp_gateway.atelier.fournisseurs import (
+    Fournisseur,
+    charger_fournisseurs,
+    fournisseur_du_modele,
+    identifiant_sspcloud,
+    modele_sspcloud_nu,
+)
 from mcp_gateway.atelier.traduction_openai import (
     TraducteurDeFlux,
     flux_depuis_message,
@@ -62,6 +69,8 @@ from mcp_gateway.atelier.traduction_openai import (
 log = logging.getLogger("atelier.relais_llm")
 
 HOTE = "127.0.0.1"
+DUREE_DE_LA_LISTE_S = 300
+DELAI_DE_LA_LISTE_S = 5.0
 CHEMIN_SANTE = "/_relais/sante"
 
 # Ce qui ne traverse pas un relais : les en-têtes de la connexion elle-même.
@@ -317,6 +326,8 @@ class RelaisLLM:
         self._client = client
         # Relus à chaque requête : déposer une clé suffit, sans redémarrage.
         self._fournisseurs = fournisseurs or (lambda: [])
+        # (instant, entrées) de la dernière liste lue, par source.
+        self._listes: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -364,6 +375,10 @@ class RelaisLLM:
             await _repondre_json(send, 200, {"ok": True, "amont": self.amont})
             return
 
+        if methode == "GET" and chemin.rstrip("/") in ("/v1/models", "/models"):
+            await self._catalogue(scope, send)
+            return
+
         messages = methode == "POST" and chemin.rstrip("/") in ("/v1/messages", "/v1/messages/count_tokens")
         corps: dict[str, Any] = {}
         if messages:
@@ -374,6 +389,12 @@ class RelaisLLM:
                 corps = {}
         entree = estimer(caracteres_de_la_requete(corps), self.ratio) if messages else 0
         modele = str(corps.get("model") or "")
+        nu = modele_sspcloud_nu(modele)
+        if messages and nu != modele:
+            # `claude-ssp-<modèle>` : l'identifiant public du catalogue ; l'amont
+            # ne connaît que le nom nu.
+            corps["model"] = modele = nu
+            brut = json.dumps(corps, ensure_ascii=False).encode("utf-8")
         fenetre = fenetre_du_modele(modele)
 
         if messages and chemin.rstrip("/").endswith("/count_tokens"):
@@ -422,6 +443,54 @@ class RelaisLLM:
                 await self._transparent(reponse, send)
         finally:
             await reponse.aclose()
+
+    async def _lire_liste(self, source: str, url: str, entetes: list[tuple[str, str]]) -> list[dict[str, Any]]:
+        """Les modèles de conversation d'une source, en cache 5 min ; périmé plutôt que rien."""
+        connu = self._listes.get(source)
+        if connu and time.monotonic() - connu[0] < DUREE_DE_LA_LISTE_S:
+            return connu[1]
+        try:
+            reponse = await self.client.get(url, headers=entetes, timeout=DELAI_DE_LA_LISTE_S)
+            donnees = reponse.json() if reponse.status_code == 200 else None
+        except (httpx.HTTPError, ValueError):
+            donnees = None
+        if not isinstance(donnees, dict) or not isinstance(donnees.get("data"), list):
+            return connu[1] if connu else []
+        entrees = [e for e in donnees["data"] if isinstance(e, dict) and est_un_modele_de_conversation(e)]
+        self._listes[source] = (time.monotonic(), entrees)
+        return entrees
+
+    async def _catalogue(self, scope: dict[str, Any], send: Envoyer) -> None:
+        """`GET /v1/models` : les modèles de l'amont et des fournisseurs, en un seul catalogue.
+
+        Claude Code lit cette liste (`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`)
+        pour remplir son sélecteur `/model`. Filtrée, pour qu'il ne propose ni
+        embeddings, ni lecture de documents, ni modèle écarté ; préfixée
+        (`albert/…`) pour les fournisseurs, dont la clé reste ici.
+        """
+        elements: list[dict[str, Any]] = []
+        for e in await self._lire_liste("amont", f"{self.amont}/v1/models", _entetes_pour_l_amont(scope)):
+            elements.append({"id": identifiant_sspcloud(str(e["id"])), "display_name": str(e.get("name") or e["id"]), "description": "SSP Cloud"})
+        for f in self._fournisseurs():
+            entetes = [("authorization", f"Bearer {f.cle}"), ("accept-encoding", "identity")]
+            for e in await self._lire_liste(f.id, f"{f.base_url}/models", entetes):
+                natif = str(e["id"]) in f.outils_natifs
+                elements.append(
+                    {
+                        "id": f.identifiant_public(str(e["id"])),
+                        "display_name": f"{f.nom} · {e['id']}",
+                        "description": f.nom + ("" if natif else " (outils imposés par l'Atelier)"),
+                    }
+                )
+        donnees = [
+            {"type": "model", "id": x["id"], "display_name": x["display_name"], "description": x["description"], "created_at": "1970-01-01T00:00:00Z"}
+            for x in elements
+        ]
+        await _repondre_json(
+            send,
+            200,
+            {"data": donnees, "has_more": False, "first_id": donnees[0]["id"] if donnees else None, "last_id": donnees[-1]["id"] if donnees else None},
+        )
 
     async def _via_fournisseur(
         self,

@@ -50,10 +50,11 @@ def _cle(settings: AtelierSettings) -> str:
 _TYPES_DE_CONVERSATION = {"text-generation", "image-text-to-text"}
 
 
-def _est_un_modele_de_conversation(entree: dict[str, Any]) -> bool:
+def est_un_modele_de_conversation(entree: dict[str, Any]) -> bool:
     """Écarte les préréglages, les plongements, la voix et les modèles sans identifiant."""
     mid = str(entree.get("id") or "")
-    if not mid or entree.get("preset") or "embed" in mid.lower() or "whisper" in mid.lower():
+    bas = mid.lower()
+    if not mid or entree.get("preset") or any(m in bas for m in ("embed", "whisper", "ocr", "rerank")):
         return False
     # Albert type ses modèles ; SSPCloud non.
     if entree.get("type") and entree["type"] not in _TYPES_DE_CONVERSATION:
@@ -80,7 +81,7 @@ def _lire_modeles(base: str, cle: str, *, en_direct: bool) -> list[str]:
             data = json.loads(reponse.read().decode("utf-8"))
         entrees = data.get("data") if isinstance(data, dict) else None
         ids = [
-            str(e["id"]) for e in entrees or [] if isinstance(e, dict) and _est_un_modele_de_conversation(e)
+            str(e["id"]) for e in entrees or [] if isinstance(e, dict) and est_un_modele_de_conversation(e)
         ]
     except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError):
         return list(connu[1]) if connu else []
@@ -100,7 +101,7 @@ def modeles_des_fournisseurs(settings: AtelierSettings, *, en_direct: bool) -> l
     sortie: list[tuple[str, str]] = []
     for f in charger_fournisseurs(settings):
         for mid in _lire_modeles(f.base_url, f.cle, en_direct=en_direct):
-            sortie.append((f"{f.prefixe()}{mid}", f"{f.nom} · {mid}"))
+            sortie.append((f.identifiant_public(mid), f"{f.nom} · {mid}"))
     return sortie
 
 

@@ -111,8 +111,11 @@ fournisseur déclaré. Déposer la clé suffit :
 printf '%s' "<clé Albert>" > ~/work/.secrets/albert_api_key && chmod 600 ~/work/.secrets/albert_api_key
 ```
 
-Les modèles d'Albert apparaissent alors dans le choix du modèle, préfixés
-(`albert/<modèle>`). La clé de SSPCloud n'est jamais envoyée à Albert : le
+Les modèles d'Albert apparaissent alors dans le sélecteur `/model` de Claude
+Code (Atelier, VS Code, terminal) et dans le choix du modèle d'un agent, sous
+le nom `claude-albert-<modèle>` : Claude Code ne retient que les identifiants
+contenant « claude » ou « anthropic », le relais retire le préfixe en
+transmettant. Les modèles SSPCloud y figurent aussi (`claude-ssp-<modèle>`). La clé de SSPCloud n'est jamais envoyée à Albert : le
 relais utilise la clé du fournisseur. Pas de redémarrage. Un autre fournisseur
 au format OpenAI se déclare dans `~/work/.secrets/fournisseurs.json`
 (`{"mon-id": {"nom": "…", "base_url": "https://…/v1"}}`, clé dans

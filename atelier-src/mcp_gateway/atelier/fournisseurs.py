@@ -26,6 +26,13 @@ ALBERT_URL = "https://albert.api.etalab.gouv.fr/v1"
 # en mode automatique ; deepseek, gemma, qwen3-coder et mistral répondent vide
 # ou écrivent l'appel en texte, mais obéissent à `tool_choice: required`.
 ALBERT_OUTILS_NATIFS = ("gpt-oss-120b",)
+# Claude Code ne garde, parmi les modèles que la passerelle annonce, que ceux
+# dont l'identifiant contient « claude » ou « anthropic » (mesuré sur 2.1.287 :
+# « 0 usable models after filter » pour des identifiants nus). Le relais publie
+# donc des identifiants `claude-<source>-<modèle>` et retire le préfixe en
+# transmettant : `claude-albert-gpt-oss-120b` ↔ `albert/gpt-oss-120b`, et
+# `claude-ssp-<modèle>` ↔ le modèle SSPCloud nu.
+SOURCE_SSPCLOUD = "ssp"
 _IDENTIFIANT = re.compile(r"^[a-z][a-z0-9-]{0,31}$")
 
 
@@ -41,6 +48,9 @@ class Fournisseur:
 
     def prefixe(self) -> str:
         return f"{self.id}/"
+
+    def identifiant_public(self, modele: str) -> str:
+        return f"claude-{self.id}-{modele}"
 
 
 def _lire_cle(chemin: Path) -> str:
@@ -65,7 +75,7 @@ def charger_fournisseurs(settings: AtelierSettings) -> list[Fournisseur]:
     sortie: list[Fournisseur] = []
     for identifiant, d in declares.items():
         base = str(d.get("base_url") or "").strip().rstrip("/")
-        if not _IDENTIFIANT.match(identifiant) or not base.startswith("https://"):
+        if identifiant == SOURCE_SSPCLOUD or not _IDENTIFIANT.match(identifiant) or not base.startswith("https://"):
             continue
         cle = _lire_cle(dossier / f"{identifiant}_api_key")
         natifs = d.get("outils_natifs")
@@ -75,9 +85,21 @@ def charger_fournisseurs(settings: AtelierSettings) -> list[Fournisseur]:
     return sortie
 
 
+def identifiant_sspcloud(modele: str) -> str:
+    """L'identifiant que le relais publie pour un modèle SSPCloud."""
+    return f"claude-{SOURCE_SSPCLOUD}-{modele}"
+
+
+def modele_sspcloud_nu(modele: str) -> str:
+    """Le modèle SSPCloud sous son nom d'amont (inchangé s'il n'a pas le préfixe)."""
+    prefixe = f"claude-{SOURCE_SSPCLOUD}-"
+    return modele[len(prefixe) :] if modele.startswith(prefixe) and len(modele) > len(prefixe) else modele
+
+
 def fournisseur_du_modele(fournisseurs: list[Fournisseur], modele: str) -> tuple[Fournisseur, str] | None:
     """(fournisseur, modèle chez lui) pour `albert/x` ; None pour un modèle SSPCloud."""
     for f in fournisseurs:
-        if modele.startswith(f.prefixe()) and len(modele) > len(f.prefixe()):
-            return f, modele[len(f.prefixe()) :]
+        for prefixe in (f.prefixe(), f"claude-{f.id}-"):
+            if modele.startswith(prefixe) and len(modele) > len(prefixe):
+                return f, modele[len(prefixe) :]
     return None

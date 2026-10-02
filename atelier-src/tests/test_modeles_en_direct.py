@@ -105,5 +105,5 @@ def test_albert_s_ajoute_prefixe_et_sans_ses_modeles_non_conversationnels(reglag
     monkeypatch.setattr(mc.urllib.request, "urlopen", faux)
     modeles = mc.list_available_models(reglages, en_direct=True)["models"]
     ids = [m["id"] for m in modeles]
-    assert ids == ["qwen3-6-35b-moe", "albert/deepseek-flash", "albert/vision"]
+    assert ids == ["qwen3-6-35b-moe", "claude-albert-deepseek-flash", "claude-albert-vision"]
     assert modeles[1]["label"] == "Albert API · deepseek-flash"

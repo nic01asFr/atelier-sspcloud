@@ -614,6 +614,9 @@ class ClaudeHarness(Harness):
         }
         if self.settings.max_output_tokens > 0:
             impose["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(self.settings.max_output_tokens)
+        if self.settings.relais_llm:
+            # `/model` liste les modèles du relais (SSPCloud, fournisseurs).
+            impose["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] = "1"
         return impose
 
     def _env(

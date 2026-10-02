@@ -62,6 +62,13 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
   gemma, qwen3-coder, mistral : réponse vide ou appel écrit en texte) sont
   contraints : le relais leur impose d'appeler un outil, avec un outil
   `repondre` qu'il reconvertit en texte ; gpt-oss-120b reste en direct.
+- sélecteur `/model` de Claude Code : le relais sert `GET /v1/models`, le catalogue
+  filtré (sans embeddings, lecture de documents ni modèles écartés) des modèles
+  SSPCloud et des fournisseurs, et Claude Code le lit
+  (`CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY`, posé pour l'Atelier, VS Code et
+  le terminal). Claude Code ne retient que les identifiants contenant `claude` ou
+  `anthropic` : le relais publie `claude-ssp-<modèle>` et `claude-albert-<modèle>`
+  et retire le préfixe en transmettant ; les noms nus restent valables.
 
 Préparation de la publication du dépôt :
 

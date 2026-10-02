@@ -115,6 +115,8 @@ def claude_extension_env(settings: AtelierSettings) -> list[dict[str, str]]:
     env: list[dict[str, str]] = [
         {"name": "ANTHROPIC_BASE_URL", "value": base_url_des_surfaces(settings)},
     ]
+    if settings.relais_llm:
+        env.append({"name": "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "value": "1"})
     model = (settings.default_model or "").strip()
     if model:
         env.append({"name": "ANTHROPIC_MODEL", "value": model})
@@ -244,6 +246,10 @@ def _merge_claude_settings_file(path: Path, settings: AtelierSettings) -> None:
     for ancien in OBSOLETES:
         env.pop(ancien, None)
     env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"] = str(fenetre_minimale())
+    # Le sélecteur `/model` de Claude Code liste les modèles que le relais
+    # annonce (SSPCloud et fournisseurs), sur toutes les surfaces.
+    if settings.relais_llm:
+        env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"] = "1"
     # L'effort, pour tout ce qui lance `claude` sans passer par nos tours :
     # l'extension VS Code, le terminal, les agents de wikichat. Notre harnais
     # le fixait pour lui seul ; le 16 septembre, les erreurs « Unexpected

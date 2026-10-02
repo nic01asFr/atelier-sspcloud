@@ -390,3 +390,102 @@ def test_relais_un_modele_natif_garde_son_flux_direct() -> None:
     envoye = json.loads(vus[0].content)
     assert envoye["stream"] is True and "tool_choice" not in envoye
     assert [o["function"]["name"] for o in envoye["tools"]] == ["lire"]
+
+
+# -- le catalogue que Claude Code lit pour son sélecteur /model ---------------
+
+
+def _lister(relais: RelaisLLM) -> tuple[int, dict[str, Any]]:
+    envoyes: list[dict[str, Any]] = []
+
+    async def send(m: dict[str, Any]) -> None:
+        envoyes.append(m)
+
+    scope = {"type": "http", "method": "GET", "path": "/v1/models", "query_string": b"", "headers": [(b"x-api-key", b"cle-sspcloud")]}
+    asyncio.run(relais.relayer(scope, b"", send))
+    debut = next(m for m in envoyes if m["type"] == "http.response.start")
+    return debut["status"], json.loads(b"".join(m.get("body", b"") for m in envoyes if m["type"] == "http.response.body"))
+
+
+def _relais_catalogue(vus: list[httpx.Request], panne_albert: bool = False) -> RelaisLLM:
+    sspcloud = {"data": [{"id": "qwen3-6-35b-moe", "name": "qwen3-6-35b-moe"}, {"id": "gemma4-26b-moe"}, {"id": "qwen3-embedding-8b"}, {"id": "chandra-ocr-2"}]}
+    albert = {"data": [{"id": "gpt-oss-120b", "type": "text-generation"}, {"id": "deepseek-v4-flash-0731", "type": "text-generation"}, {"id": "bge-m3", "type": "text-embeddings-inference"}, {"id": "lightonocr-2-1b", "type": "image-text-to-text"}]}
+
+    def gestionnaire(requete: httpx.Request) -> httpx.Response:
+        vus.append(requete)
+        if "albert" in str(requete.url):
+            return httpx.Response(503) if panne_albert else httpx.Response(200, json=albert)
+        return httpx.Response(200, json=sspcloud)
+
+    natif = Fournisseur("albert", "Albert API", "https://albert.exemple/v1", "cle-albert", frozenset({"gpt-oss-120b"}))
+    return RelaisLLM("https://sspcloud.exemple/api", client=httpx.AsyncClient(transport=httpx.MockTransport(gestionnaire)), fournisseurs=lambda: [natif])
+
+
+def test_le_catalogue_fusionne_sspcloud_et_albert_et_ecarte_le_reste() -> None:
+    vus: list[httpx.Request] = []
+    statut, corps = _lister(_relais_catalogue(vus))
+    ids = [m["id"] for m in corps["data"]]
+    assert statut == 200 and ids == ["claude-ssp-qwen3-6-35b-moe", "claude-albert-gpt-oss-120b", "claude-albert-deepseek-v4-flash-0731"]
+    assert all(m["type"] == "model" and m["display_name"] for m in corps["data"])
+    noms = {m["id"]: m["display_name"] for m in corps["data"]}
+    assert noms["claude-albert-gpt-oss-120b"] == "Albert API · gpt-oss-120b"
+    descriptions = {m["id"]: m["description"] for m in corps["data"]}
+    assert "imposés" not in descriptions["claude-albert-gpt-oss-120b"] and "imposés" in descriptions["claude-albert-deepseek-v4-flash-0731"]
+    assert corps["has_more"] is False and corps["last_id"] == ids[-1]
+
+
+def test_le_catalogue_envoie_la_bonne_cle_a_chacun() -> None:
+    vus: list[httpx.Request] = []
+    _lister(_relais_catalogue(vus))
+    chez_albert = next(r for r in vus if "albert" in str(r.url))
+    chez_sspcloud = next(r for r in vus if "sspcloud" in str(r.url))
+    assert chez_albert.headers["authorization"] == "Bearer cle-albert" and "cle-sspcloud" not in str(chez_albert.headers)
+    assert chez_sspcloud.headers["x-api-key"] == "cle-sspcloud" and "cle-albert" not in str(chez_sspcloud.headers)
+
+
+def test_un_fournisseur_en_panne_n_efface_pas_les_modeles_sspcloud() -> None:
+    statut, corps = _lister(_relais_catalogue([], panne_albert=True))
+    assert statut == 200 and [m["id"] for m in corps["data"]] == ["claude-ssp-qwen3-6-35b-moe"]
+
+
+def test_le_catalogue_est_garde_cinq_minutes() -> None:
+    vus: list[httpx.Request] = []
+    relais = _relais_catalogue(vus)
+    _lister(relais)
+    n = len(vus)
+    _lister(relais)
+    assert len(vus) == n
+
+
+def test_les_identifiants_publics_font_l_aller_retour() -> None:
+    from mcp_gateway.atelier.fournisseurs import identifiant_sspcloud, modele_sspcloud_nu
+
+    assert ALBERT.identifiant_public("gpt-oss-120b") == "claude-albert-gpt-oss-120b"
+    assert fournisseur_du_modele([ALBERT], "claude-albert-gpt-oss-120b") == (ALBERT, "gpt-oss-120b")
+    assert fournisseur_du_modele([ALBERT], "claude-albert-") is None
+    assert fournisseur_du_modele([ALBERT], "claude-ssp-qwen") is None
+    assert modele_sspcloud_nu(identifiant_sspcloud("qwen3-6-35b-moe")) == "qwen3-6-35b-moe"
+    assert modele_sspcloud_nu("qwen3-6-35b-moe") == "qwen3-6-35b-moe"  # un nom nu reste valable
+
+
+def test_ssp_n_est_pas_un_identifiant_de_fournisseur(reglages) -> None:
+    d = reglages.secrets_dir
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "fournisseurs.json").write_text(json.dumps({"ssp": {"base_url": "https://x.exemple/v1"}}), encoding="utf-8")
+    (d / "ssp_api_key").write_text("k", encoding="utf-8")
+    assert charger_fournisseurs(reglages) == []
+
+
+def test_relais_le_modele_public_albert_est_route_comme_le_prefixe() -> None:
+    vus: list[httpx.Request] = []
+    reponse = httpx.Response(200, json={"choices": [{"finish_reason": "stop", "message": {"content": "ok"}}]})
+    statut, _, _ = _appeler(_relais(reponse, vus), {"model": "claude-albert-deepseek", "max_tokens": 5, "messages": [{"role": "user", "content": "x"}]})
+    assert statut == 200 and json.loads(vus[0].content)["model"] == "deepseek"
+
+
+def test_relais_le_modele_public_sspcloud_part_sous_son_nom_nu() -> None:
+    vus: list[httpx.Request] = []
+    reponse = httpx.Response(200, json={"type": "message", "content": [], "usage": {"input_tokens": 1, "output_tokens": 1}})
+    _appeler(_relais(reponse, vus), {"model": "claude-ssp-qwen3-6-35b-moe", "max_tokens": 5, "messages": [{"role": "user", "content": "x"}]})
+    assert str(vus[0].url) == "https://sspcloud.exemple/api/v1/messages"
+    assert json.loads(vus[0].content)["model"] == "qwen3-6-35b-moe"
