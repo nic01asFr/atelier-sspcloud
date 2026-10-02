@@ -5,8 +5,9 @@ wikichat, Chrome, Onyxia, les compositions, le rôle de l'Assistant comme superv
 s'améliore lui-même dans un cadre défini. Il part de **mesures** (ce que les agents ont réellement fait sur le
 pod) et de la **lecture du code**, puis propose un cadre cible et un ordre de réalisation.
 
-Ce qui n'a pas pu être vérifié est dit à chaque fois : le code de wikichat n'est pas dans ce dépôt, le projet
-de référence « bigmcp » n'a pas été lu, et rien de ce qui suit n'a été déployé.
+Le code de wikichat (autre dépôt, `nic01asFr/wikichat`, lu au commit `818e940`) a été audité aussi : ses hooks, son
+filtre de profils, son lancement d'agents. Ce qui n'a pas pu être vérifié est dit à chaque fois : le projet de
+référence « bigmcp » n'a pas été lu, et rien de ce qui suit n'a été déployé.
 
 ## 1. Ce que les agents ont réellement fait
 
@@ -115,8 +116,10 @@ Gravité : **G** grave, **M** moyenne, **m** mineure. Les points marqués ✔ on
   « hors liste ») et `atelier_suivre` ne voit que les tours lancés depuis son propre canal.
 - **C3 (M) Un message envoyé pendant un tour attend la fin du tour**, jusqu'à 45 minutes, et la file est vidée si le
   tour tombe en erreur.
-- **C4 (M) Le guetteur de wikichat** (réveil après le tour) n'est pas mesuré avec les processus gardés : une
-  réponse hors tour pourrait être perdue.
+- **C4 (M) Le guetteur de wikichat (réveil d'une session inactive) est coupé dans l'Atelier, volontairement** : un
+  réveil démarrerait un tour à l'insu de l'interface. Le réveil doit donc passer par l'Atelier, qui ne le fait pas
+  encore (voir C1). Hors Atelier il fonctionne ; avec un processus gardé, l'effet de
+  `WIKICHAT_REVEIL_ATELIER=1` n'est pas mesuré (le document de wikichat dit lui-même « reste à constater »).
 - **C5 (M) Un agent lancé ne peut pas lancer de commandes utiles** (tests, installation) sans `bypass`.
 
 ### D. Compositions
@@ -146,6 +149,47 @@ Gravité : **G** grave, **M** moyenne, **m** mineure. Les points marqués ✔ on
   n'orientent pas assez.
 - **E4** `atelier_artefact_creer` : créer une page est une action de base ; elle ne doit jamais échouer pour une
   raison évitable (`existe déjà`, `projet et nom requis`).
+### F. Wikichat (vérifié dans son code)
+
+- **F1 (G) ✔ Son API REST locale n'a aucune authentification.** Sur le pod, depuis le même hôte et sans en-tête,
+  `/api/messages` et `/api/memoire/fiches` répondent 200 (messages, fiches de mémoire personnelle). Un agent `code`
+  qui a Bash contourne donc tout filtre de profil : lecture des messages privés et des mémoires de tous les
+  projets, `/api/inbox?agent=X` (lit **et** fait avancer le curseur d'un autre agent), expéditeur de `/api/chat`
+  libre, lancement d'agents (`/api/spawn/*`, `/api/routines/run`, webhooks de triggers, `/pilote/api/agent/*`). Seule
+  protection : une garde sur l'en-tête `Host` contre le rebinding DNS, qui n'arrête pas un processus local. Seules
+  les écritures de `/api/memoire/*` exigent la clé du lanceur.
+- **F2 (G) Le profil est annoncé par le client.** Une connexion `/sse` sans `?profil=` reçoit les 53 outils. Les
+  agents que wikichat lance lui-même (`lancement.mjs`) ne l'annoncent pas non plus. Le filtre en soi est bon (outil
+  hors profil jamais enregistré, `project` imposé pour 8 outils) ; c'est son déclenchement qui est volontaire.
+- **F3 (G) ✔ Un déclencheur désactivé peut être tiré, avec `bypassPermissions`.** `fireTrigger` ne vérifie jamais
+  `enabled`, et l'action de lancement passe `bypassAutorise: true` en dur. Un client sans profil (ou via REST) peut
+  créer un déclencheur (il naît désactivé), le tirer, et obtenir un agent en bypass ; `register_routine` est plus
+  simple encore (active dès sa création). La décision « un agent ne peut pas armer un déclencheur » est contournée,
+  et `register_trigger` remplace un déclencheur existant du même identifiant.
+- **F4 (M) Usurpation d'identité.** `?agent=X` fait foi ; `WIKICHAT_AGENT` et `session_id` sont repris tels quels par
+  les hooks. On peut déclarer une session sous un nom, lire et consommer le courrier d'une autre, ou prendre le nom
+  du « principal » qui peut tuer tous les lancements.
+- **F5 (M) Un agent `code` peut lancer indirectement un autre agent** : un message avec `expects_reply` contenant
+  `@<agent hors ligne>` déclenche le réveil automatique (40 par jour, 120 s par cible, anti-boucle d'une heure),
+  alors que `wake=true` lui est refusé.
+- **F6 (M) Les agents lancés par wikichat héritent de tout l'environnement et du fichier de secrets**, et la clé du
+  lanceur de l'Atelier est un fichier lisible par l'agent (voir A1).
+- **F7 (M) Un message peut être perdu en silence** : le serveur avance le curseur avant que la réponse arrive ; si le
+  hook abandonne à 1,5 s, le message est tenu pour remis et n'est jamais injecté.
+- **F8 (m) Les hooks échouent en silence** (jamais bloquants : au plus 2 s de latence, serveur absent ou lent
+  inclus), mais sans aucune trace ; un corps de plus de 100 Ko les désactive sans message.
+- **F9 (m) Pas de plafond de ping-pong entre deux sessions interactives avec guetteur** (le plafond de 3 relances est
+  par tour et par agent) ; le serveur distant de mémoire écoute sur toutes les interfaces et compare son jeton
+  sans temps constant.
+- **F10 (m) Documentation** : le README de wikichat dit que le profil `assistant` « donne tout ». Il n'en a que 10
+  (le reste passe par la passerelle de l'Atelier, qui n'annonce aucun profil et garde donc les 53).
+
+Ce que wikichat fait **bien** : le filtre de profils est à la source et double (liste et refus à l'appel) ;
+la fusion des hooks est idempotente et ne détruit rien ; un hook en échec ne bloque jamais un tour ; le relais de
+fin de tour est borné (3 par tour, 8 blocages consécutifs imposés par Claude Code) ; un déclencheur créé par un agent
+naît désactivé ; le lancement d'agents passe par l'Atelier (`/v1/lancements`) quand il est joignable, et un refus de
+l'Atelier n'est jamais contourné.
+
 
 ## 4. Cadre cible
 
@@ -192,6 +236,10 @@ Un projet choisit son profil par défaut ; un agent ou un lancement peut en choi
 - **Un jeton par conversation**, signé, portant profil et projet, à la place de la clé propriétaire dans le fichier
   MCP. Les points d'entrée (`/mcp`, `/mcp/onyxia[…]`) lisent le profil **dans le jeton**, pas dans un en-tête.
   Cela ferme A2 et A3 d'un coup, et rend les accès révocables.
+- **Wikichat s'authentifie aussi** : sa porte REST exige un jeton (celui de la conversation, qui porte l'identité),
+  et son profil se lit dans ce jeton, pas dans l'adresse de connexion ; les agents qu'il lance reçoivent un profil
+  par défaut au lieu de tous les outils ; `fire_trigger` refuse un déclencheur désactivé et ne passe `bypass`
+  que s'il a été explicitement accordé ; le réveil par mention suit les mêmes règles que `wake`. Cela ferme F1 à F5.
 - **Les secrets sortent de l'agent** : ni clé propriétaire ni jeton GitHub dans l'environnement du tour ; lecture de
   `~/work/.secrets/` refusée ; variables retirées des sous-processus. Pour une vraie isolation, un utilisateur
   Unix distinct ou un cloisonnement du processus de l'agent.
@@ -282,7 +330,7 @@ est modifiable à chaud et un correctif à chaud est perdu au redémarrage.
 
 | Lot | Contenu | Effort | Dépend de |
 |---|---|---|---|
-| 1 | **Frontières** : secrets hors de l'agent, jeton par conversation, « réservé » dans la passerelle, `atelier_envoyer` engageante, pod de l'Atelier non déclarable, confirmation vérifiée | élevé | — |
+| 1 | **Frontières** : secrets hors de l'agent, jeton par conversation (Atelier et wikichat), « réservé » dans la passerelle, API REST de wikichat authentifiée, `fire_trigger` et profil par défaut de wikichat, `atelier_envoyer` engageante, pod de l'Atelier non déclarable, confirmation vérifiée | élevé | — |
 | 2 | **Fiabilité d'usage** (rapide, forte valeur) : artefact idempotent, outils inutilisables retirés de la liste de l'Assistant, contexte généré depuis la config effective, mode d'emploi par connecteur, schéma de `gateway_call_tool`, aperçu de lancement clarifié, consignes corrigées | faible à moyen | — |
 | 3 | **Profils nommés** par projet, agent et lancement, appliqués pour de vrai (`outils` fermé), « Onyxia sans Atelier », profil `local` | élevé | 1 |
 | 4 | **Supervision** : suivi live déclaré, retour automatique de fin de lancement, hooks `Stop`/`UserPromptSubmit` de l'Atelier, `garde_bash` posé aussi au démarrage de l'Atelier et en échec fermé | moyen | 2 |
@@ -301,13 +349,17 @@ Le lot 2 peut partir tout de suite et ne dépend de rien. Le lot 1 est le prére
 4. Le mainteneur de l'Atelier : on l'ouvre après les lots 1 et 3, ou plus tôt, en lecture seule (propositions de
    correctif sans exécution) ?
 5. Compositions : on aligne les boucles sur bigmcp ; il faut me donner accès à ce projet, ou son schéma.
+6. Wikichat : l'authentification de sa porte REST relève de son dépôt. On la fait dans `nic01asFr/wikichat` (accès en
+   écriture à ajouter à la session), ou on la contourne côté Atelier (jeton et pare-feu local) en attendant ?
 
 ## 8. Limites de cet audit
 
-- Le code de wikichat n'est pas dans ce dépôt : le contenu réel de ses hooks, la liste exacte de ses outils par
-  profil et leur comportement en cas d'indisponibilité sont **non vérifiés**.
+- Wikichat a été lu (code et documentation), pas exécuté : l'effet d'`asyncRewake` sur un processus `claude -p`
+  gardé, le `systemMessage` de relance dans le flux de l'Atelier, et le fait que l'Atelier pose réellement
+  `WIKICHAT_PROFIL` et `WIKICHAT_PROJET` sur toutes ses entrées wikichat restent **non vérifiés**.
 - « bigmcp » n'a pas été lu : le schéma de boucles repose sur le moteur actuel et des principes d'ingénierie.
-- Vérifié par moi : les secrets dans l'environnement du service et dans `~/work/.secrets/` ; `outils` d'un agent
+- Vérifié par moi : l'API REST de wikichat ouverte sans authentification sur le pod, et `fireTrigger` qui ignore
+  `enabled` et passe `bypassAutorise: true` en dur ; les secrets dans l'environnement du service et dans `~/work/.secrets/` ; `outils` d'un agent
   écrit seulement une règle `allow` ; « réservé » n'est cité que dans le mandataire Onyxia ; les chiffres d'usage.
   Les autres points viennent de la lecture du code par des analyses séparées.
 - Non vérifié sur le pod : le contournement de `expose_public` par la passerelle, un déploiement visant
