@@ -301,3 +301,92 @@ def test_un_fournisseur_injoignable_donne_un_502() -> None:
     relais = RelaisLLM("https://s/api", client=httpx.AsyncClient(transport=httpx.MockTransport(coupe)), fournisseurs=lambda: [ALBERT])
     statut, corps, _ = _appeler(relais, {"model": "albert/d", "max_tokens": 5, "messages": []})
     assert statut == 502 and "injoignable" in json.loads(corps)["error"]["message"]
+
+
+# -- modèles contraints (appels d'outils non analysés chez le fournisseur) ----
+
+from mcp_gateway.atelier.traduction_openai import OUTIL_REPONDRE, flux_depuis_message  # noqa: E402
+
+_OUTILS = [{"name": "lire", "description": "lit", "input_schema": {"type": "object", "properties": {}}}]
+
+
+def test_un_modele_contraint_doit_toujours_appeler_un_outil() -> None:
+    corps = {"system": "Sois bref.", "tools": _OUTILS, "stream": True, "messages": [{"role": "user", "content": "x"}]}
+    sortie = vers_openai(corps, "m", contraint=True)
+    assert sortie["tool_choice"] == "required"
+    assert [o["function"]["name"] for o in sortie["tools"]] == ["lire", OUTIL_REPONDRE]
+    assert OUTIL_REPONDRE in sortie["messages"][0]["content"] and sortie["messages"][0]["content"].startswith("Sois bref.")
+    assert "stream" not in sortie  # la réponse entière est rejouée en flux
+
+
+def test_la_contrainte_ne_touche_ni_l_absence_d_outils_ni_le_choix_de_l_appelant() -> None:
+    sans = vers_openai({"messages": [], "stream": True}, "m", contraint=True)
+    assert "tools" not in sans and sans["stream"] is True
+    impose = vers_openai({"messages": [], "tools": _OUTILS, "tool_choice": {"type": "tool", "name": "lire"}}, "m", contraint=True)
+    assert [o["function"]["name"] for o in impose["tools"]] == ["lire"]
+    assert impose["tool_choice"] == {"type": "function", "function": {"name": "lire"}}
+
+
+def test_repondre_redevient_du_texte_et_clot_le_tour() -> None:
+    donnees = {"choices": [{"finish_reason": "tool_calls", "message": {"tool_calls": [{"id": "t", "function": {"name": OUTIL_REPONDRE, "arguments": '{"texte": "Voilà."}'}}]}}]}
+    m = reponse_vers_anthropic(donnees, "m")
+    assert m["content"] == [{"type": "text", "text": "Voilà."}] and m["stop_reason"] == "end_turn"
+
+
+def test_repondre_a_cote_d_un_vrai_outil_garde_le_tour_ouvert() -> None:
+    appels = [
+        {"id": "a", "function": {"name": OUTIL_REPONDRE, "arguments": "je lis"}},  # JSON oublié : on garde le texte
+        {"id": "b", "function": {"name": "lire", "arguments": "{}"}},
+    ]
+    m = reponse_vers_anthropic({"choices": [{"finish_reason": "tool_calls", "message": {"tool_calls": appels}}]}, "m")
+    assert [b["type"] for b in m["content"]] == ["text", "tool_use"] and m["content"][0]["text"] == "je lis"
+    assert m["stop_reason"] == "tool_use"
+
+
+def test_un_message_entier_se_rejoue_en_flux() -> None:
+    message = reponse_vers_anthropic(
+        {"choices": [{"finish_reason": "tool_calls", "message": {"content": "ok", "tool_calls": [{"id": "t", "function": {"name": "lire", "arguments": '{"p": 1}'}}]}}], "usage": {"prompt_tokens": 4, "completion_tokens": 3}},
+        "m",
+    )
+    ev = flux_depuis_message(message)
+    assert [e["type"] for e in ev if e["type"] != "content_block_delta"] == [
+        "message_start", "content_block_start", "content_block_stop", "content_block_start", "content_block_stop", "message_delta", "message_stop",
+    ]
+    assert ev[-2]["delta"]["stop_reason"] == "tool_use" and ev[-2]["usage"]["output_tokens"] == 3
+    delta_outil = [e for e in ev if e["type"] == "content_block_delta" and e["index"] == 1][0]["delta"]
+    assert json.loads(delta_outil["partial_json"]) == {"p": 1}
+
+
+def test_les_modeles_natifs_se_declarent(reglages) -> None:
+    d = reglages.secrets_dir
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "albert_api_key").write_text("k", encoding="utf-8")
+    (albert,) = charger_fournisseurs(reglages)
+    assert albert.outils_natifs == frozenset({"gpt-oss-120b"})
+
+
+def test_relais_un_modele_contraint_est_appele_sans_flux_et_rejoue_en_flux() -> None:
+    vus: list[httpx.Request] = []
+    reponse = httpx.Response(200, json={"choices": [{"finish_reason": "tool_calls", "message": {"tool_calls": [{"id": "t", "function": {"name": OUTIL_REPONDRE, "arguments": '{"texte": "Bonjour"}'}}]}}], "usage": {"prompt_tokens": 9, "completion_tokens": 4}})
+    corps = {"model": "albert/deepseek", "stream": True, "max_tokens": 50, "tools": _OUTILS, "messages": [{"role": "user", "content": "salut"}]}
+    statut, brut, entetes = _appeler(_relais(reponse, vus), corps)
+    envoye = json.loads(vus[0].content)
+    assert "stream" not in envoye and envoye["tool_choice"] == "required"
+    assert statut == 200 and (b"content-type", b"text/event-stream") in entetes
+    texte = brut.decode()
+    assert '"text": "Bonjour"' in texte and "event: message_stop" in texte and '"end_turn"' in texte
+
+
+def test_relais_un_modele_natif_garde_son_flux_direct() -> None:
+    natif = Fournisseur("albert", "Albert API", "https://albert.exemple/v1", "cle-albert", frozenset({"gpt-oss"}))
+    vus: list[httpx.Request] = []
+
+    def gestionnaire(requete: httpx.Request) -> httpx.Response:
+        vus.append(requete)
+        return httpx.Response(200, content=b"data: [DONE]\n\n", headers={"content-type": "text/event-stream"})
+
+    relais = RelaisLLM("https://s/api", client=httpx.AsyncClient(transport=httpx.MockTransport(gestionnaire)), fournisseurs=lambda: [natif])
+    _appeler(relais, {"model": "albert/gpt-oss", "stream": True, "max_tokens": 5, "tools": _OUTILS, "messages": [{"role": "user", "content": "x"}]})
+    envoye = json.loads(vus[0].content)
+    assert envoye["stream"] is True and "tool_choice" not in envoye
+    assert [o["function"]["name"] for o in envoye["tools"]] == ["lire"]

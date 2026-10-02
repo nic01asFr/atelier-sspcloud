@@ -58,6 +58,10 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
   Anthropic ⇄ OpenAI (messages, outils, flux), appelle le fournisseur avec sa
   propre clé, et le choix du modèle les liste (`albert/<modèle>`). Il suffit
   de déposer `~/work/.secrets/albert_api_key`.
+  Les modèles d'Albert qui n'analysent pas bien les appels d'outils (deepseek,
+  gemma, qwen3-coder, mistral : réponse vide ou appel écrit en texte) sont
+  contraints : le relais leur impose d'appeler un outil, avec un outil
+  `repondre` qu'il reconvertit en texte ; gpt-oss-120b reste en direct.
 
 Préparation de la publication du dépôt :
 

@@ -116,7 +116,11 @@ Les modèles d'Albert apparaissent alors dans le choix du modèle, préfixés
 relais utilise la clé du fournisseur. Pas de redémarrage. Un autre fournisseur
 au format OpenAI se déclare dans `~/work/.secrets/fournisseurs.json`
 (`{"mon-id": {"nom": "…", "base_url": "https://…/v1"}}`, clé dans
-`mon-id_api_key`). Cette voie ne passe pas par les fournisseurs d'Onyxia : leur
+`mon-id_api_key`). Pour les modèles dont le fournisseur ne rend pas les appels d'outils en mode
+automatique, le relais impose un appel d'outil et reconvertit en texte l'outil
+factice `repondre` ; ces réponses arrivent d'un bloc, pas mot à mot. Les
+modèles sûrs se listent dans `outils_natifs` (par défaut `gpt-oss-120b`).
+Cette voie ne passe pas par les fournisseurs d'Onyxia : leur
 clé n'arrive à l'Atelier qu'à l'installation, et un seul modèle avec elle.
 
 `gemma4-26b-moe` n'est plus proposé à Claude Code (ni créneau opus, ni repli) :

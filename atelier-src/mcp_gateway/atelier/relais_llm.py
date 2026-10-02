@@ -54,6 +54,7 @@ from mcp_gateway.atelier.config import AtelierSettings, fenetre_du_modele, get_s
 from mcp_gateway.atelier.fournisseurs import Fournisseur, charger_fournisseurs, fournisseur_du_modele
 from mcp_gateway.atelier.traduction_openai import (
     TraducteurDeFlux,
+    flux_depuis_message,
     reponse_vers_anthropic,
     vers_openai,
 )
@@ -437,7 +438,11 @@ class RelaisLLM:
         chez un autre fournisseur.
         """
         fournisseur, modele_amont = cible
-        charge = vers_openai(corps, modele_amont)
+        # Un modèle dont l'analyse native des appels d'outils échoue chez le
+        # fournisseur est contraint ; son flux est alors rejoué, pas diffusé.
+        contraint = modele_amont not in fournisseur.outils_natifs
+        charge = vers_openai(corps, modele_amont, contraint=contraint)
+        flux_demande = bool(corps.get("stream"))
         modele = str(corps.get("model") or "")
         try:
             demande = self.client.build_request(
@@ -470,7 +475,7 @@ class RelaisLLM:
                     await _repondre_json(
                         send, reponse.status_code, {"type": "error", "error": {"type": "api_error", "message": message}}
                     )
-                self._noter("POST", "/v1/messages", modele, bool(charge.get("stream")), reponse.status_code, entree, None, debut)
+                self._noter("POST", "/v1/messages", modele, flux_demande, reponse.status_code, entree, None, debut)
             elif charge.get("stream"):
                 sortie = await self._flux_traduit(reponse, send, modele, entree, fenetre)
                 self._noter("POST", "/v1/messages", modele, True, 200, entree, sortie, debut)
@@ -485,10 +490,29 @@ class RelaisLLM:
                     )
                 else:
                     message = corriger_reponse_entiere(reponse_vers_anthropic(donnees, modele), entree, self.ratio)
-                    await _repondre_json(send, 200, message)
-                self._noter("POST", "/v1/messages", modele, False, reponse.status_code, entree, None, debut)
+                    if flux_demande:
+                        await self._rejouer(send, message, entree, fenetre)
+                    else:
+                        await _repondre_json(send, 200, message)
+                self._noter("POST", "/v1/messages", modele, flux_demande, reponse.status_code, entree, None, debut)
         finally:
             await reponse.aclose()
+
+    async def _rejouer(self, send: Envoyer, message: dict[str, Any], entree: int, fenetre: int) -> None:
+        """Un message entier, rendu comme un flux SSE."""
+        correcteur = CorrecteurDuFlux(entree, self.ratio, fenetre)
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"text/event-stream"), (b"cache-control", b"no-cache")],
+            }
+        )
+        for ev in flux_depuis_message(message):
+            data = correcteur.ligne("data: " + json.dumps(ev, ensure_ascii=False))
+            texte = f"event: {ev['type']}\n{data}\n\n"
+            await send({"type": "http.response.body", "body": texte.encode("utf-8"), "more_body": True})
+        await send({"type": "http.response.body", "body": b""})
 
     async def _flux_traduit(
         self, reponse: httpx.Response, send: Envoyer, modele: str, entree: int, fenetre: int

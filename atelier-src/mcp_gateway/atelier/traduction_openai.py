@@ -12,6 +12,24 @@ from __future__ import annotations
 import json
 from typing import Any
 
+# Outil factice des modèles dont l'analyse native des appels d'outils échoue
+# chez le fournisseur : on les force à toujours appeler un outil (`required`,
+# que le fournisseur tient par décodage guidé) ; `repondre` leur laisse la
+# possibilité de parler. Le relais le reconvertit en texte.
+OUTIL_REPONDRE = "repondre"
+_CONSIGNE_REPONDRE = (
+    f"Pour parler à la personne, ou quand tu as fini et qu'aucun autre outil n'est nécessaire, "
+    f"appelle l'outil `{OUTIL_REPONDRE}` avec ton texte."
+)
+_OUTIL_REPONDRE = {
+    "type": "function",
+    "function": {
+        "name": OUTIL_REPONDRE,
+        "description": "Répond à la personne en texte : à utiliser quand aucun autre outil n'est nécessaire.",
+        "parameters": {"type": "object", "properties": {"texte": {"type": "string"}}, "required": ["texte"]},
+    },
+}
+
 _ARRETS = {"stop": "end_turn", "length": "max_tokens", "tool_calls": "tool_use", "function_call": "tool_use"}
 
 
@@ -92,10 +110,21 @@ def _message_assistant(blocs: list[Any]) -> dict[str, Any]:
     return message
 
 
-def vers_openai(corps: dict[str, Any], modele: str) -> dict[str, Any]:
-    """La requête OpenAI équivalente à une requête `/v1/messages`."""
+def vers_openai(corps: dict[str, Any], modele: str, *, contraint: bool = False) -> dict[str, Any]:
+    """La requête OpenAI équivalente à une requête `/v1/messages`.
+
+    `contraint` : voir `OUTIL_REPONDRE`. Sans effet quand la requête n'a pas
+    d'outils, ou quand l'appelant impose déjà son choix d'outil. Le flux est
+    alors coupé : l'appel d'un outil ne se diffuse pas comme du texte, le relais
+    rejoue la réponse entière.
+    """
+    outils_presents = any(isinstance(o, dict) for o in corps.get("tools") or [])
+    choix_demande = _choix_d_outil(corps.get("tool_choice"))
+    contraint = contraint and outils_presents and choix_demande in (None, "auto")
     messages: list[dict[str, Any]] = []
     consigne = _texte(corps.get("system"))
+    if contraint:
+        consigne = f"{consigne}\n\n{_CONSIGNE_REPONDRE}".strip()
     if consigne:
         messages.append({"role": "system", "content": consigne})
     for message in corps.get("messages") or []:
@@ -118,11 +147,13 @@ def vers_openai(corps: dict[str, Any], modele: str) -> dict[str, Any]:
         sortie["stop"] = corps["stop_sequences"]
     outils = [_outil(o) for o in corps.get("tools") or [] if isinstance(o, dict)]
     if outils:  # une liste vide serait refusée par certains amonts
+        if contraint:
+            outils.append(_OUTIL_REPONDRE)
         sortie["tools"] = outils
-        choix = _choix_d_outil(corps.get("tool_choice"))
+        choix = "required" if contraint else choix_demande
         if choix is not None:
             sortie["tool_choice"] = choix
-    if corps.get("stream"):
+    if corps.get("stream") and not contraint:
         sortie["stream"] = True
         sortie["stream_options"] = {"include_usage": True}
     return sortie
@@ -137,8 +168,19 @@ def _usage(donnees: Any) -> tuple[int, int]:
     return int(donnees.get("prompt_tokens") or 0), int(donnees.get("completion_tokens") or 0)
 
 
+def _texte_de_repondre(arguments: str) -> str:
+    try:
+        lu = json.loads(arguments or "{}")
+    except json.JSONDecodeError:
+        return arguments  # un modèle qui oublie le JSON parle quand même
+    return str(lu.get("texte") or "") if isinstance(lu, dict) else str(lu)
+
+
 def reponse_vers_anthropic(donnees: dict[str, Any], modele: str) -> dict[str, Any]:
-    """Un message Anthropic à partir d'une réponse `/chat/completions` entière."""
+    """Un message Anthropic à partir d'une réponse `/chat/completions` entière.
+
+    L'outil factice `repondre` redevient du texte.
+    """
     choix = (donnees.get("choices") or [{}])[0]
     message = choix.get("message") or {}
     contenu: list[dict[str, Any]] = []
@@ -149,6 +191,11 @@ def reponse_vers_anthropic(donnees: dict[str, Any], modele: str) -> dict[str, An
         contenu.append({"type": "text", "text": str(message["content"])})
     for appel in message.get("tool_calls") or []:
         fonction = appel.get("function") or {}
+        if fonction.get("name") == OUTIL_REPONDRE:
+            parole = _texte_de_repondre(fonction.get("arguments") or "")
+            if parole:
+                contenu.append({"type": "text", "text": parole})
+            continue
         try:
             entree = json.loads(fonction.get("arguments") or "{}")
         except json.JSONDecodeError:
@@ -157,16 +204,46 @@ def reponse_vers_anthropic(donnees: dict[str, Any], modele: str) -> dict[str, An
             {"type": "tool_use", "id": appel.get("id", ""), "name": fonction.get("name", ""), "input": entree}
         )
     entree_jetons, sortie_jetons = _usage(donnees.get("usage"))
+    arret = _ARRETS.get(choix.get("finish_reason") or "stop", "end_turn")
+    if arret == "tool_use" and not any(b["type"] == "tool_use" for b in contenu):
+        arret = "end_turn"  # il n'a appelé que `repondre`
     return {
         "id": donnees.get("id") or "msg_relais",
         "type": "message",
         "role": "assistant",
         "model": modele,
         "content": contenu or [{"type": "text", "text": ""}],
-        "stop_reason": _ARRETS.get(choix.get("finish_reason") or "stop", "end_turn"),
+        "stop_reason": arret,
         "stop_sequence": None,
         "usage": {"input_tokens": entree_jetons, "output_tokens": sortie_jetons},
     }
+
+
+def flux_depuis_message(message: dict[str, Any]) -> list[dict[str, Any]]:
+    """Les événements SSE d'un message déjà entier (réponse rejouée en flux)."""
+    debut = {**message, "content": [], "stop_reason": None, "usage": {"input_tokens": message["usage"]["input_tokens"], "output_tokens": 0}}
+    evenements: list[dict[str, Any]] = [{"type": "message_start", "message": debut}]
+    for index, bloc in enumerate(message["content"]):
+        if bloc["type"] == "text":
+            ouvert, delta = {"type": "text", "text": ""}, {"type": "text_delta", "text": bloc["text"]}
+        elif bloc["type"] == "thinking":
+            ouvert = {"type": "thinking", "thinking": "", "signature": ""}
+            delta = {"type": "thinking_delta", "thinking": bloc["thinking"]}
+        else:
+            ouvert = {**bloc, "input": {}}
+            delta = {"type": "input_json_delta", "partial_json": json.dumps(bloc.get("input") or {}, ensure_ascii=False)}
+        evenements.append({"type": "content_block_start", "index": index, "content_block": ouvert})
+        evenements.append({"type": "content_block_delta", "index": index, "delta": delta})
+        evenements.append({"type": "content_block_stop", "index": index})
+    evenements.append(
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": message["stop_reason"], "stop_sequence": None},
+            "usage": message["usage"],
+        }
+    )
+    evenements.append({"type": "message_stop"})
+    return evenements
 
 
 class TraducteurDeFlux:
