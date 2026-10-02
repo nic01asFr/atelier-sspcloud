@@ -5,6 +5,7 @@ import * as S from "../state.js";
 import { $ } from "../core/dom.js";
 import { bindAutoGrowTextarea, syncAutoGrowTextarea } from "../ui/auto-grow-textarea.js";
 import { noteDuMode } from "../ui/mode-processus.js";
+import { optionsDuModele } from "../ui/choix-du-modele.js";
 
 const MAX_TEXTAREA_PX = 160;
 const MAX_ATTACHMENTS = 8;
@@ -58,7 +59,8 @@ export function createComposerInputController(ctx) {
       rm.setAttribute("aria-label", `Retirer ${f.name}`);
       rm.textContent = "×";
       rm.addEventListener("click", async () => {
-        if (state.token && state.sessionId && f.id) {
+        // Un fichier encore côté écran n'a rien déposé sur le pod : rien à retirer.
+        if (!f.local && state.token && state.sessionId && f.id) {
           try {
             await api.deleteSessionAttachment(state.token, state.sessionId, f.id);
           } catch {
@@ -93,7 +95,7 @@ export function createComposerInputController(ctx) {
   async function onAttachFiles(e) {
     const input = e.target;
     const files = input?.files;
-    if (!files?.length || !state.token || !state.sessionId) return;
+    if (!files?.length || !state.token) return;
     const pending = state.composerAttachments || [];
     if (pending.length >= MAX_ATTACHMENTS) {
       S.setError(state, `Maximum ${MAX_ATTACHMENTS} fichiers par message.`);
@@ -104,6 +106,12 @@ export function createComposerInputController(ctx) {
     S.setError(state, "");
     for (const file of files) {
       if (pending.length >= MAX_ATTACHMENTS) break;
+      if (!state.sessionId) {
+        // Premier message : la conversation n'existe pas encore. Le fichier
+        // reste côté écran, et part dès qu'elle naît.
+        state.composerAttachments.push({ local: true, file, name: file.name, size: file.size });
+        continue;
+      }
       try {
         const meta = await api.uploadSessionAttachment(
           state.token,
@@ -122,6 +130,95 @@ export function createComposerInputController(ctx) {
     render();
   }
 
+  /**
+   * Dépose sur la conversation les fichiers choisis avant qu'elle existe.
+   * Rend la liste complète des pièces jointes déposées ; lève si un dépôt
+   * échoue (les autres restent à l'écran, rien n'est perdu).
+   */
+  async function deposerLesFichiersEnAttente() {
+    const liste = state.composerAttachments || [];
+    if (!state.sessionId || !liste.some((a) => a.local)) return liste;
+    const deposees = [];
+    for (const a of liste) {
+      if (!a.local) {
+        deposees.push(a);
+        continue;
+      }
+      try {
+        deposees.push(await api.uploadSessionAttachment(state.token, state.sessionId, a.file));
+      } catch (err) {
+        state.composerAttachments = [...deposees, ...liste.slice(deposees.length)];
+        renderAttachments();
+        throw new Error(`${a.name} : ${err.message || err}`);
+      }
+    }
+    state.composerAttachments = deposees;
+    return deposees;
+  }
+
+  // -- le modèle de la conversation (`/model` de Claude Code) -----------------
+
+  /** Le catalogue du service, lu une fois ; on réessaie au plus une fois par minute. */
+  async function chargerLesModeles() {
+    if (!state.token || state.modelsCatalog || state.modelsCatalogEnCours) return;
+    const maintenant = Date.now();
+    if (state.modelsCatalogEssai && maintenant - state.modelsCatalogEssai < 60000) return;
+    state.modelsCatalogEssai = maintenant;
+    state.modelsCatalogEnCours = true;
+    try {
+      S.setModelsCatalog(state, await api.listModels(state.token));
+    } catch {
+      /* le sélecteur garde « Modèle par défaut » */
+    } finally {
+      state.modelsCatalogEnCours = false;
+    }
+    if (state.modelsCatalog) render();
+  }
+
+  /** Remplit le sélecteur ; ne reconstruit les options que si elles ont changé. */
+  function remplirLesModeles(select, valeur) {
+    chargerLesModeles();
+    const options = optionsDuModele(state.modelsCatalog, valeur);
+    const signature = options.map((o) => `${o.value}\u0000${o.label}`).join("\u0001");
+    if (select.dataset.signature !== signature) {
+      select.replaceChildren(
+        ...options.map((o) => {
+          const opt = document.createElement("option");
+          opt.value = o.value;
+          opt.textContent = o.label;
+          return opt;
+        })
+      );
+      select.dataset.signature = signature;
+    }
+    if (select.value !== valeur) select.value = valeur;
+  }
+
+  /** Pose le modèle sur la conversation, ou le retient jusqu'au premier message. */
+  async function appliquerModele(modele) {
+    if (!state.sessionId) {
+      state.modeleEnAttente = modele;
+      render();
+      return true;
+    }
+    try {
+      const rec = await api.patchSession(state.token, state.sessionId, { model: modele });
+      const i = (state.sessions || []).findIndex((x) => x.session_id === rec.session_id);
+      if (i >= 0) state.sessions[i] = rec;
+      S.setError(state, "");
+      render();
+      return true;
+    } catch (err) {
+      S.setError(state, `Modèle non appliqué : ${err.message}`);
+      render();
+      return false;
+    }
+  }
+
+  async function onModelChange(ev) {
+    await appliquerModele(ev.target.value);
+  }
+
   function bind() {
     const input = $("composer-input");
     grow = bindAutoGrowTextarea(input, { maxHeight: MAX_TEXTAREA_PX });
@@ -129,6 +226,7 @@ export function createComposerInputController(ctx) {
     $("btn-stop")?.addEventListener("click", onStop);
     $("btn-composer-attach")?.addEventListener("click", onAttachClick);
     $("composer-attach-input")?.addEventListener("change", onAttachFiles);
+    $("composer-model")?.addEventListener("change", onModelChange);
     $("composer-mode")?.addEventListener("change", onModeChange);
     $("btn-mode-projet")?.addEventListener("click", onModeProjet);
   }
@@ -211,5 +309,8 @@ export function createComposerInputController(ctx) {
     resetGrow,
     renderAttachments,
     clearAttachments,
+    deposerLesFichiersEnAttente,
+    remplirLesModeles,
+    appliquerModele,
   };
 }

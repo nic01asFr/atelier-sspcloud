@@ -3300,6 +3300,13 @@ button:disabled {
   font-size: var(--t-xs);
 }
 
+/* Les libellés de modèle sont longs (« Albert API · deepseek-v4-flash-0731 ») :
+   le sélecteur se plafonne et garde la place du reste de la barre. */
+.composer-model {
+  max-width: min(18rem, 40vw);
+  text-overflow: ellipsis;
+}
+
 .composer-mode:disabled {
   opacity: 0.5;
 }

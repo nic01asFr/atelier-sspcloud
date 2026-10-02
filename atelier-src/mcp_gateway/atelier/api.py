@@ -107,6 +107,9 @@ class PatchSessionBody(BaseModel):
     # service ; un mode inconnu est ramené au réglage plutôt que refusé.
     permission_mode: str | None = None
     effort: str | None = None
+    # Le modèle de la conversation, pour les tours à venir (`/model` de Claude
+    # Code). Vide = celui du service.
+    model: str | None = None
 
 
 class ForkBody(BaseModel):
@@ -1438,6 +1441,7 @@ def build_app(
                 archived=body.archived,
                 permission_mode=body.permission_mode,
                 effort=body.effort,
+                model=body.model,
             )
         except KeyError:
             raise HTTPException(404, "session not found") from None

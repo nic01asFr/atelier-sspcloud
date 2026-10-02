@@ -1,5 +1,6 @@
 /** Chat SSE — envoi message Claude Code. */
 
+import { commandeModele, ditLesModeles, resoudreModele } from "../ui/choix-du-modele.js";
 import * as api from "../api.js";
 import * as S from "../state.js";
 import { $ } from "../core/dom.js";
@@ -506,6 +507,12 @@ export function recevoirDuDirect(ctx, suivi, ev) {
   return false;
 }
 
+/** Le nom du premier fichier joint, sans son extension : un nom de projet à défaut de texte. */
+export function nomDuPremierFichier(pieces) {
+  const nom = String(pieces?.[0]?.name || "").trim();
+  return nom.replace(/\.[^.]{1,8}$/, "").replace(/[-_]+/g, " ").trim();
+}
+
 /**
  * @param {object} ctx
  */
@@ -520,7 +527,12 @@ export function createChatController(ctx) {
   async function assurerConversation(texte) {
     if (S.estAssistant(state)) {
       // L'Assistant n'a pas de projet : sa conversation naît dans son dossier.
-      const rec = await api.createSession(state.token, { slug: S.assistantSlug(state), kind: "assistant" });
+      const rec = await api.createSession(state.token, {
+        slug: S.assistantSlug(state),
+        kind: "assistant",
+        model: state.modeleEnAttente || undefined,
+      });
+      state.modeleEnAttente = "";
       S.setSessionId(state, rec.session_id);
       S.setMessages(state, []);
       S.setPendingProjectSlug(state, null);
@@ -536,7 +548,12 @@ export function createChatController(ctx) {
       await api.createProject(state.token, { slug, kind: "code", title: titre });
       await refreshProjects(state);
     }
-    const rec = await api.createSession(state.token, { slug, kind: "code" });
+    const rec = await api.createSession(state.token, {
+      slug,
+      kind: "code",
+      model: state.modeleEnAttente || undefined,
+    });
+    state.modeleEnAttente = "";
     // Le mode choisi avant le premier message vaut dès ce premier tour.
     if (state.modeEnAttente) {
       try {
@@ -560,11 +577,48 @@ export function createChatController(ctx) {
     writeQuery?.();
   }
 
+  /**
+   * `/model` et `/model <nom>`, comme dans Claude Code : la commande ne part
+   * pas au modèle, elle change celui de la conversation (ou le dit).
+   */
+  async function commandeDeModele(commande) {
+    $("composer-input").value = "";
+    composerInput?.resetGrow?.();
+    const dire = (texte) => S.appendMessage(state, { role: "system", text: texte });
+    const courante = state.sessions?.find((x) => x.session_id === state.sessionId);
+    const actuel = state.sessionId ? courante?.model || "" : state.modeleEnAttente || "";
+    if (!commande.nom) {
+      dire(ditLesModeles(state.modelsCatalog, actuel));
+      render();
+      return;
+    }
+    const modele = resoudreModele(commande.nom, state.modelsCatalog);
+    if (modele === null) {
+      dire(`Modèle inconnu : ${commande.nom}. /model liste ceux qui existent.`);
+      render();
+      return;
+    }
+    if (await composerInput?.appliquerModele?.(modele)) {
+      dire(`Modèle : ${modele || "celui du service"}, pour les tours à venir.`);
+    }
+    render();
+  }
+
   async function onSend(ev) {
     ev.preventDefault();
     const text = $("composer-input")?.value.trim() || "";
-    const attachments = state.composerAttachments || [];
+    let attachments = state.composerAttachments || [];
     if ((!text && !attachments.length) || state.view !== "code") {
+      return;
+    }
+    const commande = commandeModele(text);
+    if (commande && !attachments.length) {
+      if (state.busy || tourEnCoursAilleurs()) {
+        S.setError(state, "Un tour est en cours : le modèle se change entre deux tours.");
+        render();
+        return;
+      }
+      await commandeDeModele(commande);
       return;
     }
 
@@ -593,13 +647,23 @@ export function createChatController(ctx) {
 
     if (!state.sessionId) {
       try {
-        await assurerConversation(text);
+        // Sans texte, le premier fichier donne son nom au projet.
+        await assurerConversation(text || nomDuPremierFichier(attachments));
       } catch (err) {
         S.setBusy(state, false);
         S.setError(state, err.message || String(err));
         render();
         return;
       }
+    }
+    // Les fichiers choisis avant la conversation partent maintenant qu'elle existe.
+    try {
+      attachments = (await composerInput?.deposerLesFichiersEnAttente?.()) || attachments;
+    } catch (err) {
+      S.setBusy(state, false);
+      S.setError(state, `Pièce jointe non déposée — ${err.message || err}`);
+      render();
+      return;
     }
     S.appendMessage(state, {
       role: "user",

@@ -993,7 +993,31 @@ function texteDeLaPersonne(texte) {
   return enveloppe;
 }
 
+/**
+ * Les fichiers joints d'un message de la personne, d'après son texte.
+ *
+ * L'Atelier ajoute au message, pour Claude, une mention `@.atelier/uploads/
+ * <id>_<nom>` par fichier — la mention `@fichier` de Claude Code. Relu depuis
+ * la transcription, le message les porte en clair : on les rend en pastilles
+ * nommées plutôt qu'avec un chemin technique.
+ */
+export function piecesJointesDuTexte(texte) {
+  const pieces = [];
+  const reste = String(texte || "").replace(
+    /^[ \t]*@\.atelier\/uploads\/[0-9A-Za-z-]{8,}_([^\r\n]+?)[ \t]*$/gm,
+    (_, nom) => {
+      pieces.push({ name: nom });
+      return "";
+    }
+  );
+  return { texte: reste.replace(/\n{2,}/g, "\n").trim(), pieces };
+}
+
 export function appendMessageBody(parent, m) {
+  if (m.role === "user" && !m.attachments?.length) {
+    const lu = piecesJointesDuTexte(m.text);
+    if (lu.pieces.length) m = { ...m, text: lu.texte, attachments: lu.pieces };
+  }
   // Appelable deux fois sur le même nœud sans le doubler : chaque partie a
   // son conteneur, qu'on retrouve et qu'on met à jour. C'est ce qui permet
   // de rafraîchir un message sans le reconstruire.

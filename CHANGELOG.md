@@ -69,6 +69,11 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
   le terminal). Claude Code ne retient que les identifiants contenant `claude` ou
   `anthropic` : le relais publie `claude-ssp-<modèle>` et `claude-albert-<modèle>`
   et retire le préfixe en transmettant ; les noms nus restent valables.
+- conversation : un sélecteur de modèle dans la barre du message, comme `/model` de
+  Claude Code (avant le premier message ou ensuite ; `PATCH /v1/sessions/{id}`
+  accepte `model`), et les commandes `/model` et `/model <nom>` dans le fil ;
+  les fichiers se joignent avant le premier message (ils partent à la création de
+  la conversation) et se lisent par leur nom plutôt que par leur chemin.
 
 Préparation de la publication du dépôt :
 
