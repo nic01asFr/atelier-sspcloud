@@ -50,6 +50,9 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
   dernière conversation. Le script de démarrage l'installe désormais à chaque démarrage ;
   la consigne porte sa date et l'extension jette une consigne de plus d'une demi-heure ;
   le lien existe aussi dans l'Assistant, pour sa conversation.
+- choix du modèle : la liste ajoute les modèles que l'API du modèle annonce
+  (`/v1/models`, cache de 5 min, panne tolérée), après les créneaux des
+  réglages ; les préréglages, plongements et modèles écartés n'y figurent pas.
 
 Préparation de la publication du dépôt :
 

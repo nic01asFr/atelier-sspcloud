@@ -763,14 +763,15 @@ def build_app(
             "models": _models_payload(),
         }
 
-    def _models_payload() -> dict[str, Any]:
+    def _models_payload(*, en_direct: bool = False) -> dict[str, Any]:
         from mcp_gateway.atelier.models_catalog import list_available_models
 
-        return list_available_models(settings)
+        return list_available_models(settings, en_direct=en_direct)
 
     @router.get("/models")
     def list_models(_owner: str = Depends(require_owner)) -> dict[str, Any]:
-        return _models_payload()
+        # Seule route qui interroge l'API (cache de 5 min) ; /meta n'attend jamais le réseau.
+        return _models_payload(en_direct=True)
 
     def _lire_secret_interne() -> str:
         """Le secret partagé, ou une chaîne vide s'il n'a pas été posé."""

@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
-from mcp_gateway.atelier.config import AtelierSettings
+from mcp_gateway.atelier.config import MODELES_ECARTES, AtelierSettings
 
 
 def _settings_paths(settings: AtelierSettings) -> list[Path]:
@@ -27,8 +31,66 @@ def _load_claude_settings(settings: AtelierSettings) -> dict[str, Any]:
     return {}
 
 
-def list_available_models(settings: AtelierSettings) -> dict[str, Any]:
-    """Modèles exposés à l'UI (select), dérivés de ~/.claude/settings.json."""
+DUREE_DU_CACHE_S = 300
+DELAI_AMONT_S = 3.0
+# (instant, ids) de la dernière lecture réussie, par adresse d'API.
+_cache: dict[str, tuple[float, list[str]]] = {}
+
+
+def _cle(settings: AtelierSettings) -> str:
+    depuis_env = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if depuis_env:
+        return depuis_env
+    try:
+        return settings.llm_key_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _est_un_modele_de_conversation(entree: dict[str, Any]) -> bool:
+    """Écarte les préréglages, les plongements et les modèles sans identifiant."""
+    mid = str(entree.get("id") or "")
+    if not mid or entree.get("preset") or "embed" in mid.lower() or "whisper" in mid.lower():
+        return False
+    return mid not in MODELES_ECARTES
+
+
+def modeles_de_l_api(settings: AtelierSettings, *, en_direct: bool) -> list[str]:
+    """Identifiants que l'API du modèle annonce (`GET /v1/models`).
+
+    `en_direct=False` ne lit que le cache : l'appelant n'attend jamais le
+    réseau. Toute panne rend la dernière liste connue, ou rien.
+    """
+    base = settings.anthropic_base_url.rstrip("/")
+    connu = _cache.get(base)
+    if connu and (not en_direct or time.monotonic() - connu[0] < DUREE_DU_CACHE_S):
+        return list(connu[1])
+    cle = _cle(settings)
+    if not en_direct or not cle:
+        return []
+    requete = urllib.request.Request(
+        f"{base}/v1/models", headers={"Authorization": f"Bearer {cle}", "x-api-key": cle}
+    )
+    try:
+        with urllib.request.urlopen(requete, timeout=DELAI_AMONT_S) as reponse:
+            data = json.loads(reponse.read().decode("utf-8"))
+        entrees = data.get("data") if isinstance(data, dict) else None
+        ids = [
+            str(e["id"]) for e in entrees or [] if isinstance(e, dict) and _est_un_modele_de_conversation(e)
+        ]
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError, KeyError):
+        return list(connu[1]) if connu else []
+    _cache[base] = (time.monotonic(), ids)
+    return ids
+
+
+def list_available_models(settings: AtelierSettings, *, en_direct: bool = False) -> dict[str, Any]:
+    """Modèles exposés à l'UI (select) : ~/.claude/settings.json, puis l'API.
+
+    Les créneaux des réglages passent en premier (le défaut y est choisi) ;
+    les autres modèles que l'API annonce s'y ajoutent, Albert compris dès
+    qu'elle les expose.
+    """
     raw = _load_claude_settings(settings)
     env = raw.get("env") if isinstance(raw.get("env"), dict) else {}
 
@@ -70,15 +132,8 @@ def list_available_models(settings: AtelierSettings) -> dict[str, Any]:
     elif isinstance(fallback, str) and fallback.strip():
         add(fallback.strip(), None)
 
-    # Alias symboliques utiles si le CLI les accepte encore
-    for alias, target, label in (
-        ("sonnet", sonnet or default, "Équilibré (alias)"),
-        ("opus", opus or default, "Plus capable (alias)"),
-        ("haiku", haiku or default, "Plus rapide (alias)"),
-    ):
-        if target and alias not in ordered:
-            # n'ajoute les alias que s'ils pointent vers un id réel distinct
-            pass
+    for mid in modeles_de_l_api(settings, en_direct=en_direct):
+        add(mid, None)
 
     models = [
         {
