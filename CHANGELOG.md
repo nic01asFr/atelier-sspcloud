@@ -13,6 +13,9 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- Assistant : passer d'une conversation de projet à l'Assistant pendant un tour
+  ne laisse plus le champ désactivé avec « Arrêter » affiché (l'état « occupé »
+  de la conversation quittée était emporté) ;
 - supervision : une autorisation du lanceur dans son périmètre ne repasse plus
   par le « Oui » de la personne (constaté au premier essai de bout en bout :
   `atelier_decider(allow)` était engageante, donc chaque décision revenait à
