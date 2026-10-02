@@ -1,5 +1,6 @@
 /** Vue Code — barre session, fil de chat, composer. */
 
+import { tourDeLaConversation } from "../ui/etat-du-tour.js";
 import { rendreNoteDuMode } from "../ui/mode-processus.js";
 import * as api from "../api.js";
 import * as S from "../state.js";
@@ -216,7 +217,7 @@ const BAS_DU_FIL = 1e9;
 
     if (role === "user" && texte && typeof m.rang === "number") {
       const modifier = boutonAction("crayon", "Modifier", "Corriger cette question et repartir d’ici");
-      modifier.disabled = !!state.busy;
+      modifier.disabled = tourDeLaConversation(state).enCours;
       modifier.addEventListener("click", () => ouvrirEdition(div, m, texte));
       barre.appendChild(modifier);
     }
@@ -229,7 +230,7 @@ const BAS_DU_FIL = 1e9;
           "Relancer",
           "Reposer la même question dans une nouvelle conversation qui reprend d’avant elle"
         );
-        relancer.disabled = !!state.busy;
+        relancer.disabled = tourDeLaConversation(state).enCours;
         relancer.addEventListener("click", () => {
           relancer.disabled = true;
           actions?.reprendreIci?.(question.rang, question.text.trim());
@@ -589,6 +590,7 @@ const BAS_DU_FIL = 1e9;
     // On écrit même pendant un tour : le message attend son tour au lieu
     // d'être refusé. Seul le premier message d'une conversation neuve doit
     // attendre, faute de conversation où le déposer.
+    const tour = tourDeLaConversation(state);
     const canSend = sessionReady && (!state.busy || !!state.sessionId);
     const input = $("composer-input");
     const send = $("btn-send");
@@ -605,9 +607,11 @@ const BAS_DU_FIL = 1e9;
       send.disabled = !canSend || !hasContent;
       // Il reste visible pendant un tour : c'est par lui qu'on met en file.
       send.hidden = false;
-      send.textContent = state.busy ? "Mettre en file" : "Envoyer";
+      send.textContent = tour.enCours ? "Mettre en file" : "Envoyer";
     }
-    if (stop) stop.hidden = !state.busy;
+    // « Arrêter » vaut pour la conversation affichée : son propre flux, ou un
+    // tour lancé ailleurs (un autre onglet, VS Code, un agent) qui la fait tourner.
+    if (stop) stop.hidden = !tour.enCours;
     // Avant le premier message, il n'y a pas encore de conversation où les
     // déposer : elles attendent côté écran, et partent dès que la conversation
     // naît (voir `assurerConversation`).

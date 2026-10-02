@@ -631,12 +631,26 @@ export function createChatController(ctx) {
       if (!state.sessionId || !text) return;
       $("composer-input").value = "";
       composerInput?.resetGrow?.();
+      // La réponse arrive parfois longtemps après : on a pu changer de
+      // conversation entre-temps. Elle ne s'écrit que là où elle a été posée.
+      const visee = state.sessionId;
       try {
-        const rendu = await api.mettreEnFile(state.token, state.sessionId, text);
+        const rendu = await api.mettreEnFile(state.token, visee, text);
         const depose = (rendu?.events || []).find((e) => e.cause === "message_en_file");
-        S.ajouterEnFile(state, { id: depose?.tool_id || "", texte: text });
+        if (state.sessionId === visee) {
+          if (depose?.tool_id) {
+            S.ajouterEnFile(state, { id: depose.tool_id, texte: text });
+          } else {
+            // Rien n'était en cours : la conversation a pris le message comme
+            // un envoi ordinaire (le tour a eu lieu pendant cet appel). Ce
+            // n'est pas une mise en file — on relit le fil au lieu d'en inventer
+            // une entrée, sans identifiant, que rien ne pourrait retirer.
+            await relireLeJournal(state, render);
+            await refreshSessions(state);
+          }
+        }
       } catch (err) {
-        S.setError(state, err.message || String(err));
+        if (state.sessionId === visee) S.setError(state, err.message || String(err));
       }
       render();
       return;
@@ -656,6 +670,9 @@ export function createChatController(ctx) {
         return;
       }
     }
+    // La conversation vient de naître : l'écran a changé de conversation, et
+    // « occupé » avec lui. C'est bien elle qui travaille.
+    S.setBusy(state, true);
     // Les fichiers choisis avant la conversation partent maintenant qu'elle existe.
     try {
       attachments = (await composerInput?.deposerLesFichiersEnAttente?.()) || attachments;
@@ -704,11 +721,24 @@ export function createChatController(ctx) {
       globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
     memoire.envois.add(envoi);
 
+    // Ce flux appartient à CETTE conversation. Si on en ouvre une autre, il
+    // continue sur le pod mais n'écrit plus à l'écran : ses événements iraient
+    // dans le fil de l'autre. En revenant, le fil se relit et le suivi en direct
+    // reprend le tour (voir `observer`).
+    const sid = state.sessionId;
+    const flux = { detache: false };
+    const ici = () => !flux.detache && state.sessionId === sid;
+
     try {
-      await api.streamEvents(state.sessionId, text, {
+      await api.streamEvents(sid, text, {
         attachmentIds,
         envoi,
         onEvent: (ev) => {
+          if (!ici()) {
+            flux.detache = true;
+            retenirEvenement(memoire, ev);
+            return;
+          }
           // Dès le premier signe de vie, la liste latérale doit passer
           // « en réponse » : elle restait « jamais lancée » tout le tour.
           if (!stream.listeRafraichie) {
@@ -718,14 +748,16 @@ export function createChatController(ctx) {
           recevoirDeLEnvoi({ state, render, views }, stream, memoire, ev);
         },
       });
-      S.finalizeAssistant(state);
-      if (!stream.blocs.length) {
-        const last = state.messages[state.messages.length - 1];
-        if (last?.role === "assistant" && !last.text) {
-          state.messages = state.messages.slice(0, -1);
+      if (ici()) {
+        S.finalizeAssistant(state);
+        if (!stream.blocs.length) {
+          const last = state.messages[state.messages.length - 1];
+          if (last?.role === "assistant" && !last.text) {
+            state.messages = state.messages.slice(0, -1);
+          }
         }
+        S.persistUserTurns(state);
       }
-      S.persistUserTurns(state);
       await refreshSessions(state);
     } catch (err) {
       // Le lien peut tomber alors que le tour, lui, continue sur le pod. On
@@ -733,15 +765,25 @@ export function createChatController(ctx) {
       // rebrancher relancerait le tour. Mais on peut faire ce que
       // l'utilisateur faisait à la main — attendre la fin, puis relire la
       // conversation. Sans cela l'écran restait figé jusqu'au rechargement.
-      S.finalizeAssistant(state);
-      const repris = await rattraperLeFil(state, render);
-      if (!repris) S.setError(state, err.message || String(err));
+      if (ici()) {
+        S.finalizeAssistant(state);
+        const repris = await rattraperLeFil(state, render);
+        if (!repris) S.setError(state, err.message || String(err));
+      }
     } finally {
       // La fin du tour arrive aussi par le flux en direct, parfois après
       // celui-ci : `memoire` la fait reconnaître (voir `dejaRendu`).
-      S.setBusy(state, false);
+      // Ce qui touche l'écran ne vaut que si l'on est encore sur cette
+      // conversation : « occupé » et la file sont ceux de la conversation
+      // affichée, pas ceux du flux qui vient de finir.
+      if (state.sessionId === sid) {
+        if (!flux.detache) S.setBusy(state, false);
+        await relireLaFile(sid);
+      }
       render();
       views.fils?.renderFils({ relire: true });
+      // Après le rendu : l'écran est déjà au repos, la liste le rejoint.
+      reposerLaListe(sid).then(render);
     }
   }
 
@@ -753,6 +795,36 @@ export function createChatController(ctx) {
   // La mémoire survit aux changements de fil : un envoi reste le nôtre.
   const memoire = creerMemoireDuFil();
   let suivi = { flux: null, memoire };
+
+  /**
+   * Ce qui attend vraiment dans la conversation, d'après le serveur. À la fin
+   * d'un tour — surtout un arrêt, qui abandonne la file — l'écran ne doit pas
+   * garder des messages qui ne partiront plus.
+   */
+  async function relireLaFile(sessionId) {
+    try {
+      const file = await api.fileDesMessages(state.token, sessionId);
+      if (state.sessionId === sessionId) S.setEnFile(state, file?.messages || []);
+    } catch {
+      /* la file se relira à la prochaine ouverture */
+    }
+  }
+
+  /**
+   * La liste des conversations, relue jusqu'à ce que celle-ci ne soit plus
+   * « en cours ». Le flux d'un tour se ferme un instant avant que le service
+   * ait écrit l'état final : une seule lecture, juste après, rendait « en
+   * cours » — et l'écran gardait « Mettre en file » et « Arrêter » pour une
+   * conversation au repos.
+   */
+  async function reposerLaListe(sessionId) {
+    for (let i = 0; i < 8; i += 1) {
+      await refreshSessions(state);
+      const fiche = (state.sessions || []).find((s) => s.session_id === sessionId);
+      if (!fiche || fiche.state !== "running") return;
+      await new Promise((r) => setTimeout(r, 500));
+    }
+  }
 
   function tourEnCoursAilleurs() {
     if (suivi.flux) return true;
@@ -801,8 +873,15 @@ export function createChatController(ctx) {
         }
         // La traîne d'un tour lancé d'ici est reconnue à ses identifiants,
         // quel que soit son retard : elle n'ouvre pas de seconde bulle.
-        if (recevoirDuDirect({ state, render, views }, suivi, ev)) {
-          refreshSessions(state).then(render);
+        const clos = recevoirDuDirect({ state, render, views }, suivi, ev);
+        if (clos) refreshSessions(state).then(render);
+        // Un tour qui se termine, ou qu'on arrête, abandonne ce qui attendait :
+        // ce qu'on croyait en file ne l'est peut-être plus. À lire même quand
+        // l'écran n'avait pas ouvert ce tour (il a pu naître avant qu'on
+        // revienne sur cette conversation).
+        if (ev.kind === "fin" || ev.kind === "erreur") {
+          relireLaFile(sessionId).then(render);
+          reposerLaListe(sessionId).then(render);
         }
       },
     });
@@ -824,5 +903,5 @@ export function createChatController(ctx) {
     render();
   }
 
-  return { onSend, observer, cesserDObserver, annulerEnFile };
+  return { onSend, observer, cesserDObserver, annulerEnFile, relireLaFile };
 }

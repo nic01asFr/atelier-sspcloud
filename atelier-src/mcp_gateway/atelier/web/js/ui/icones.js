@@ -18,6 +18,7 @@ const TRACES = {
   "fleche-gauche": '<path d="M19 12H5"/><path d="m11 6-6 6 6 6"/>',
   "fleche-droite": '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
   plus: '<path d="M12 5v14"/><path d="M5 12h14"/>',
+  epingle: '<path d="M12 17v5"/><path d="M9 3h6l-1 6 3 3H7l3-3z"/>',
   "fleche-haut": '<path d="M12 19V5"/><path d="m6 11 6-6 6 6"/>',
   "fleche-bas": '<path d="M12 5v14"/><path d="m6 13 6 6 6-6"/>',
   points: '<circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/>',

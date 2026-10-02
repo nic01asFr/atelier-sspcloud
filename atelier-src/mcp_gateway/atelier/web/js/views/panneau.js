@@ -40,6 +40,7 @@
  * et son cadre (donc le screencast) n'existe que tant qu'il est affiché.
  */
 
+import { icone } from "../ui/icones.js";
 import * as S from "../state.js";
 import { rendrePanneauApplications } from "./applications.js";
 
@@ -174,9 +175,11 @@ function el(balise, classe, texte) {
   return n;
 }
 
-function bouton(texte, titre, action, classe = "ghost panneau-btn") {
-  const b = el("button", classe, texte);
+function bouton(texte, titre, action, classe = "ghost panneau-btn", nomIcone = "") {
+  const b = el("button", classe);
   b.type = "button";
+  if (nomIcone) b.appendChild(icone(nomIcone));
+  b.appendChild(el("span", "panneau-btn-texte", texte));
   if (titre) {
     b.title = titre;
     b.setAttribute("aria-label", titre);
@@ -403,7 +406,23 @@ export function createPanneauView(ctx) {
       });
       rayons.appendChild(b);
     }
-    zone.replaceChildren(rayons, contenu);
+    const entete = [];
+    const courant = local.vues.find((v) => v.id === local.actif);
+    if (courant) {
+      // Le catalogue prend la place de la page : on dit d'où l'on vient, et on y retourne.
+      const retour = bouton(
+        `Retour à ${titreDeLOnglet(courant, projetDeLaConversation())}`,
+        "Revenir à la page montrée",
+        () => {
+          local.catalogue = false;
+          rendre();
+        },
+        "ghost panneau-btn panneau-catalogue-retour",
+        "fleche-gauche",
+      );
+      entete.push(retour);
+    }
+    zone.replaceChildren(...entete, rayons, contenu);
     if (local.rayon === "bureaux") rendreBureaux(contenu);
     else rendreCreations(contenu, options);
   }
@@ -546,10 +565,14 @@ export function createPanneauView(ctx) {
       ...local.vues.map((v) => {
         const signal = estLeNavigateur(v) && local.signal && !(v.id === local.actif && !local.catalogue);
         const titreOnglet = titreDeLOnglet(v, projetDeLaConversation());
+        const groupe = el("div", "panneau-onglet-groupe");
+        groupe.setAttribute("role", "presentation");
+        const actif = v.id === local.actif;
+        if (actif) groupe.dataset.actif = "1";
         const b = el("button", "panneau-onglet", signal ? `● ${titreOnglet}` : titreOnglet);
         b.type = "button";
         b.setAttribute("role", "tab");
-        b.setAttribute("aria-selected", v.id === local.actif ? "true" : "false");
+        b.setAttribute("aria-selected", actif ? "true" : "false");
         b.title = v.epingle === "projet" ? `${titreOnglet} — épinglée au projet` : titreOnglet;
         if (signal) {
           b.dataset.signal = "1";
@@ -564,7 +587,15 @@ export function createPanneauView(ctx) {
           if (estLeNavigateur(v)) local.signal = false;
           rendre();
         });
-        return b;
+        // Fermer se fait sur l'onglet lui-même, comme partout.
+        const fermer = el("button", "panneau-onglet-fermer");
+        fermer.type = "button";
+        fermer.title = `Fermer l'onglet ${titreOnglet}`;
+        fermer.setAttribute("aria-label", `Fermer l'onglet ${titreOnglet}`);
+        fermer.appendChild(icone("croix"));
+        fermer.addEventListener("click", () => fermerOnglet(v));
+        groupe.append(b, fermer);
+        return groupe;
       }),
     );
 
@@ -578,19 +609,20 @@ export function createPanneauView(ctx) {
       if (sEpingleAuProjet(active, projetDeLaConversation())) {
         gestes.push(
           bouton(epingle.texte, epingle.titre, () => enregistrer({ ...active, epingle: epingle.suivante }),
-            `ghost panneau-btn${active.epingle === "projet" ? " panneau-btn-actif" : ""}`),
+            `ghost panneau-btn${active.epingle === "projet" ? " panneau-btn-actif" : ""}`, "epingle"),
         );
       }
       gestes.push(
         bouton("Recharger", estUnService(active) || estLeNavigateur(active) ? "Recharger cet onglet" : "Recharger cette création", () => {
           const f = iframes.get(active.id);
           if (f) f.src = adresseDeLaVue(active);
-        }),
-        bouton("Détacher", "Ouvrir dans un onglet du navigateur", () => detacher(active)),
-        bouton("Fermer", "Fermer cet onglet du panneau", () => fermerOnglet(active)),
+        }, "ghost panneau-btn", "relancer"),
+        bouton("Détacher", "Ouvrir dans un onglet du navigateur", () => detacher(active), "ghost panneau-btn", "detacher"),
       );
       outils.replaceChildren(...gestes);
-      outils.hidden = false;
+      // Dans le catalogue, la page n'est plus sous les yeux : ces gestes
+      // agiraient sur ce qu'on ne voit pas.
+      outils.hidden = local.catalogue;
     } else {
       outils.replaceChildren();
       outils.hidden = true;
@@ -601,6 +633,7 @@ export function createPanneauView(ctx) {
       const libelle = dansLAssistant() ? "Montrer une création d'un projet" : "Montrer une création du projet";
       ajouter.title = libelle;
       ajouter.setAttribute("aria-label", libelle);
+      ajouter.setAttribute("aria-expanded", local.catalogue || !local.vues.length ? "true" : "false");
     }
     const catalogue = document.getElementById("panneau-catalogue");
     const montrerCatalogue = local.catalogue || !local.vues.length;
@@ -632,6 +665,13 @@ export function createPanneauView(ctx) {
   }
 
   function bind() {
+    // Les deux boutons de l'en-tête portent une icône, pas un mot isolé ou un glyphe nu.
+    const replier = document.getElementById("panneau-replier");
+    if (replier && !replier.querySelector(".icone")) {
+      replier.replaceChildren(icone("chevron-droite"), el("span", "panneau-btn-texte", "Replier"));
+    }
+    const plus = document.getElementById("panneau-ajouter");
+    if (plus && !plus.querySelector(".icone")) plus.replaceChildren(icone("plus"));
     document.getElementById("session-panneau-button")?.addEventListener("click", () => ouvrir(!local.ouvert));
     document.getElementById("panneau-ajouter")?.addEventListener("click", () => {
       local.catalogue = !local.catalogue;

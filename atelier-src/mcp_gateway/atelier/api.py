@@ -1370,12 +1370,15 @@ def build_app(
         _owner: str = Depends(require_owner),
     ) -> dict[str, Any]:
         kind = body.kind if body.kind in ("assistant", "code") else None
-        rec = store.create(
-            slug=body.slug,
-            model=body.model,
-            title=body.title,
-            kind=kind,
-        )
+        try:
+            rec = store.create(
+                slug=body.slug,
+                model=body.model,
+                title=body.title,
+                kind=kind,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         return rec.to_dict()
 
     @router.get("/sessions")

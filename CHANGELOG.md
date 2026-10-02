@@ -74,6 +74,26 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
   accepte `model`), et les commandes `/model` et `/model <nom>` dans le fil ;
   les fichiers se joignent avant le premier message (ils partent à la création de
   la conversation) et se lisent par leur nom plutôt que par leur chemin.
+- conversation, plusieurs conversations à la fois : « occupé », le bouton « Arrêter » et
+  la file d'attente sont ceux de la conversation affichée. Mesuré au banc (agent
+  factice lent) : pendant qu'une conversation tournait, une autre s'ouvrait en
+  « Mettre en file » avec un bouton Arrêter, le flux de la première écrivait dans le fil
+  de la seconde, l'arrêt de la seconde devenait impossible quand la première finissait,
+  un message envoyé à une conversation que l'écran croyait occupée réapparaissait
+  « en attente » dans une autre, sans identifiant, et un arrêt laissait à l'écran les
+  messages que le service avait abandonnés. Chaque flux n'écrit plus que dans sa
+  conversation (en y revenant, le suivi en direct reprend), la file se relit du service
+  à la fin ou à l'arrêt d'un tour, la liste se relit jusqu'au repos, et « Arrêter »,
+  « Modifier » et « Relancer » suivent l'état de la conversation affichée, y compris
+  pour un tour lancé ailleurs ;
+- créer une conversation valide le projet : un `slug` qui sort de `projects/`
+  (`../x`), avec espace ou majuscule est refusé (400) au lieu de créer un dossier hors
+  de `projects/` ou un projet de plus ; une conversation de l'Assistant garde toujours son
+  propre projet ;
+- panneau : les onglets portent leur croix, « Replier » a sa flèche, le « + » est un bouton
+  collé aux onglets, la barre d'outils a des icônes (Épingler, Recharger, Détacher ; seules
+  sur téléphone) et se masque dans le catalogue, qui dit d'où l'on vient (« Retour à … »)
+  et présente chaque création en fiche (nom, mode, boutons) au lieu de colonnes brutes.
 
 Préparation de la publication du dépôt :
 

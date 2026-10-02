@@ -467,8 +467,16 @@ export function syncShellModeFromSelection(state) {
 }
 
 export function setSessionId(state, id) {
+  const change = (id || null) !== (state.sessionId || null);
   state.sessionId = id || null;
   if (!id) state.sessionMcp = null;
+  if (change) {
+    // « Occupé » est l'état de la conversation affichée, pas de l'écran : le
+    // flux d'une autre ne la rend pas occupée, et ce qui attendait dans la
+    // file de l'une ne s'affiche pas dans l'autre.
+    state.busy = false;
+    state.enFile = [];
+  }
 }
 
 export function setSessionMcp(state, data) {

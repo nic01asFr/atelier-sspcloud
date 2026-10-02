@@ -3689,22 +3689,63 @@ button.session-face-link {
 }
 
 .apps-ligne {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 0.4rem 0.9rem;
-  padding: 0.35rem 0;
+  gap: 0.15rem 0.75rem;
+  padding: 0.55rem 0;
   border-top: 1px solid var(--line);
 }
 
 .apps-nom {
+  grid-column: 1;
+  min-width: 0;
   font-weight: 600;
-  min-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Ce qu'on en sait, sous le nom : état, mode, auteur — séparés, pas alignés en colonnes. */
+.apps-meta {
+  grid-column: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.5rem;
+  color: var(--muted);
+  font-size: var(--t-xs);
+}
+
+.apps-meta > * + *::before {
+  content: "·";
+  margin-right: 0.5rem;
+}
+
+.apps-gestes {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+/* Les gestes d'une fiche sont des boutons, pas du texte : « Montrer » en tête. */
+.apps-gestes .apps-action {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  padding: 0.25rem 0.65rem;
+  font-size: var(--t-xs);
+}
+
+.apps-gestes .apps-action:first-child:not([disabled]) {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .apps-etat {
   color: var(--muted);
-  min-width: 7rem;
 }
 
 .apps-etat-pret {
@@ -3718,7 +3759,7 @@ button.session-face-link {
 }
 
 .apps-erreur {
-  flex-basis: 100%;
+  grid-column: 1 / -1;
   font-size: var(--t-xs);
 }
 
@@ -3785,13 +3826,35 @@ button.session-face-link {
   border-bottom: 1px solid var(--line);
 }
 
+/* « Replier » : une flèche vers le bord où le panneau se range, et son mot. */
+.panneau-retour {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+/* Les onglets se suivent, et le « + » vient juste après le dernier, comme dans
+   un navigateur : un bouton, pas un glyphe perdu au bord. */
 .panneau-onglets {
   display: flex;
   gap: 0.25rem;
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
+}
+
+.panneau-onglet-groupe {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+}
+
+.panneau-onglet-groupe[data-actif="1"] {
+  background: var(--bg);
+  border-color: var(--line);
 }
 
 .panneau-onglet {
@@ -3810,10 +3873,40 @@ button.session-face-link {
   cursor: pointer;
 }
 
+/* Un onglet qui porte sa croix lui laisse la place, à droite ; le cadre est
+   celui du groupe, pas du bouton qu'il contient (sinon : un double cadre). */
+.panneau-onglet-groupe > .panneau-onglet,
+.panneau-onglet-groupe > .panneau-onglet[aria-selected="true"] {
+  border-color: transparent;
+  background: transparent;
+  padding-right: 0.2rem;
+}
+
 .panneau-onglet[aria-selected="true"] {
   color: var(--text);
   background: var(--bg);
   border-color: var(--line);
+}
+
+.panneau-onglet-fermer {
+  display: inline-grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  margin-right: 0.2rem;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.panneau-onglet-fermer:hover,
+.panneau-onglet-fermer:focus-visible {
+  color: var(--text);
+  background: var(--line);
 }
 
 .panneau-onglet-projet::before {
@@ -3822,6 +3915,9 @@ button.session-face-link {
 }
 
 .panneau-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   min-height: 2rem;
   font-size: 0.8rem;
 }
@@ -3831,18 +3927,36 @@ button.session-face-link {
 }
 
 .panneau-ajouter {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
   min-width: 2rem;
-  font-size: 1.1rem;
-  line-height: 1;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
   color: var(--accent);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.panneau-ajouter[aria-expanded="true"] {
+  border-color: var(--accent);
 }
 
 .panneau-outils {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: 0.25rem;
   padding: 0.3rem 0.5rem;
   border-bottom: 1px solid var(--line);
+}
+
+/* Le catalogue prend la place de la page : le retour y mène, en haut. */
+.panneau-catalogue-retour {
+  margin-bottom: 0.5rem;
 }
 
 .panneau-note {
@@ -3895,6 +4009,28 @@ button.session-face-link {
 
   .panneau-btn {
     min-height: 2.5rem;
+  }
+
+  /* Sur un téléphone, les gestes de la barre d'outils ne gardent que leur
+     icône (leur nom reste dans l'infobulle et pour les lecteurs d'écran). */
+  .panneau-outils .panneau-btn-texte {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .panneau-outils .panneau-btn {
+    min-width: 2.5rem;
+    justify-content: center;
+    font-size: 1.1rem;
+  }
+
+  .panneau-ajouter,
+  .panneau-onglet-fermer {
+    width: 2.5rem;
+    height: 2.5rem;
   }
 }
 
