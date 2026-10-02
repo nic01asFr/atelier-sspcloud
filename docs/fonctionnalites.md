@@ -434,7 +434,12 @@ redessine). Une vue est épinglée à la conversation (`~/work/panneau/<conversa
   et **ouvre le panneau** chez la personne (décision J-f), sans geste de sa part : il n'existe aucun
   bouton « Exposer ». Il ne montre que les créations de son projet.
 - *L'Assistant* : `atelier_montrer(projet, nom, …)` montre la création **d'un autre projet** dans le
-  panneau de sa conversation, sans rien écrire dans ce projet. Il n'a pas de projet à lui et n'écrit
+  panneau de sa conversation, sans rien écrire dans ce projet. Son panneau est le même que celui des
+  projets, avec trois différences : le catalogue (« + ») range les créations **de tous les projets**,
+  un bloc par projet, et la personne en choisit une comme l'agent ; chaque onglet d'un autre projet que
+  celui de la conversation dit son projet (« autre · secret »), car deux projets peuvent avoir une
+  création du même nom ; l'épingle « au projet » n'est pas proposée pour ces vues, qui restent à la
+  conversation. Il n'a pas de projet à lui et n'écrit
   que dans `notes/` : `atelier_artefact_creer` et `atelier_navigateur_ouvrir` lui sont refusés, avec
   la voie à suivre (déléguer à un agent code par `atelier_lancer_agent`, puis montrer).
 - *Avant d'annoncer qu'une page est prête* : `atelier_artefact_verifier` (avec `nom`) et

@@ -116,8 +116,9 @@ function bouton(libelle, action, { desactive = false, titre = "" } = {}) {
 /**
  * Rend le panneau dans `conteneur`.
  *
- * `etat` : `{ slug, expose, artefacts, artefactsUrl }`, tel que
- * `GET /v1/apps?slug=` le rend (plus l'adresse des artefacts).
+ * `etat` : `{ slug, expose, artefacts, artefactsUrl, titre? }`, tel que
+ * `GET /v1/apps?slug=` le rend (plus l'adresse des artefacts). `titre` remplace
+ * « Créations du projet » : l'Assistant liste les créations de plusieurs projets.
  * `actions` : `{ demarrer(nom), arreter(nom), journal(nom), copier(texte),
  * recharger() }`, des promesses ; injectées pour que le panneau se teste
  * sans réseau. Tant qu'une fiche est en transition, `recharger` est rappelé
@@ -125,7 +126,7 @@ function bouton(libelle, action, { desactive = false, titre = "" } = {}) {
  */
 export function rendrePanneauApplications(conteneur, etat, actions) {
   const liste = el("div", "apps-liste");
-  const titre = el("div", "apps-titre", "Créations du projet");
+  const titre = el("div", "apps-titre", etat.titre || "Créations du projet");
   liste.appendChild(titre);
 
   if (!etat.expose) {

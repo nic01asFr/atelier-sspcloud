@@ -32,10 +32,13 @@ import {
   estUnService,
   fusionnerVues,
   libelleEpingle,
+  sEpingleAuProjet,
+  titreDeLOnglet,
   vueDeService,
   vueDuNavigateur,
 } from "../../mcp_gateway/atelier/web/js/views/panneau.js";
 import { rendrePanneauApplications } from "../../mcp_gateway/atelier/web/js/views/applications.js";
+import { ESPACE_ASSISTANT } from "../../mcp_gateway/atelier/web/js/state.js";
 import { libelleEchanges, rendreFils } from "../../mcp_gateway/atelier/web/js/views/fils.js";
 import { ouvreUnTour, buildStreamBlocks } from "../../mcp_gateway/atelier/web/js/controllers/chat.js";
 import { appendBlock, carteDAction } from "../../mcp_gateway/atelier/web/js/ui/message-render.js";
@@ -420,6 +423,106 @@ async function attendre() {
   await attendre();
   verifier(!onglets().some((b) => b.dataset.signal === "1"), "retrouvé sans signal");
   porte(texte(bascule), "Panneau (2)", "l'onglet du navigateur est retrouvé");
+}
+
+// ── L'Assistant : le panneau de tous les projets ───────────────────────
+// Il n'a pas de projet à lui (`wikichat-memory` n'est pas dans `projects/`) et
+// montre les créations de n'importe lequel : son catalogue les range par
+// projet, ses onglets disent leur projet, et l'épingle « au projet » ne se
+// propose pas pour la création d'un autre projet.
+{
+  egal(titreDeLOnglet({ projet: "autre", nom: "secret", titre: "secret" }, "demo"), "autre · secret", "un autre projet dit son projet");
+  egal(titreDeLOnglet({ projet: "demo", nom: "site", titre: "Site" }, "demo"), "Site", "le projet de la conversation n'est pas répété");
+  egal(titreDeLOnglet({ projet: "autre", nom: "x" }, ""), "x", "sans projet de conversation connu, pas de préfixe");
+  egal(titreDeLOnglet(vueDuNavigateur("s"), "demo"), "Navigateur de l'agent", "le navigateur garde son titre");
+  verifier(sEpingleAuProjet({ projet: "demo", nom: "a" }, "demo"), "une création du projet s'épingle");
+  verifier(!sEpingleAuProjet({ projet: "autre", nom: "a" }, "demo"), "celle d'un autre projet reste à la conversation");
+  verifier(!sEpingleAuProjet(vueDuNavigateur("s"), "demo"), "le navigateur ne s'épingle pas");
+
+  const ids = ["panneau", "view-code", "session-panneau-button", "panneau-onglets", "panneau-outils",
+    "panneau-catalogue", "panneau-corps", "panneau-note", "panneau-ajouter", "panneau-replier"];
+  for (const id of ids) {
+    document.getElementById(id)?.remove();
+    const n = document.createElement(id === "panneau" ? "aside" : "div");
+    n.id = id;
+    document.body.appendChild(n);
+  }
+  document.getElementById("panneau").hidden = true;
+  document.getElementById("panneau-catalogue").hidden = true;
+
+  const appels = [];
+  let refuser = false;
+  const fiche = (slug, nom) => ({ slug, nom, mode: "autonome", etat: "statique" });
+  const api = {
+    panneauVues: async () => ({ vues: [] }),
+    panneauEnregistrer: async (sid, v) => {
+      appels.push(["enregistrer", v.projet, v.nom, v.epingle]);
+      if (refuser) throw new Error("une conversation ne montre que les créations de son projet");
+      return { ...v, id: `v_${v.projet}_${v.nom}`, genre: "creation", par: "personne" };
+    },
+    panneauRetirer: async () => ({ retiree: true }),
+    listApps: async (slug) => (appels.push(["apps", slug]), {
+      expose: true,
+      artefacts: [fiche("autre", "secret"), fiche("demo", "site"), fiche("demo", "carte")],
+    }),
+    artifactsUrl: (slug) => `/v1/artifacts/${slug}/`,
+  };
+  const state = {
+    view: "code",
+    espace: ESPACE_ASSISTANT,
+    sessionId: "a1",
+    slug: "wikichat-memory",
+    sessions: [{ session_id: "a1", slug: "wikichat-memory", kind: "assistant" }],
+  };
+  const panneau = createPanneauView({ state, api, render: () => {} });
+  panneau.bind();
+  panneau.renderPanneau();
+  await attendre();
+
+  const catalogue = document.getElementById("panneau-catalogue");
+  const onglets = () => document.getElementById("panneau-onglets").querySelectorAll("button");
+  const gestes = () => document.getElementById("panneau-outils").querySelectorAll("button").map((b) => texte(b));
+
+  // Le panneau s'ouvre sans vue : le catalogue de tous les projets, rangé par projet.
+  cliquer(document.getElementById("session-panneau-button"));
+  await attendre();
+  egal(appels.find((a) => a[0] === "apps"), ["apps", ""], "l'Assistant lit les créations de tous les projets");
+  porte(texte(catalogue), "Créations · autre", "un bloc par projet : autre");
+  porte(texte(catalogue), "Créations · demo", "un bloc par projet : demo");
+  nePorte(texte(catalogue), "Créations du projet", "pas le titre d'un projet unique");
+  egal(document.getElementById("panneau-ajouter").title, "Montrer une création d'un projet", "le « + » dit ce qu'il ouvre");
+
+  // La personne montre la création d'un autre projet : onglet daté de son projet.
+  const bloc = catalogue.querySelectorAll(".panneau-projet").find((n) => n.dataset.projet === "autre");
+  cliquer(bloc.querySelectorAll("button").find((b) => texte(b) === "Montrer"));
+  await attendre();
+  egal(appels.find((a) => a[0] === "enregistrer"), ["enregistrer", "autre", "secret", "conversation"], "enregistrée dans le projet nommé, à la conversation");
+  egal(onglets().map((b) => texte(b)), ["autre · secret"], "l'onglet dit son projet");
+  egal(gestes(), ["Recharger", "Détacher", "Fermer"], "pas d'épingle au projet pour la création d'un autre projet");
+
+  // Un refus du serveur se dit, puis une action réussie efface la note.
+  refuser = true;
+  cliquer(document.getElementById("panneau-ajouter"));
+  await attendre();
+  const blocDemo = catalogue.querySelectorAll(".panneau-projet").find((n) => n.dataset.projet === "demo");
+  cliquer(blocDemo.querySelectorAll("button").find((b) => texte(b) === "Montrer"));
+  await attendre();
+  const note = document.getElementById("panneau-note");
+  verifier(!note.hidden && texte(note).includes("ne montre que"), "le refus se dit");
+  refuser = false;
+  panneau.montrer({ id: "v_ok", genre: "creation", projet: "demo", nom: "site", titre: "site", epingle: "conversation", par: "agent" });
+  verifier(note.hidden, "une vue montrée avec succès efface la note d'erreur");
+
+  // Une autre conversation (un projet) : le catalogue de l'Assistant ne survit pas.
+  state.espace = null;
+  state.sessionId = "s9";
+  state.slug = "demo";
+  state.sessions.push({ session_id: "s9", slug: "demo", kind: "code" });
+  panneau.renderPanneau();
+  await attendre();
+  await attendre();
+  nePorte(texte(catalogue), "Créations · autre", "le catalogue de l'Assistant ne reste pas dans un projet");
+  egal(document.getElementById("panneau-ajouter").title, "Montrer une création du projet", "le « + » redit le projet");
 }
 
 bilan("panneau");

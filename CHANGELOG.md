@@ -37,7 +37,14 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
   vide ; `atelier_artefact_verifier` et `atelier_montrer` rendent des
   `avertissements` pour une page autonome (index absent, fichier introuvable,
   chemin absolu, ressource externe bloquée) ; les consignes disent qu'il n'y a
-  aucun bouton « Exposer ».
+  aucun bouton « Exposer » ;
+- panneau de l'Assistant : son catalogue (« + ») liste les créations de tous les
+  projets, rangées par projet, au lieu d'échouer sur « projet inconnu :
+  wikichat-memory » ; la personne peut en montrer une, comme l'agent ; les onglets
+  d'un autre projet disent leur projet ; l'épingle « au projet » n'est plus
+  proposée pour eux (elle échouait avec un message obscur) ; le catalogue d'une
+  conversation ne reste plus affiché dans la suivante, et une note d'erreur ne
+  survit plus à une action réussie.
 
 Préparation de la publication du dépôt :
 
