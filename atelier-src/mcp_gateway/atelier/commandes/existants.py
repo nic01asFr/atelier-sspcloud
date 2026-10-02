@@ -113,6 +113,29 @@ def _decider_allegement(args: dict[str, Any]) -> str:
     return REVERSIBLE if str(args.get("decision") or "").strip().lower() == "deny" else ENGAGEANTE
 
 
+def _decider_allegement_du_lanceur(catalogue: Any):
+    """Comme `_decider_allegement`, et une autorisation de lanceur supervisé dans son périmètre passe seule.
+
+    Seule exception à A-5 : la personne a dit « Oui » à un lancement supervisé,
+    et l'Atelier tient le périmètre (`perimetre_du_lanceur.py`). Hors périmètre,
+    ou pour une règle « toujours », l'autorisation reste engageante.
+    """
+
+    def allegement(args: dict[str, Any]) -> str:
+        base = _decider_allegement(args)
+        if base != ENGAGEANTE:
+            return base
+        outils = getattr(catalogue, "outils", None)
+        if outils is None:
+            return ENGAGEANTE
+        try:
+            return REVERSIBLE if outils.decision_du_lanceur_sans_confirmation(args) else ENGAGEANTE
+        except Exception:  # noqa: BLE001 — dans le doute, la classe déclarée
+            return ENGAGEANTE
+
+    return allegement
+
+
 # Le mot « création » de l'interface envoyait le modèle vers les compositions
 # (mesuré : 0 sur 6, `docs/archives/vision/mesures-vague1.md`). Les descriptions de la
 # famille des artefacts portent donc les mots que la personne emploie, et
@@ -205,7 +228,7 @@ def declarer_les_existants(catalogue: Catalogue) -> None:
             classe=ENGAGEANTE,
             regles=["un refus passe sans confirmation ; une autorisation demande le « Oui »"],
             carte=_carte_decider,
-            allegement=_decider_allegement,
+            allegement=_decider_allegement_du_lanceur(catalogue),
         ),
     )
     d(

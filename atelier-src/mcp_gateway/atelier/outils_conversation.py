@@ -797,7 +797,29 @@ class OutilsAtelier:
             "transcript": texte[-derniers:] if coupe else texte,
         }
 
-    def _garder_le_perimetre_du_lanceur(self, demande: Any) -> None:
+    def decision_du_lanceur_sans_confirmation(self, args: dict[str, Any]) -> bool:
+        """Vrai si autoriser cette demande est le geste d'un lanceur dans son périmètre.
+
+        La personne a consenti à la supervision en disant « Oui » à l'aperçu du
+        lancement (`supervise`) ; le périmètre est tenu par l'Atelier. Dans ces
+        limites, chaque autorisation n'a plus à repasser par elle. Une règle
+        retenue pour toujours (`portee`) reste son geste.
+        """
+        if (args.get("portee") or "") == "toujours":
+            return False
+        registre = self.harness.decisions
+        demande = registre.demande(str(args.get("demande") or "")) or registre.demande_tracee(
+            str(args.get("demande") or "")
+        )
+        if demande is None:
+            return False
+        try:
+            self._garder_le_perimetre_du_lanceur(demande, exiger_supervision=True)
+        except _Refus:
+            return False
+        return True
+
+    def _garder_le_perimetre_du_lanceur(self, demande: Any, exiger_supervision: bool = False) -> None:
         """Un agent supervisé ne reçoit d'un lanceur que ce qui reste dans son projet.
 
         Vaut pour toute réponse passée par cet outil, refus compris ; seule la
@@ -806,6 +828,8 @@ class OutilsAtelier:
         """
         rec = self.store.get(demande.session_id)
         if rec is None or not getattr(rec, "supervise", False):
+            if exiger_supervision:
+                raise _Refus("pas un lancement supervisé")
             return
         from pathlib import Path
 
