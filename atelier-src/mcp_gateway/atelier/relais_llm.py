@@ -51,6 +51,12 @@ from typing import Any, Awaitable, Callable
 import httpx
 
 from mcp_gateway.atelier.config import AtelierSettings, fenetre_du_modele, get_settings
+from mcp_gateway.atelier.fournisseurs import Fournisseur, charger_fournisseurs, fournisseur_du_modele
+from mcp_gateway.atelier.traduction_openai import (
+    TraducteurDeFlux,
+    reponse_vers_anthropic,
+    vers_openai,
+)
 
 log = logging.getLogger("atelier.relais_llm")
 
@@ -303,10 +309,13 @@ class RelaisLLM:
         *,
         ratio: float = 3.4,
         client: httpx.AsyncClient | None = None,
+        fournisseurs: Callable[[], list[Fournisseur]] | None = None,
     ) -> None:
         self.amont = amont.rstrip("/")
         self.ratio = ratio
         self._client = client
+        # Relus à chaque requête : déposer une clé suffit, sans redémarrage.
+        self._fournisseurs = fournisseurs or (lambda: [])
 
     @property
     def client(self) -> httpx.AsyncClient:
@@ -374,6 +383,11 @@ class RelaisLLM:
             self._noter(methode, chemin, modele, None, 200, entree, None, debut)
             return
 
+        cible = fournisseur_du_modele(self._fournisseurs(), modele) if messages else None
+        if cible is not None:
+            await self._via_fournisseur(send, corps, cible, entree, fenetre, debut)
+            return
+
         if messages:
             nettoye = sans_outils_vides(corps)
             if nettoye is not None:
@@ -407,6 +421,99 @@ class RelaisLLM:
                 await self._transparent(reponse, send)
         finally:
             await reponse.aclose()
+
+    async def _via_fournisseur(
+        self,
+        send: Envoyer,
+        corps: dict[str, Any],
+        cible: tuple[Fournisseur, str],
+        entree: int,
+        fenetre: int,
+        debut: float,
+    ) -> None:
+        """Un modèle d'un fournisseur OpenAI : on traduit, on appelle avec SA clé.
+
+        La clé que le CLI envoie est celle de SSPCloud : elle ne part jamais
+        chez un autre fournisseur.
+        """
+        fournisseur, modele_amont = cible
+        charge = vers_openai(corps, modele_amont)
+        modele = str(corps.get("model") or "")
+        try:
+            demande = self.client.build_request(
+                "POST",
+                f"{fournisseur.base_url}/chat/completions",
+                headers={
+                    "authorization": f"Bearer {fournisseur.cle}",
+                    "content-type": "application/json",
+                    "accept-encoding": "identity",
+                },
+                content=json.dumps(charge, ensure_ascii=False).encode("utf-8"),
+            )
+            reponse = await self.client.send(demande, stream=True)
+        except httpx.HTTPError as exc:
+            log.warning("fournisseur %s injoignable : %s", fournisseur.id, type(exc).__name__)
+            await _repondre_json(
+                send,
+                502,
+                {"type": "error", "error": {"type": "api_error", "message": f"{fournisseur.nom} injoignable"}},
+            )
+            return
+        try:
+            if reponse.status_code >= 400:
+                texte = (await reponse.aread()).decode("utf-8", "replace")
+                reecrite = erreur_trop_long(texte, fenetre)
+                if reecrite is not None:
+                    await _repondre_json(send, 400, reecrite)
+                else:
+                    message = f"{fournisseur.nom} : HTTP {reponse.status_code} — {texte[:300]}"
+                    await _repondre_json(
+                        send, reponse.status_code, {"type": "error", "error": {"type": "api_error", "message": message}}
+                    )
+                self._noter("POST", "/v1/messages", modele, bool(charge.get("stream")), reponse.status_code, entree, None, debut)
+            elif charge.get("stream"):
+                sortie = await self._flux_traduit(reponse, send, modele, entree, fenetre)
+                self._noter("POST", "/v1/messages", modele, True, 200, entree, sortie, debut)
+            else:
+                try:
+                    donnees = json.loads(await reponse.aread())
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    donnees = None
+                if not isinstance(donnees, dict):
+                    await _repondre_json(
+                        send, 502, {"type": "error", "error": {"type": "api_error", "message": f"{fournisseur.nom} : réponse illisible"}}
+                    )
+                else:
+                    message = corriger_reponse_entiere(reponse_vers_anthropic(donnees, modele), entree, self.ratio)
+                    await _repondre_json(send, 200, message)
+                self._noter("POST", "/v1/messages", modele, False, reponse.status_code, entree, None, debut)
+        finally:
+            await reponse.aclose()
+
+    async def _flux_traduit(
+        self, reponse: httpx.Response, send: Envoyer, modele: str, entree: int, fenetre: int
+    ) -> int:
+        traducteur = TraducteurDeFlux(modele)
+        correcteur = CorrecteurDuFlux(entree, self.ratio, fenetre)
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"text/event-stream"), (b"cache-control", b"no-cache")],
+            }
+        )
+
+        async def emettre(evenements: list[dict[str, Any]]) -> None:
+            for ev in evenements:
+                data = correcteur.ligne("data: " + json.dumps(ev, ensure_ascii=False))
+                texte = f"event: {ev['type']}\n{data}\n\n"
+                await send({"type": "http.response.body", "body": texte.encode("utf-8"), "more_body": True})
+
+        async for ligne in reponse.aiter_lines():
+            await emettre(traducteur.ligne(ligne))
+        await emettre(traducteur.fin())
+        await send({"type": "http.response.body", "body": b""})
+        return estimer(correcteur.caracteres_sortie, self.ratio)
 
     async def _flux(
         self, reponse: httpx.Response, send: Envoyer, entree: int, fenetre: int
@@ -588,7 +695,11 @@ def main() -> None:
     # Boucle locale seulement, sans option pour en sortir : le relais porte
     # les clés des appelants vers la passerelle.
     uvicorn.run(
-        RelaisLLM(args.amont, ratio=args.ratio),
+        RelaisLLM(
+            args.amont,
+            ratio=args.ratio,
+            fournisseurs=lambda: charger_fournisseurs(get_settings()),
+        ),
         host=HOTE,
         port=args.port,
         log_level="warning",

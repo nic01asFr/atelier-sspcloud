@@ -53,6 +53,11 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 - choix du modèle : la liste ajoute les modèles que l'API du modèle annonce
   (`/v1/models`, cache de 5 min, panne tolérée), après les créneaux des
   réglages ; les préréglages, plongements et modèles écartés n'y figurent pas.
+- fournisseurs OpenAI : Albert API (et d'autres, déclarés dans
+  `fournisseurs.json`) s'utilisent comme SSPCloud. Le relais LLM traduit
+  Anthropic ⇄ OpenAI (messages, outils, flux), appelle le fournisseur avec sa
+  propre clé, et le choix du modèle les liste (`albert/<modèle>`). Il suffit
+  de déposer `~/work/.secrets/albert_api_key`.
 
 Préparation de la publication du dépôt :
 

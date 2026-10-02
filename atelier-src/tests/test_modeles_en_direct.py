@@ -86,3 +86,24 @@ def test_une_panne_sans_cache_ne_casse_rien(reglages, monkeypatch) -> None:
 def test_une_reponse_illisible_ne_casse_rien(reglages, monkeypatch) -> None:
     _api(monkeypatch, data=["pas", "un", "objet"])
     assert _ids(reglages, en_direct=True) == []
+
+
+def test_albert_s_ajoute_prefixe_et_sans_ses_modeles_non_conversationnels(reglages, monkeypatch) -> None:
+    (reglages.secrets_dir / "albert_api_key").write_text("k", encoding="utf-8")
+    albert = {
+        "data": [
+            {"id": "deepseek-flash", "type": "text-generation"},
+            {"id": "vision", "type": "image-text-to-text"},
+            {"id": "embeddings-large", "type": "text-embeddings-inference"},
+            {"id": "voix", "type": "automatic-speech-recognition"},
+        ]
+    }
+
+    def faux(requete, timeout):
+        return io.BytesIO(json.dumps(albert if "albert" in requete.full_url else {"data": [{"id": "qwen3-6-35b-moe"}]}).encode())
+
+    monkeypatch.setattr(mc.urllib.request, "urlopen", faux)
+    modeles = mc.list_available_models(reglages, en_direct=True)["models"]
+    ids = [m["id"] for m in modeles]
+    assert ids == ["qwen3-6-35b-moe", "albert/deepseek-flash", "albert/vision"]
+    assert modeles[1]["label"] == "Albert API · deepseek-flash"
