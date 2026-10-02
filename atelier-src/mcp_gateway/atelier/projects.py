@@ -103,6 +103,22 @@ class ProjectStore:
             return "Mémoire Wikichat"
         return slug.replace("-", " ").replace("_", " ")
 
+    def titre_choisi(self, slug: str) -> str:
+        """Le titre qu'une personne a donné au projet, ou « » s'il n'en a pas.
+
+        Le titre de repli de la liste (le nom du dossier avec des espaces) n'en
+        est pas un : un projet resté « sans nom » doit se dire par son dossier.
+        """
+        if slug == self.settings.assistant_slug:
+            return ""
+        from mcp_gateway.atelier.commandes.structure import titre_declare
+
+        declare = titre_declare(self.settings.projects_dir / slug)
+        if declare:
+            return declare
+        entry = self._load_meta().get("projects", {}).get(slug, {})
+        return str(entry.get("title") or "").strip()
+
     def list_projects(self, *, include_archived: bool = False) -> list[ProjectRecord]:
         meta = self._load_meta()
         seen: set[str] = set()

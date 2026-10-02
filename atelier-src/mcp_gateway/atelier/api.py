@@ -1125,6 +1125,15 @@ def build_app(
             raise HTTPException(404, "project not found") from None
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
+        if body.title is not None and rec.kind != "assistant":
+            # L'agent lit le titre dans le contexte du projet : renommer le
+            # projet le met à jour tout de suite, sans attendre le prochain tour.
+            try:
+                from mcp_gateway.atelier.project_context import ecrire_contexte
+
+                ecrire_contexte(Path(rec.path), slug, settings)
+            except Exception:  # noqa: BLE001 — le renommage a réussi ; le contexte se corrigera au prochain tour
+                logging.getLogger("atelier.api").warning("contexte de %s non régénéré", slug)
         return rec.to_dict()
 
     def _project_path(slug: str) -> Path:
