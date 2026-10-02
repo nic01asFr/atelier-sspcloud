@@ -226,6 +226,25 @@ for script in atelier-relancer atelier-figer-le-travail.sh atelier-app atelier-v
   fi
 done
 
+# --- l'extension de l'Atelier pour code-server -----------------------------
+# Sans elle, la consigne que dépose le lien « VS Code » (.atelier/session.json)
+# n'est lue par personne : code-server rouvre la dernière conversation au lieu
+# de la courante. Seul un outil de déploiement la posait (retiré en 0.3.0) :
+# l'image et ce script ne l'installaient pas. Recopiée à chaque démarrage, elle
+# suit la version de l'Atelier. Son dossier ne porte que son nom, ce que
+# code-server lit sans registre à tenir. Une fenêtre déjà ouverte la charge au
+# prochain rechargement.
+# >>> extension-atelier
+EXTENSION_ATELIER="$SOURCE_ATELIER/vscode-extension/atelier-ouvre-claude"
+if [ -f "$EXTENSION_ATELIER/package.json" ] && [ -f "$EXTENSION_ATELIER/extension.js" ]; then
+  mkdir -p "$EXTENSIONS/atelier-ouvre-claude" \
+    && cp -f "$EXTENSION_ATELIER/package.json" "$EXTENSION_ATELIER/extension.js" "$EXTENSIONS/atelier-ouvre-claude/" \
+    || avertir "l'extension atelier-ouvre-claude ne s'est pas posée : VS Code n'ouvrira pas la conversation courante"
+else
+  avertir "extension atelier-ouvre-claude introuvable ($EXTENSION_ATELIER) : VS Code n'ouvrira pas la conversation courante"
+fi
+# <<< extension-atelier
+
 # --- wikichat -------------------------------------------------------------
 # Optionnel : sans lui, les onglets Assistant et Agents restent vides, le
 # reste de l'Atelier fonctionne.

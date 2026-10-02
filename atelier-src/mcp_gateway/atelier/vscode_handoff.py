@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 import logging
 import re
 import shutil
@@ -607,8 +608,12 @@ def write_resume_sidecar(
     dossier = cwd or settings.projects_dir / slug
     root = dossier / ".atelier"
     root.mkdir(parents=True, exist_ok=True)
+    # `ecrit_le` : la consigne vaut pour une ouverture, tout de suite. L'extension
+    # ignore celle qu'un dossier garde depuis des heures (jamais lue, parce que
+    # code-server n'avait pas ouvert ce dossier) plutôt que d'y ouvrir une
+    # conversation d'hier.
     (root / "session.json").write_text(
-        json.dumps({"session_id": session_id, "slug": slug}, indent=2) + "\n",
+        json.dumps({"session_id": session_id, "slug": slug, "ecrit_le": int(time.time())}, indent=2) + "\n",
         encoding="utf-8",
     )
     path = root / "OPEN_CLAUDE_SESSION.md"

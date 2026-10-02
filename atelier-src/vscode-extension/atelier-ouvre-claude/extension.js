@@ -21,6 +21,9 @@ const path = require("path");
 
 const COMMANDE = "claude-vscode.primaryEditor.open";
 const MARQUE = path.join(".atelier", "session.json");
+// Le temps qu'une consigne reste valable : de quoi laisser code-server demarrer
+// a froid (extensions, fenetre), pas de quoi rouvrir la conversation d'hier.
+const DUREE_DE_LA_CONSIGNE_S = 30 * 60;
 
 // L'Atelier depose la conversation qu'il confie, et on la reprend : le
 // fichier vaut pour cette ouverture-la, pas pour toutes les suivantes. Le
@@ -31,8 +34,11 @@ function reprendreConversationConfiee() {
   if (!dossier) return "";
   const marque = path.join(dossier.uri.fsPath, MARQUE);
   let session = "";
+  let ecritLe = NaN;
   try {
-    session = String(JSON.parse(fs.readFileSync(marque, "utf8")).session_id || "").trim();
+    const consigne = JSON.parse(fs.readFileSync(marque, "utf8"));
+    session = String(consigne.session_id || "").trim();
+    ecritLe = Number(consigne.ecrit_le);
   } catch (_) {
     return "";
   }
@@ -41,7 +47,17 @@ function reprendreConversationConfiee() {
   } catch (_) {
     // Rien a faire : au pire on rouvrira la meme conversation.
   }
-  return session;
+  // Une consigne vaut pour l'ouverture qui vient d'etre demandee. Celle qu'un
+  // dossier garde depuis longtemps (code-server n'a pas ouvert ce dossier a ce
+  // moment-la) ouvrirait une conversation d'hier : on la jette, sans l'ouvrir.
+  // Sans date, elle vient d'une version qui ne la posait pas : meme sort.
+  return consigneFraiche(ecritLe, Date.now()) ? session : "";
+}
+
+function consigneFraiche(ecritLe, maintenantMs) {
+  if (!Number.isFinite(ecritLe)) return false;
+  const age = maintenantMs / 1000 - ecritLe;
+  return age >= -60 && age <= DUREE_DE_LA_CONSIGNE_S;
 }
 
 // VS Code restitue les onglets d'une fenetre deja ouverte une fois, dont le
@@ -82,4 +98,4 @@ async function activate() {
   await vscode.commands.executeCommand(COMMANDE, session);
 }
 
-module.exports = { activate, deactivate() {} };
+module.exports = { activate, deactivate() {}, consigneFraiche, DUREE_DE_LA_CONSIGNE_S };

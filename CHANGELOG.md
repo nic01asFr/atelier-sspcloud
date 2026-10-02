@@ -44,7 +44,12 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
   d'un autre projet disent leur projet ; l'épingle « au projet » n'est plus
   proposée pour eux (elle échouait avec un message obscur) ; le catalogue d'une
   conversation ne reste plus affiché dans la suivante, et une note d'erreur ne
-  survit plus à une action réussie.
+  survit plus à une action réussie ;
+- VS Code : l'extension `atelier-ouvre-claude`, qui ouvre la conversation courante, n'était
+  posée par rien depuis le retrait de `deploy-patches/` : le lien « VS Code » rouvrait la
+  dernière conversation. Le script de démarrage l'installe désormais à chaque démarrage ;
+  la consigne porte sa date et l'extension jette une consigne de plus d'une demi-heure ;
+  le lien existe aussi dans l'Assistant, pour sa conversation.
 
 Préparation de la publication du dépôt :
 

@@ -67,6 +67,29 @@ export function retirerLesClassees(messages, classees) {
     .filter((m) => m.role !== "system" || m.blocks.length || m.text);
 }
 
+/**
+ * Le lien « VS Code » de la barre de conversation. Il ouvre **la conversation
+ * courante** dans code-server, ou n'existe pas : jamais celle d'avant. Pour un
+ * projet comme pour l'Assistant, la porte `/v1/vscode/open` retrouve le dossier
+ * et l'identifiant du CLI par la fiche de la conversation.
+ */
+export function lienVsCode({ vscodeUrl, sessionId, slug, titre }) {
+  if (!vscodeUrl || !sessionId) return { hidden: true, href: "", title: "" };
+  return { hidden: false, href: api.vscodeOpenUrl(slug, sessionId), title: titre || slug || "" };
+}
+
+function poserLienVsCode(etat) {
+  const lien = $("session-vscode-link");
+  if (!lien) return;
+  lien.hidden = etat.hidden;
+  if (etat.hidden) {
+    lien.removeAttribute("href");
+    return;
+  }
+  lien.href = etat.href;
+  lien.title = etat.title;
+}
+
 export function createCodeChatView(ctx) {
   const { state, render, composerInput, actions } = ctx;
 
@@ -662,8 +685,14 @@ const BAS_DU_FIL = 1e9;
       }
       const choix = $("session-project-select");
       if (choix) choix.hidden = true;
-      const lien = $("session-vscode-link");
-      if (lien) lien.hidden = true;
+      poserLienVsCode(
+        lienVsCode({
+          vscodeUrl: state.meta?.vscode_url,
+          sessionId: enConversation ? state.sessionId : "",
+          slug: current?.slug || slug,
+          titre: LIBELLES_ASSISTANT.titre,
+        }),
+      );
       return;
     }
     const titleEl = $("session-title-display");
@@ -708,18 +737,14 @@ const BAS_DU_FIL = 1e9;
 
     // L'état et le nombre de tours se lisent déjà dans la liste, en face de
     // chaque conversation ; les répéter ici doublait sans rien apprendre.
-    const vs = state.meta?.vscode_url;
-    const link = $("session-vscode-link");
-    if (link) {
-      if (vs && enConversation) {
-        link.hidden = false;
-        link.href = api.vscodeOpenUrl(slug, state.sessionId);
-        link.title = project?.path || slug;
-      } else {
-        link.hidden = true;
-        link.removeAttribute("href");
-      }
-    }
+    poserLienVsCode(
+      lienVsCode({
+        vscodeUrl: state.meta?.vscode_url,
+        sessionId: enConversation ? state.sessionId : "",
+        slug: current?.slug || slug,
+        titre: project?.path || slug,
+      }),
+    );
 
     // Les créations du projet ne s'ouvrent plus dans un autre onglet : le
     // bouton « Panneau » les montre à côté du fil (voir `views/panneau.js`).

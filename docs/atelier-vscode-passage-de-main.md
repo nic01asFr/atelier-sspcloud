@@ -70,8 +70,16 @@ réglages de fenêtre, la marque d'ouverture, et corrige la marque `entrypoint`.
 Les secrets ne vont **que** dans les réglages utilisateur : un dossier de projet
 se partage et se versionne.
 
-**`.atelier/session.json`** — la consigne : quelle conversation ouvrir. Elle vaut
-pour une ouverture, pas pour toutes les suivantes.
+**`.atelier/session.json`** — la consigne : quelle conversation ouvrir (`session_id`), et quand elle a
+été écrite (`ecrit_le`, en secondes). Elle vaut pour une ouverture, pas pour toutes les suivantes, et
+pour une demi-heure au plus : l'extension jette, sans rien ouvrir, une consigne plus ancienne ou sans
+date, qu'un dossier garde parce que code-server ne l'a pas ouvert à ce moment-là.
+
+**Installation de l'extension** — `install/atelier-init.sh` la recopie à chaque démarrage dans le dossier
+d'extensions de code-server, depuis le code que l'image embarque (bloc `extension-atelier`). Elle n'a
+longtemps été posée que par un outil de déploiement, retiré en 0.3.0 : sans elle, personne ne lit la
+consigne, et code-server rouvre la dernière conversation. Une fenêtre déjà ouverte la charge au
+prochain rechargement.
 
 **Extension `atelier-ouvre-claude`** (`atelier-src/vscode-extension/`) — s'éveille
 sur `onStartupFinished`, lit la consigne **et la supprime**, attend que la
