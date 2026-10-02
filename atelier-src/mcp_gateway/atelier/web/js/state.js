@@ -239,10 +239,11 @@ export function setView(state, view) {
   if (state.view === "code" && state.espace !== avant) {
     // Passer des projets à l'Assistant (ou l'inverse) ne garde pas le fil de
     // l'autre espace : il n'y a pas sa place.
-    state.sessionId = null;
-    state.sessionMcp = null;
+    // Par `setSessionId` : « occupé » est celui de la conversation affichée.
+    // Le laisser tel quel rendait l'Assistant muet (champ désactivé, « Arrêter »
+    // affiché) quand on y passait pendant un tour d'une conversation de projet.
+    setSessionId(state, null);
     state.messages = [];
-    state.enFile = [];
     state.pendingProjectSlug = null;
   }
 }

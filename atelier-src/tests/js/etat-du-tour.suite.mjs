@@ -43,4 +43,21 @@ const liste = [
   egal(st.sessionId, null, "fermer la conversation");
 }
 
+// Passer des projets à l'Assistant pendant qu'un tour de projet tourne : le
+// champ de l'Assistant reste utilisable, sans « Arrêter » (vu sur le pod le 02/10).
+{
+  const st = { view: "code", espace: S.ESPACE_PROJETS, sessionId: "A", busy: true, enFile: [{ id: "m1", texte: "x" }], messages: [{}] };
+  S.setView(st, "assistant");
+  egal(st.espace, S.ESPACE_ASSISTANT, "l'espace a changé");
+  egal(st.sessionId, null, "pas de fil repris dans l'autre espace");
+  egal(st.busy, false, "« occupé » n'est pas emporté dans l'Assistant");
+  egal(st.enFile, [], "ni la file");
+  egal(tourDeLaConversation({ sessions: liste, ...st }).enCours, false, "pas de « Arrêter » sur une conversation neuve");
+  st.sessionId = "D";
+  st.busy = true;
+  S.setView(st, "code");
+  egal(st.busy, false, "et dans l'autre sens");
+  egal(st.espace, S.ESPACE_PROJETS, "retour aux projets");
+}
+
 bilan("etat-du-tour");
