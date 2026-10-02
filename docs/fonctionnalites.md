@@ -248,7 +248,7 @@ avec « Oui ». Un « fait » annoncé sans carte est marqué « non vérifié �
   et le lanceur répond par `atelier_decider` — sans « Oui » à chaque fois dans le périmètre : la personne a consenti en validant l'aperçu du lancement supervisé (seule exception à « l'Assistant n'accepte jamais seul » ; une règle « toujours » et tout ce qui sort du périmètre restent à la personne). Le périmètre est tenu par l'Atelier
   (`perimetre_du_lanceur.py`) : lire et écrire dans le projet, commandes locales courantes,
   `git` de lecture et de commit. Tout le reste — réseau, clés, `.git`, envoi, installation de
-  dépendances, autres outils — reste à la personne, qui le voit dans l'Atelier. Sans `branche`,
+  dépendances, autres outils — reste à la personne (le lanceur peut toujours le *refuser*), qui le voit dans l'Atelier. Sans `branche`,
   l'aperçu avertit que l'agent modifie directement le projet.
 - Il peut refuser une proposition de « À valider », jamais l'accepter.
 
