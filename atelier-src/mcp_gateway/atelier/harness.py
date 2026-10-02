@@ -485,6 +485,25 @@ class ProcessusVivant:
         self.lecteur = threading.Thread(target=lire, name="atelier-stderr", daemon=True)
         self.lecteur.start()
 
+    def laisser_arriver_les_erreurs(self, pas: float = 0.02, maximum: float = 0.5) -> None:
+        """Laisse le fil de lecture livrer ce que le CLI vient d'écrire sur stderr.
+
+        Un tour qui finit sans que le processus meure ne peut pas attendre la
+        fin du fil (il ne finit pas). Mais l'erreur écrite juste avant la ligne
+        de résultat voyage par un autre tube, lu par un autre fil : lue aussitôt
+        après le résultat, elle pouvait ne pas encore être là, et se perdait.
+        On attend donc que le fil se tienne tranquille — deux lectures
+        identiques de suite —, au plus `maximum` secondes.
+        """
+        fin = time.monotonic() + maximum
+        avant = -1
+        while time.monotonic() < fin:
+            n = len(self.erreurs)
+            if n == avant:
+                return
+            avant = n
+            time.sleep(pas)
+
     def attendre_les_erreurs(self, delai: float = 2.0) -> None:
         if self.lecteur is not None:
             self.lecteur.join(timeout=delai)
@@ -1216,6 +1235,7 @@ class ClaudeHarness(Harness):
                         break
                 if termine:
                     code = None
+                    vivant.laisser_arriver_les_erreurs()
                 else:
                     code = proc.wait(timeout=5)
                     vivant.attendre_les_erreurs()
