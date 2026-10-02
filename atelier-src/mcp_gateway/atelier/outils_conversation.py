@@ -822,8 +822,8 @@ class OutilsAtelier:
     def _garder_le_perimetre_du_lanceur(self, demande: Any, exiger_supervision: bool = False) -> None:
         """Un agent supervisé ne reçoit d'un lanceur que ce qui reste dans son projet.
 
-        Vaut pour toute réponse passée par cet outil, refus compris ; seule la
-        personne, depuis l'Atelier, répond au reste. Les conversations ouvertes
+        Vaut pour toute **autorisation** passée par cet outil ; un refus passe
+        toujours. Seule la personne, depuis l'Atelier, autorise le reste. Les conversations ouvertes
         par la personne ne sont pas concernées.
         """
         rec = self.store.get(demande.session_id)
@@ -855,7 +855,10 @@ class OutilsAtelier:
             demande = registre.demande_tracee(request_id)
         if demande is None:
             raise _Refus(f"demande inconnue : {request_id}")
-        self._garder_le_perimetre_du_lanceur(demande)
+        if choix == "allow":
+            # Refuser est le geste sûr : le lanceur le peut toujours, sans quoi un
+            # agent bloqué sur une demande hors périmètre n'attendrait que la personne.
+            self._garder_le_perimetre_du_lanceur(demande)
 
         pour_toujours = (
             demande.genre != "question"

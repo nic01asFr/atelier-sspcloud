@@ -129,3 +129,24 @@ def test_l_allegement_de_atelier_decider_suit_le_perimetre(racine: Path) -> None
     assert allegement({"demande": "r1", "decision": "allow"}) == REVERSIBLE
     assert allegement({"demande": "r1", "decision": "deny"}) == REVERSIBLE
     assert _decider_allegement_du_lanceur(SimpleNamespace(outils=None))({"decision": "allow"}) == ENGAGEANTE
+
+
+def test_le_lanceur_refuse_toujours_mais_n_autorise_que_dans_son_perimetre(racine: Path) -> None:
+    """Essai réel du 02/10 : le refus d'un `curl` hors périmètre était lui-même refusé."""
+    supervise = SimpleNamespace(supervise=True, slug=racine.name)
+    dehors = _d("Bash", command="curl -s http://exemple.fr")
+    rendues: list[str] = []
+    registre = SimpleNamespace(
+        demande=lambda _id: dehors,
+        demande_tracee=lambda _id: None,
+        repondre=lambda _id, reponse: rendues.append(str(reponse.get("behavior"))) or True,
+        clore=lambda _id: None,
+        retenir=lambda _regle: None,
+    )
+    outils = _outils(supervise, racine)
+    outils.harness = SimpleNamespace(decisions=registre)
+    refus = outils._outil_decider({"demande": "r1", "decision": "deny", "motif": "hors projet"})
+    assert refus["decision"] == "deny" and rendues == ["deny"], "un refus passe, même hors périmètre"
+    with pytest.raises(_Refus, match="attend la personne"):
+        outils._outil_decider({"demande": "r1", "decision": "allow"})
+    assert rendues == ["deny"], "l'autorisation hors périmètre n'a rien rendu au CLI"

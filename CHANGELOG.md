@@ -13,6 +13,9 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- supervision : le lanceur peut toujours *refuser* une demande de l'agent qu'il
+  supervise, même hors de son périmètre (le périmètre ne borne que les
+  autorisations) ; constaté à l'essai réel : le refus d'un `curl` était refusé ;
 - fil : une autorisation tranchée rejoint le geste qui l'a demandée (« autorisé »
   ou « refusé » sur sa ligne, dans le pli des étapes) au lieu de s'empiler sous
   le pli et de couper le fil de la réflexion ; seules celles à trancher restent
