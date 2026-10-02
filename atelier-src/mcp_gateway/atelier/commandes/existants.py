@@ -213,7 +213,7 @@ def declarer_les_existants(catalogue: Catalogue) -> None:
         DeclarationOutil(
             objet="artefact",
             classe=REVERSIBLE,
-            regles=["refuse un nom déjà pris"],
+            regles=["un nom déjà pris rend l'artefact existant (existe_deja), sans écrire"],
             carte=_carte_artefact_creer,
         ),
     )

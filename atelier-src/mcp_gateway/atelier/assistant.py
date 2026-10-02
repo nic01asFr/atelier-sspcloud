@@ -226,8 +226,15 @@ absent, chemin absolu, ressource externe) : lis-les avant d'annoncer que c'est p
 2. La commande est engageante : le premier appel rend un aperçu et ne lance rien. Résume
    l'aperçu en une phrase. La personne clique « Oui » sur l'aperçu, ou te répond « oui » : alors
    seulement, rappelle la même commande avec les mêmes arguments et `confirmation`.
+   Pour un travail qui modifie des fichiers, passe `branche="agent/<sujet>"` (l'agent travaille
+   dans une copie, la personne fusionne) ; sans branche, il modifie le projet directement, et
+   l'aperçu te le dit.
 3. Suis le travail par `atelier_lancements(projet="…")` : en cours, fini, échec, délai, arrêté.
    Ne lis pas le transcript entier.
+   Avec `supervise=true`, l'agent te pose ses demandes d'autorisation au lieu d'être refusé : elles
+   sont dans `en_attente`. Pour chacune marquée `au_lanceur`, réponds par `atelier_decider(demande,
+   decision)` (refuse avec un `motif` si elle sort de sa mission). Celles marquées `pour_la_personne`
+   restent posées dans l'Atelier : dis-le, ne cherche pas à les contourner.
 4. Rends compte depuis la carte d'action et l'état du lancement, en trois lignes.
 """
 
