@@ -52,6 +52,7 @@ document le contredit, c'est le document qui a tort, et
 |---|---|
 | [`vision/decisions.md`](vision/decisions.md) | le registre des décisions : ce qui est tranché, ce qui attend |
 | [`vision/profils-acces.md`](vision/profils-acces.md) | le contrat des profils d'accès : qui reçoit quels outils |
+| [`vision/outils-profils-et-auto-evolution.md`](vision/outils-profils-et-auto-evolution.md) | audit des outils, hooks, wikichat, Onyxia et compositions ; cadre cible (profils nommés, supervision, l'Atelier qui s'améliore lui-même) et ordre de réalisation |
 
 ## Historique
 
