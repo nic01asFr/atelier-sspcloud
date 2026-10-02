@@ -387,7 +387,7 @@ class OutilsAtelier:
             {
                 "name": "atelier_artefact_creer",
                 "description": (
-                    "Crée artifacts/<nom>/ d'un seul geste et refuse un nom déjà pris : aucune "
+                    "Crée artifacts/<nom>/ d'un seul geste ; un nom déjà pris rend l'existant : aucune "
                     "conversation n'écrit par-dessus une autre. `mode` : autonome (défaut ; déposez-y "
                     "vos fichiers) ou serveur (un artefact.json à compléter est posé : commande avec "
                     "{port}, sante, protocoles). Crée le dossier, rien de plus : tes fichiers, c'est "
@@ -797,6 +797,28 @@ class OutilsAtelier:
             "transcript": texte[-derniers:] if coupe else texte,
         }
 
+    def _garder_le_perimetre_du_lanceur(self, demande: Any) -> None:
+        """Un agent supervisé ne reçoit d'un lanceur que ce qui reste dans son projet.
+
+        Vaut pour toute réponse passée par cet outil, refus compris ; seule la
+        personne, depuis l'Atelier, répond au reste. Les conversations ouvertes
+        par la personne ne sont pas concernées.
+        """
+        rec = self.store.get(demande.session_id)
+        if rec is None or not getattr(rec, "supervise", False):
+            return
+        from pathlib import Path
+
+        from mcp_gateway.atelier.perimetre_du_lanceur import hors_perimetre
+
+        racine = Path(self.store.settings.projects_dir) / rec.slug
+        raison = hors_perimetre(demande, racine)
+        if raison is not None:
+            raise _Refus(
+                f"hors de ton périmètre de lanceur ({raison}) : cette demande attend la personne, "
+                "dans l'Atelier. Dis-le-lui ; ne la contourne pas."
+            )
+
     def _outil_decider(self, args: dict[str, Any]) -> Any:
         request_id = (args.get("demande") or "").strip()
         choix = (args.get("decision") or "").strip().lower()
@@ -809,6 +831,7 @@ class OutilsAtelier:
             demande = registre.demande_tracee(request_id)
         if demande is None:
             raise _Refus(f"demande inconnue : {request_id}")
+        self._garder_le_perimetre_du_lanceur(demande)
 
         pour_toujours = (
             demande.genre != "question"

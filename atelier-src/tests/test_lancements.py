@@ -281,3 +281,42 @@ def test_le_dossier_de_travail_d_un_agent_est_une_cible_valable(reglages: Atelie
         # Un projet qui n'existe pas, lui, reste refusé.
         refus = _lancer(client, projet="n-existe-pas")
         assert refus.status_code == 403
+
+
+# ── La supervision : le lanceur répond, dans le périmètre du projet ─────────
+
+
+def test_un_lancement_supervise_pose_ses_demandes_au_lieu_de_les_refuser(reglages: AtelierSettings) -> None:
+    _projet(reglages, "alpha")
+    with _client(reglages) as client:
+        r = _lancer(client, projet="alpha", supervise=True)
+        assert r.status_code == 202, r.text
+        lancement = r.json()["lancement"]
+        assert lancement["supervise"] is True
+        fin = _fin(client, lancement["id"])
+        assert client.app.state.harness.appels[-1]["peut_attendre"] is True
+        assert client.app.state.store.get(fin["conversation"]).supervise is True
+
+        sans = _lancer(client, projet="alpha")
+        assert sans.json()["lancement"]["supervise"] is False
+        _fin(client, sans.json()["lancement"]["id"])
+        assert client.app.state.harness.appels[-1]["peut_attendre"] is False
+
+
+def test_une_reparation_de_gardien_n_est_jamais_supervisee(reglages: AtelierSettings) -> None:
+    from mcp_gateway.atelier.lancements import Lanceur
+
+    assert Lanceur._supervise({"supervise": True}, "gardien:controle") is False
+    assert Lanceur._supervise({"supervise": True}, "conversation:abc") is True
+    assert Lanceur._supervise({}, "conversation:abc") is False
+
+
+def test_l_apercu_dit_quand_l_agent_travaille_sans_branche(reglages: AtelierSettings) -> None:
+    _projet(reglages, "alpha")
+    with _client(reglages) as client:
+        lanceur = client.app.state.lancements
+        sans = lanceur.apercu({"projet": "alpha", "message": "x", "mode": "acceptEdits", "supervise": True}, "conversation:a")
+        assert sans["supervise"] is True
+        assert any("sans branche" in a for a in sans["avertissements"])
+        lecture = lanceur.apercu({"projet": "alpha", "message": "x", "mode": "plan"}, "conversation:a")
+        assert not any("sans branche" in a for a in lecture["avertissements"])

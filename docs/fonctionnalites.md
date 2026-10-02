@@ -243,6 +243,13 @@ avec « Oui ». Un « fait » annoncé sans carte est marqué « non vérifié �
   en quelques appels, a une inverse et rend une preuve. Sinon il **délègue** :
   `atelier_lancer_agent(projet, message)` (engageante : aperçu, puis « Oui » de la personne),
   suit par `atelier_lancements`, rend compte depuis la carte d'action.
+- **Superviser** : avec `supervise=true`, l'agent lancé **pose** ses demandes d'autorisation (sinon
+  elles sont refusées sans bruit) ; elles apparaissent dans `en_attente` de `atelier_lancements`,
+  et le lanceur répond par `atelier_decider`. Le périmètre est tenu par l'Atelier
+  (`perimetre_du_lanceur.py`) : lire et écrire dans le projet, commandes locales courantes,
+  `git` de lecture et de commit. Tout le reste — réseau, clés, `.git`, envoi, installation de
+  dépendances, autres outils — reste à la personne, qui le voit dans l'Atelier. Sans `branche`,
+  l'aperçu avertit que l'agent modifie directement le projet.
 - Il peut refuser une proposition de « À valider », jamais l'accepter.
 
 **Ce que ça ne fait pas.** Il n'écrit pas dans les projets (seulement dans son dossier `notes/`),

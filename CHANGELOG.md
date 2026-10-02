@@ -13,6 +13,12 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- lancements supervisés : `atelier_lancer_agent(supervise=true)` fait poser les
+  demandes d'autorisation de l'agent lancé (elles étaient refusées sans bruit) ;
+  son lanceur les lit dans `atelier_lancements › en_attente` et y répond par
+  `atelier_decider`, dans un périmètre tenu par l'Atelier (le projet, les
+  commandes locales) ; le reste attend la personne ; l'aperçu avertit d'un
+  lancement sans branche ;
 - création d'artefact sans erreur inutile : `atelier_artefact_creer` sur un
   nom pris rend l'artefact existant (`existe_deja`) ; « projet requis » dit
   quoi passer ; l'Assistant ne voit plus l'outil qu'il se verrait refuser ;

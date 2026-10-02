@@ -465,6 +465,9 @@ class SessionRecord:
     # ouverte par la personne. La vue Agents le lit pour montrer les agents
     # spécifiques à côté des autres.
     lance_par: str = ""
+    # Lancé en supervision : ses demandes d'autorisation sont posées, et c'est
+    # son lanceur qui répond (dans le périmètre de `perimetre_du_lanceur.py`).
+    supervise: bool = False
     # Le nom sous lequel cet agent parle à wikichat quand ce n'est pas celui
     # que l'Atelier dérive (`<slug>-<id6>`) : un agent nommé de wikichat
     # (« Librarian ») garde son nom en passant par l'Atelier, et son courrier

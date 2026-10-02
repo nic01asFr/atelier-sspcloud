@@ -1,0 +1,94 @@
+"""Ce qu'un lanceur peut autoriser à la place de la personne : le projet, pas au-delà."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+from mcp_gateway.atelier.decisions import Demande
+from mcp_gateway.atelier.outils_conversation import OutilsAtelier, _Refus
+from mcp_gateway.atelier.perimetre_du_lanceur import hors_perimetre
+
+
+def _d(outil: str, **arguments: Any) -> Demande:
+    return Demande(request_id="r1", session_id="s1", outil=outil, arguments=arguments)
+
+
+@pytest.fixture()
+def racine(tmp_path: Path) -> Path:
+    (tmp_path / "src").mkdir()
+    return tmp_path
+
+
+@pytest.mark.parametrize(
+    "demande",
+    [
+        _d("Edit", file_path="src/a.py"),
+        _d("Write", file_path="nouveau.txt"),
+        _d("Read", file_path="src/a.py"),
+        _d("Grep", pattern="x"),
+        _d("Bash", command="pytest -q 2>&1 | tail -5"),
+        _d("Bash", command="python -m lecteur serve"),
+        _d("Bash", command="git add -A && git commit -m x"),
+        _d("Bash", command="ls -la src && cat src/a.py"),
+        _d("Bash", command="mkdir -p out; cp src/a.py out/"),
+    ],
+)
+def test_dans_le_perimetre(demande: Demande, racine: Path) -> None:
+    assert hors_perimetre(demande, racine) is None, demande.arguments
+
+
+def _hors(racine: Path) -> list[Demande]:
+    return [
+        _d("Edit", file_path="/etc/passwd"),
+        _d("Write", file_path=str(racine / ".secrets" / "cle")),
+        _d("Edit", file_path=str(racine / ".git" / "config")),
+        _d("Read", file_path="../autre/x"),
+        _d("Bash", command="curl -s http://exemple.fr"),
+        _d("Bash", command="git push origin main"),
+        _d("Bash", command="rm -rf src"),
+        _d("Bash", command="pip install requests"),
+        _d("Bash", command="python -m venv .venv"),
+        _d("Bash", command="cat ~/work/.secrets/llm_api_key"),
+        _d("Bash", command="cat /etc/hosts"),
+        _d("Bash", command="kubectl get pods"),
+        _d("Bash", command="ls && curl x"),
+        _d("Bash", command="docker ps"),
+        _d("WebFetch", url="https://exemple.fr"),
+        _d("mcp__onyxia__exec", code="x"),
+        Demande(request_id="q", session_id="s", outil="AskUserQuestion", genre="question"),
+    ]
+
+
+def test_hors_du_perimetre_reste_a_la_personne(racine: Path) -> None:
+    for demande in _hors(racine):
+        assert hors_perimetre(demande, racine), (demande.outil, demande.arguments)
+
+
+def test_un_lien_ne_fait_pas_sortir_du_projet(racine: Path, tmp_path_factory: pytest.TempPathFactory) -> None:
+    dehors = tmp_path_factory.mktemp("dehors")
+    (racine / "lien").symlink_to(dehors)
+    assert hors_perimetre(_d("Write", file_path="lien/x"), racine)
+
+
+def _outils(rec: Any, racine: Path) -> OutilsAtelier:
+    outils = OutilsAtelier(store=None, projects=None, harness=None, apps=None)
+    outils.store = SimpleNamespace(get=lambda _id: rec, settings=SimpleNamespace(projects_dir=racine.parent))
+    return outils
+
+
+def test_atelier_decider_applique_le_perimetre_aux_agents_supervises(racine: Path) -> None:
+    rec = SimpleNamespace(supervise=True, slug=racine.name)
+    outils = _outils(rec, racine)
+    outils._garder_le_perimetre_du_lanceur(_d("Edit", file_path="src/a.py"))
+    with pytest.raises(_Refus, match="attend la personne"):
+        outils._garder_le_perimetre_du_lanceur(_d("Bash", command="git push"))
+
+
+def test_une_conversation_de_la_personne_n_est_pas_concernee(racine: Path) -> None:
+    outils = _outils(SimpleNamespace(supervise=False, slug=racine.name), racine)
+    outils._garder_le_perimetre_du_lanceur(_d("Bash", command="git push"))
+    _outils(None, racine)._garder_le_perimetre_du_lanceur(_d("Bash", command="git push"))

@@ -206,6 +206,8 @@ class Lancement:
     erreur: str = ""
     message: str = ""
     outils: list[str] = field(default_factory=list)
+    # Supervisé : ses demandes d'autorisation sont posées et son lanceur y répond.
+    supervise: bool = False
     # Sur une branche : la copie de travail, la branche, la base et son commit.
     branche: str = ""
     copie: str = ""
@@ -434,6 +436,26 @@ class Lanceur:
         ]
         return sortie[: max(1, min(limite, 500))]
 
+    def demandes_en_attente(self, lancement: Lancement) -> list[dict[str, Any]]:
+        """Ce que l'agent supervisé attend : de quoi décider, et si le lanceur le peut."""
+        from mcp_gateway.atelier.perimetre_du_lanceur import hors_perimetre, resume_de_la_demande
+
+        racine = Path(self.settings.projects_dir) / lancement.projet
+        sortie = []
+        for demande in self.store.harness.decisions.en_attente(lancement.conversation):
+            raison = hors_perimetre(demande, racine)
+            sortie.append(
+                {
+                    "demande": demande.request_id,
+                    "outil": demande.outil,
+                    "resume": resume_de_la_demande(demande),
+                    "posee_le": demande.posee_le,
+                    "au_lanceur": raison is None,
+                    "pour_la_personne": raison,
+                }
+            )
+        return sortie
+
     def reconcilier(self) -> list[str]:
         """Au démarrage : un lancement « en cours » sans fil qui le joue a été interrompu."""
         repris = []
@@ -524,6 +546,11 @@ class Lanceur:
                 return base, avertissements
         return voulu, avertissements
 
+    @staticmethod
+    def _supervise(demande: dict[str, Any], origine: str) -> bool:
+        """Une réparation de gardien n'a personne pour répondre : jamais supervisée."""
+        return demande.get("supervise") is True and not origine.startswith(PREFIXE_GARDIEN)
+
     def _duree(self, demande: dict[str, Any], exiger: bool, avertissements: list[str]) -> int:
         plafonds = demande.get("plafonds") if isinstance(demande.get("plafonds"), dict) else {}
         brut = plafonds.get("duree_s", demande.get("duree_s"))
@@ -593,12 +620,19 @@ class Lanceur:
         slug, dossier = self._projet(demande)
         mode, avertissements = self._mode(dossier, demande, origine)
         duree = self._duree(demande, False, avertissements)
+        branche = str(demande.get("branche") or "")
+        if not branche and mode != "plan":
+            avertissements.append(
+                "sans branche : l'agent modifie directement le projet. Passez `branche` "
+                "(`agent/<sujet>`) pour qu'il travaille dans une copie et propose son résultat."
+            )
         return {
             "projet": slug,
             "nom": str(demande.get("nom") or "").strip() or None,
             "mode": mode,
             "duree_s": duree,
-            "branche": str(demande.get("branche") or "") or None,
+            "supervise": self._supervise(demande, origine),
+            "branche": branche or None,
             "message": str(demande.get("message") or "")[:500],
             "avertissements": avertissements,
             "plafonds": asdict(self.plafonds),
@@ -658,6 +692,7 @@ class Lanceur:
                 cree_le=_maintenant(),
                 message=message[:2000],
                 outils=outils,
+                supervise=self._supervise(demande, origine),
                 branche=branche,
                 reparation=demande.get("reparation") if isinstance(demande.get("reparation"), dict) else None,
             )
@@ -668,6 +703,7 @@ class Lanceur:
                 titre = str(demande.get("titre") or "").strip() or nom or f"Agent lancé ({origine})"
                 rec = self.store.create(slug=slug, model=(str(demande.get("modele") or "").strip() or None), title=titre[:120])
             rec.lance_par = origine
+            rec.supervise = lancement.supervise
             if nom:
                 rec.nom_wikichat = nom
             if copie is not None:
@@ -752,7 +788,7 @@ class Lanceur:
             resultat = self.store.send(
                 lancement.conversation,
                 lancement.message,
-                peut_attendre=False,
+                peut_attendre=lancement.supervise,
                 mode=lancement.mode,
                 delai_s=duree,
                 regles=regles or None,
@@ -1011,6 +1047,14 @@ def inscrire_les_commandes(catalogue: Any, lanceur: Lanceur) -> None:
             "duree_min": {"type": "integer", "description": "Durée maximale en minutes (15 par défaut, 30 au plus)."},
             "mode": {"type": "string", "enum": ["plan", "default", "acceptEdits"]},
             "modele": {"type": "string"},
+            "supervise": {
+                "type": "boolean",
+                "description": (
+                    "Vrai : ses demandes d'autorisation vous reviennent (atelier_lancements → en_attente, "
+                    "réponse par atelier_decider) au lieu d'être refusées. Vous n'autorisez que ce qui reste "
+                    "dans le projet ; le reste attend la personne."
+                ),
+            },
             "branche": {"type": "string", "description": "Facultatif : `agent/<sujet>`, pour qu'il travaille dans une copie et propose sa branche."},
         },
         "required": ["projet", "message"],
@@ -1073,6 +1117,7 @@ def inscrire_les_commandes(catalogue: Any, lanceur: Lanceur) -> None:
             schema=schema_lancer,
             regles=[
                 "profil code du projet visé, jamais celui de l'Assistant",
+                "supervise=true : l'agent pose ses demandes d'autorisation, le lanceur répond dans le périmètre du projet",
                 "mode du projet ; bypassPermissions seulement par une définition de routine ou de trigger et si le projet l'accorde",
                 "plafonds tenus par l'Atelier : simultanés, par jour, par origine, durée",
                 "sur une branche : copie de travail, jamais main, jamais d'envoi",
@@ -1088,7 +1133,14 @@ def inscrire_les_commandes(catalogue: Any, lanceur: Lanceur) -> None:
             projet=str(arguments.get("projet") or ""),
             limite=int(arguments.get("limite") or 50),
         )
-        return Effet(charge={"lancements": [l.en_dict() for l in liste], "nombre": len(liste)})
+        attente = lanceur.demandes_en_attente
+        sortie = []
+        for l in liste:
+            fiche = l.en_dict()
+            if l.supervise and l.conversation:
+                fiche["en_attente"] = attente(l)
+            sortie.append(fiche)
+        return Effet(charge={"lancements": sortie, "nombre": len(liste)})
 
     catalogue.ajouter(
         Commande(
