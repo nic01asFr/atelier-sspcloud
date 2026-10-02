@@ -309,6 +309,10 @@ def test_une_reparation_de_gardien_n_est_jamais_supervisee(reglages: AtelierSett
     assert Lanceur._supervise({"supervise": True}, "gardien:controle") is False
     assert Lanceur._supervise({"supervise": True}, "conversation:abc") is True
     assert Lanceur._supervise({}, "conversation:abc") is False
+    # Un client sans schéma envoie « true » en texte ; « false » reste faux.
+    assert Lanceur._supervise({"supervise": "true"}, "conversation:abc") is True
+    assert Lanceur._supervise({"supervise": "false"}, "conversation:abc") is False
+    assert Lanceur._supervise({"supervise": 0}, "conversation:abc") is False
 
 
 def test_l_apercu_dit_quand_l_agent_travaille_sans_branche(reglages: AtelierSettings) -> None:
