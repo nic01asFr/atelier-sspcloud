@@ -85,7 +85,17 @@ OUTILS_DU_PROFIL_CODE = frozenset(
 # sont plus **déclarées** à l'Assistant (environ 2 000 unités de schémas par
 # requête, `assistant.py`), mais restent **permises** : `gateway_find_tools`
 # les trouve, `gateway_call_tool` les appelle, par les mêmes gardes.
-HORS_LISTE_ASSISTANT = frozenset({"atelier_envoyer", "atelier_transcript", "atelier_suivre", "atelier_ouvrir"})
+HORS_LISTE_ASSISTANT = frozenset(
+    {
+        "atelier_envoyer",
+        "atelier_transcript",
+        "atelier_suivre",
+        "atelier_ouvrir",
+        # Refusée à l'Assistant (il n'écrit pas de fichiers) : la déclarer
+        # l'invite à l'essayer ; il délègue, puis montre avec atelier_montrer.
+        "atelier_artefact_creer",
+    }
+)
 
 # Un identifiant de conversation : celui de l'Atelier ou celui du CLI. Il
 # nomme un fichier du magasin ; rien d'autre ne passe.

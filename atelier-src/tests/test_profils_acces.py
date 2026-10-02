@@ -557,3 +557,14 @@ def test_une_conversation_connue_de_code_qui_annonce_assistant_et_le_dossier_res
     conv = conversation(porte.atelier, "demo")
     dossier = _dossier_de_l_assistant(porte.atelier)
     assert porte.noms(profil="assistant", conv=conv, dossier=dossier) == OUTILS_CODE
+
+
+@pytest.mark.parametrize("outil", ["onyxia__expose_public", "onyxia__unexpose_public"])
+def test_l_assistant_n_expose_pas_une_adresse_publique_par_la_passerelle(porte: Porte, outil: str) -> None:
+    """Publier une adresse est un geste de la personne, même par `gateway_call_tool`."""
+    conv = _conversation_de_l_assistant(porte.atelier)
+    charge, erreur = porte.appeler(
+        "gateway_call_tool", {"name": outil, "arguments": {}}, profil="assistant", conv=conv
+    )
+    assert "réservé à la personne" in json.dumps(charge, ensure_ascii=False), charge
+    assert porte.pool.appels == [], "rien n'est parti vers Onyxia"

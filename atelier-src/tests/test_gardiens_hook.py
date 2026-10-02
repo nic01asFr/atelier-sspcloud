@@ -14,6 +14,8 @@ from mcp_gateway.atelier.claude_home import fusionner_les_reglages
 from mcp_gateway.gardiens.garde_bash import MODULE, commande_du_hook, poser, raison_de_refus
 
 REFUSEES = [
+    "cat ~/work/.secrets/atelier_lanceur_key",
+    "ls /home/user/work/.secrets",
     'pkill -f "server.mjs"',
     "pkill -f server.mjs",
     "pkill node",
@@ -45,6 +47,7 @@ ACCEPTEES = [
     "git commit -m 'Refuser pkill dans le hook'",
     "curl -s http://127.0.0.1:3777/api/health",
     "grep -rn 0.0.0.0 docs/",
+    "grep -rn secrets docs/",
 ]
 
 

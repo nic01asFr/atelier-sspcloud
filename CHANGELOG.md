@@ -13,6 +13,12 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- création d'artefact sans erreur inutile : `atelier_artefact_creer` sur un
+  nom pris rend l'artefact existant (`existe_deja`) ; « projet requis » dit
+  quoi passer ; l'Assistant ne voit plus l'outil qu'il se verrait refuser ;
+- gardes : `~/work/.secrets/` est refusé aux commandes des agents, et
+  `expose_public` / `unexpose_public` ne passent plus par `gateway_call_tool`
+  (gestes de la personne) ;
 - une seule version pour le service, le paquet et le chart (0.3.0) ;
 - image redistribuable : le navigateur sans écran et l'extension Claude Code
   sont téléchargés depuis leur source au premier démarrage, puis gardés sur

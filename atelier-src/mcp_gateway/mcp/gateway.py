@@ -88,6 +88,9 @@ class _Appel:
     autorises: set[str] | None
 
 
+_OUTILS_DE_LA_PERSONNE = frozenset({"expose_public", "unexpose_public"})
+
+
 def _refus_hors_profil(appel: _Appel) -> dict | None:
     if appel.internal or appel.autorises is None or appel.nom in appel.autorises:
         return None
@@ -472,6 +475,14 @@ class McpGateway:
         refus = _refus_hors_profil(appel)
         if refus is not None:
             return refus
+
+        if not internal and name.rsplit("__", 1)[-1] in _OUTILS_DE_LA_PERSONNE:
+            # Publier ou retirer une adresse publique est un geste de la
+            # personne ; un modèle ne l'obtient pas par `gateway_call_tool`.
+            return _texte(
+                f"{name} est réservé à la personne : demandez-lui de l'exposer depuis l'Atelier.",
+                erreur=True,
+            )
 
         try:
             result = await self.pool.call(name, arguments)

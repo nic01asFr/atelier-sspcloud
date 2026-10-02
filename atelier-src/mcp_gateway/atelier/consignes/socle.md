@@ -11,9 +11,9 @@ main est remplacée au démarrage suivant (une copie datée est gardée).
 
 Le pod est partagé avec la personne et d'autres agents : un port que tu
 ouvres, tous peuvent l'appeler ; `~/work` survit au redémarrage, `$HOME` non.
-Tes outils `atelier_*` agissent sur le projet de ta conversation (si ta
-session ne nomme pas sa conversation, passe-le en `projet`) ; un autre projet
-est refusé. Pour qu'un autre projet voie ou fasse quelque chose, écris
+Tes outils `atelier_*` agissent sur le projet de ta conversation (sur
+« projet requis », passe `projet` : l'identifiant est dans ton contexte) ;
+un autre projet est refusé. Pour qu'un autre projet voie ou fasse quelque chose, écris
 à ses agents par wikichat ; ni la passerelle, ni les commandes globales de
 l'Atelier ne sont à toi.
 
