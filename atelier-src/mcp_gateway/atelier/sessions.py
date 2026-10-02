@@ -392,6 +392,23 @@ def enregistrer_les_routes_des_processus(app: Any) -> None:
     app.include_router(router)
 
 
+_MODELE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:\-\[\]]{0,119}$")
+
+
+def modele_valide(valeur: str) -> str:
+    """Un identifiant de modèle ou un alias (`sonnet`, `opus`…), ou vide (= le défaut).
+
+    Même liberté que `--model` : on ne vérifie que la forme, c'est le CLI et
+    la passerelle qui savent ce qu'ils servent.
+    """
+    texte = (valeur or "").strip()
+    if not texte:
+        return ""
+    if not _MODELE.match(texte):
+        raise ValueError(f"modèle invalide : {texte[:40]!r}")
+    return texte
+
+
 @dataclass
 class SessionRecord:
     session_id: str
@@ -604,6 +621,7 @@ class SessionStore:
         archived: bool | None = None,
         permission_mode: str | None = None,
         effort: str | None = None,
+        model: str | None = None,
     ) -> SessionRecord:
         rec = self.get(session_id)
         if not rec:
@@ -638,6 +656,11 @@ class SessionStore:
             )
         if effort is not None:
             rec.effort = effort_valide(effort)
+        if model is not None:
+            # Comme `/model` dans Claude Code : le modèle de la conversation
+            # change pour les tours à venir (il est dans l'empreinte du processus
+            # gardé, qui repart avec `--model` et reprend la conversation).
+            rec.model = modele_valide(model)
         self.save(rec)
         if permission_mode is not None:
             # Le processus gardé de cette conversation ne garde pas l'ancien

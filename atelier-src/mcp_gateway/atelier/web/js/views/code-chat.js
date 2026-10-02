@@ -608,9 +608,24 @@ const BAS_DU_FIL = 1e9;
       send.textContent = state.busy ? "Mettre en file" : "Envoyer";
     }
     if (stop) stop.hidden = !state.busy;
-    const peutJoindre = sessionReady && !!state.sessionId;
+    // Avant le premier message, il n'y a pas encore de conversation où les
+    // déposer : elles attendent côté écran, et partent dès que la conversation
+    // naît (voir `assurerConversation`).
+    const peutJoindre = sessionReady;
     if (attach) attach.disabled = !peutJoindre;
     if (attachInput) attachInput.disabled = !peutJoindre;
+
+    // Le modèle appartient à la conversation, comme `/model` dans Claude Code :
+    // il se choisit avant le premier message (il vaut dès le premier tour) et
+    // se change ensuite, pour les tours à venir.
+    const modele = $("composer-model");
+    if (modele) {
+      const courante = state.sessions?.find((x) => x.session_id === state.sessionId);
+      const valeur = state.sessionId ? courante?.model || "" : state.modeleEnAttente || "";
+      composerInput?.remplirLesModeles?.(modele, valeur);
+      modele.disabled = !sessionReady || state.busy;
+      modele.hidden = !sessionReady;
+    }
 
     // Le mode de travail appartient à la conversation. Il se choisit aussi
     // avant le premier message (lot H : il n'apparaissait qu'après) ; il est

@@ -100,6 +100,14 @@ conversation s'ouvre dans l'interface, dans VS Code et au terminal, avec les mê
 - On peut écrire pendant qu'un tour travaille : le message se met en file. On peut joindre des
   fichiers. Plusieurs écrans (un autre onglet, VS Code) regardent la même conversation sans la
   déclencher.
+- Le modèle de la conversation se choisit dans la barre du message, comme `/model` dans Claude
+  Code : avant le premier message (il vaut dès le premier tour) ou ensuite (pour les tours à
+  venir, le processus repart avec `--model` et reprend la conversation). La liste est celle de
+  Claude Code : modèles SSPCloud et fournisseurs (Albert). `/model` seul la dit, `/model <nom>`
+  change de modèle (identifiant, fin d'identifiant, alias `opus`/`sonnet`/`haiku`, `default`).
+- Les fichiers se joignent aussi avant le premier message : ils attendent à l'écran et partent
+  dès que la conversation naît ; sans texte, le premier fichier nomme le projet. Le fil les
+  montre en pastilles, avec leur nom.
 - « Ouvrir dans VS Code » ouvre code-server sur la conversation elle-même ; ce qui s'y dit
   apparaît en direct dans l'interface, et inversement.
 - Le bouton « Échanges » paraît quand la conversation a des fils wikichat ouverts avec d'autres
