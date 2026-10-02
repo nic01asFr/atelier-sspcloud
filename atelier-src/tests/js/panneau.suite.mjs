@@ -42,6 +42,18 @@ import { ESPACE_ASSISTANT } from "../../mcp_gateway/atelier/web/js/state.js";
 import { libelleEchanges, rendreFils } from "../../mcp_gateway/atelier/web/js/views/fils.js";
 import { ouvreUnTour, buildStreamBlocks } from "../../mcp_gateway/atelier/web/js/controllers/chat.js";
 import { appendBlock, carteDAction } from "../../mcp_gateway/atelier/web/js/ui/message-render.js";
+
+// Les onglets du panneau : leurs boutons de rôle « tab ». Chaque onglet porte
+// aussi sa croix de fermeture, un autre bouton.
+function lesOnglets() {
+  return document.getElementById("panneau-onglets").querySelectorAll("button").filter((b) => b.getAttribute("role") === "tab");
+}
+// La croix de l'onglet actif : fermer se fait sur l'onglet lui-même.
+function croixDeLOngletActif() {
+  const tous = document.getElementById("panneau-onglets").querySelectorAll("button");
+  const rang = lesOnglets().findIndex((b) => b.getAttribute("aria-selected") === "true");
+  return tous.filter((b) => (b.getAttribute("aria-label") || "").startsWith("Fermer l'onglet"))[rang];
+}
 import { messageSysteme, messagesFromTranscript } from "../../mcp_gateway/atelier/web/js/api.js";
 
 async function attendre() {
@@ -111,20 +123,19 @@ async function attendre() {
   const pris = panneau.surEvenement({ kind: "systeme", cause: "panneau_montrer", session_id: "s1", text: JSON.stringify(neuve) });
   verifier(pris, "l'événement Montrer est reconnu");
   verifier(!document.getElementById("panneau").hidden, "Montrer ouvre le panneau seul (J-f)");
-  const actif = document.getElementById("panneau-onglets").querySelectorAll("button").find((b) => b.getAttribute("aria-selected") === "true");
+  const actif = lesOnglets().find((b) => b.getAttribute("aria-selected") === "true");
   egal(texte(actif), "Rapport", "l'onglet montré est actif");
   verifier(document.querySelector(".panneau-cadre") !== null, "son cadre existe");
   verifier(!panneau.surEvenement({ kind: "systeme", cause: "message_suivant" }), "un autre événement n'est pas pour le panneau");
   panneau.surEvenement({ kind: "systeme", cause: "panneau_montrer", session_id: "autre", text: JSON.stringify({ ...carte, id: "v_x" }) });
-  egal(document.getElementById("panneau-onglets").querySelectorAll("button").length, 2, "une autre conversation ne s'invite pas");
+  egal(lesOnglets().length, 2, "une autre conversation ne s'invite pas");
 
   // Épingler, puis fermer.
   const epingler = document.getElementById("panneau-outils").querySelectorAll("button").find((b) => texte(b) === "Épingler au projet");
   cliquer(epingler);
   await attendre();
   porte(JSON.stringify(appels), '["enregistrer","projet"]', "épingler au projet enregistre");
-  const fermer = document.getElementById("panneau-outils").querySelectorAll("button").find((b) => texte(b) === "Fermer");
-  cliquer(fermer);
+  cliquer(croixDeLOngletActif());
   await attendre();
   verifier(appels.some((a) => a[0] === "retirer"), "fermer retire l'onglet côté service");
 }
@@ -170,7 +181,7 @@ async function attendre() {
   const aside = document.getElementById("panneau");
   const corps = document.getElementById("panneau-corps");
   const cadreDuBureau = () => corps.querySelectorAll(".panneau-cadre").find((f) => (f.getAttribute("src") || f.src) === "/v1/bureaux/blender/bureau/ouvrir") || null;
-  const onglet = (t) => document.getElementById("panneau-onglets").querySelectorAll("button").find((b) => texte(b) === t);
+  const onglet = (t) => lesOnglets().find((b) => texte(b) === t);
 
   // L'agent ne peut pas ouvrir un bureau : l'événement est pris, rien ne s'ouvre.
   verifier(panneau.surEvenement({ kind: "systeme", cause: "panneau_montrer", session_id: "s2", text: JSON.stringify(vue) }), "l'événement est reconnu");
@@ -195,7 +206,7 @@ async function attendre() {
   porte(cadreDuBureau().getAttribute("sandbox"), "allow-same-origin", "noVNC a besoin de son cookie sur l'hôte");
   nePorte(cadreDuBureau().getAttribute("sandbox"), "allow-top-navigation", "jamais la navigation du haut");
   const gestes = document.getElementById("panneau-outils").querySelectorAll("button").map((b) => texte(b));
-  egal(gestes, ["Recharger", "Détacher", "Fermer"], "un bureau ne s'épingle pas");
+  egal(gestes, ["Recharger", "Détacher"], "un bureau ne s'épingle pas");
   verifier(!appels.some((a) => a[0] === "enregistrer"), "et ne s'enregistre pas");
 
   // Masqué, le flux s'arrête ; affiché, il repart.
@@ -210,10 +221,10 @@ async function attendre() {
   // Fermer : rien à retirer côté Atelier.
   panneau.ouvrir(true);
   cliquer(onglet("Bureau Blender"));
-  cliquer(document.getElementById("panneau-outils").querySelectorAll("button").find((b) => texte(b) === "Fermer"));
+  cliquer(croixDeLOngletActif());
   await attendre();
   verifier(!appels.some((a) => a[0] === "retirer"), "fermer un bureau n'appelle pas le panneau de l'Atelier");
-  egal(document.getElementById("panneau-onglets").querySelectorAll("button").map((b) => texte(b)), ["Carte"], "l'onglet est parti");
+  egal(lesOnglets().map((b) => texte(b)), ["Carte"], "l'onglet est parti");
 }
 
 // ── Les créations : « Montrer » remplace le nouvel onglet ──────────────
@@ -357,7 +368,7 @@ async function attendre() {
   const aside = document.getElementById("panneau");
   const corps = document.getElementById("panneau-corps");
   const bascule = document.getElementById("session-panneau-button");
-  const onglets = () => document.getElementById("panneau-onglets").querySelectorAll("button");
+  const onglets = () => lesOnglets();
   const actif = () => onglets().find((b) => b.getAttribute("aria-selected") === "true");
   const cadreDuNavigateur = () => corps.querySelectorAll(".panneau-cadre").find((f) => (f.getAttribute("src") || f.src) === "/v1/ecran/s3/ouvrir") || null;
   const outil = (id, nom) => ({ kind: "outil_debut", session_id: "s3", tool: nom, tool_id: id, text: "{}" });
@@ -375,7 +386,7 @@ async function attendre() {
   porte(cadreDuNavigateur().getAttribute("sandbox"), "allow-same-origin", "l'écran a besoin de son cookie sur l'hôte");
   nePorte(cadreDuNavigateur().getAttribute("sandbox"), "allow-top-navigation", "jamais la navigation du haut");
   const gestes = document.getElementById("panneau-outils").querySelectorAll("button").map((b) => texte(b));
-  egal(gestes, ["Recharger", "Détacher", "Fermer"], "le navigateur ne s'épingle pas");
+  egal(gestes, ["Recharger", "Détacher"], "le navigateur ne s'épingle pas");
 
   // La personne regarde une création : l'agent change de page, on ne lui vole pas l'attention.
   cliquer(onglets().find((b) => texte(b) === "Carte"));
@@ -411,7 +422,7 @@ async function attendre() {
 
   // Fermer l'onglet : rien à retirer côté Atelier.
   cliquer(onglets().find((b) => texte(b).includes("Navigateur")));
-  cliquer(document.getElementById("panneau-outils").querySelectorAll("button").find((b) => texte(b) === "Fermer"));
+  cliquer(croixDeLOngletActif());
   await attendre();
   verifier(!appels.some((a) => a[0] === "retirer" || a[0] === "enregistrer"), "le navigateur n'est jamais enregistré");
 
@@ -480,7 +491,7 @@ async function attendre() {
   await attendre();
 
   const catalogue = document.getElementById("panneau-catalogue");
-  const onglets = () => document.getElementById("panneau-onglets").querySelectorAll("button");
+  const onglets = () => lesOnglets();
   const gestes = () => document.getElementById("panneau-outils").querySelectorAll("button").map((b) => texte(b));
 
   // Le panneau s'ouvre sans vue : le catalogue de tous les projets, rangé par projet.
@@ -498,7 +509,7 @@ async function attendre() {
   await attendre();
   egal(appels.find((a) => a[0] === "enregistrer"), ["enregistrer", "autre", "secret", "conversation"], "enregistrée dans le projet nommé, à la conversation");
   egal(onglets().map((b) => texte(b)), ["autre · secret"], "l'onglet dit son projet");
-  egal(gestes(), ["Recharger", "Détacher", "Fermer"], "pas d'épingle au projet pour la création d'un autre projet");
+  egal(gestes(), ["Recharger", "Détacher"], "pas d'épingle au projet pour la création d'un autre projet");
 
   // Un refus du serveur se dit, puis une action réussie efface la note.
   refuser = true;

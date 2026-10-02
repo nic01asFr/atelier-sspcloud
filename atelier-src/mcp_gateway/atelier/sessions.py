@@ -392,6 +392,21 @@ def enregistrer_les_routes_des_processus(app: Any) -> None:
     app.include_router(router)
 
 
+_SLUG_DE_PROJET = re.compile(r"^[a-z0-9][a-z0-9_-]{0,79}$")
+
+
+def slug_de_projet_valide(slug: str, settings: AtelierSettings) -> str:
+    """Le nom d'un dossier de `projects/`, rien d'autre.
+
+    La création de projet impose déjà cette forme ; celle de conversation ne
+    la vérifiait pas : `../evasion` donnait un dossier de travail hors de
+    `projects/`, `A B` ou une faute de frappe, un projet de plus dans la liste.
+    """
+    if slug == settings.assistant_slug or _SLUG_DE_PROJET.match(slug or ""):
+        return slug
+    raise ValueError(f"slug de projet invalide : {str(slug)[:40]!r} (minuscules, chiffres, - et _)")
+
+
 _MODELE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/:\-\[\]]{0,119}$")
 
 
@@ -582,6 +597,11 @@ class SessionStore:
     ) -> SessionRecord:
         sid = new_session_id()
         slug = (slug or self.settings.default_slug).strip() or self.settings.default_slug
+        if kind == "assistant":
+            # Une conversation de l'Assistant n'a qu'un « projet » : le sien. Un
+            # autre nom ne ferait que mentir sur l'endroit où elle travaille.
+            slug = self.settings.assistant_slug
+        slug_de_projet_valide(slug, self.settings)
         model = model if model is not None else self.settings.default_model
         resolved_kind = kind or _kind_for_slug(self.settings, slug)
         cwd = _cwd_for_new_session(self.settings, slug, resolved_kind, sid)

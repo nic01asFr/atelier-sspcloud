@@ -6,6 +6,7 @@ import { $ } from "../core/dom.js";
 import { bindAutoGrowTextarea, syncAutoGrowTextarea } from "../ui/auto-grow-textarea.js";
 import { noteDuMode } from "../ui/mode-processus.js";
 import { optionsDuModele } from "../ui/choix-du-modele.js";
+import { tourDeLaConversation } from "../ui/etat-du-tour.js";
 
 const MAX_TEXTAREA_PX = 160;
 const MAX_ATTACHMENTS = 8;
@@ -77,11 +78,28 @@ export function createComposerInputController(ctx) {
   }
 
   async function onStop() {
-    if (!state.token || !state.sessionId || !state.busy) return;
+    if (!state.token || !state.sessionId || !tourDeLaConversation(state).enCours) return;
+    // La conversation visée est celle qu'on regarde au moment du clic, et
+    // seulement elle : une autre qui tourne ne s'arrête pas par ce bouton.
+    const visee = state.sessionId;
     try {
-      await api.interruptSession(state.token, state.sessionId);
+      await api.interruptSession(state.token, visee);
     } catch (err) {
       S.setError(state, err.message || String(err));
+      render();
+      return;
+    }
+    // L'arrêt abandonne ce qui attendait, mais le service le fait un instant
+    // après avoir répondu : on relit à deux reprises plutôt que de garder à
+    // l'écran des messages qui ne partiront plus.
+    for (const delai of [0, 700]) {
+      if (delai) await new Promise((r) => setTimeout(r, delai));
+      try {
+        const file = await api.fileDesMessages(state.token, visee);
+        if (state.sessionId === visee) S.setEnFile(state, file?.messages || []);
+      } catch {
+        /* relue à la prochaine ouverture */
+      }
       render();
     }
   }

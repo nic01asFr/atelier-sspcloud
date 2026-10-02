@@ -97,7 +97,11 @@ conversation s'ouvre dans l'interface, dans VS Code et au terminal, avec les mê
 - Le fil montre les textes, les outils appelés (résultats repliés au-delà de 1 500 caractères
   ou 25 lignes), les demandes d'autorisation (cartes « Autoriser / Refuser », avec « toujours
   pour ce fil ») et les questions à choix de l'agent.
-- On peut écrire pendant qu'un tour travaille : le message se met en file. On peut joindre des
+- On peut écrire pendant qu'un tour travaille : le message se met en file (« en attente », avec
+  « Retirer » tant qu'il n'est pas parti). Plusieurs conversations peuvent tourner ensemble :
+  « Arrêter », « Mettre en file » et la file sont ceux de la conversation affichée, et changer de
+  conversation ne mélange rien (un tour lancé d'ici, d'un autre onglet ou de VS Code se suit de la
+  même façon, et « Arrêter » l'arrête). On peut joindre des
   fichiers. Plusieurs écrans (un autre onglet, VS Code) regardent la même conversation sans la
   déclencher.
 - Le modèle de la conversation se choisit dans la barre du message, comme `/model` dans Claude

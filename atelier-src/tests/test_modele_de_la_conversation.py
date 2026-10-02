@@ -59,3 +59,23 @@ def test_le_modele_fait_partie_de_l_empreinte_du_processus(tmp_path) -> None:
     a = ClaudeHarness._empreinte(tmp_path, "qwen3-6-35b-moe", "default", "", "", None)
     b = ClaudeHarness._empreinte(tmp_path, "claude-albert-gpt-oss-120b", "default", "", "", None)
     assert a != b
+
+
+# -- le projet d'une conversation (créée par l'API, un agent, un autre accès) --
+
+
+def test_un_slug_qui_sort_de_projects_est_refuse(atelier: TestClient, reglages) -> None:
+    for mauvais in ("../evasion", "a/b", "A B", "Majuscule", "-tiret", ".cache", "x" * 100):
+        r = atelier.post("/v1/sessions", headers=_entete(atelier), json={"slug": mauvais})
+        assert r.status_code == 400, mauvais
+    assert not (reglages.work_dir / "evasion").exists()
+
+
+def test_une_conversation_de_l_assistant_est_toujours_chez_l_assistant(atelier: TestClient, reglages) -> None:
+    r = atelier.post("/v1/sessions", headers=_entete(atelier), json={"slug": "n-importe-quoi", "kind": "assistant"})
+    assert r.status_code == 200 and r.json()["slug"] == reglages.assistant_slug and r.json()["kind"] == "assistant"
+
+
+def test_sans_slug_c_est_le_projet_par_defaut_et_il_le_dit(atelier: TestClient, reglages) -> None:
+    r = atelier.post("/v1/sessions", headers=_entete(atelier), json={})
+    assert r.status_code == 200 and r.json()["slug"] == reglages.default_slug

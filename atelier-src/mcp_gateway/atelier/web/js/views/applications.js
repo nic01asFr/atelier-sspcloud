@@ -164,19 +164,27 @@ export function rendrePanneauApplications(conteneur, etat, actions) {
     const ligne = el("div", "apps-ligne");
     ligne.dataset.app = f.nom;
     ligne.appendChild(el("span", "apps-nom", f.titre || f.nom));
-    const libelle = LIBELLES[f.etat] || f.etat;
-    const statut = el("span", `apps-etat apps-etat-${f.etat}`, libelle);
-    if (f.raison || f.erreur) statut.setAttribute("title", f.erreur || f.raison);
-    ligne.appendChild(statut);
-    ligne.appendChild(el("span", "apps-mode", f.mode === "serveur" ? "serveur" : "autonome"));
+    // Ce qu'on en sait, en une ligne sous le nom. Une page autonome n'a pas
+    // d'état à dire (« fichiers » n'apprenait rien) : le mode suffit.
+    const meta = el("span", "apps-meta");
+    if (f.etat !== "statique") {
+      const statut = el("span", `apps-etat apps-etat-${f.etat}`, LIBELLES[f.etat] || f.etat);
+      if (f.raison || f.erreur) statut.setAttribute("title", f.erreur || f.raison);
+      meta.appendChild(statut);
+    }
+    meta.appendChild(el("span", "apps-mode", f.mode === "serveur" ? "serveur" : "page autonome"));
     if (f.auteur) {
       const auteur = el("span", "apps-auteur", f.auteur);
       auteur.setAttribute("title", "Conversation qui l'a créé");
-      ligne.appendChild(auteur);
+      meta.appendChild(auteur);
     }
+    ligne.appendChild(meta);
+    // Les gestes, groupés à droite de la fiche.
+    const gestes = el("span", "apps-gestes");
+    ligne.appendChild(gestes);
 
     if (actions.montrer && f.etat !== "invalide" && (etat.expose || f.mode !== "serveur")) {
-      ligne.appendChild(
+      gestes.appendChild(
         bouton("Montrer", () => actions.montrer(f), { titre: "Afficher dans le panneau, à côté du fil" }),
       );
     } else if (f.ouvrir && f.etat !== "invalide") {
@@ -184,9 +192,9 @@ export function rendrePanneauApplications(conteneur, etat, actions) {
       lien.setAttribute("href", f.ouvrir);
       lien.setAttribute("target", "_blank");
       lien.setAttribute("rel", "noopener");
-      ligne.appendChild(lien);
+      gestes.appendChild(lien);
     } else {
-      ligne.appendChild(
+      gestes.appendChild(
         bouton("Ouvrir", () => {}, {
           desactive: true,
           titre: f.etat === "invalide" ? "Manifeste invalide" : "Pas d'hôte des applications",
@@ -196,7 +204,7 @@ export function rendrePanneauApplications(conteneur, etat, actions) {
 
     if (f.mode === "serveur") {
       const tourne = ["pret", "demarrage", "redemarrage"].includes(f.etat);
-      ligne.appendChild(
+      gestes.appendChild(
         bouton(tourne ? "Arrêter" : "Démarrer", async (b) => {
           b.setAttribute("disabled", "");
           try {
@@ -206,7 +214,7 @@ export function rendrePanneauApplications(conteneur, etat, actions) {
           }
         }),
       );
-      ligne.appendChild(
+      gestes.appendChild(
         bouton("Journal", async () => {
           const texte = await actions.journal(f.nom);
           // Du texte, rien d'autre : jamais interprété comme du HTML.
@@ -216,7 +224,7 @@ export function rendrePanneauApplications(conteneur, etat, actions) {
       );
     }
     if (f.url) {
-      ligne.appendChild(bouton("Copier l'URL", () => actions.copier(f.url)));
+      gestes.appendChild(bouton("Copier l'URL", () => actions.copier(f.url)));
     }
     if (f.erreur) ligne.appendChild(el("div", "apps-erreur", f.erreur));
     liste.appendChild(ligne);
