@@ -142,6 +142,12 @@ def bloc_contexte(
         f"- Ce que tu écris avec `add_project_note` est partagé par toutes les"
         f" conversations de **{nom}**.",
         "",
+        "### Te faire suivre",
+        "",
+        "- La personne lit ton déroulé en direct. Avant une série d'actions, dis en une"
+        " phrase ce que tu fais et pourquoi ; après un résultat inattendu, ce que tu en"
+        " conclus. Sans ces phrases, elle ne voit que des outils.",
+        "",
         "### Joindre les autres projets",
         "",
         "Tu ne vois que ce projet. Pour qu'un autre projet voie ou fasse quelque chose,"
