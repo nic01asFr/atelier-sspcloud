@@ -5384,6 +5384,15 @@ button.session-face-link[aria-expanded="true"] {
   color: var(--attention);
 }
 
+/* L'autorisation tranchée, dite sur la ligne du geste qui l'a demandée. */
+.etape-etat-autorise {
+  color: var(--texte-3);
+}
+
+.etape-etat-refuse {
+  color: var(--attention);
+}
+
 .etape-corps {
   margin: var(--esp-1) 0 var(--esp-2) 1.6rem;
 }

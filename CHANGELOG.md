@@ -13,6 +13,10 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- fil : une autorisation tranchée rejoint le geste qui l'a demandée (« autorisé »
+  ou « refusé » sur sa ligne, dans le pli des étapes) au lieu de s'empiler sous
+  le pli et de couper le fil de la réflexion ; seules celles à trancher restent
+  en bas, là où l'on répond ;
 - Assistant : passer d'une conversation de projet à l'Assistant pendant un tour
   ne laisse plus le champ désactivé avec « Arrêter » affiché (l'état « occupé »
   de la conversation quittée était emporté) ;
