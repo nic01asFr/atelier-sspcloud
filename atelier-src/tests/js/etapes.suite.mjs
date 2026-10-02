@@ -364,4 +364,35 @@ const parole = (t) => ({ type: "text", text: t });
   egal(appliquerTheme("sombre", doc, refuse), "sombre", "un stockage refusé n'empêche pas d'appliquer le thème");
 }
 
+// ── Les autorisations : tranchées, elles rejoignent leur geste ──────────
+
+{
+  const decision = (id, outilId, etat) => ({
+    type: "decision", etat, demande: { request_id: id, tool_use_id: outilId, outil: "Bash", genre: "autorisation" },
+  });
+  const blocs = [
+    parole("Je vérifie."),
+    outil("t1", "Bash", { command: "ls" }),
+    decision("d1", "t1", "allow"),
+    outil("t2", "Bash", { command: "make" }),
+    decision("d2", "t2", "deny"),
+    outil("t3", "Bash", { command: "pytest" }),
+    decision("d3", "t3", "en_attente"),
+  ];
+  const g = regrouperTour(blocs, { raisonnement: false });
+  egal(g.toujoursVisibles.map((b) => b.demande.request_id), ["d3"], "seule l'autorisation encore à trancher reste en bas");
+  egal(
+    g.etapes.filter((e) => e.genre === "outil").map((e) => e.decision),
+    ["allow", "deny", ""],
+    "les tranchées sont dites sur la ligne de leur outil ; celle en attente n'a pas encore de verdict",
+  );
+  egal(g.nombre, 3, "les décisions ne comptent pas comme des étapes");
+  // Une décision sans outil connu (question, outil absent du fil) reste visible.
+  const seule = regrouperTour([decision("d9", "inconnu", "allow")], { raisonnement: false });
+  egal(seule.toujoursVisibles.length, 1, "sans outil à qui la rattacher, elle reste visible");
+  // Une demande restée sans réponse n'est jamais repliée.
+  const orpheline = regrouperTour([outil("t1", "Bash", {}), decision("d1", "t1", "orpheline")], { raisonnement: false });
+  egal(orpheline.toujoursVisibles.length, 1, "une demande restée sans réponse reste visible");
+}
+
 bilan("etapes");

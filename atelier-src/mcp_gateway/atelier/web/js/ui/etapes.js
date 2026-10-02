@@ -377,6 +377,18 @@ export function regrouperTour(blocs, { aCarte = () => false, raisonnement = regl
   const reponse = [];
   let nombre = 0;
 
+  // Une autorisation déjà tranchée n'attend plus rien de la personne : elle
+  // rejoint le geste qui l'a provoquée, dans le déroulé, au lieu de s'empiler
+  // sous le pli et de couper le fil de la réflexion. Seules restent en bas
+  // celles qu'il faut encore trancher (et les demandes restées sans réponse).
+  const outilsParId = new Set(liste.filter((b) => b?.type === "tool" && b.id).map((b) => b.id));
+  const decisionDe = new Map();
+  for (const b of liste) {
+    if (b?.type === "decision" && (b.etat === "allow" || b.etat === "deny") && outilsParId.has(b.demande?.tool_use_id)) {
+      decisionDe.set(b.demande.tool_use_id, b.etat);
+    }
+  }
+
   liste.forEach((b, i) => {
     if (!b) return;
     if (b.type === "text") {
@@ -392,11 +404,13 @@ export function regrouperTour(blocs, { aCarte = () => false, raisonnement = regl
     if (b.type === "tool") {
       nombre += 1;
       const echec = etapeEnEchec(b);
-      etapes.push({ genre: "outil", bloc: b, libelle: libelleEtape(b), echec });
+      etapes.push({ genre: "outil", bloc: b, libelle: libelleEtape(b), echec, decision: decisionDe.get(b.id) || "" });
       if (echec || aCarte(b)) toujoursVisibles.push(b);
       return;
     }
-    // decision, perimees, systeme : jamais replié.
+    // Tranchée et rattachée à son outil : elle est dans l'étape (voir plus haut).
+    if (b.type === "decision" && decisionDe.has(b.demande?.tool_use_id) && (b.etat === "allow" || b.etat === "deny")) return;
+    // decision à trancher, perimees, systeme : jamais replié.
     toujoursVisibles.push(b);
   });
 

@@ -788,7 +788,7 @@ function span(classe, texte) {
 function empreinteEtape(etape) {
   const r = reglagesDuFil();
   return [
-    "etape", etape.genre, empreinteDuBloc(etape.bloc), etape.echec ? "e" : "",
+    "etape", etape.genre, empreinteDuBloc(etape.bloc), etape.echec ? "e" : "", etape.decision || "",
     r.raisonnement ? "R" : "", r.actions ? "A" : "",
   ].join("|");
 }
@@ -848,6 +848,13 @@ export function construireEtape(etape) {
   tete.append(icone(iconeEtape(b), "etape-icone"), libelle);
   if (enCours || etape.echec) {
     tete.appendChild(span(`etape-etat etape-etat-${b.status}`, ETATS_OUTIL[b.status] || ""));
+  }
+  // L'autorisation qu'a demandée ce geste, dite sur sa ligne : « autorisé » ou
+  // « refusé », sans carte à part. Un refus se lit déjà dans l'état de l'outil.
+  if (etape.decision === "allow") {
+    tete.appendChild(span("etape-etat etape-etat-autorise", "autorisé"));
+  } else if (etape.decision === "deny" && !etape.echec) {
+    tete.appendChild(span("etape-etat etape-etat-refuse", "refusé"));
   }
   pli.open = r.actions;
   remplirAuDepliage(pli, corps, (c) => appendBlock(c, { ...b, sansCarte: aUneCarte(b.output) }));
