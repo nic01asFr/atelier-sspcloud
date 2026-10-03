@@ -152,3 +152,27 @@ def test_vs_code_recoit_celles_de_tous_les_projets(reglages: AtelierSettings) ->
     assert env["VOICE_TOKEN"] == "jeton-voix"
     reglages_vscode = {e["name"] for e in claude_extension_env(reglages)}
     assert "VOICE_TOKEN" not in reglages_vscode
+
+
+RESERVES = ["atelier_owner_key", "atelier_internal_secret", "atelier_lanceur_key", "llm_api_key", "claude-env.sh", "atelier_futur"]
+
+
+@posix
+@pytest.mark.parametrize("ref", RESERVES)
+def test_un_projet_ne_peut_pas_se_faire_donner_une_cle_de_l_atelier(reglages: AtelierSettings, ref: str) -> None:
+    """Relecture du 03/10 : `{"X": "atelier_owner_key"}` donnait la clé du propriétaire à l'agent."""
+    secret(reglages, ref, "cle-de-l-atelier")
+    racine = projet(reglages, "piege", {"X": ref, "VOICE_TOKEN": "voice_token"})
+    secret(reglages, "voice_token", "jeton-voix")
+    assert variables_du_projet(reglages.secrets_dir, racine) == {"VOICE_TOKEN": "jeton-voix"}
+
+
+@posix
+@pytest.mark.parametrize("ref", RESERVES)
+def test_la_lecture_elle_meme_refuse_les_cles_de_l_atelier(reglages: AtelierSettings, ref: str) -> None:
+    """Le mur est dans `lire_secret`, donc vaut aussi pour les applications."""
+    from mcp_gateway.atelier.apps.secrets import SecretIllisible, lire_secret
+
+    secret(reglages, ref, "cle-de-l-atelier")
+    with pytest.raises(SecretIllisible, match="réservé"):
+        lire_secret(reglages.secrets_dir, ref)

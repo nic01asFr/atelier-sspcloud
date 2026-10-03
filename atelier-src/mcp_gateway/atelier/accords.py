@@ -27,22 +27,14 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
-from mcp_gateway.atelier.apps.secrets import reference_valide
+from mcp_gateway.atelier.apps.secrets import (
+    NOMS_DE_L_ATELIER,
+    PREFIXES_DE_L_ATELIER,
+    reference_valide,
+)
 from mcp_gateway.atelier.auth import ENTETE_INTERFACE
 from mcp_gateway.atelier.vscode_bridge import COOKIE_NAME
 from mcp_gateway.auth import bearer_from_header
-
-# Ce que l'Atelier garde pour lui : jamais proposé à un connecteur.
-NOMS_DE_L_ATELIER = frozenset(
-    {
-        "atelier_owner_key",
-        "atelier_internal_secret",
-        "atelier_lanceur_key",
-        "llm_api_key",
-        "claude-env.sh",
-        "atelier-git-askpass.sh",
-    }
-)
 
 
 def noms_des_secrets(dossier: Path) -> list[dict[str, Any]]:
@@ -55,7 +47,7 @@ def noms_des_secrets(dossier: Path) -> list[dict[str, Any]]:
         nom = chemin.name
         # Les noms connus, et tout ce que l'Atelier range sous son préfixe : une
         # clé qu'il ajouterait demain (celle du lanceur l'a montré) reste à lui.
-        if nom in NOMS_DE_L_ATELIER or nom.startswith((".", "atelier_", "atelier-")) or not reference_valide(nom):
+        if nom in NOMS_DE_L_ATELIER or nom.startswith(PREFIXES_DE_L_ATELIER) or not reference_valide(nom):
             continue
         if nom.endswith((".avant", ".tmp", ".bak")) or ".avant-" in nom:
             continue

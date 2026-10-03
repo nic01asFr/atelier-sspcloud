@@ -29,7 +29,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from mcp_gateway.atelier.apps.secrets import SecretIllisible, lire_secret, reference_valide
+from mcp_gateway.atelier.apps.secrets import SecretIllisible, lire_secret, reference_valide, reserve_a_l_atelier
 
 log = logging.getLogger("atelier.env_projet")
 
@@ -76,6 +76,8 @@ def lire_references(racine: Path) -> dict[str, str]:
         raison = raison_du_refus(str(nom))
         if raison is None and not (isinstance(ref, str) and reference_valide(ref)):
             raison = f"référence invalide pour {nom} : {ref!r}"
+        elif raison is None and reserve_a_l_atelier(ref):
+            raison = f"{ref} est réservé à l'Atelier"
         if raison:
             log.warning("%s : %s", chemin, raison)
             continue

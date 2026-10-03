@@ -13,6 +13,15 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- relecture de sécurité du 03/10, trois abus corrigés, chacun avec son test :
+  le périmètre du lanceur laissait passer les chemins relatifs (`a/../../b`),
+  les variables, les redirections collées, les jokers sur `.secrets`, les
+  guillemets qui recollent un nom, `find -exec/-delete` et `python -c` (20 des 26
+  contournements essayés passaient) ; une référence de `.atelier/env.json` ou de
+  manifeste d'application pouvait désigner `atelier_owner_key` : les clés de
+  l'Atelier sont réservées dans `lire_secret` ; une image `![](…/events?message=)`
+  dans une bulle lançait un tour (le GET qui agit exige maintenant une
+  destination `empty` ou `document`, et le rendu ne charge plus cette adresse) ;
 - la case Onyxia du « + » compte pour l'Assistant : le profil l'imposait même
   décochée (la sélection du dossier était écrite, mais ignorée) ; il n'est plus
   écarté que si le dossier l'a explicitement décoché, par défaut il reste donné ;

@@ -17,6 +17,26 @@ from pathlib import Path
 FORME_REFERENCE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 
 
+# Ce que l'Atelier garde pour lui : ni un projet ni une application ne peut s'en
+# faire donner la valeur (sinon `{"X": "atelier_owner_key"}` remet la clé du
+# propriétaire à l'agent). Tout ce qu'il range sous son préfixe est à lui aussi.
+NOMS_DE_L_ATELIER = frozenset(
+    {
+        "atelier_owner_key",
+        "atelier_internal_secret",
+        "atelier_lanceur_key",
+        "llm_api_key",
+        "claude-env.sh",
+        "atelier-git-askpass.sh",
+    }
+)
+PREFIXES_DE_L_ATELIER = (".", "atelier_", "atelier-")
+
+
+def reserve_a_l_atelier(ref: str) -> bool:
+    return ref in NOMS_DE_L_ATELIER or ref.startswith(PREFIXES_DE_L_ATELIER)
+
+
 class SecretIllisible(ValueError):
     """Le secret n'existe pas, ou pas sous une forme qu'on accepte de lire."""
 
@@ -29,6 +49,8 @@ def lire_secret(dossier: Path, ref: str) -> str:
     """La valeur du secret `ref` rangé dans `dossier`, fin de ligne retirée."""
     if not reference_valide(ref):
         raise SecretIllisible(f"référence de secret invalide : {ref!r}")
+    if reserve_a_l_atelier(ref):
+        raise SecretIllisible(f"secret {ref} : réservé à l'Atelier, un projet ne peut pas le demander")
     chemin = dossier / ref
     try:
         infos = chemin.lstat()

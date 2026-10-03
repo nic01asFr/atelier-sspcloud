@@ -57,8 +57,21 @@ MOTIFS_INTERDITS = re.compile(
     r"|\b(?:pip3?|npm|npx|yarn|pnpm|uv|apt|apt-get)\b"
     r"|\bpython3?\s+-m\s+(?:pip|venv|ensurepip)\b"
 )
-_REDIRECTION_DE_FLUX = re.compile(r"\d*>&\d+|&>>?\s*\S+")
+_REDIRECTION_DE_FLUX = re.compile(r"\d*>&\d+")
+_ECRIT_TOUT = re.compile(r"&>>?")
 _SEPARATEURS = re.compile(r"\|\||&&|[;|&\n]|\$\(|`|\)")
+_REDIRECTION = re.compile(r"^\d*(?:>>?|<)(.*)$")
+# Un `.` initial n'est jamais couvert par `*`, `?` ou `[` : seul un composant qui
+# commence par `.` et porte un joker peut viser `.secrets` ou `.git`.
+_JOKER_CACHE = re.compile(r"(?:^|/)\.[^/]*[*?\[]")
+_SUBSTITUTION = re.compile(r"[<>]\(")
+# Du code écrit dans la commande même : on ne sait pas ce qu'il fait.
+_CODE_EN_LIGNE = {
+    "python": {"-c"},
+    "python3": {"-c"},
+    "node": {"-e", "-p", "--eval", "--print"},
+}
+_ACTIONS_DE_FIND = {"-exec", "-execdir", "-ok", "-okdir", "-delete"}
 
 
 def _dedans(chemin: str, racine: Path) -> bool:
@@ -78,11 +91,29 @@ def _dedans(chemin: str, racine: Path) -> bool:
     return not (relatif and relatif[0] in {".secrets", ".git"})
 
 
+def _mot_local(mot: str, racine: Path) -> str | None:
+    """None si ce mot de la commande reste dans le projet ; sinon pourquoi."""
+    if mot.startswith("-"):
+        # `--sortie=/ailleurs` : la valeur d'une option est un chemin comme un autre.
+        mot = mot.partition("=")[2]
+        if not mot:
+            return None
+    if "$" in mot:
+        return f"variable non résolue : {mot}"
+    if _JOKER_CACHE.search(mot):
+        return f"joker sur un nom caché : {mot}"
+    if mot.startswith(("/", "~")) or "/" in mot or ".." in mot.split("/"):
+        if not _dedans(mot.rstrip("*?[") or ".", racine):
+            return f"chemin hors du projet : {mot}"
+    return None
+
+
 def _commande_locale(commande: str, racine: Path) -> str | None:
     """None si la commande est locale ; sinon, pourquoi elle remonte à la personne."""
-    if MOTIFS_INTERDITS.search(commande):
+    if MOTIFS_INTERDITS.search(commande) or _SUBSTITUTION.search(commande):
         return "sort du local (réseau, clés, dépôt, envoi, suppression récursive)"
-    for morceau in _SEPARATEURS.split(_REDIRECTION_DE_FLUX.sub(" ", commande)):
+    nette = _ECRIT_TOUT.sub(">", _REDIRECTION_DE_FLUX.sub(" ", commande))
+    for morceau in _SEPARATEURS.split(nette):
         morceau = morceau.strip()
         if not morceau:
             continue
@@ -90,6 +121,9 @@ def _commande_locale(commande: str, racine: Path) -> str | None:
             mots = shlex.split(morceau)
         except ValueError:
             return "commande illisible"
+        # Les guillemets recollent `.s''ecrets` : on relit la commande une fois dénouée.
+        if MOTIFS_INTERDITS.search(" ".join(mots)):
+            return "sort du local (réseau, clés, dépôt, envoi, suppression récursive)"
         while mots and "=" in mots[0] and not mots[0].startswith(("-", "/", ".")):
             mots = mots[1:]  # VAR=valeur devant la commande
         if not mots:
@@ -101,11 +135,22 @@ def _commande_locale(commande: str, racine: Path) -> str | None:
             sous = next((m for m in mots[1:] if not m.startswith("-")), "")
             if sous not in SOUS_COMMANDES_GIT:
                 return f"git {sous or '?'} n'est pas une commande locale de lecture ou de commit"
-        for mot in mots[1:]:
-            if mot.startswith("-"):
-                continue
-            if mot.startswith(("/", "~", "..")) and not _dedans(mot, racine):
-                return f"chemin hors du projet : {mot}"
+        if programme == "find" and _ACTIONS_DE_FIND & set(mots):
+            return "find lance une autre commande ou supprime"
+        if _CODE_EN_LIGNE.get(programme, set()) & set(mots[1:]):
+            return f"{programme} exécute du code écrit dans la commande"
+        suite = iter(mots[1:])
+        for mot in suite:
+            redirection = _REDIRECTION.match(mot)
+            if redirection:
+                mot = redirection.group(1) or next(suite, "")
+                if not mot:
+                    return "redirection sans cible"
+                if mot.startswith("-"):
+                    mot = "./" + mot
+            raison = _mot_local(mot, racine)
+            if raison:
+                return raison
     return None
 
 
