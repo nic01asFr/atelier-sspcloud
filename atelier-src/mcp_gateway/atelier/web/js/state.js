@@ -246,6 +246,7 @@ export function setView(state, view) {
     setSessionId(state, null);
     state.messages = [];
     state.pendingProjectSlug = null;
+    oublierLesChoixConnecteurs(state);
   }
 }
 
@@ -494,13 +495,42 @@ export function setMessages(state, messages) {
  * Une demande tranchée : sa carte se retire et son verdict rejoint la ligne de
  * l'outil, puis se retient pour les relectures du journal. Vrai si le fil a changé.
  */
+/** Un choix de connecteur fait avant le premier message : il attend la conversation. */
+export function noterChoixConnecteur(state, id, active) {
+  state.mcpEnAttente = { ...(state.mcpEnAttente || {}), [id]: !!active };
+}
+
+/** Les choix attendent d'être posés ou d'être oubliés (autre espace, autre projet). */
+export function oublierLesChoixConnecteurs(state) {
+  state.mcpEnAttente = {};
+  if (state.sessionMcp?.apercu) state.sessionMcp = null;
+}
+
+/** Retient de quel outil une demande parle : la carte peut disparaître avant son verdict. */
+export function noterLaDemande(state, demande) {
+  const rid = demande?.request_id;
+  const tid = demande?.tool_use_id;
+  if (!rid || !tid || demande?.genre === "question") return;
+  state.outilsDesDemandes = { ...(state.outilsDesDemandes || {}), [rid]: tid };
+}
+
+/**
+ * Une demande tranchée : sa carte se retire et son verdict rejoint la ligne de
+ * l'outil, puis se retient pour les relectures du journal. Vrai si le fil a changé.
+ *
+ * L'outil se lit sur la carte ; si une relecture du journal l'a déjà emportée,
+ * sur ce qu'on avait retenu (`noterLaDemande`).
+ */
 export function rattacherUnVerdict(state, requestId, etat) {
+  if (etat !== "allow" && etat !== "deny") return false;
   const avant = state.messages;
-  const id = idDeLOutil(avant, requestId);
-  const apres = rattacherLeVerdict(avant, requestId, etat);
-  if (apres === avant) return false;
-  state.messages = apres;
-  if (id) state.verdicts = { ...(state.verdicts || {}), [id]: etat };
+  const id = idDeLOutil(avant, requestId) || state.outilsDesDemandes?.[requestId] || "";
+  if (!id) return false;
+  state.verdicts = { ...(state.verdicts || {}), [id]: etat };
+  const retiree = rattacherLeVerdict(avant, requestId, etat);
+  const posee = appliquerLesVerdicts(retiree, state.verdicts);
+  if (posee === avant) return false;
+  state.messages = posee;
   return true;
 }
 

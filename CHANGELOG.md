@@ -13,6 +13,16 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- connecteurs réglables avant le premier message : le « + » d'une conversation
+  neuve (projet ou Assistant) montre ce qu'elle recevra (`GET /v1/mcp/apercu`,
+  sans rien créer) ; les cases cochées attendent côté écran et sont appliquées à
+  la naissance de la conversation, donc valent dès le premier tour ;
+- fil : le verdict d'une autorisation ne se perdait plus à l'abandon de
+  l'événement, mais deux relectures du journal assignaient les messages
+  directement (sans réappliquer les verdicts), et une relecture arrivée avant
+  l'événement emportait la carte, donc l'identifiant de l'outil. Les relectures
+  passent par `setMessages`, et l'outil de chaque demande est retenu au moment
+  où elle est posée ;
 - « Services du projet » dit ce que l'agent reçoit : Onyxia, coché dans le choix
   du projet, n'était livré à aucun agent sans déploiement déclaré (constaté sur
   `depth-models` : « aucun outil Onyxia »). La ligne est maintenant éteinte et

@@ -87,4 +87,30 @@ const carte = (rid, tid, genre = "autorisation") => ({ type: "decision", etat: "
   verifier(appliquerLesVerdicts(identique, {}) === identique && appliquerLesVerdicts(identique, undefined) === identique, "sans verdicts retenus, rien ne change");
 }
 
+// Constat du 03/10 (4e essai, Chrome) : la relecture du journal passe avant le verdict
+// et emporte la carte ; sans souvenir de l'outil, le verdict ne trouvait plus où se poser.
+{
+  const st = {
+    messages: [
+      { role: "assistant", blocks: [outil("t1")] },
+      { role: "system", blocks: [carte("d1", "t1")] },
+    ],
+  };
+  S.noterLaDemande(st, { request_id: "d1", tool_use_id: "t1", genre: "autorisation" });
+  S.noterLaDemande(st, { request_id: "q1", tool_use_id: "t9", genre: "question" });
+  S.noterLaDemande(st, { request_id: "", tool_use_id: "t2" });
+  egal(st.outilsDesDemandes, { d1: "t1" }, "seule une autorisation est retenue, avec son identifiant");
+
+  // Le journal est relu : la carte n'est plus là.
+  S.setMessages(st, [{ role: "assistant", blocks: [outil("t1")] }]);
+  verifier(st.messages[0].blocks[0].verdict === undefined, "rien n'est encore dit");
+  egal(S.rattacherUnVerdict(st, "d1", "allow"), true, "le verdict se pose quand même, sur le souvenir");
+  egal(st.messages[0].blocks[0].verdict, "allow", "la ligne de l'outil le porte");
+  // Une nouvelle relecture ne l'efface pas.
+  S.setMessages(st, [{ role: "assistant", blocks: [outil("t1")] }]);
+  egal(st.messages[0].blocks[0].verdict, "allow", "et il survit à la relecture suivante");
+  egal(S.rattacherUnVerdict(st, "inconnue", "allow"), false, "une demande jamais vue : rien");
+  egal(S.rattacherUnVerdict(st, "d1", "relachee"), false, "un verdict inconnu : rien");
+}
+
 bilan("verdict-decision");

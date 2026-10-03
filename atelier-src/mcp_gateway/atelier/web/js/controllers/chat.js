@@ -1,5 +1,6 @@
 /** Chat SSE — envoi message Claude Code. */
 
+import { choixAEnvoyer } from "../ui/connecteurs-avant-envoi.js";
 import { verdictDeLaCause } from "../ui/verdict-decision.js";
 import { commandeModele, ditLesModeles, resoudreModele } from "../ui/choix-du-modele.js";
 import * as api from "../api.js";
@@ -243,7 +244,9 @@ async function relireLeJournal(state, render) {
   try {
     const messages = await buildMessagesFromServer(state, sessionId);
     if (state.sessionId !== sessionId) return false;
-    state.messages = messages;
+    // Par `setMessages` : le journal ne dit pas ce qui a été accordé, les verdicts
+    // déjà rendus se remettent sur les outils relus.
+    S.setMessages(state, messages);
     render();
     return true;
   } catch {
@@ -261,7 +264,7 @@ async function rattraperLeFil(state, render) {
       await new Promise((r) => setTimeout(r, 2000));
     }
     if (state.sessionId !== sessionId) return false;
-    state.messages = await buildMessagesFromServer(state, sessionId);
+    S.setMessages(state, await buildMessagesFromServer(state, sessionId));
     render();
     return true;
   } catch {
@@ -401,6 +404,7 @@ function appliquerEvenement(ctx, stream, ev) {
       const demande = tryParseJson(ev.text);
       if (demande && typeof demande === "object") {
         const bloc = { type: "decision", demande, etat: "en_attente" };
+        S.noterLaDemande(state, demande);
         stream.decisions.push(bloc);
         stream.blocs.push(bloc);
         stream.phase = "decision";
@@ -536,6 +540,18 @@ export function createChatController(ctx) {
    * l'accueille — nait du premier message. Rien n'est ecrit sur le pod
    * tant que l'utilisateur n'a rien envoye.
    */
+  /** Les connecteurs cochés avant le premier message valent dès ce premier tour. */
+  async function appliquerLesConnecteursEnAttente(sessionId) {
+    const choix = choixAEnvoyer(state.sessionMcp?.connectors, state.mcpEnAttente);
+    state.mcpEnAttente = {};
+    if (!Object.keys(choix).length) return;
+    try {
+      await api.patchSessionMcp(state.token, sessionId, { overlay: choix });
+    } catch (err) {
+      S.setError(state, `Connecteurs non appliqués : ${err.message}`);
+    }
+  }
+
   async function assurerConversation(texte) {
     if (S.estAssistant(state)) {
       // L'Assistant n'a pas de projet : sa conversation naît dans son dossier.
@@ -545,6 +561,7 @@ export function createChatController(ctx) {
         model: state.modeleEnAttente || undefined,
       });
       state.modeleEnAttente = "";
+      await appliquerLesConnecteursEnAttente(rec.session_id);
       S.setSessionId(state, rec.session_id);
       S.setMessages(state, []);
       S.setPendingProjectSlug(state, null);
@@ -575,6 +592,7 @@ export function createChatController(ctx) {
       }
       state.modeEnAttente = "";
     }
+    await appliquerLesConnecteursEnAttente(rec.session_id);
     S.setSlug(state, slug);
     S.ensureExpanded(state, slug);
     S.setSessionId(state, rec.session_id);
