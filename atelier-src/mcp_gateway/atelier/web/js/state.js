@@ -1,3 +1,4 @@
+import { messagePourUtilisateur } from "./ui/messages-erreur.js";
 import { appliquerLesVerdicts, idDeLOutil, rattacherLeVerdict } from "./ui/verdict-decision.js";
 /** État applicatif pur — pas de fetch, pas de DOM. */
 
@@ -207,7 +208,8 @@ export function setToken(state, token) {
 }
 
 export function setError(state, msg) {
-  state.error = msg || "";
+  // Dite en français, avec quoi faire : les erreurs arrivent brutes de partout.
+  state.error = messagePourUtilisateur(msg);
 }
 
 export function setBusy(state, busy) {

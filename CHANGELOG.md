@@ -13,6 +13,11 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- les erreurs s'affichent en français et disent quoi faire : « Failed to fetch »,
+  « SSE connection error », « Internal Server Error », « Bearer owner key
+  required » ou un détail JSON brut deviennent une phrase (connexion perdue,
+  session expirée, réessayer) ; les autres messages passent tels quels
+  (`ui/messages-erreur.js`, appliqué au point unique `setError`) ;
 - GPU : chaque appel `gpu_*` laisse une ligne dans `logs/gpu.jsonl` (qui, quoi,
   réponse d'Onyxia), `gpu_switch` n'impose plus `session_id` à un projet sans pod,
   l'Assistant ne peut plus préempter le GPU d'un autre (geste de la personne), et
