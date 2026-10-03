@@ -13,6 +13,17 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- relecture du 03/10, noyau des conversations : une conversation ne joue plus
+  qu'un tour à la fois (la réservation se prend à l'entrée de `send`, y compris
+  pendant le démarrage du tour : un double envoi lançait deux processus sur le
+  même identifiant) ; la fin d'un tour n'écrase plus que l'état du tour (un
+  renommage, un changement de modèle ou un archivage faits pendant ce temps
+  survivent, une conversation supprimée ne ressuscite plus) ; supprimer une
+  conversation en cours arrête son tour ; l'historique ne dédoublonne plus un
+  « oui » répété dans un même registre ;
+- l'image n'est étiquetée `latest` et `main` qu'après son test de fumée (seule
+  l'étiquette du commit part d'abord), et les tests tournent aussi sur les
+  demandes de fusion qui touchent `charts/` ou `install/` ;
 - relecture de sécurité du 03/10, trois abus corrigés, chacun avec son test :
   le périmètre du lanceur laissait passer les chemins relatifs (`a/../../b`),
   les variables, les redirections collées, les jokers sur `.secrets`, les
