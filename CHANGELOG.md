@@ -13,6 +13,9 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- la case Onyxia du « + » compte pour l'Assistant : le profil l'imposait même
+  décochée (la sélection du dossier était écrite, mais ignorée) ; il n'est plus
+  écarté que si le dossier l'a explicitement décoché, par défaut il reste donné ;
 - connecteurs réglables avant le premier message : le « + » d'une conversation
   neuve (projet ou Assistant) montre ce qu'elle recevra (`GET /v1/mcp/apercu`,
   sans rien créer) ; les cases cochées attendent côté écran et sont appliquées à
