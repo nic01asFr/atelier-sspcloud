@@ -404,7 +404,7 @@ export function regrouperTour(blocs, { aCarte = () => false, raisonnement = regl
     if (b.type === "tool") {
       nombre += 1;
       const echec = etapeEnEchec(b);
-      etapes.push({ genre: "outil", bloc: b, libelle: libelleEtape(b), echec, decision: decisionDe.get(b.id) || "" });
+      etapes.push({ genre: "outil", bloc: b, libelle: libelleEtape(b), echec, decision: decisionDe.get(b.id) || b.verdict || "" });
       if (echec || aCarte(b)) toujoursVisibles.push(b);
       return;
     }

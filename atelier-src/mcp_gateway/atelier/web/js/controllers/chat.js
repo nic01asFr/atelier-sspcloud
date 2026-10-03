@@ -1,5 +1,6 @@
 /** Chat SSE — envoi message Claude Code. */
 
+import { rattacherLeVerdict, verdictDeLaCause } from "../ui/verdict-decision.js";
 import { commandeModele, ditLesModeles, resoudreModele } from "../ui/choix-du-modele.js";
 import * as api from "../api.js";
 import * as S from "../state.js";
@@ -437,6 +438,14 @@ function appliquerEvenement(ctx, stream, ev) {
         stream.phase = "reponse";
         pushStreamToUi(state, stream);
         views.codeChat.renderThread();
+      } else {
+        // Une demande trouvée déjà posée à l'ouverture n'est pas dans ce flux :
+        // sa carte est à part. Tranchée (ici, ailleurs, ou par un lanceur), elle
+        // se retire et son verdict rejoint la ligne de l'outil.
+        const etat = verdictDeLaCause(ev.cause);
+        const avant = state.messages;
+        state.messages = rattacherLeVerdict(avant, ev.tool_id, etat);
+        if (state.messages !== avant) views.codeChat.renderThread();
       }
     } else if (ev.kind === "systeme" && ev.cause === "message_systeme" && ev.text) {
       // Ce qu'un hook dit à la personne : une relance de wikichat, le plus

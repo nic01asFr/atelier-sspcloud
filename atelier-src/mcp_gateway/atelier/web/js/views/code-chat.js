@@ -7,6 +7,7 @@ import * as S from "../state.js";
 import { $ } from "../core/dom.js";
 import { appendMessageBody, replierLesResultats, texteDeLaReponse } from "../ui/message-render.js";
 import { icone } from "../ui/icones.js";
+import { rattacherLeVerdict } from "../ui/verdict-decision.js";
 import { LIBELLES as LIBELLES_ASSISTANT } from "./assistant.js";
 import { marquerNonVerifie, nonVerifie } from "./assistant-cartes.js";
 
@@ -353,6 +354,8 @@ const BAS_DU_FIL = 1e9;
         if (reponses) b.reponses = reponses;
       }
     }
+    // Tranchée, la carte se retire et son verdict rejoint la ligne de l'outil.
+    state.messages = rattacherLeVerdict(state.messages, requestId, etat);
   }
 
   /**
