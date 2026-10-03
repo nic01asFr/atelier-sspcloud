@@ -511,6 +511,12 @@ class SessionStore:
     def __init__(self, settings: AtelierSettings, harness: Harness) -> None:
         self.settings = settings
         self.harness = harness
+        # Les conversations dont un envoi est en cours dans ce processus : de
+        # l'entrée dans `send` à la fin du tour. Le harnais ne connaît un tour
+        # qu'une fois le processus lancé ; entre-temps (compaction, fichiers MCP)
+        # un second envoi prenait la fiche « en cours » pour périmée.
+        self._reservees: set[str] = set()
+        self._verrou_des_tours = threading.Lock()
         settings.ensure_dirs()
 
     def _path(self, session_id: str) -> Path:
@@ -772,6 +778,12 @@ class SessionStore:
         rec = self.get(session_id)
         if not rec:
             raise KeyError(session_id)
+        if rec.state == "running":
+            # Supprimer ne laisse pas tourner un processus que plus rien ne montre.
+            try:
+                self.harness.interrupt(session_id)
+            except Exception as exc:  # noqa: BLE001 — la suppression doit aboutir
+                log.warning("arrêt de %s avant suppression impossible : %s", session_id[:8], exc)
         path = self._path(session_id)
         if path.is_file():
             path.unlink()
@@ -1457,6 +1469,91 @@ class SessionStore:
         regles: dict[str, list[str]] | None = None,
         env_tour: dict[str, str] | None = None,
     ) -> TurnResult:
+        """Joue un tour — ou, si la conversation en joue déjà un, met le message en file.
+
+        Une seule conversation, un seul tour à la fois : la réservation se prend
+        ici, avant tout le reste, et se rend à la fin du tour (réussi, en échec
+        ou interrompu). Le détail d'un tour est dans `_send`.
+        """
+        with self._verrou_des_tours:
+            deja = session_id in self._reservees
+            if not deja:
+                self._reservees.add(session_id)
+        if deja:
+            if not self.get(session_id):
+                raise KeyError(session_id)
+            return self._mettre_en_file(session_id, message)
+        try:
+            return self._send(
+                session_id,
+                message,
+                attachment_ids=attachment_ids,
+                on_event=on_event,
+                peut_attendre=peut_attendre,
+                reprises=reprises,
+                mode=mode,
+                delai_s=delai_s,
+                regles=regles,
+                env_tour=env_tour,
+            )
+        finally:
+            with self._verrou_des_tours:
+                self._reservees.discard(session_id)
+
+    def _ecrire_le_sort_du_tour(self, rec: SessionRecord) -> None:
+        """Écrit ce que le tour a décidé — et rien d'autre.
+
+        La fiche lue au début du tour date de plusieurs minutes : la réécrire en
+        entier défaisait un renommage, un changement de modèle ou un archivage
+        faits pendant ce temps, et ressuscitait une conversation supprimée. On
+        relit la fiche, on n'y pose que l'état du tour, et on ne fait pas
+        revivre ce qui a disparu.
+        """
+        courante = self.get(rec.session_id)
+        if courante is None:
+            return
+        courante.state = "archived" if courante.state == "archived" else rec.state
+        courante.cause = rec.cause
+        courante.turns = rec.turns
+        courante.last_text = rec.last_text
+        if rec.claude_session_id:
+            courante.claude_session_id = rec.claude_session_id
+        self.save(courante)
+
+    def _mettre_en_file(self, session_id: str, message: str) -> TurnResult:
+        """Le message attend : il partira dans le tour en cours, dès qu'il aura fini.
+
+        Deux processus sur le même identifiant de session se marcheraient dessus ;
+        c'est le CLI qui tient la file, il suffit de lui écrire au bon moment.
+        """
+        identifiant = self.harness.messages.deposer(session_id, message)
+        return TurnResult(
+            session_id=session_id,
+            exit_code=0,
+            events=[
+                AtelierEvent(
+                    kind="systeme",
+                    session_id=session_id,
+                    cause="message_en_file",
+                    tool_id=identifiant,
+                    text=message,
+                )
+            ],
+        )
+
+    def _send(
+        self,
+        session_id: str,
+        message: str,
+        attachment_ids: list[str] | None = None,
+        on_event: Callable[[AtelierEvent], None] | None = None,
+        peut_attendre: bool = False,
+        reprises: int = 0,
+        mode: str = "",
+        delai_s: int | None = None,
+        regles: dict[str, list[str]] | None = None,
+        env_tour: dict[str, str] | None = None,
+    ) -> TurnResult:
         """Joue un tour.
 
         `delai_s`, `regles` et `env_tour` sont ceux d'un agent lancé (lot D,
@@ -1486,25 +1583,8 @@ class SessionStore:
             rec.state = "failed" if rec.cause else "idle"
             self.save(rec)
         if rec.state == "running":
-            # Un tour travaille vraiment. On ne refuse pas et on n'en lance pas
-            # un second — deux processus sur le même identifiant de session se
-            # marcheraient dessus. Le message attend, et partira dans le tour
-            # en cours dès qu'il aura fini le précédent : c'est le CLI qui
-            # tient cette file, il suffit de lui écrire au bon moment.
-            identifiant = self.harness.messages.deposer(session_id, message)
-            return TurnResult(
-                session_id=session_id,
-                exit_code=0,
-                events=[
-                    AtelierEvent(
-                        kind="systeme",
-                        session_id=session_id,
-                        cause="message_en_file",
-                        tool_id=identifiant,
-                        text=message,
-                    )
-                ],
-            )
+            # Un tour travaille vraiment (lancé hors de ce processus) : le message attend.
+            return self._mettre_en_file(session_id, message)
         if rec.kind == "assistant":
             _normalize_assistant_cwd(self.settings, rec)
             self.save(rec)
@@ -1596,7 +1676,7 @@ class SessionStore:
         except Exception as exc:  # noqa: BLE001 — surface cause to API
             rec.state = "failed"
             rec.cause = str(exc)
-            self.save(rec)
+            self._ecrire_le_sort_du_tour(rec)
             raise
 
         # Le tour a été arrêté parce que la conversation devenait trop lourde :
@@ -1610,7 +1690,7 @@ class SessionStore:
             rec.turns += 1
             rec.state = "idle"
             rec.cause = ""
-            self.save(rec)
+            self._ecrire_le_sort_du_tour(rec)
             if on_event is not None:
                 on_event(
                     AtelierEvent(
@@ -1625,9 +1705,9 @@ class SessionStore:
                 # même endroit, une fois de plus.
                 rec.state = "timeout"
                 rec.cause = "contexte_plafond"
-                self.save(rec)
+                self._ecrire_le_sort_du_tour(rec)
                 return result
-            return self.send(
+            return self._send(
                 session_id,
                 MESSAGE_DE_REPRISE,
                 on_event=on_event,
@@ -1667,7 +1747,7 @@ class SessionStore:
         else:
             rec.state = "idle"
             rec.cause = ""
-        self.save(rec)
+        self._ecrire_le_sort_du_tour(rec)
         self.sync_claude_titles()
         return result
 

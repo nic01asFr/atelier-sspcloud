@@ -114,12 +114,19 @@ def fondre(registres: list[Path]) -> list[dict[str, Any]]:
     attrape le même geste écrit autrement — mais seulement quand il y a du
     texte : un tour qui n'appelle que des outils n'en a pas, et les fondre sur
     un texte vide les réduirait tous à un seul.
+
+    Le texte ne fond qu'entre registres, et en comptant : un « oui » dit deux
+    fois dans une même histoire reste deux fois ; il ne s'efface que s'il a déjà
+    été retenu dans un registre précédent, autant de fois qu'il l'y a été.
     """
     vus_uuid: set[str] = set()
-    vus_texte: set[tuple[str, str]] = set()
+    # (type, texte) → combien de fois retenu dans les registres déjà lus.
+    retenus_avant: dict[tuple[str, str], int] = {}
     retenues: list[tuple[str, int, dict[str, Any]]] = []
     rang = 0
     for chemin in registres:
+        a_fondre = dict(retenus_avant)
+        retenus_ici: dict[tuple[str, str], int] = {}
         # Une entrée sans horodatage (le `result` qui clôt un tour, dans le
         # journal de l'Atelier) prend celui de l'entrée qui la précède dans son
         # registre. Sans cela elle remontait au début de l'histoire : l'affichage
@@ -136,14 +143,17 @@ def fondre(registres: list[Path]) -> list[dict[str, Any]]:
                 continue
             texte = normaliser(texte_dune_entree(e))
             cle = (str(e.get("type")), texte)
-            if texte and cle in vus_texte:
+            if texte and a_fondre.get(cle, 0) > 0:
+                a_fondre[cle] -= 1
                 continue
             if uid:
                 vus_uuid.add(uid)
             if texte:
-                vus_texte.add(cle)
+                retenus_ici[cle] = retenus_ici.get(cle, 0) + 1
             retenues.append((str(e.get("timestamp") or ""), rang, e))
             rang += 1
+        for cle, n in retenus_ici.items():
+            retenus_avant[cle] = retenus_avant.get(cle, 0) + n
     # Sans horodatage, l'entrée garde sa place d'arrivée plutôt que de remonter
     # en tête : mieux vaut un ordre approximatif qu'une histoire réécrite.
     dates = [h for h, _, _ in retenues if h]

@@ -198,3 +198,39 @@ def test_le_resultat_sans_horodatage_reste_a_la_fin_de_son_tour(tmp_path: Path) 
     types = [e["type"] for e in fondre([atelier, cli])]
     assert types.index("result") > types.index("assistant")
     assert types[-1] == "result"
+
+
+def _dits(registres: list[Path]) -> list[tuple[str, str]]:
+    return [(e["type"], e["message"]["content"][0]["text"]) for e in fondre(registres)]
+
+
+def test_un_message_repete_dans_un_meme_registre_n_est_pas_avale(tmp_path: Path) -> None:
+    """Relecture du 03/10 : un deuxième « oui » ou « continue » disparaissait de la vue."""
+    seul = _registre(
+        tmp_path / "a.jsonl",
+        [
+            _ligne("user", "oui", "10:00", "u1"),
+            _ligne("assistant", "d'accord", "10:01", "a1"),
+            _ligne("user", "oui", "10:02", "u2"),
+            _ligne("assistant", "d'accord", "10:03", "a2"),
+        ],
+    )
+    assert _dits([seul]) == [("user", "oui"), ("assistant", "d'accord"), ("user", "oui"), ("assistant", "d'accord")]
+
+
+def test_les_repetitions_ne_sont_fondues_qu_avec_leur_double_de_l_autre_registre(tmp_path: Path) -> None:
+    atelier = _registre(
+        tmp_path / "a.jsonl",
+        [_ligne("user", "oui", "10:00", "a-u1"), _ligne("user", "oui", "10:02", "a-u2")],
+    )
+    # Le CLI a écrit les mêmes deux « oui » sous d'autres uuid, plus un troisième
+    # tapé de son côté.
+    cli = _registre(
+        tmp_path / "c.jsonl",
+        [
+            _ligne("user", "oui", "10:00", "c-u1"),
+            _ligne("user", "oui", "10:02", "c-u2"),
+            _ligne("user", "oui", "10:09", "c-u3"),
+        ],
+    )
+    assert _dits([atelier, cli]) == [("user", "oui")] * 3

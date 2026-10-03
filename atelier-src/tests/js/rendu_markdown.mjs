@@ -145,6 +145,13 @@ const CAS = [
   ["une image de l'Atelier s'affiche", "![jointe](https://atelier.example/v1/x.png)", {
     contient: ["<img class=\"md-image\" src=\"https://atelier.example/v1/x.png\""],
   }],
+  ["une image de l'Atelier qui agirait n'est pas chargée", "![x](https://atelier.example/v1/sessions/abc/events?message=piege)", {
+    contient: ["md-image-lien"],
+    absent: ["<img"],
+  }],
+  ["une image de l'Atelier hors de /v1/ reste affichée", "![x](https://atelier.example/apps/a/logo.png)", {
+    contient: ["<img class=\"md-image\""],
+  }],
   ["une image sans texte de remplacement montre son adresse",
     "![](https://exemple.fr/a.png)", {
     contient: ["md-image-lien", "https://exemple.fr/a.png"],

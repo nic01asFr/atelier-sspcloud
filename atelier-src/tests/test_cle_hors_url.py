@@ -74,3 +74,33 @@ def test_le_front_n_ecrit_plus_la_cle_dans_l_adresse() -> None:
     debut = api_js.index("export function streamEvents")
     corps = api_js[debut : debut + 900]
     assert "token" not in corps
+
+
+def test_une_image_de_la_page_ne_lance_pas_de_tour(atelier: TestClient) -> None:
+    """Relecture du 03/10 : `![](/v1/sessions/<id>/events?message=…)` dans une bulle.
+
+    Le navigateur charge l'image seul, avec le cookie et `Sec-Fetch-Site:
+    same-origin` : sans garde sur la destination, cela lançait un tour au nom du
+    propriétaire. Seul un `EventSource` (destination `empty`) ou une navigation
+    visible (`document`) a le droit d'agir.
+    """
+    atelier.post("/v1/auth/cookie", headers={"Authorization": f"Bearer {_cle(atelier)}"})
+    for destination in ("image", "script", "style", "iframe", "embed", "object", "audio", "video", "track", "font"):
+        r = atelier.get(f"{CHEMIN}?message=piege", headers={**MEME_ORIGINE, "Sec-Fetch-Dest": destination})
+        assert r.status_code == 403, destination
+    for destination in ("empty", "document"):
+        r = atelier.get(f"{CHEMIN}?message=bonjour", headers={**MEME_ORIGINE, "Sec-Fetch-Dest": destination})
+        assert r.status_code == 404, destination  # passe la garde : la session n'existe pas
+
+
+def test_la_garde_decide_sur_la_destination() -> None:
+    from mcp_gateway.atelier.auth import raison_du_refus
+
+    entetes = {"sec-fetch-site": "same-origin"}
+    chemin = "/v1/sessions/abc/events"
+    assert raison_du_refus("GET", chemin, {**entetes, "sec-fetch-dest": "image"}, set())
+    assert raison_du_refus("GET", chemin, {**entetes, "sec-fetch-dest": "empty"}, set()) is None
+    # Un client sans l'en-tête (non navigateur, ou ancien) reste jugé sur le site.
+    assert raison_du_refus("GET", chemin, entetes, set()) is None
+    # Les GET qui n'agissent pas ne sont pas concernés.
+    assert raison_du_refus("GET", "/v1/sessions", {**entetes, "sec-fetch-dest": "image"}, set()) is None

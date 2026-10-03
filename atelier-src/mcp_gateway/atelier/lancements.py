@@ -801,7 +801,15 @@ class Lanceur:
             fiche = self.store.get(lancement.conversation)
             cause = getattr(fiche, "cause", "") if fiche else ""
             etat_fiche = getattr(fiche, "state", "") if fiche else ""
-            if etat_fiche == "interrupted":
+            if any(e.kind == "systeme" and e.cause == "message_en_file" for e in resultat.events):
+                # La conversation travaillait déjà : le message attend dans l'autre
+                # tour, rien n'a tourné pour CE lancement. « Fini » mentirait.
+                etat, erreur = (
+                    ECHEC,
+                    "la conversation travaillait déjà : rien n'a tourné pour ce lancement "
+                    "(son message attend dans le tour en cours)",
+                )
+            elif etat_fiche == "interrupted":
                 etat = ARRETE
             elif cause == "timeout_mural" or etat_fiche == "timeout":
                 etat, erreur = DELAI, f"durée dépassée ({duree} s)"

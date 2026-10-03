@@ -223,6 +223,13 @@ def raison_du_refus(
             return None
         return "requête d'une autre origine refusée"
     if any(m.match(chemin) for m in GET_QUI_AGISSENT):
+        # Une image, un script, un cadre… de la page se charge sans que personne
+        # ne le décide : `![](…/events?message=)` dans une bulle suffirait à lancer
+        # un tour. Seuls un `EventSource` (`empty`) ou une navigation visible
+        # (`document`) agissent ; sans l'en-tête, le site seul décide.
+        destination = entetes.get("sec-fetch-dest")
+        if destination is not None and destination not in ("empty", "document"):
+            return "ce type de requête ne peut pas lancer un tour"
         if site in ("same-origin", "none"):
             return None
         return "requête d'une autre origine refusée"

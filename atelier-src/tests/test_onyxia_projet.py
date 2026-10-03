@@ -326,3 +326,78 @@ def test_une_panne_d_onyxia_revient_a_l_agent() -> None:
     m = ox.MandataireOnyxia(panne, lambda: OUTILS_AMONT)
     resultat = _appel(m, "assistant", None, "list_pods", {})
     assert resultat["isError"] and "injoignable" in _charge(resultat)["refus"]
+
+
+# ── Le GPU : relecture du 03/10 ─────────────────────────────────────────
+
+
+def test_gpu_switch_sans_pod_n_impose_pas_de_session() -> None:
+    """Projet en `service` + `gpu` : il n'y a pas de session `proj-<slug>` à imposer."""
+    borne = ox.borne_du_projet("carte", structure.Deploiement(service="carte.service.yml", gpu=True))
+    envoye = ox.filtrer_appel("code", borne, "gpu_switch", {})
+    assert "session_id" not in envoye and envoye["preempt"] is False and envoye["project"] == "carte"
+
+
+def test_l_assistant_ne_preempte_pas_le_gpu_d_un_autre() -> None:
+    """Un modèle demande ; préempter est un geste de la personne (gpu-arbitrage.md §2)."""
+    with pytest.raises(ox.RefusOnyxia, match="préempter"):
+        ox.filtrer_appel("assistant", None, "gpu_switch", {"project": "x", "preempt": True})
+    assert ox.filtrer_appel("assistant", None, "gpu_switch", {"project": "x"})["preempt"] is False
+    assert ox.filtrer_appel("assistant", None, "gpu_switch", {"project": "x", "preempt": False})["preempt"] is False
+    # Les autres outils de l'Assistant ne sont pas touchés.
+    assert ox.filtrer_appel("assistant", None, "exec", {"code": "1"}) == {"code": "1"}
+
+
+class OnyxiaGpu(FauxOnyxia):
+    """Un GPU qu'on peut déclarer pris : `gpu_switch` échoue alors, et `gpu_release` se note."""
+
+    def __init__(self, pris: bool) -> None:
+        super().__init__({"proj-carte": "proj-carte-gpu-jupyter-pytorch-gpu-0"})
+        self.pris = pris
+
+    async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if outil == "gpu_switch" and self.pris:
+            self.appels.append((outil, dict(arguments)))
+            return _texte({"error": {"code": "GPU_HELD", "message": "tenu par proj-depth-models"}}, erreur=True)
+        return await super().appeler(outil, arguments)
+
+
+def _avec_journal(faux: FauxOnyxia) -> tuple[ox.MandataireOnyxia, list[dict[str, Any]]]:
+    ecrit: list[dict[str, Any]] = []
+    return ox.MandataireOnyxia(faux.appeler, faux.outils, journal=ecrit.append), ecrit
+
+
+def test_un_gpu_switch_refuse_ne_relache_rien_mais_dit_quoi_faire() -> None:
+    """Relâcher de soi-même pourrait faire perdre un GPU légitimement tenu : l'agent décide."""
+    faux = OnyxiaGpu(pris=True)
+    m, _ = _avec_journal(faux)
+    resultat = _appel(m, "code", _borne(gpu=True), "gpu_switch", {})
+    assert resultat["isError"]
+    assert faux.envoyes("gpu_release") == []
+    texte = " ".join(b["text"] for b in resultat["content"])
+    assert "GPU_HELD" in texte and "gpu_release" in texte
+
+
+def test_un_gpu_switch_reussi_reste_tel_quel() -> None:
+    faux = OnyxiaGpu(pris=False)
+    m, _ = _avec_journal(faux)
+    resultat = _appel(m, "code", _borne(gpu=True), "gpu_switch", {})
+    assert not resultat["isError"] and len(resultat["content"]) == 1
+
+
+def test_chaque_appel_gpu_laisse_une_trace() -> None:
+    faux = OnyxiaGpu(pris=True)
+    m, ecrit = _avec_journal(faux)
+    _appel(m, "code", _borne(gpu=True), "gpu_switch", {})
+    _appel(m, "code", _borne(gpu=True), "gpu_status", {})
+    _appel(m, "code", _borne(gpu=True), "exec", {"code": "1"})  # pas du GPU : pas de ligne
+    assert [(e["outil"], e["ok"]) for e in ecrit] == [("gpu_switch", False), ("gpu_status", True)]
+    assert ecrit[0]["projet"] == "carte" and ecrit[0]["profil"] == "code"
+    assert "GPU_HELD" in ecrit[0]["resultat"] and "ts" in ecrit[0]
+
+
+def test_un_refus_du_filtre_est_aussi_journalise() -> None:
+    m, ecrit = _avec_journal(OnyxiaGpu(pris=False))
+    _appel(m, "code", _borne(gpu=True), "gpu_switch", {"preempt": True})
+    assert [(e["outil"], e["ok"]) for e in ecrit] == [("gpu_switch", False)]
+    assert "refus" in ecrit[0]["resultat"]

@@ -228,3 +228,16 @@ def test_la_veille_ne_se_reproduit_pas_en_tournant(
     vrai_sommeil(0.5)
     assert harnais._veilleur is fil, "toujours le même fil"
     assert _veilleurs() <= compte, "et aucun autre n'est né entre-temps"
+
+
+def test_un_message_reste_en_file_a_la_fin_du_tour_se_dit(harnais: ClaudeHarness, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Relecture du 03/10 : « message_en_file » annoncé, puis le tour finit sans l'avoir envoyé."""
+    monkeypatch.setattr(harnais.messages, "vider", lambda sid: 2)
+    resultat = _tour(harnais, "conv-file", "bonjour")
+    abandons = [e for e in resultat.events if e.kind == "systeme" and e.cause == "messages_abandonnes"]
+    assert [e.text for e in abandons] == ["2"]
+
+
+def test_sans_message_en_file_aucun_abandon_n_est_signale(harnais: ClaudeHarness) -> None:
+    resultat = _tour(harnais, "conv-propre", "bonjour")
+    assert not [e for e in resultat.events if e.cause == "messages_abandonnes"]
