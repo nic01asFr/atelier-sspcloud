@@ -969,6 +969,15 @@ def project_binding_state(
         if name in echecs:
             ligne["echec_authentification"] = echecs[name].get("code", 401)
             ligne["distribue"] = False
+            ligne["raison"] = (
+                f"refusé à l'authentification ({ligne['echec_authentification']}) : "
+                "à reconnecter dans Connecteurs"
+            )
+        if est_onyxia(name):
+            # Onyxia ne se coche pas comme un autre service : un agent code ne le
+            # reçoit que par le déploiement que le projet déclare. Le choix peut
+            # être écrit (`active`) sans que l'agent ait rien : on dit ce qu'il reçoit.
+            ligne.update(_etat_onyxia_du_projet(settings, cwd, pool))
         etat.append(ligne)
     # La passerelle de l'Atelier n'est pas dans le pool. Elle est dans tout
     # projet, sans case à cocher ; ce qu'on affiche est ce que l'agent reçoit
@@ -991,6 +1000,29 @@ def project_binding_state(
         },
     )
     return etat
+
+
+def _etat_onyxia_du_projet(
+    settings: AtelierSettings, cwd: Path, pool: dict[str, Any]
+) -> dict[str, Any]:
+    """Ce que reçoit un agent code du projet au titre d'Onyxia : le même verdict que `lier_le_projet`."""
+    livree = False
+    try:
+        from mcp_gateway.atelier.onyxia_projet import onyxia_pour_projet  # type: ignore[import-not-found]
+
+        livree = onyxia_pour_projet(settings, cwd.name, "code", pool=pool) is not None
+    except Exception:  # noqa: BLE001 — dans le doute, on ne promet pas
+        livree = False
+    return {
+        "par_deploiement": True,
+        "distribue": livree,
+        "raison": (
+            "borné au déploiement du projet"
+            if livree
+            else "s'ouvre par le déploiement du projet, et aucun n'est déclaré : demandez à "
+            "l'Assistant de relier le projet à un pod ou à un service Onyxia"
+        ),
+    }
 
 
 def write_project_binding(

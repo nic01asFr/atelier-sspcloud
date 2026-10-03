@@ -13,6 +13,12 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- « Services du projet » dit ce que l'agent reçoit : Onyxia, coché dans le choix
+  du projet, n'était livré à aucun agent sans déploiement déclaré (constaté sur
+  `depth-models` : « aucun outil Onyxia »). La ligne est maintenant éteinte et
+  désactivée, avec la raison et la marche à suivre ; un service refusé à
+  l'authentification de même. Le choix déjà écrit est gardé pour le jour où le
+  service est livré ;
 - fil : le verdict d'une demande trouvée déjà posée n'était pas rattaché à son
   outil (au Chrome du pod : l'événement « décision rendue » arrivait sans tour
   ouvert et était abandonné) ; il l'est, et il se retient pour que la relecture
