@@ -13,6 +13,11 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- fil : une autorisation trouvée déjà posée à l'ouverture (agent lancé ailleurs,
+  autre onglet) se retire du bas une fois tranchée — par la personne ou par un
+  lanceur — et son verdict (« autorisé » / « refusé ») rejoint la ligne de
+  l'outil ; constaté au Chrome du pod : la carte disparaissait sans laisser
+  de trace ;
 - agents : le contexte demande aussi d'écrire en français le champ `description`
   de chaque commande, qui sert de libellé d'étape (mesuré : l'agent le remplit
   toujours, mais en anglais, et ne commente rien entre ses outils) ;

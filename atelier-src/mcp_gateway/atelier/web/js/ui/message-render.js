@@ -698,7 +698,7 @@ export function empreinteDuBloc(b) {
     return [
       "tool", b.id || "", b.name || "", b.status || "",
       (b.output || "").length, JSON.stringify(b.input || "").length,
-      b.masquerDetails ? "1" : "0",
+      b.masquerDetails ? "1" : "0", b.verdict || "",
       // Le repli dépend du fil affiché : passer de Code à l'Assistant redessine.
       replierToujours ? "r" : "",
     ].join(":");
