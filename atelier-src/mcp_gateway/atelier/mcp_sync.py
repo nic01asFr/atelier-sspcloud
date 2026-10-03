@@ -535,6 +535,12 @@ def compute_binding_merged(
         )
         merged = merge_assistant_bindings(pool, global_binding, session_binding)
     merged = _sans_echecs_d_authentification(settings, merged)
+    # Onyxia de l'Assistant suit le choix du dossier (la case du « + ») ; celui
+    # d'un projet de code suit son déploiement déclaré (`onyxia_pour_projet`).
+    onyxia_ecarte = False
+    if profil == "assistant":
+        choix = {**_binding_selection(global_binding), **_binding_selection(session_binding or {})}
+        onyxia_ecarte = any(est_onyxia(nom) and not actif for nom, actif in choix.items())
     merged = {
         nom: cfg
         for nom, cfg in merged.items()
@@ -542,7 +548,7 @@ def compute_binding_merged(
         and not est_onyxia(nom)
         and not (nom != SERVICE_ATELIER and _vise_la_passerelle(cfg, settings))
     }
-    onyxia = onyxia_du_profil(settings, slug, profil, pool=pool_entier)
+    onyxia = None if onyxia_ecarte else onyxia_du_profil(settings, slug, profil, pool=pool_entier)
     if onyxia is not None:
         merged[SERVICE_ONYXIA] = onyxia
     merged = integrer_wikichat(integrer_le_navigateur(merged, settings), settings)

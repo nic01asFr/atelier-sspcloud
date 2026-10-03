@@ -500,3 +500,19 @@ def test_un_agent_code_ne_peut_pas_annoncer_le_slug_de_l_assistant(reglages: Ate
     store = types.SimpleNamespace(settings=reglages)
     assert projet_annonce_valide(store, "vrai-projet") == "vrai-projet"
     assert projet_annonce_valide(store, reglages.assistant_slug) == ""
+
+
+def test_onyxia_de_l_assistant_suit_la_case_du_dossier(reglages: AtelierSettings) -> None:
+    """La case Onyxia du « + » vaut pour l'Assistant : par défaut présent, décoché absent."""
+    from mcp_gateway.atelier.mcp_sync import _ecrire_la_selection, compute_binding_merged
+
+    _pool_complet(reglages)
+    dossier = reglages.assistant_root / "sessions" / "conv-onyxia"
+    dossier.mkdir(parents=True)
+    assert "Onyxia" in compute_binding_merged(reglages, kind="assistant", cwd=dossier)
+
+    _ecrire_la_selection(dossier, {"Onyxia": False, "wikichat": True})
+    assert "Onyxia" not in compute_binding_merged(reglages, kind="assistant", cwd=dossier)
+
+    _ecrire_la_selection(dossier, {"Onyxia": True, "wikichat": True})
+    assert "Onyxia" in compute_binding_merged(reglages, kind="assistant", cwd=dossier)
