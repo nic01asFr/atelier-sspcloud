@@ -324,3 +324,20 @@ def test_l_apercu_dit_quand_l_agent_travaille_sans_branche(reglages: AtelierSett
         assert any("sans branche" in a for a in sans["avertissements"])
         lecture = lanceur.apercu({"projet": "alpha", "message": "x", "mode": "plan"}, "conversation:a")
         assert not any("sans branche" in a for a in lecture["avertissements"])
+
+
+def test_un_lancement_sur_une_conversation_occupee_n_est_pas_fini(reglages: AtelierSettings) -> None:
+    """Relecture du 03/10 : le message partait en file, rien ne tournait, et le lancement passait « fini »."""
+    _projet(reglages, "alpha")
+    with _client(reglages) as client:
+        premier = _fin(client, _lancer(client, projet="alpha", nom="Sentinel").json()["lancement"]["id"])
+        store = client.app.state.store
+        store._reservees.add(premier["conversation"])  # un tour travaille déjà dessus
+        try:
+            second = _lancer(client, projet="alpha", nom="Sentinel", conversation=premier["conversation"])
+            assert second.status_code == 202, second.text
+            fin = _fin(client, second.json()["lancement"]["id"])
+        finally:
+            store._reservees.discard(premier["conversation"])
+        assert fin["etat"] == "echec", fin
+        assert "travaillait déjà" in fin["erreur"]

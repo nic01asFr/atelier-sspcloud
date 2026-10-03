@@ -13,6 +13,10 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- un lancement qui reprend une conversation déjà occupée n'est plus marqué
+  « fini » (son message partait en file, rien ne tournait) : il passe en échec et
+  le dit ; un message resté en file quand le tour s'arrête se signale
+  (`messages_abandonnes`) au lieu de disparaître en silence ;
 - les erreurs s'affichent en français et disent quoi faire : « Failed to fetch »,
   « SSE connection error », « Internal Server Error », « Bearer owner key
   required » ou un détail JSON brut deviennent une phrase (connexion perdue,
