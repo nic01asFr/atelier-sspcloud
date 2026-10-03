@@ -40,28 +40,24 @@ def _outils_du_profil_code() -> list[str]:
         return []
 
 
-def _deploiement(chemin: Path) -> dict[str, Any]:
-    """Le bloc `deploiement` de `.atelier/projet.json`, s'il y en a un."""
-    try:
-        donnees = json.loads((chemin / ".atelier" / "projet.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    bloc = donnees.get("deploiement") if isinstance(donnees, dict) else None
-    return bloc if isinstance(bloc, dict) else {}
+def _lignes_onyxia(chemin: Path, slug: str, pool_a_onyxia: bool = True) -> list[str]:
+    """Ce qu'Onyxia donne à CE projet — les outils réellement ouverts, pas une promesse."""
+    from mcp_gateway.atelier.onyxia_projet import regles_code, situation_du_deploiement
 
-
-def _lignes_onyxia(chemin: Path) -> list[str]:
-    bloc = _deploiement(chemin)
-    cible = str(bloc.get("pod") or bloc.get("service") or "").strip()
-    if not cible:
-        return [
-            "- Onyxia : aucun outil. Ce projet ne déclare pas de déploiement ;"
-            " la personne le déclare dans l'Atelier si le projet doit tourner dans un pod.",
-        ]
+    borne, raison = situation_du_deploiement(chemin, slug, pool_a_onyxia=pool_a_onyxia)
+    if borne is None:
+        return [f"- Onyxia : aucun outil. {raison[0].upper()}{raison[1:]}."]
+    ouverts = []
+    regles = regles_code(borne)
+    if borne.pod is not None:
+        ouverts.append(f"exécuter du code et lire ou écrire des fichiers dans le pod {borne.pod}")
+    if borne.service is not None:
+        ouverts.append(f"voir, démarrer et arrêter le service {borne.service}")
+    if "gpu_switch" in regles:
+        ouverts.append("prendre et rendre le GPU du projet, sans préempter celui d'un autre")
     return [
-        f"- Onyxia : les outils de **{cible}** seulement (exécuter, lire, état, démarrer"
-        " et arrêter son service, GPU), parce que ce projet y est déployé. Ni les"
-        " autres pods, ni l'exposition publique.",
+        "- Onyxia, borné au déploiement de ce projet : " + " ; ".join(ouverts) + ". Ni les autres"
+        " pods, ni l'exposition publique.",
     ]
 
 
@@ -93,6 +89,7 @@ def bloc_contexte(
     branche: str = "",
     assistant: bool = False,
     titre: str = "",
+    pool_a_onyxia: bool = True,
 ) -> str:
     """Le contexte de l'Atelier pour ce dossier, tel qu'il doit apparaître.
 
@@ -131,7 +128,7 @@ def bloc_contexte(
         " celui de la conversation : tu n'as pas à le nommer.",
         "- wikichat, limité à ce projet : son état, ses notes, ta mémoire, la"
         " connaissance, la messagerie.",
-        *_lignes_onyxia(chemin),
+        *_lignes_onyxia(chemin, slug, pool_a_onyxia),
         "",
         "### Ton identité et le coordinateur",
         "",
@@ -286,12 +283,22 @@ def contexte_attendu(settings: Any, cwd: Path, slug: str) -> tuple[Path, str] | 
             titre = ProjectStore(settings).titre_choisi(slug)
         except Exception:  # noqa: BLE001 — le contexte s'écrit sans titre plutôt que de ne pas s'écrire
             titre = ""
+    pool_a_onyxia = True
+    if not assistant:
+        try:
+            from mcp_gateway.atelier.mcp_sync import _pool_enabled
+            from mcp_gateway.atelier.onyxia_projet import SERVEUR_DU_POOL
+
+            pool_a_onyxia = SERVEUR_DU_POOL in _pool_enabled(settings)
+        except Exception:  # noqa: BLE001 — dans le doute, on suit la fiche du projet
+            pool_a_onyxia = True
     bloc = bloc_contexte(
         slug,
         dossier,
         branche="" if assistant else branche_de_la_copie(dossier),
         assistant=assistant,
         titre=titre,
+        pool_a_onyxia=pool_a_onyxia,
     )
     return dossier, bloc
 

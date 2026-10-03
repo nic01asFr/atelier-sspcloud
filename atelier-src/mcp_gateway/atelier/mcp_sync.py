@@ -1019,15 +1019,19 @@ def _etat_onyxia_du_projet(
         livree = onyxia_pour_projet(settings, cwd.name, "code", pool=pool) is not None
     except Exception:  # noqa: BLE001 — dans le doute, on ne promet pas
         livree = False
+    # Le verdict est celui de `onyxia_pour_projet` (le même que `lier_le_projet`) ;
+    # la raison, elle, dit pourquoi — fiche cassée, rien de déclaré, pas de pool.
+    raison = "aucun déploiement n'est déclaré : demandez à l'Assistant de relier le projet à un pod ou à un service Onyxia"
+    try:
+        from mcp_gateway.atelier.onyxia_projet import SERVEUR_DU_POOL, situation_du_deploiement
+
+        _, raison = situation_du_deploiement(cwd, cwd.name, pool_a_onyxia=SERVEUR_DU_POOL in pool)
+    except Exception:  # noqa: BLE001 — la raison est une aide, jamais un obstacle
+        pass
     return {
         "par_deploiement": True,
         "distribue": livree,
-        "raison": (
-            "borné au déploiement du projet"
-            if livree
-            else "s'ouvre par le déploiement du projet, et aucun n'est déclaré : demandez à "
-            "l'Assistant de relier le projet à un pod ou à un service Onyxia"
-        ),
+        "raison": raison if livree else f"s'ouvre par le déploiement du projet : {raison}",
     }
 
 

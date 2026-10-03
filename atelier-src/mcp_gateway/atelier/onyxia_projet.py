@@ -33,6 +33,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Literal
 from uuid import uuid4
 
@@ -166,9 +167,16 @@ def regles_code(borne: Borne) -> dict[str, Regle]:
             {
                 # Son GPU : basculer le slot vers le pod GPU du projet, sans
                 # préempter celui d'un autre projet, et le rendre.
+                # `session_id` seulement s'il y a un pod : sans lui, `proj-<slug>`
+                # n'existe pas côté Onyxia et l'appel échouerait en NO_SESSION.
                 "gpu_switch": Regle(
                     frozenset({"idle_minutes"}),
-                    {"project": borne.slug, "session_id": borne.session, "preempt": False, **ns},
+                    {
+                        "project": borne.slug,
+                        **({"session_id": borne.session} if borne.pod is not None else {}),
+                        "preempt": False,
+                        **ns,
+                    },
                 ),
                 "gpu_release": Regle(frozenset(), {"project": borne.slug, **ns}),
                 "gpu_status": Regle(
@@ -198,6 +206,15 @@ def filtrer_appel(
             "Proposez-le dans « À valider »."
         )
     if profil == "assistant":
+        if outil == "gpu_switch":
+            # Un modèle demande le GPU ; en prendre un à un autre qui le tient est
+            # un geste de la personne (docs/vision/gpu-arbitrage.md §2, principe 5).
+            if arguments.get("preempt"):
+                raise RefusOnyxia(
+                    "préempter le GPU d'un autre est un geste de la personne : "
+                    "demandez-lui de libérer le GPU, puis rappelez gpu_switch sans preempt."
+                )
+            arguments["preempt"] = False
         return arguments
     if profil != "code":
         raise RefusOnyxia(f"profil inconnu : {profil}")
@@ -278,6 +295,33 @@ def lire_le_deploiement(settings: Any, slug: str) -> structure.Deploiement | Non
         log.warning("projet %s : fiche invalide, pas d'Onyxia (%s)", slug, exc)
         return None
     return projet.deploiement if projet is not None else None
+
+
+# Une seule phrase pour dire comment s'ouvre Onyxia à un projet : la liste des
+# services, le contexte de l'agent et l'Assistant la reprennent telle quelle.
+POUR_DECLARER = "demandez à l'Assistant de relier le projet à son pod ou à son service Onyxia"
+
+
+def situation_du_deploiement(
+    racine: Path, slug: str, *, pool_a_onyxia: bool = True
+) -> tuple[Borne | None, str]:
+    """Ce qu'Onyxia donne à ce projet, et pourquoi : (borne, raison en une phrase).
+
+    Une fiche cassée n'est pas une absence de déclaration : on le dit, au lieu
+    de laisser croire que rien n'a été déclaré.
+    """
+    if not isinstance(slug, str) or not slug or "/" in slug or "\\" in slug or slug.startswith("."):
+        return None, f"aucun déploiement n'est déclaré : {POUR_DECLARER}"
+    try:
+        projet = structure.lire(Path(racine))
+    except structure.ErreurProjetJson as exc:
+        return None, f"la fiche du projet (.atelier/projet.json) est invalide, donc Onyxia n'est pas ouvert : {exc}"
+    deploiement = projet.deploiement if projet is not None else None
+    if deploiement is None:
+        return None, f"aucun déploiement n'est déclaré : {POUR_DECLARER}"
+    if not pool_a_onyxia:
+        return None, "Onyxia n'est pas connecté à l'Atelier"
+    return borne_du_projet(slug, deploiement), "borné au déploiement du projet"
 
 
 def _entree(settings: Any, chemin: str) -> dict[str, Any]:
@@ -366,9 +410,15 @@ class MandataireOnyxia:
     connue. Les deux sont injectés : les tests s'en passent de serveur.
     """
 
-    def __init__(self, appeler: AppelerAmont, outils_amont: OutilsAmont) -> None:
+    def __init__(
+        self,
+        appeler: AppelerAmont,
+        outils_amont: OutilsAmont,
+        journal: Callable[[dict[str, Any]], None] | None = None,
+    ) -> None:
         self._appeler = appeler
         self._outils_amont = outils_amont
+        self._journal = journal
         self._sessions_verifiees: dict[tuple[str, str], float] = {}
 
     # Le protocole ---------------------------------------------------------
@@ -421,6 +471,59 @@ class MandataireOnyxia:
     # Les outils -----------------------------------------------------------
 
     async def appeler_outil(
+        self, profil: Profil, borne: Borne | None, nom: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        resultat = await self._appeler_filtre(profil, borne, nom, arguments)
+        if nom.startswith("gpu_"):
+            self._noter(profil, borne, nom, arguments, resultat)
+            if nom == "gpu_switch" and resultat.get("isError") and borne is not None and borne.gpu:
+                # On ne relâche PAS de soi-même : sans connaître l'état réel du GPU,
+                # relâcher pourrait faire perdre au projet un GPU qu'il tient et le
+                # modèle chargé dessus. Le nettoyage des demandes sans suite est
+                # celui du courtier (docs/vision/gpu-arbitrage.md §7) ; l'agent, lui,
+                # sait quoi faire.
+                resultat = {
+                    **resultat,
+                    "content": [
+                        *(resultat.get("content") or []),
+                        {
+                            "type": "text",
+                            "text": (
+                                "gpu_switch n'a pas abouti. Rien n'a été relâché automatiquement : "
+                                "si le pod GPU du projet reste à 0/1, appelez gpu_status puis gpu_release."
+                            ),
+                        },
+                    ],
+                }
+        return resultat
+
+    def _noter(
+        self, profil: Profil, borne: Borne | None, outil: str, arguments: dict[str, Any], resultat: dict[str, Any]
+    ) -> None:
+        """Une ligne par appel GPU : qui, quoi, et ce qu'Onyxia a répondu."""
+        if self._journal is None:
+            return
+        erreur = bool(resultat.get("isError"))
+        texte = ""
+        for bloc in resultat.get("content") or []:
+            if isinstance(bloc, dict) and bloc.get("type") == "text":
+                texte = str(bloc.get("text") or "")
+                break
+        entree = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "profil": profil,
+            "projet": borne.slug if borne is not None else "",
+            "outil": outil,
+            "arguments": arguments,
+            "ok": not erreur,
+            "resultat": texte[:500],
+        }
+        try:
+            self._journal(entree)
+        except Exception:  # noqa: BLE001 — le journal ne doit jamais faire échouer l'appel
+            log.warning("journal GPU non écrit", exc_info=True)
+
+    async def _appeler_filtre(
         self, profil: Profil, borne: Borne | None, nom: str, arguments: dict[str, Any]
     ) -> dict[str, Any]:
         try:
@@ -546,7 +649,18 @@ def _mandataire_du_pool(app: Any) -> MandataireOnyxia:
         client, _ = pool.resolve_tool(f"{PREFIXE_DU_POOL}__exec")
         return list(getattr(client, "tools", None) or [])
 
-    return MandataireOnyxia(appeler, outils_amont)
+    def journal(entree: dict[str, Any]) -> None:
+        # Un fichier d'événements, une ligne JSON par appel : qui tenait le GPU,
+        # quand, et pourquoi il a été refusé. Hors des fiches de conversation.
+        reglages = getattr(app.state, "settings", None)
+        if reglages is None:
+            return
+        chemin = Path(reglages.work_dir) / "logs" / "gpu.jsonl"
+        chemin.parent.mkdir(parents=True, exist_ok=True)
+        with chemin.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entree, ensure_ascii=False) + "\n")
+
+    return MandataireOnyxia(appeler, outils_amont, journal=journal)
 
 
 def monter(app: Any) -> MandataireOnyxia:

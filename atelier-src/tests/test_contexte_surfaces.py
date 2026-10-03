@@ -83,11 +83,22 @@ def test_le_contexte_annonce_les_outils_du_profil_code_et_pas_le_briefing(reglag
 
 
 def test_un_deploiement_declare_change_la_ligne_onyxia(reglages: AtelierSettings) -> None:
+    from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
+    from mcp_gateway.db import connect
+
+    conn = connect(reglages.gateway_db_path)
+    try:
+        IntegratedMcpStore(conn).upsert("Onyxia", {"type": "http", "url": "https://onyxia.exemple/mcp"})
+    finally:
+        conn.close()
     dossier = _projet(reglages, "alpha")
     (dossier / ".atelier").mkdir()
-    (dossier / ".atelier" / "projet.json").write_text(json.dumps({"deploiement": {"pod": "mon-pod"}}), encoding="utf-8")
+    (dossier / ".atelier" / "projet.json").write_text(
+        json.dumps({"slug": "alpha", "titre": "alpha", "deploiement": {"pod": "mon-pod"}}), encoding="utf-8"
+    )
     texte = contexte_attendu(reglages, dossier, "alpha")[1]
-    assert "Onyxia : les outils de **mon-pod** seulement" in texte
+    ligne = next(l for l in texte.splitlines() if l.startswith("- Onyxia"))
+    assert "borné au déploiement de ce projet" in ligne and "mon-pod" in ligne
 
 
 def test_un_projet_d_avant_la_structure_n_est_pas_touche_au_demarrage(reglages: AtelierSettings) -> None:

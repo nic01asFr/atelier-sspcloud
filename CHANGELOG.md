@@ -13,6 +13,17 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- GPU : chaque appel `gpu_*` laisse une ligne dans `logs/gpu.jsonl` (qui, quoi,
+  réponse d'Onyxia), `gpu_switch` n'impose plus `session_id` à un projet sans pod,
+  l'Assistant ne peut plus préempter le GPU d'un autre (geste de la personne), et
+  un `gpu_switch` refusé dit à l'agent quoi faire. Pas de relâchement automatique :
+  sans lire l'état réel du GPU, il pourrait faire perdre un GPU légitimement
+  tenu ; le nettoyage reste celui du courtier (`docs/vision/gpu-arbitrage.md` §7) ;
+- le contexte de l'agent code dit les outils Onyxia qu'il a vraiment (pod,
+  service, GPU), ne les promet plus si Onyxia n'est pas dans le pool, distingue
+  une fiche `projet.json` invalide d'une absence de déploiement (la liste des
+  services le dit aussi), et la façon de déclarer un déploiement est dite d'une
+  seule manière ;
 - relecture du 03/10, noyau des conversations : une conversation ne joue plus
   qu'un tour à la fois (la réservation se prend à l'entrée de `send`, y compris
   pendant le démarrage du tour : un double envoi lançait deux processus sur le
