@@ -55,3 +55,40 @@ export function rattacherLeVerdict(messages, requestId, etat) {
   }
   return suivant;
 }
+
+/** L'identifiant de l'outil auquel se rapporte une demande, si la carte est dans le fil. */
+export function idDeLOutil(messages, requestId) {
+  for (const m of messages || []) {
+    for (const b of m?.blocks || []) {
+      if (b?.type === "decision" && b.demande?.request_id === requestId) return b.demande?.tool_use_id || "";
+    }
+  }
+  return "";
+}
+
+/**
+ * Remet sur les outils les verdicts retenus (`{ idDeLOutil: "allow"|"deny" }`).
+ *
+ * Une relecture du journal remplace les messages, et le journal ne dit pas ce
+ * qui a été accordé : sans cela, « autorisé » s'effacerait à la fin du tour.
+ * Rend le même tableau si rien n'est à poser.
+ */
+export function appliquerLesVerdicts(messages, verdicts) {
+  if (!Array.isArray(messages) || !verdicts || !Object.keys(verdicts).length) return messages;
+  let change = false;
+  const suivant = messages.map((m) => {
+    if (!Array.isArray(m?.blocks)) return m;
+    let touche = false;
+    const blocs = m.blocks.map((b) => {
+      if (b?.type === "tool" && b.id && verdicts[b.id] && b.verdict !== verdicts[b.id]) {
+        touche = true;
+        return { ...b, verdict: verdicts[b.id] };
+      }
+      return b;
+    });
+    if (!touche) return m;
+    change = true;
+    return { ...m, blocks: blocs };
+  });
+  return change ? suivant : messages;
+}

@@ -13,6 +13,10 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- fil : le verdict d'une demande trouvée déjà posée n'était pas rattaché à son
+  outil (au Chrome du pod : l'événement « décision rendue » arrivait sans tour
+  ouvert et était abandonné) ; il l'est, et il se retient pour que la relecture
+  du journal, qui ne le contient pas, ne l'efface pas ;
 - fil : une autorisation trouvée déjà posée à l'ouverture (agent lancé ailleurs,
   autre onglet) se retire du bas une fois tranchée — par la personne ou par un
   lanceur — et son verdict (« autorisé » / « refusé ») rejoint la ligne de

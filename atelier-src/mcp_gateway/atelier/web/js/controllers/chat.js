@@ -1,6 +1,6 @@
 /** Chat SSE — envoi message Claude Code. */
 
-import { rattacherLeVerdict, verdictDeLaCause } from "../ui/verdict-decision.js";
+import { verdictDeLaCause } from "../ui/verdict-decision.js";
 import { commandeModele, ditLesModeles, resoudreModele } from "../ui/choix-du-modele.js";
 import * as api from "../api.js";
 import * as S from "../state.js";
@@ -442,10 +442,7 @@ function appliquerEvenement(ctx, stream, ev) {
         // Une demande trouvée déjà posée à l'ouverture n'est pas dans ce flux :
         // sa carte est à part. Tranchée (ici, ailleurs, ou par un lanceur), elle
         // se retire et son verdict rejoint la ligne de l'outil.
-        const etat = verdictDeLaCause(ev.cause);
-        const avant = state.messages;
-        state.messages = rattacherLeVerdict(avant, ev.tool_id, etat);
-        if (state.messages !== avant) views.codeChat.renderThread();
+        if (S.rattacherUnVerdict(state, ev.tool_id, verdictDeLaCause(ev.cause))) views.codeChat.renderThread();
       }
     } else if (ev.kind === "systeme" && ev.cause === "message_systeme" && ev.text) {
       // Ce qu'un hook dit à la personne : une relance de wikichat, le plus
@@ -497,6 +494,12 @@ export function recevoirDuDirect(ctx, suivi, ev) {
   // fois. Ni bulle, ni ajout à la bulle en cours.
   if (dejaRendu(suivi.memoire, ev)) return false;
   if (!suivi.flux) {
+    // Le verdict d'une demande trouvée déjà posée à l'ouverture arrive sans
+    // tour ouvert ici : il se rattache à son outil au lieu d'être perdu.
+    if (ev.kind === "decision_rendue") {
+      if (S.rattacherUnVerdict(state, ev.tool_id, verdictDeLaCause(ev.cause))) ctx.render?.();
+      return false;
+    }
     // Une fin sans début : rien à ouvrir.
     if (!ouvreUnTour(ev)) return false;
     suivi.flux = { blocs: [], tools: [], decisions: [], phase: "attente" };
