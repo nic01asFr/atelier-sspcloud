@@ -109,6 +109,7 @@ function createApp() {
     onToggle: (id, active) => composerMcpHolder.toggleConnector?.(id, active),
     onManage: () => composerMcpHolder.onManage?.(),
     onAdvanced: () => composerMcpHolder.onAdvanced?.(),
+    onApercu: () => composerMcpHolder.chargerApercu?.(),
   });
 
   const connectorActionsHolder = {};

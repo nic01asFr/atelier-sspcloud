@@ -1461,6 +1461,31 @@ def build_app(
             raise HTTPException(400, str(exc)) from exc
         return rec.to_dict()
 
+    @router.get("/mcp/apercu")
+    def apercu_mcp(
+        request: Request,
+        kind: str = "code",
+        slug: str = "",
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Les connecteurs d'une conversation qui n'existe pas encore : de quoi les régler avant le premier message."""
+        from mcp_gateway.atelier.session_mcp import apercu_avant_le_premier_message
+
+        if kind not in ("code", "assistant"):
+            raise HTTPException(400, "kind : code ou assistant")
+        if kind == "assistant":
+            cwd = Path(settings.assistant_root)
+        else:
+            from mcp_gateway.atelier.sessions import slug_de_projet_valide
+
+            try:
+                slug_de_projet_valide(slug, settings)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            cwd = Path(settings.projects_dir) / slug
+        upstream = getattr(request.app.state, "upstream_status", {}) or {}
+        return apercu_avant_le_premier_message(settings, kind, cwd, upstream)
+
     @router.get("/sessions/{session_id}/mcp")
     def get_session_mcp(
         session_id: str,

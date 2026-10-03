@@ -1,6 +1,7 @@
 /** Overlay MCP conversation — fetch + toggle composer +. */
 
 import { optionsDesServices } from "../ui/services-du-projet.js";
+import { apercuPossible } from "../ui/connecteurs-avant-envoi.js";
 import * as api from "../api.js";
 import * as S from "../state.js";
 import { $ } from "../core/dom.js";
@@ -12,9 +13,38 @@ import { openModal } from "../ui/modal.js";
 export function createComposerMcpController(ctx) {
   const { state, render, composerMcp, navigateView } = ctx;
 
+  /**
+   * Avant le premier message, la conversation n'existe pas : on montre ce
+   * qu'elle recevra (l'aperçu du service, qui ne crée rien). Une fois tous les
+   * minutes au plus, tant que l'écran n'a pas changé d'espace ou de projet.
+   */
+  async function chargerApercu() {
+    if (!apercuPossible(state) || state.sessionMcp?.apercu || state.apercuEnCours) return;
+    const maintenant = Date.now();
+    if (state.apercuEssai && maintenant - state.apercuEssai < 60000) return;
+    state.apercuEssai = maintenant;
+    state.apercuEnCours = true;
+    try {
+      const kind = S.estAssistant(state) ? "assistant" : "code";
+      const slug = kind === "code" ? state.slug || state.pendingProjectSlug || "" : "";
+      const apercu = await api.getMcpApercu(state.token, { kind, slug });
+      // L'écran a pu changer pendant l'attente : on ne pose pas l'aperçu d'un autre.
+      if (apercuPossible(state)) state.sessionMcp = apercu;
+    } catch {
+      /* le « + » reste inactif : rien n'est promis */
+    } finally {
+      state.apercuEnCours = false;
+    }
+    composerMcp.renderComposerMcp();
+  }
+
   async function refreshSessionMcp() {
-    if (!state.token || !state.sessionId) {
+    if (!state.token) {
       state.sessionMcp = null;
+      return;
+    }
+    if (!state.sessionId) {
+      await chargerApercu();
       return;
     }
     try {
@@ -36,6 +66,12 @@ export function createComposerMcpController(ctx) {
   }
 
   async function toggleConnector(id, active) {
+    if (!state.sessionId && state.sessionMcp?.apercu) {
+      // Conversation pas encore née : le choix attend le premier message.
+      S.noterChoixConnecteur(state, id, active);
+      composerMcp.renderComposerMcp();
+      return;
+    }
     if (!state.token || !state.sessionId || state.mcpOverlayBusy) return;
     S.setMcpOverlayBusy(state, true);
     composerMcp.renderComposerMcp();
@@ -130,5 +166,5 @@ export function createComposerMcpController(ctx) {
     });
   }
 
-  return { refreshSessionMcp, toggleConnector, onManage, onAdvanced, bind };
+  return { refreshSessionMcp, chargerApercu, toggleConnector, onManage, onAdvanced, bind };
 }

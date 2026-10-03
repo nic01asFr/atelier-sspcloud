@@ -133,6 +133,15 @@ export async function getSession(token, sessionId) {
   return res.json();
 }
 
+/** Les connecteurs d'une conversation qui n'existe pas encore (rien n'est créé). */
+export async function getMcpApercu(token, { kind = "code", slug = "" } = {}) {
+  const q = new URLSearchParams({ kind });
+  if (slug) q.set("slug", slug);
+  const res = await fetch(`/v1/mcp/apercu?${q}`, { headers: jsonHeaders(token) });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
 export async function getSessionMcp(token, sessionId) {
   const res = await fetch(`/v1/sessions/${encodeURIComponent(sessionId)}/mcp`, {
     headers: jsonHeaders(token),

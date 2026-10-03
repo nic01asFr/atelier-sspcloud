@@ -26,13 +26,12 @@ def session_mcp_layers(
     return binding, effective
 
 
-def build_session_mcp_payload(
+def _lignes_des_connecteurs(
     settings: AtelierSettings,
-    rec: Any,
-    upstream: dict[str, str] | None = None,
-) -> dict[str, Any]:
-    binding, effective = session_mcp_layers(settings, rec)
-    upstream = upstream or {}
+    binding: dict[str, dict[str, Any]],
+    effective: dict[str, dict[str, Any]],
+    upstream: dict[str, str],
+) -> list[dict[str, Any]]:
     connectors: list[dict[str, Any]] = []
     for name in sorted(binding.keys()):
         pool_key = f"registry:{name}"
@@ -55,6 +54,16 @@ def build_session_mcp_payload(
                 "scope": nature["scope"],
             }
         )
+    return connectors
+
+
+def build_session_mcp_payload(
+    settings: AtelierSettings,
+    rec: Any,
+    upstream: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    binding, effective = session_mcp_layers(settings, rec)
+    connectors = _lignes_des_connecteurs(settings, binding, effective, upstream or {})
     return {
         "session_id": rec.session_id,
         "kind": rec.kind,
@@ -63,4 +72,30 @@ def build_session_mcp_payload(
         "mcp_overlay": dict(rec.mcp_overlay or {}),
         "connectors": connectors,
         "effective_path": str(settings.mcp_effective_dir / f"{rec.session_id}.json"),
+    }
+
+
+def apercu_avant_le_premier_message(
+    settings: AtelierSettings,
+    kind: str,
+    cwd: Path,
+    upstream: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Les connecteurs que recevra une conversation qui n'existe pas encore.
+
+    Même liste que `build_session_mcp_payload`, calculée sur le dossier où elle
+    naîtra (le projet, ou la racine de l'Assistant), **sans rien créer** : pas de
+    dossier de conversation, pas de fiche. Le choix fait avant le premier message
+    se pose, lui, quand la conversation naît (`PATCH /v1/sessions/<id>/mcp`).
+    """
+    binding = compute_binding_merged(settings, kind=kind, cwd=cwd)  # type: ignore[arg-type]
+    connectors = _lignes_des_connecteurs(settings, binding, dict(binding), upstream or {})
+    return {
+        "session_id": "",
+        "kind": kind,
+        "apercu": True,
+        "binding": sorted(binding.keys()),
+        "effective": sorted(binding.keys()),
+        "mcp_overlay": {},
+        "connectors": connectors,
     }

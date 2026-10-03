@@ -1,6 +1,7 @@
 /** Popover connecteurs conversation (composer +). */
 
 import { $ } from "../core/dom.js";
+import { fusionnerLesChoix } from "../ui/connecteurs-avant-envoi.js";
 
 function healthBadgeClass(health) {
   if (health === "connected") return "mcp-badge mcp-badge-ok";
@@ -23,7 +24,7 @@ function healthLabel(health) {
  * @param {() => void} ctx.onManage
  */
 export function createComposerMcpView(ctx) {
-  const { state, onToggle, onManage, onAdvanced } = ctx;
+  const { state, onToggle, onManage, onAdvanced, onApercu } = ctx;
   let open = false;
 
   function setOpen(value) {
@@ -44,11 +45,19 @@ export function createComposerMcpView(ctx) {
     const badge = $("composer-mcp-badge");
     if (!pop || !btn) return;
 
+    // Avant le premier message, le « + » règle ce que recevra la conversation à
+    // naître : l'aperçu du service, et les choix qui attendent côté écran.
+    const avantEnvoi = !state.sessionId && !!state.sessionMcp?.apercu;
+    if (!state.sessionId && state.view === "code" && state.token && !state.sessionMcp?.apercu) {
+      onApercu?.();
+    }
     const sessionReady =
-      state.view === "code" && !!state.token && !!state.sessionId;
+      state.view === "code" && !!state.token && (!!state.sessionId || avantEnvoi);
     btn.disabled = !sessionReady || state.busy;
 
-    const connectors = state.sessionMcp?.connectors || [];
+    const connectors = avantEnvoi
+      ? fusionnerLesChoix(state.sessionMcp?.connectors || [], state.mcpEnAttente)
+      : state.sessionMcp?.connectors || [];
     // Le badge signale un écart voulu, pas le socle : il compte ce qui se règle.
     const reglables = connectors.filter((c) => !c.system);
     const activeCount = reglables.filter((c) => c.active).length;
@@ -71,8 +80,14 @@ export function createComposerMcpView(ctx) {
 
     const head = document.createElement("div");
     head.className = "composer-mcp-head";
-    head.textContent = "Connecteurs — ce fil";
+    head.textContent = avantEnvoi ? "Connecteurs — pour ce premier message" : "Connecteurs — ce fil";
     pop.appendChild(head);
+    if (avantEnvoi) {
+      const note = document.createElement("p");
+      note.className = "composer-mcp-acquis";
+      note.textContent = "Vos choix s’appliquent dès l’envoi du premier message.";
+      pop.appendChild(note);
+    }
 
     // Ce qui se règle ici, ce sont les services qu'on a branchés soi-même.
     // La coordination et l'accès aux fichiers ne sont pas de cet ordre : un
