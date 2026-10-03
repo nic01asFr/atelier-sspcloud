@@ -1,3 +1,4 @@
+import { appliquerLesVerdicts, idDeLOutil, rattacherLeVerdict } from "./ui/verdict-decision.js";
 /** État applicatif pur — pas de fetch, pas de DOM. */
 
 // L'ancien emplacement de la clé propriétaire. On ne l'écrit plus jamais : le
@@ -485,7 +486,22 @@ export function setSessionMcp(state, data) {
 }
 
 export function setMessages(state, messages) {
-  state.messages = messages || [];
+  // Les verdicts déjà rendus se remettent sur les outils : le journal ne les dit pas.
+  state.messages = appliquerLesVerdicts(messages || [], state.verdicts);
+}
+
+/**
+ * Une demande tranchée : sa carte se retire et son verdict rejoint la ligne de
+ * l'outil, puis se retient pour les relectures du journal. Vrai si le fil a changé.
+ */
+export function rattacherUnVerdict(state, requestId, etat) {
+  const avant = state.messages;
+  const id = idDeLOutil(avant, requestId);
+  const apres = rattacherLeVerdict(avant, requestId, etat);
+  if (apres === avant) return false;
+  state.messages = apres;
+  if (id) state.verdicts = { ...(state.verdicts || {}), [id]: etat };
+  return true;
 }
 
 export function setChargementFil(state, sessionId) {

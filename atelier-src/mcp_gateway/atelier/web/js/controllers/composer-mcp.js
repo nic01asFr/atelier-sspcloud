@@ -1,5 +1,6 @@
 /** Overlay MCP conversation — fetch + toggle composer +. */
 
+import { optionsDesServices } from "../ui/services-du-projet.js";
 import * as api from "../api.js";
 import * as S from "../state.js";
 import { $ } from "../core/dom.js";
@@ -79,28 +80,10 @@ export function createComposerMcpController(ctx) {
       return render();
     }
     const connecteurs = etat.connectors || [];
-    // Ce qu'un service apporte se dit en clair ; son identifiant technique
-    // n'apparaît qu'en second, pour qui a besoin de le reconnaître.
-    const APPORTS = {
-      "Accès aux outils": "chercher un outil, lancer une composition",
-      "Coordination et mémoire": "messages, mémoire, agents",
-      "Navigateur web": "pages, formulaires, réseau, captures",
-    };
-    const options = connecteurs.map((c) => ({
-      value: c.id,
-      label: c.name,
-      checked: !!c.active,
-      // L'accès aux outils de l'Atelier est dans tout projet, sur toutes les
-      // surfaces : il s'affiche tel que l'agent le reçoit, sans case à décocher.
-      disabled: !!c.fixe,
-      hint: c.fixe
-        ? "toujours présent, dans l’Atelier, VS Code et le terminal"
-        : c.system
-        ? (c.scope || []).length
-          ? `ouvre ${c.scope[0]}`
-          : APPORTS[c.group] || "socle de l’Atelier"
-        : `service branché · ${c.id_technique || c.id}`,
-    }));
+    // Ce que l'agent reçoit se dit en clair : un service choisi mais non livré
+    // (Onyxia sans déploiement, refus d'authentification) l'explique au lieu de
+    // se cocher comme les autres, et son choix est gardé pour plus tard.
+    const { options, retenus } = optionsDesServices(connecteurs);
     openModal(state, {
       // Ouverte depuis le fil, la question porte sur le fil : la modale
       // reste dans son cadre plutôt que de recouvrir l'application.
@@ -122,7 +105,8 @@ export function createComposerMcpController(ctx) {
         },
       ],
       onSubmit: async (data) => {
-        await api.putProjectMcp(state.token, slug, data.servers || []);
+        const choisis = new Set([...(data.servers || []), ...retenus]);
+        await api.putProjectMcp(state.token, slug, [...choisis]);
         await refreshSessionMcp();
         composerMcp.renderComposerMcp();
       },

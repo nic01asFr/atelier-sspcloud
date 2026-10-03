@@ -9,7 +9,8 @@
 //   - la ligne de l'étape porte ce verdict.
 
 import { bilan, egal, verifier } from "./verifier.mjs";
-import { rattacherLeVerdict, verdictDeLaCause } from "../../mcp_gateway/atelier/web/js/ui/verdict-decision.js";
+import { appliquerLesVerdicts, idDeLOutil, rattacherLeVerdict, verdictDeLaCause } from "../../mcp_gateway/atelier/web/js/ui/verdict-decision.js";
+import * as S from "../../mcp_gateway/atelier/web/js/state.js";
 import { regrouperTour } from "../../mcp_gateway/atelier/web/js/ui/etapes.js";
 
 const outil = (id) => ({ type: "tool", id, name: "Bash", input: { command: "ls" }, status: "done" });
@@ -60,6 +61,30 @@ const carte = (rid, tid, genre = "autorisation") => ({ type: "decision", etat: "
   const apres = rattacherLeVerdict(messages, "d1", "allow");
   egal(apres[0].blocks.map((b) => b.type), ["tool", "text"], "la carte sort du message, le reste demeure");
   egal(apres[0].blocks[0].verdict, "allow", "et l'outil porte le verdict");
+}
+
+// Le verdict survit à la relecture du journal, qui remplace les messages.
+{
+  const st = {
+    messages: [
+      { role: "assistant", blocks: [outil("t1")] },
+      { role: "system", blocks: [carte("d1", "t1")] },
+    ],
+  };
+  egal(idDeLOutil(st.messages, "d1"), "t1", "l'outil de la demande est retrouvé");
+  egal(idDeLOutil(st.messages, "inconnue"), "", "demande inconnue");
+  egal(S.rattacherUnVerdict(st, "d1", "allow"), true, "le fil a changé");
+  egal(st.messages.length, 1, "la carte est partie");
+  egal(st.verdicts, { t1: "allow" }, "le verdict est retenu");
+  egal(S.rattacherUnVerdict(st, "d1", "allow"), false, "plus rien à rattacher la seconde fois");
+
+  // Le journal relu ne connaît pas le verdict : setMessages le remet.
+  S.setMessages(st, [{ role: "assistant", blocks: [outil("t1"), outil("t2")] }]);
+  egal(st.messages[0].blocks[0].verdict, "allow", "l'outil relu porte de nouveau son verdict");
+  verifier(st.messages[0].blocks[1].verdict === undefined, "un autre outil n'en reçoit pas");
+  const identique = [{ role: "assistant", blocks: [outil("t9")] }];
+  verifier(appliquerLesVerdicts(identique, { t1: "allow" }) === identique, "sans outil concerné, le même tableau");
+  verifier(appliquerLesVerdicts(identique, {}) === identique && appliquerLesVerdicts(identique, undefined) === identique, "sans verdicts retenus, rien ne change");
 }
 
 bilan("verdict-decision");

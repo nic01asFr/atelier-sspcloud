@@ -152,6 +152,35 @@ def test_le_module_de_l_equipe_o_fait_foi_des_qu_il_existe(
     assert ("deploye", "code", True) in appels and ("autre", "code", True) in appels
 
 
+def test_la_liste_des_services_du_projet_dit_ce_que_l_agent_recoit_d_onyxia(
+    reglages: AtelierSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Constat du 03/10 : « Services du projet » cochait Onyxia, l'agent n'avait aucun outil Onyxia.
+
+    `active` est le choix ; `distribue` est ce que l'agent reçoit. Onyxia ne vient que
+    d'un déploiement déclaré : sans lui, la ligne le dit au lieu de promettre.
+    """
+
+    def onyxia_pour_projet(settings, slug, profil, *, pool=None):  # noqa: ANN001
+        return {"type": "http", "url": "http://x/mcp/onyxia"} if slug == "deploye" else None
+
+    module = types.ModuleType("mcp_gateway.atelier.onyxia_projet")
+    module.onyxia_pour_projet = onyxia_pour_projet  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "mcp_gateway.atelier.onyxia_projet", module)
+    _pool_complet(reglages)
+    for slug in ("deploye", "autre"):
+        write_project_binding(reglages, reglages.projects_dir / slug, ["Onyxia", "qgis"])
+
+    sans = {e["id"]: e for e in project_binding_state(reglages, reglages.projects_dir / "autre")}
+    assert sans["Onyxia"]["active"] is True, "le choix est gardé"
+    assert sans["Onyxia"]["distribue"] is False and sans["Onyxia"]["par_deploiement"] is True
+    assert "déploiement" in sans["Onyxia"]["raison"] and "Assistant" in sans["Onyxia"]["raison"]
+    assert "distribue" not in sans["qgis"], "un autre service n'est pas concerné"
+
+    avec = {e["id"]: e for e in project_binding_state(reglages, reglages.projects_dir / "deploye")}
+    assert avec["Onyxia"]["distribue"] is True and avec["Onyxia"]["par_deploiement"] is True
+
+
 def test_assistant_converti_au_format_claude_code(reglages: AtelierSettings) -> None:
     """M3 : l'ancien « binding » de l'Assistant devient une vraie déclaration, relié au démarrage."""
     _pool_complet(reglages)
