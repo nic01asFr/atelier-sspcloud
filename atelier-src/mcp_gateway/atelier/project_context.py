@@ -144,9 +144,12 @@ def bloc_contexte(
         "",
         "### Te faire suivre",
         "",
-        "- La personne lit ton déroulé en direct. Avant une série d'actions, dis en une"
-        " phrase ce que tu fais et pourquoi ; après un résultat inattendu, ce que tu en"
-        " conclus. Sans ces phrases, elle ne voit que des outils.",
+        "- La personne lit ton déroulé en direct, et le champ `description` de chaque"
+        " appel Bash est le libellé de l'étape : écris-le en français, en une courte phrase"
+        " qui dit ce que tu fais (« Chercher le mot dans le projet »), pas en anglais.",
+        "- Avant une série d'actions, dis en une phrase ce que tu vas faire et pourquoi ;"
+        " après un résultat inattendu, ce que tu en conclus. Sans ces phrases, elle ne voit"
+        " que des outils.",
         "",
         "### Joindre les autres projets",
         "",

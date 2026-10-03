@@ -76,4 +76,6 @@ def test_le_contexte_demande_de_dire_ce_qu_on_fait_entre_les_actions(tmp_path) -
     """Constat du 02/10 : un agent (deepseek via Albert) enchaînait 22 outils sans un mot ;
     la personne ne voyait que des étapes, sans savoir ce qu'il pensait."""
     texte = bloc_contexte("demo", tmp_path / "demo", titre="Démo")
-    assert "Te faire suivre" in texte and "dis en une phrase ce que tu fais" in texte
+    assert "Te faire suivre" in texte and "dis en une phrase ce que tu vas faire" in texte
+    # Mesuré sur le pod : l'agent remplit toujours `description`, mais en anglais.
+    assert "`description`" in texte and "en français" in texte

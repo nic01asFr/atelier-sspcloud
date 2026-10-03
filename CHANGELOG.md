@@ -13,6 +13,9 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- agents : le contexte demande aussi d'écrire en français le champ `description`
+  de chaque commande, qui sert de libellé d'étape (mesuré : l'agent le remplit
+  toujours, mais en anglais, et ne commente rien entre ses outils) ;
 - agents : le contexte du projet demande de dire en une phrase ce que l'on fait
   avant une série d'actions (constaté : un agent sur un modèle de raisonnement
   enchaînait 22 outils sans un mot, et la personne ne voyait que des étapes) ;
