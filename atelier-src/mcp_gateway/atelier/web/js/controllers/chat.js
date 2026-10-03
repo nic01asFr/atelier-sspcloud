@@ -243,7 +243,9 @@ async function relireLeJournal(state, render) {
   try {
     const messages = await buildMessagesFromServer(state, sessionId);
     if (state.sessionId !== sessionId) return false;
-    state.messages = messages;
+    // Par `setMessages` : le journal ne dit pas ce qui a été accordé, les verdicts
+    // déjà rendus se remettent sur les outils relus.
+    S.setMessages(state, messages);
     render();
     return true;
   } catch {
@@ -261,7 +263,7 @@ async function rattraperLeFil(state, render) {
       await new Promise((r) => setTimeout(r, 2000));
     }
     if (state.sessionId !== sessionId) return false;
-    state.messages = await buildMessagesFromServer(state, sessionId);
+    S.setMessages(state, await buildMessagesFromServer(state, sessionId));
     render();
     return true;
   } catch {
@@ -401,6 +403,7 @@ function appliquerEvenement(ctx, stream, ev) {
       const demande = tryParseJson(ev.text);
       if (demande && typeof demande === "object") {
         const bloc = { type: "decision", demande, etat: "en_attente" };
+        S.noterLaDemande(state, demande);
         stream.decisions.push(bloc);
         stream.blocs.push(bloc);
         stream.phase = "decision";

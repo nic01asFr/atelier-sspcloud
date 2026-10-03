@@ -383,6 +383,9 @@ const BAS_DU_FIL = 1e9;
       if (!neuves.length) continue;
       for (const d of neuves) {
         connues.add(d.request_id);
+        // Retenu : si le journal est relu avant le verdict, la carte aura disparu
+        // et seul ce souvenir dira de quel outil il s'agit.
+        S.noterLaDemande(state, d);
         S.appendMessage(state, {
           role: "system",
           blocks: [{ type: "decision", demande: d, etat: "en_attente" }],
