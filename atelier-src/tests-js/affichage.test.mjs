@@ -57,9 +57,18 @@ test("un projet créé sans nom ne porte pas le nom du bouton qui le crée", asy
   const lus = ["js/controllers/projects.js", "js/controllers/chat.js", "js/views/code-chat.js"].map(
     (f) => readFileSync(new URL("../mcp_gateway/atelier/web/" + f, import.meta.url), "utf8")
   );
+  // Le libellé du bouton sert de titre à la fenêtre qui demande le nom, jamais de
+  // nom au projet : aucun `createProject(...)` ne le reçoit.
   for (const source of lus) {
-    assert.ok(!/"Nouveau projet"/.test(source), "« Nouveau projet » ne désigne plus qu'une action");
+    for (let i = source.indexOf("createProject("); i !== -1; i = source.indexOf("createProject(", i + 1)) {
+      assert.ok(
+        !source.slice(i, i + 200).includes("Nouveau projet"),
+        "« Nouveau projet » ne désigne qu'une action, jamais le nom d'un projet"
+      );
+    }
   }
+  // Et le nom vient de la personne, vérifié avant la création.
+  assert.ok(/verifierLeNom\(/.test(lus[0]), "le nom se vérifie avant de créer");
 });
 
 test("les états de composition et d'exécution se lisent en français", async () => {
