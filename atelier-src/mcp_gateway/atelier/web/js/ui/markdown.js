@@ -38,7 +38,11 @@ function safeUrl(href) {
  */
 function memeOrigine(url) {
   try {
-    return new URL(url).origin === globalThis.location?.origin;
+    const u = new URL(url);
+    if (u.origin !== globalThis.location?.origin) return false;
+    // Même chez nous, une adresse qui AGIT (le GET qui lance un tour) ne se
+    // charge pas comme une image : le serveur la refuse aussi, mais on ne tente pas.
+    return !/^\/v1\/sessions\/[^/]+\/events\/?$/.test(u.pathname);
   } catch {
     return false;
   }

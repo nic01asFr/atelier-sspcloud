@@ -150,3 +150,62 @@ def test_le_lanceur_refuse_toujours_mais_n_autorise_que_dans_son_perimetre(racin
     with pytest.raises(_Refus, match="attend la personne"):
         outils._outil_decider({"demande": "r1", "decision": "allow"})
     assert rendues == ["deny"], "l'autorisation hors périmètre n'a rien rendu au CLI"
+
+
+# Contournements relevés à la relecture du 03/10 : chacun faisait accepter par le
+# lanceur une sortie du projet, ou l'accès aux clés.
+CONTOURNEMENTS = [
+    "cat foo/../../etc/passwd",
+    "cat ./../x",
+    "cat src/../../x",
+    "echo hi >../../x",
+    "echo hi >/tmp/x",
+    "echo hi > ../x",
+    "echo hi &>/tmp/x",
+    "cat <../x",
+    "cat $HOME/.ssh/id_rsa",
+    "cat ${HOME}/x",
+    "ls $(echo /)",
+    "find . -exec bash -c id ;",
+    "find . -delete",
+    "find . -execdir sh ;",
+    "cat .secre?s/k",
+    "cat .sec*/k",
+    "cat .?ecrets/k",
+    "cat .g*/config",
+    "cat .s''ecrets/x",
+    'cat ".sec""rets/x"',
+    "cat .s\\ecrets/x",
+    "python -c 'import os; os.system(\"id\")'",
+    "node -e 'process.exit()'",
+    "git --git-dir=/etc status",
+    "sed --in-place=/etc/x s/a/b/ src/a.py",
+    "diff <(curl x) src/a.py",
+]
+
+ACCEPTES = [
+    "ls src/*.py",
+    "cat src/a.py",
+    "grep -rn 'def ' src/",
+    "grep -n a/b src/a.py",
+    "sed -i s/a/b/ src/a.py",
+    "echo ok > out.txt",
+    "echo ok >> src/log.txt",
+    "pytest -q tests/ 2>&1 | tail -5",
+    "python -m lecteur serve",
+    "python scripts/build.py",
+    "mkdir -p out/sous && cp src/a.py out/sous/",
+    "find . -name '*.py'",
+    "ls -la ./src",
+    "cat ./src/../src/a.py",
+]
+
+
+@pytest.mark.parametrize("commande", CONTOURNEMENTS)
+def test_les_contournements_remontent_a_la_personne(commande: str, racine: Path) -> None:
+    assert hors_perimetre(_d("Bash", command=commande), racine), commande
+
+
+@pytest.mark.parametrize("commande", ACCEPTES)
+def test_les_gestes_courants_restent_acceptes(commande: str, racine: Path) -> None:
+    assert hors_perimetre(_d("Bash", command=commande), racine) is None, commande

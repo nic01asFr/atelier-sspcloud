@@ -1091,6 +1091,7 @@ class ClaudeHarness(Harness):
             self._en_tour.add(session_id)
         depuis = len(vivant.erreurs)
         termine = False
+        abandonnes = 0
         # L'entrée reste ouverte après l'envoi : c'est par elle que remontent
         # les réponses aux demandes d'autorisation, et que partent les messages
         # écrits pendant que le tour travaille.
@@ -1266,13 +1267,24 @@ class ClaudeHarness(Harness):
             # portera les messages restés en file. Les laisser ferait croire
             # qu'ils partiront.
             self.decisions.abandonner(session_id)
-            self.messages.vider(session_id)
+            abandonnes = self.messages.vider(session_id)
             try:
                 sync_claude_home(self.settings)
             except OSError:
                 pass
             self._veiller()
 
+        if abandonnes:
+            # L'interface avait annoncé « en file » : un message qui n'a pas pu
+            # partir se dit, il ne disparaît pas en silence.
+            emettre(
+                AtelierEvent(
+                    kind="systeme",
+                    session_id=session_id,
+                    cause="messages_abandonnes",
+                    text=str(abandonnes),
+                )
+            )
         if not any(e.kind == "fin" for e in events) and code == 0:
             emettre(AtelierEvent(kind="fin", session_id=session_id, cause="exit_0"))
         if code not in (0, None) and not any(e.kind == "erreur" for e in events):

@@ -3,6 +3,7 @@
 import * as api from "../api.js";
 import * as S from "../state.js";
 import { refreshProjects, refreshSessions } from "../services/catalog.js";
+import { projetVideReutilisable, TITRE_PAR_DEFAUT } from "../ui/projet-sans-nom.js";
 
 /**
  * @param {object} ctx
@@ -16,10 +17,12 @@ export function createProjectActions(ctx) {
    * qu'a l'envoi du premier message.
    */
   async function newProject() {
-    const titre = "Projet sans nom";
-    const slug = S.uniqueProjectSlug(state, S.slugifyProjectName(titre) || "projet");
+    const titre = TITRE_PAR_DEFAUT;
+    // Un projet sans nom encore vide est repris : chaque clic n'en laisse pas un de plus.
+    const vide = projetVideReutilisable(state);
+    const slug = vide ? vide.slug : S.uniqueProjectSlug(state, S.slugifyProjectName(titre) || "projet");
     try {
-      await api.createProject(state.token, { slug, kind: "code", title: titre });
+      if (!vide) await api.createProject(state.token, { slug, kind: "code", title: titre });
       await refreshProjects(state);
       S.setView(state, "code");
       S.ensureExpanded(state, slug);
