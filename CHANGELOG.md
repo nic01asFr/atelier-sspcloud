@@ -13,6 +13,9 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- « Nouveau projet » : le projet créé sans nom prend le nom du premier message
+  (il gardait « Projet sans nom », d'où des `projet-sans-nom-8`), et un clic de
+  plus reprend le projet sans nom resté vide au lieu d'en créer un autre ;
 - un lancement qui reprend une conversation déjà occupée n'est plus marqué
   « fini » (son message partait en file, rien ne tournait) : il passe en échec et
   le dit ; un message resté en file quand le tour s'arrête se signale

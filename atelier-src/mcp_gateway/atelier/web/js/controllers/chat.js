@@ -1,5 +1,6 @@
 /** Chat SSE — envoi message Claude Code. */
 
+import { estSansNom, titreAuPremierMessage } from "../ui/projet-sans-nom.js";
 import { choixAEnvoyer } from "../ui/connecteurs-avant-envoi.js";
 import { verdictDeLaCause } from "../ui/verdict-decision.js";
 import { commandeModele, ditLesModeles, resoudreModele } from "../ui/choix-du-modele.js";
@@ -570,6 +571,10 @@ export function createChatController(ctx) {
       return;
     }
     let slug = state.pendingProjectSlug || "";
+    // Le projet créé par « Nouveau projet » n'a pas été renommé : il prend le nom
+    // du premier message, comme un projet créé à l'envoi.
+    const projetExistant = slug ? (state.projects || []).find((p) => p.slug === slug) : null;
+    const titreAuDepart = titreAuPremierMessage(projetExistant, texte, S.projectNameFromMessage);
     if (!slug) {
       const titre = S.projectNameFromMessage(texte) || "Projet sans nom";
       const base = S.slugifyProjectName(titre) || "projet";
@@ -593,6 +598,14 @@ export function createChatController(ctx) {
       state.modeEnAttente = "";
     }
     await appliquerLesConnecteursEnAttente(rec.session_id);
+    if (titreAuDepart && estSansNom(projetExistant)) {
+      try {
+        await api.patchProject(state.token, slug, { title: titreAuDepart });
+        await refreshProjects(state);
+      } catch {
+        /* le projet garde son nom de départ : la personne peut le renommer */
+      }
+    }
     S.setSlug(state, slug);
     S.ensureExpanded(state, slug);
     S.setSessionId(state, rec.session_id);
