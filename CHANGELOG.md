@@ -13,6 +13,13 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- « Nouveau projet » ouvre une fenêtre qui demande le nom : rien n'est créé avant
+  sa validation (plus de `projet-sans-nom-8`), un nom vide ou déjà pris est
+  refusé dans la fenêtre, et le projet créé s'ouvre avec le composeur prêt, où le
+  premier message fait naître la conversation. Le bouton ne créait rien de
+  visible : il ajoutait un dossier sans nom dont le nom passait en édition dans la
+  liste. La reprise du projet vide, ajoutée la veille, est retirée ; un projet
+  « sans nom » déjà existant prend toujours le nom de son premier message ;
 - « Nouveau projet » : le projet créé sans nom prend le nom du premier message
   (il gardait « Projet sans nom », d'où des `projet-sans-nom-8`), et un clic de
   plus reprend le projet sans nom resté vide au lieu d'en créer un autre ;

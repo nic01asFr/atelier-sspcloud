@@ -3,7 +3,8 @@
 import * as api from "../api.js";
 import * as S from "../state.js";
 import { refreshProjects, refreshSessions } from "../services/catalog.js";
-import { projetVideReutilisable, TITRE_PAR_DEFAUT } from "../ui/projet-sans-nom.js";
+import { openModal } from "../ui/modal.js";
+import { nettoyerLeNom, verifierLeNom, LONGUEUR_MAX } from "../ui/nouveau-projet.js";
 
 /**
  * @param {object} ctx
@@ -12,31 +13,47 @@ export function createProjectActions(ctx) {
   const { state, render, writeQuery } = ctx;
 
   /**
-   * Le dossier est cree tout de suite et son nom passe en edition : le geste
-   * est delibere, le projet est donc assume. La conversation, elle, n'existera
-   * qu'a l'envoi du premier message.
+   * Une fenêtre demande le nom ; rien n'est créé avant sa validation. Le projet
+   * créé s'ouvre avec le composeur prêt : le premier message y fait naître la
+   * conversation.
    */
-  async function newProject() {
-    const titre = TITRE_PAR_DEFAUT;
-    // Un projet sans nom encore vide est repris : chaque clic n'en laisse pas un de plus.
-    const vide = projetVideReutilisable(state);
-    const slug = vide ? vide.slug : S.uniqueProjectSlug(state, S.slugifyProjectName(titre) || "projet");
-    try {
-      if (!vide) await api.createProject(state.token, { slug, kind: "code", title: titre });
-      await refreshProjects(state);
-      S.setView(state, "code");
-      S.ensureExpanded(state, slug);
-      S.setSlug(state, slug);
-      S.setSessionId(state, null);
-      S.setMessages(state, []);
-      S.setPendingProjectSlug(state, slug);
-      S.setEditingProjectSlug(state, slug);
-      writeQuery();
-      render();
-    } catch (err) {
-      S.setError(state, err.message || String(err));
-      render();
-    }
+  function newProject() {
+    S.setError(state, "");
+    openModal(state, {
+      title: "Nouveau projet",
+      lead: "Donnez un nom à votre projet. Vous pourrez écrire à l’agent juste après.",
+      size: "md",
+      submitLabel: "Créer le projet",
+      fields: [
+        {
+          name: "nom",
+          label: "Nom du projet",
+          placeholder: "Par exemple : Atlas des écoles",
+          required: true,
+          full: true,
+          maxlength: LONGUEUR_MAX,
+        },
+      ],
+      onSubmit: async (data) => {
+        const titre = nettoyerLeNom(data.nom);
+        const erreur = verifierLeNom(titre, state.projects);
+        if (erreur) throw new Error(erreur);
+        const slug = S.uniqueProjectSlug(state, S.slugifyProjectName(titre) || "projet");
+        await api.createProject(state.token, { slug, kind: "code", title: titre });
+        await refreshProjects(state);
+        S.setView(state, "code");
+        S.ensureExpanded(state, slug);
+        S.setSlug(state, slug);
+        S.setSessionId(state, null);
+        S.setMessages(state, []);
+        S.setSessionMcp(state, null);
+        S.setPendingProjectSlug(state, slug);
+        writeQuery();
+        render();
+        // Le composeur est prêt : la personne écrit tout de suite.
+        setTimeout(() => document.getElementById("composer-input")?.focus(), 0);
+      },
+    });
   }
 
   /** Ouvre le champ de renommage dans la liste laterale. */

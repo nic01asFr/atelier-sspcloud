@@ -228,6 +228,7 @@ export function openModal(
     }
     input.placeholder = field.placeholder || "";
     if (field.required) input.required = true;
+    if (field.maxlength) input.maxLength = field.maxlength;
     if (field.pattern) input.pattern = field.pattern;
     if (field.autocomplete) input.autocomplete = field.autocomplete;
     wrap.appendChild(input);
