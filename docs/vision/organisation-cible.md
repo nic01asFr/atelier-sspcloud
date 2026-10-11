@@ -78,6 +78,9 @@ Chaque étape est livrable seule, avec une preuve de réussite et un retour arri
 ### Étape 1 : rendre le store de wikichat durable (D-53)
 - Appeler `ensure_wikichat_data_link` au démarrage, **avant** wikichat ; migration non destructive
   (copie de l'existant, puis lien) ; test de redémarrage.
+- **Écrit** (`donnees_wikichat.py`, appelé par l'init avant wikichat) : copie vérifiée, ancien
+  dossier gardé, lien ; la copie du pod en marche vers le volume reste à faire à la main avant le
+  premier redémarrage (registre D-53).
 - **Décision de la personne** : c'est une migration de données.
 - **Preuve** : un déclencheur créé survit à un redémarrage. **Retour** : retirer le lien, restaurer la copie.
 

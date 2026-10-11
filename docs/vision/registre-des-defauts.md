@@ -456,8 +456,12 @@ l'événement et agit, l'agent n'a rien de plus à retenir. Chaque entrée dit o
   les messages, les canaux et le sel d'identité ; les faits, fiches, vecteurs et les trois
   déclencheurs semés au démarrage sont recalculés. Constaté le 11/10 : `agents/` et `projects/`
   vides, `migration-w2.json` daté du démarrage ; l'archive du 27/09 n'a aucun état de wikichat.
-  **Statut : vérifié.** À régler avant tout nouveau redémarrage (migration de données : à
-  soumettre à la personne).
+  **Statut : vérifié.** Correction écrite (`donnees_wikichat.py`, appelée par l'init avant
+  wikichat) : copie vérifiée vers `~/work/wikichat/donnees`, ancien dossier gardé en
+  `.wikichat.avant-migration`, puis lien ; jamais de suppression, retour arrière automatique.
+  **Elle ne protège pas le premier redémarrage** : le pod en marche porte l'ancien init et le
+  conteneur neuf n'aura plus rien à migrer. Avant ce redémarrage-là, copier `~/.wikichat` dans
+  `~/work/wikichat/donnees` (le lien du conteneur neuf la reprend), puis supprimer le pod aussitôt.
 - **D-54 (G) — L'environnement d'un agent est une copie de celui de l'Atelier.**
   `harness._env` part de `os.environ.copy()` : un agent qui a Bash lit `ATELIER_OWNER_KEY`,
   `ATELIER_GITHUB_TOKEN`, `ATELIER_LLM_API_KEY`. `~/work/gateway/owner_key.txt` est lisible par

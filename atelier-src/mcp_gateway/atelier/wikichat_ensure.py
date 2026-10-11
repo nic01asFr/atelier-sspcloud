@@ -42,11 +42,20 @@ def _link_home_wikichat(home_link: Path, durable: Path) -> None:
 
 
 def ensure_wikichat_data_link(settings: AtelierSettings) -> Path:
-    """~/work/wikichat durable ; $HOME/.wikichat → lien (API native WikiChat)."""
-    durable = settings.wikichat_dir
-    durable.mkdir(parents=True, exist_ok=True)
+    """~/work/wikichat/donnees durable ; $HOME/.wikichat → lien (API native WikiChat).
+
+    Sous Linux, le dossier existant est migré sans rien détruire
+    (`donnees_wikichat`, D-53) : l'init le fait avant de lancer wikichat.
+    """
     home_link = Path.home() / ".wikichat"
-    _link_home_wikichat(home_link, durable)
+    if sys.platform == "win32":
+        durable = settings.wikichat_dir
+        durable.mkdir(parents=True, exist_ok=True)
+        _link_home_wikichat(home_link, durable)
+        return home_link
+    from mcp_gateway.atelier.donnees_wikichat import lier_le_store
+
+    lier_le_store(home_link, settings.wikichat_dir / "donnees")
     return home_link
 
 

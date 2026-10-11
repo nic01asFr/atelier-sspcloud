@@ -458,12 +458,28 @@ demarrer_code_server() {
   dire "code-server lancé"
 }
 
+# Le store de wikichat (~/.wikichat : déclencheurs, agents, mémoire, sessions)
+# vit sur le volume. Dans le conteneur, ~ ne survit pas à un redémarrage (D-53).
+# Copie, vérification, ancien dossier gardé, puis lien ; jamais de suppression.
+# Avant wikichat : il ne doit pas écrire dans ce qu'on déplace. Un échec ici ne
+# bloque pas le démarrage, il est dit.
+lier_le_store_wikichat() {
+  local bilan
+  if bilan="$(cd "$SRC_ATELIER" && python3 -m mcp_gateway.atelier.donnees_wikichat \
+        "$HOME/.wikichat" "$WORK/wikichat/donnees" 2>&1)"; then
+    dire "store de wikichat : $bilan"
+  else
+    avertir "store de wikichat NON durable, il sera perdu au prochain redémarrage : $bilan"
+  fi
+}
+
 demarrer_wikichat() {
   [ "$AVEC_WIKICHAT" = "1" ] || return 0
   if curl -fsS -o /dev/null "http://127.0.0.1:$PORT_WIKICHAT/api/health" 2>/dev/null; then
     dire "wikichat déjà en route"
     return
   fi
+  lier_le_store_wikichat
   if [ ! -s "$SECRETS/llm_api_key" ]; then
     avertir "wikichat non lancé : il lui faut la clé LLM"
     return
