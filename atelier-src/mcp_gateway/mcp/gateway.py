@@ -13,6 +13,7 @@ from mcp_gateway.bundles import BundleSession, PlafondDepasse
 from mcp_gateway.catalog import Catalog
 from mcp_gateway.compositions import CompositionService
 from mcp_gateway.meta_tools_defs import META_TOOLS
+from mcp_gateway.mcp.appel_tolerant import lire_appel, rappel
 from mcp_gateway.mcp.instructions import build_mcp_instructions
 from mcp_gateway.profile_tools import (
     create_profile_mcp,
@@ -704,18 +705,19 @@ async def _gerer_find_tools(passerelle: McpGateway, appel: _Appel) -> dict:
 
 @_meta_outil("gateway_call_tool")
 async def _gerer_call_tool(passerelle: McpGateway, appel: _Appel) -> dict:
-    target = str(appel.arguments.get("name") or "").strip()
-    if not target:
-        return _texte("Argument 'name' requis.", erreur=True)
-    if target == "gateway_call_tool":
-        return _texte("Appel récursif refusé.", erreur=True)
+    # Les modèles se trompent de forme (arguments en texte, à plat, mal
+    # nommés, appel de soi-même) : on comprend, et on le dit une fois.
+    lu = lire_appel(appel.arguments)
+    if lu.erreur:
+        return _texte(lu.erreur, erreur=True)
+    target = lu.cible
     # Même chemin que n'importe quel appel : le garde du profil s'applique
     # à la cible, gateway_call_tool n'élargit donc jamais le périmètre.
     via = VIA_META_OUTIL.set("gateway_call_tool")
     try:
         result = await passerelle.tools_call(
             target,
-            appel.arguments.get("arguments") or {},
+            lu.arguments,
             appel.session_id,
             internal=appel.internal,
         )
@@ -723,7 +725,22 @@ async def _gerer_call_tool(passerelle: McpGateway, appel: _Appel) -> dict:
         VIA_META_OUTIL.reset(via)
     # Un échec doit rendre de quoi se corriger : sans cela l'assistant
     # relance à l'identique, ou repart en recherche pour rien.
-    return passerelle._enrich_call_failure(result, target, appel.session_id)
+    result = passerelle._enrich_call_failure(result, target, appel.session_id)
+    return _avec_rappel(result, rappel(lu))
+
+
+def _avec_rappel(resultat: dict, ligne: str) -> dict:
+    """Ajoute la correction de forme au premier bloc texte, sans rien d'autre toucher."""
+    if not ligne or not isinstance(resultat, dict):
+        return resultat
+    contenu = resultat.get("content")
+    if isinstance(contenu, list):
+        for bloc in contenu:
+            if isinstance(bloc, dict) and bloc.get("type") == "text" and isinstance(bloc.get("text"), str):
+                bloc["text"] += ligne
+                return resultat
+        contenu.append({"type": "text", "text": ligne.strip()})
+    return resultat
 
 
 @_meta_outil("gateway_list_bundles")

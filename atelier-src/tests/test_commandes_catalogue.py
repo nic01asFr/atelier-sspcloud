@@ -349,3 +349,25 @@ def test_le_service_monte_le_catalogue_et_l_expose(atelier) -> None:  # noqa: AN
         assert c["classe"] in ("lecture", "reversible", "engageante", "reservee")
         if c["inverse"]:
             assert c["inverse"] in declarations, f"{c['nom']} : inverse inconnue {c['inverse']}"
+
+
+def test_le_refus_du_jeton_dit_pourquoi_et_quoi_faire(tmp_path: Path) -> None:
+    catalogue, engageant, _ = _catalogue(tmp_path)
+    jeton = _executer(catalogue.executer("atelier_essai_engageant", {"valeur": 5}, _modele())).charge[
+        "confirmation"
+    ]
+    autres = _executer(
+        catalogue.executer("atelier_essai_engageant", {"valeur": 6, "confirmation": jeton}, _modele())
+    )
+    assert "pas ceux de l'aperçu" in autres.charge["erreur"]
+
+    inconnu = _executer(
+        catalogue.executer("atelier_essai_engageant", {"valeur": 5, "confirmation": "zzz"}, _modele())
+    )
+    assert "inconnu" in inconnu.charge["erreur"] and "SANS `confirmation`" in inconnu.charge["erreur"]
+
+    catalogue._jetons[jeton].expire = 0  # noqa: SLF001
+    expire = _executer(
+        catalogue.executer("atelier_essai_engageant", {"valeur": 5, "confirmation": jeton}, _modele())
+    )
+    assert "expiré" in expire.charge["erreur"] and engageant.appels == []

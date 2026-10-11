@@ -356,6 +356,31 @@ class Catalogue:
                 return None
             return self._jetons.pop(jeton)
 
+    def _raison_du_refus_du_jeton(
+        self, jeton: str, nom: str, arguments: dict[str, Any], ctx: Contexte
+    ) -> str:
+        """Dit POURQUOI le jeton ne vaut pas, et quoi faire : un agent qui lit
+        « invalide, expiré, déjà servi… » ne sait pas lequel des quatre."""
+        suite = "Rien n'a été fait. Rappelez la commande SANS `confirmation` pour obtenir un nouvel aperçu."
+        with self._verrou:
+            trouve = self._jetons.get(jeton)
+        if trouve is None:
+            return (
+                "jeton de confirmation inconnu : déjà servi, ou l'aperçu s'est perdu "
+                f"(redémarrage de l'Atelier). {suite}"
+            )
+        if trouve.expire < time.time():
+            return f"jeton de confirmation expiré (il vaut {JETON_DUREE_S // 60} minutes). {suite}"
+        if trouve.nom != nom:
+            return f"ce jeton a été donné pour {trouve.nom}, pas pour {nom}. {suite}"
+        if trouve.empreinte != empreinte(nom, arguments):
+            return (
+                "les arguments ne sont pas ceux de l'aperçu confirmé : redonnez exactement "
+                "les mêmes, ou, si vous voulez changer quelque chose, demandez un nouvel "
+                "aperçu sans `confirmation` (la personne devra le confirmer à nouveau)."
+            )
+        return f"ce jeton a été donné à une autre conversation. {suite}"
+
     def _journaliser(
         self,
         *,
@@ -480,10 +505,7 @@ class Catalogue:
         if classe == ENGAGEANTE and not ctx.confirme:
             if confirmation:
                 if self._consommer_jeton(str(confirmation), nom, arguments, ctx) is None:
-                    return refuser(
-                        "jeton de confirmation invalide, expiré, déjà servi, ou donné pour "
-                        "d'autres arguments : redemandez un aperçu"
-                    )
+                    return refuser(self._raison_du_refus_du_jeton(str(confirmation), nom, arguments, ctx))
             else:
                 try:
                     apercu = await self._apercu(commande, ctx, arguments)
