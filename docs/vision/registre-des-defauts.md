@@ -479,6 +479,17 @@ l'événement et agit, l'agent n'a rien de plus à retenir. Chaque entrée dit o
   réponse. 86 demandes sont restées sans réponse (âge médian 14 jours), 16 en veille.
   **Statut : vérifié.**
 
+- **D-59 (m) — Les processus orphelins ne sont pas ramassés.** PID 1 est l'application Python,
+  qui ne fait pas `waitpid` sur les orphelins : 50 zombies une heure après le démarrage (six par
+  session du navigateur de l'agent : `bash`, `npm`, `node` ×3, `chrome-devtools`, `sh`). Sans
+  effet visible à l'heure, mais croissant sur un pod qui reste des jours. **Statut : vérifié.**
+- **D-60 (G) — Les plafonds de l'Atelier ne tiennent pas dans la mémoire du pod.** 4 applications
+  de 1,5 Gio, 6 Chrome, 3 CLI persistants, 3 lancements simultanés et la voix (2,2 Go), plus le
+  socle (0,7 Go) : de l'ordre de 12 à 15 Gio pour un plafond de 8 Gi. Aucun contrôle de santé ne
+  surveille la mémoire. Un dépassement est tué par le noyau ; si c'est PID 1, le conteneur
+  redémarre (et le store de wikichat disparaît, D-53). Les lignes Chrome et CLI sont des
+  estimations à mesurer sous charge. **Statut : rapporté (calcul sur les plafonds).**
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue
