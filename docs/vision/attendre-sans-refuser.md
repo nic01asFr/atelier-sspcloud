@@ -115,7 +115,9 @@ posée ──(réponse < délai)────────────────
   autres. Un lancement dont l'agent dort est **« en attente de vous »**, jamais
   « fini » (registre D-09). Les lancements **supervisés** gardent leur circuit :
   le lanceur décide dans son périmètre (`atelier_decider`) ; au-delà, c'est la
-  personne.
+  personne. Le lanceur, s'il est un agent, **reçoit** la demande
+  (message de l'Atelier qui le relance s'il est inactif) au lieu d'avoir à la chercher
+  (`relais_au_lanceur.py`).
 - **Journal** : chaque étape est écrite (posée, notifiée, en veille, répondue,
   reprise) avec l'acteur réel de la réponse.
 

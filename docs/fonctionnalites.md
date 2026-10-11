@@ -245,7 +245,7 @@ avec « Oui ». Un « fait » annoncé sans carte est marqué « non vérifié �
   suit par `atelier_lancements`, rend compte depuis la carte d'action.
 - **Superviser** : avec `supervise=true`, l'agent lancé **pose** ses demandes d'autorisation (sinon
   elles sont refusées sans bruit) ; elles apparaissent dans `en_attente` de `atelier_lancements`,
-  et le lanceur répond par `atelier_decider` — sans « Oui » à chaque fois dans le périmètre : la personne a consenti en validant l'aperçu du lancement supervisé (seule exception à « l'Assistant n'accepte jamais seul » ; une règle « toujours » et tout ce qui sort du périmètre restent à la personne). Le périmètre est tenu par l'Atelier
+  et le lanceur répond par `atelier_decider` — **sans avoir à aller les chercher** : si le lanceur est un agent (conversation), la demande lui est envoyée comme message de l'Atelier (`relais_au_lanceur.py`) ; inactif, il est **relancé** par ce message ; occupé, il la voit par `atelier_suivre` ou, après 20 s sans réponse, le message est mis en file. Une demande n'est relayée qu'une fois (au plus 30 messages par lancement), et ce qui sort du périmètre ou toute question à la personne attend la personne. Le lanceur est aussi prévenu de la **fin** de l'agent lancé s'il est inactif. L'agent lancé peut **interroger son lanceur sans bloquer** par `atelier_demander_au_lanceur(question)` : la question part comme message, la réponse arrive par `atelier_envoyer`, qui relance l'agent lancé (un agent supervisé peut toujours attendre son lanceur). Sans cela, une demande restée sans lanceur disponible attendait la personne — sans « Oui » à chaque fois dans le périmètre : la personne a consenti en validant l'aperçu du lancement supervisé (seule exception à « l'Assistant n'accepte jamais seul » ; une règle « toujours » et tout ce qui sort du périmètre restent à la personne). Le périmètre est tenu par l'Atelier
   (`perimetre_du_lanceur.py`) : lire et écrire dans le projet, commandes locales courantes,
   `git` de lecture et de commit. Tout le reste — réseau, clés, `.git`, envoi, installation de
   dépendances, autres outils — reste à la personne (le lanceur peut toujours le *refuser*), qui le voit dans l'Atelier. Sans `branche`,
@@ -325,6 +325,7 @@ session de l'interface est « la personne ».
 | | `atelier_agent_activer` | **reservee** | `atelier_agent_desactiver` | |
 | | `atelier_lancer_agent` | engageante | | |
 | | `atelier_lancements` | lecture | | |
+| | `atelier_demander_au_lanceur` | reversible | | |
 | connecteur | `atelier_connecteur_ajouter` | engageante | `atelier_connecteur_retirer` | |
 | | `atelier_connecteur_retirer` | reversible | `atelier_connecteur_ajouter` (reprise) | |
 | | `atelier_connecteur_accorder` | **reservee** | | |

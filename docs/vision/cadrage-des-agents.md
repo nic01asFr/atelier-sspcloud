@@ -110,6 +110,16 @@ agent ou un sous-agent.
 5. Il applique les plafonds et le journal unique ; les questions d'autorisation de la cible remontent
    à l'appelant, puis à la personne.
 
+**Déjà livré, première moitié du contrat** (`relais_au_lanceur.py`) : entre un agent et l'agent qu'il
+a lancé en supervision, rien n'est plus à aller chercher. Les demandes d'autorisation de l'agent
+lancé, dans le périmètre du lanceur, deviennent un message de l'Atelier adressé au lanceur : s'il est
+inactif, il est relancé pour y répondre (`atelier_decider`) ; s'il travaille, il les voit par
+`atelier_suivre` et, passé 20 s, le message est mis en file. Réciproquement, l'agent lancé interroge
+son lanceur sans bloquer par `atelier_demander_au_lanceur`, et la fin de l'agent lancé est dite au
+lanceur inactif. Reste du geste unique `demander` : viser un projet ou un agent quelconque (pas
+seulement celui qu'on a lancé), la réponse persistée et liée à sa requête, la provenance dans le tour
+de la cible.
+
 Un sous-agent de son propre projet passe par le natif (`.claude/agents`), un sous-agent d'un autre
 projet par `demander`. Cela remplace le jeton de confirmation de `lancer_agent` pour la délégation
 courante.

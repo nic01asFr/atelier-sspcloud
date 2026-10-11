@@ -626,7 +626,9 @@ class OutilsAtelier:
         if isinstance(args.get("peut_attendre"), bool):
             peut_attendre = bool(args["peut_attendre"])
         else:
-            peut_attendre = APPEL_INTERACTIF.get()
+            # Un agent lancé en supervision attend toujours son lanceur : le
+            # message qui le relance ne doit pas le priver de poser ses demandes.
+            peut_attendre = APPEL_INTERACTIF.get() or bool(getattr(rec, "supervise", False))
 
         suivi = _Suivi()
         with self._verrou:

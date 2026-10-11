@@ -2787,7 +2787,29 @@ def build_app(
     enregistrer_les_commandes(app)
     enregistrer_les_lancements(app)
     # Un agent lancé qui finit ou se bloque : la personne en est prévenue.
-    app.state.lancements.avis = notifieur.lancement
+    # Et son lanceur, quand c'est un agent, reçoit ses demandes et sa fin
+    # (`relais_au_lanceur`) : il n'a pas à aller les chercher.
+    from mcp_gateway.atelier.relais_au_lanceur import RelaisAuLanceur
+
+    relais = RelaisAuLanceur(
+        store=store, lanceur=app.state.lancements, projets=Path(settings.projects_dir)
+    )
+    app.state.relais_au_lanceur = relais
+    app.state.lancements.relais = relais
+
+    def _avis_fin(lancement: Any) -> None:
+        notifieur.lancement(lancement)
+        relais.fin(lancement)
+
+    app.state.lancements.avis = _avis_fin
+    _avis_de_base = harness.avis
+
+    def _avis_demande(quoi: str, demande: Any) -> None:
+        if _avis_de_base is not None:
+            _avis_de_base(quoi, demande)
+        relais.demande(quoi, demande)
+
+    harness.avis = _avis_demande  # type: ignore[assignment]
     enregistrer_les_routes_des_processus(app)
     enregistrer_les_automates(app)
     enregistrer_les_accords(app)
