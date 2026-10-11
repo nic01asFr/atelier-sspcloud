@@ -449,6 +449,36 @@ l'événement et agit, l'agent n'a rien de plus à retenir. Chaque entrée dit o
   deux fois pour « Réponds seulement : ok »). Retirer `send_message` des outils de
   l'Assistant : c'est la configuration du rôle qui tranche, pas la consigne.
 
+- **D-53 (G) — Le store de wikichat est perdu à chaque redémarrage du pod.**
+  `~/.wikichat` est un dossier de la couche éphémère, pas un lien vers le volume :
+  `ensure_wikichat_data_link` (`wikichat_ensure.py`) existe mais n'est appelé nulle part
+  (c'est T23). Un redémarrage vide les agents et routines du Pilote, le registre des projets,
+  les messages, les canaux et le sel d'identité ; les faits, fiches, vecteurs et les trois
+  déclencheurs semés au démarrage sont recalculés. Constaté le 11/10 : `agents/` et `projects/`
+  vides, `migration-w2.json` daté du démarrage ; l'archive du 27/09 n'a aucun état de wikichat.
+  **Statut : vérifié.** À régler avant tout nouveau redémarrage (migration de données : à
+  soumettre à la personne).
+- **D-54 (G) — L'environnement d'un agent est une copie de celui de l'Atelier.**
+  `harness._env` part de `os.environ.copy()` : un agent qui a Bash lit `ATELIER_OWNER_KEY`,
+  `ATELIER_GITHUB_TOKEN`, `ATELIER_LLM_API_KEY`. `~/work/gateway/owner_key.txt` est lisible par
+  le groupe (660). Les bornages par commande et par projet sont donc des consignes pour tout
+  agent qui a un shell. **Statut : vérifié.** Prérequis : jeton par conversation (D1), puis
+  environnement en liste blanche.
+- **D-55 (G) — `sudo` sans mot de passe pour l'utilisateur des agents**, `kubectl` installé
+  dans le pod. Un agent peut réécrire le code et les réglages de l'Atelier, ou une politique
+  gérée posée par `root`. **Statut : vérifié.**
+- **D-56 (G) — Des secrets collés par la personne sont restés dans des transcripts**
+  (une clé d'API de modèle et un jeton de session d'un outil de données, dans
+  `~/work/transcripts/`, dossier `wikichat-memory`). Un fichier `.env.sspcloud` non lu dans
+  `projects/claude-code/`. À révoquer, puis à purger. **Statut : rapporté.**
+- **D-57 (M) — Boucle de refus du geste `relancer_wikichat`** : 216 refus et 16 alertes en
+  4 h le 27/09 pendant une panne de wikichat, par l'acteur `gardiens`. Il manque un
+  coupe-circuit (nombre d'essais, délai croissant). **Statut : vérifié (journal).**
+- **D-58 (M) — Mesure impossible des décisions de permission** : les fichiers répondus
+  disparaissent de `decisions/` et le journal ne garde ni l'outil, ni le projet, ni le délai de
+  réponse. 86 demandes sont restées sans réponse (âge médian 14 jours), 16 en veille.
+  **Statut : vérifié.**
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue
