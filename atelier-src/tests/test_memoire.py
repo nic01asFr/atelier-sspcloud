@@ -344,10 +344,10 @@ def test_proposition_de_memoire_passe_par_a_valider(atelier: TestClient, wikicha
     assert not [a for a in wikichat.appels if a["methode"] == "POST"], "rien n'est retenu avant l'accord"
     # Le même texte n'est pas dupliqué ; au plus trois par conversation.
     atelier.post("/v1/memoire/propositions", json=corps, headers=lanceur(atelier))
-    for i in range(2):
-        r = atelier.post("/v1/memoire/propositions", json={**corps, "texte": f"autre préférence {i}"}, headers=lanceur(atelier))
+    for texte in ("Réponses courtes et en français", "Toujours proposer un plan avant de coder"):
+        r = atelier.post("/v1/memoire/propositions", json={**corps, "texte": texte}, headers=lanceur(atelier))
         assert r.status_code == 200
-    r = atelier.post("/v1/memoire/propositions", json={**corps, "texte": "une de trop"}, headers=lanceur(atelier))
+    r = atelier.post("/v1/memoire/propositions", json={**corps, "texte": "Ne jamais toucher au dossier archives"}, headers=lanceur(atelier))
     assert r.status_code == 422
     en_attente = atelier.app.state.a_valider.lister(source="memoire")
     assert len(en_attente) == 3

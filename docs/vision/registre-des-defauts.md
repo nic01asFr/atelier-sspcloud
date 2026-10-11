@@ -221,6 +221,7 @@ Gravité : **C** critique · **G** grave · **M** moyen · **m** mineur.
 ### Fins de lancement et états faux
 
 - **D-09 (G) — « fini » ≠ livré.** Preuves : `lc-…9ed5dd70` « fini » en 100 s,
+  *Corrigé en partie le 11/10 : un tour qui finit sur une erreur n'est plus « fini » (D-10) ; la conclusion dit si l'agent a livré (`livre`) ; une branche vide ne propose plus de fusion (D-21). Reste : recalculer `non_commite` après la clôture.*
   aucun livrable, la conversation continue 4 h (29 erreurs) ; `lc-…db3134a6`
   « arrêté », puis 534 lignes écrites dans la copie ni commitées ni proposées,
   `conclusion` figée à la clôture ; `lc-…4ca1e104` « fini » sur des appels
@@ -228,12 +229,14 @@ Gravité : **C** critique · **G** grave · **M** moyen · **m** mineur.
   livré / sans livrable / bloqué ; recalculer `non_commite` à la lecture ; détecter
   les appels d'outils illisibles répétés.
 - **D-10 (G) — Conversation morte en erreur mais « idle ».** Preuve : 6da335e1
+  *Corrigé le 11/10 : un résultat du CLI en erreur (`is_error`) rend la conversation « en échec », même quand le processus gardé rend un code 0 ; un agent lancé dans ce cas est « échec », pas « fini ».*
   (`autocompact_thrashing`, un blob d'image a saturé le contexte ; l'état reste
   `idle`, le dernier texte est ancien). Le flux produit bien un événement
   `erreur` (`events.py:217`) : c'est le calcul d'état de l'index qui l'ignore.
   **Statut : rapporté (partiel).** Correction : état « en échec » + message en
   clair ; ne pas injecter de blob image dans le contexte.
 - **D-11 (M) — Arrêt sans motif ni acteur ; interruption d'un tour absent.**
+  *Corrigé le 11/10 : interrompre une conversation au repos ne la marque plus « interrompue » et le dit (`rien_a_interrompre`) ; un lancement arrêté ou coupé garde son motif (« arrêté par … », « durée dépassée »).*
   Preuve : `arrete` avec `erreur` vide ; `atelier_interrompre` répond « fait »
   95 s après la fin. **Statut : rapporté.**
 - **D-12 (M) — Deux conversations pour une même session CLI.** Preuve : 2e11c55e
@@ -244,6 +247,7 @@ Gravité : **C** critique · **G** grave · **M** moyen · **m** mineur.
   Preuve : `maj` de 12 conversations à 12:06 le 11/10 alors que la carte les
   disait à 13 jours. **Statut : rapporté.**
 - **D-14 (M) — Compteurs et mémoire comptent des messages qui ne sont pas de la
+  *Corrigé le 11/10 : résumés de compaction, messages de l'Atelier (`[Atelier]`) et entrées synthétiques ne sont plus lus comme des paroles de la personne (fiche et mémoire de nuit).*
   personne.** Preuve : 5ae7334b « 122 messages de la personne » dont des résumés
   de compaction (`isSynthetic`) et des notifications d'application ; propositions
   mémoire prêtant à la personne des préférences venues du résumé du modèle.
@@ -258,6 +262,7 @@ Gravité : **C** critique · **G** grave · **M** moyen · **m** mineur.
   git, absent du worktree). Correction : injecter la config MCP dans la copie, ou
   avertir à l'aperçu.
 - **D-16 (G) — La mission cite des chemins hors de la copie.** Preuve :
+  *Corrigé le 11/10 : l'aperçu du lancement avertit des chemins absolus d'une mission sur branche et dit quoi faire.*
   `lc-…9ed5dd70` (lecture et écriture dans `/home/onyxia/work/...`),
   `lc-…aab4f0bc`. **Statut : rapporté.** Correction : détecter à l'aperçu ; copier
   les fichiers d'entrée ; dire à l'agent le chemin de sa copie.
@@ -276,6 +281,7 @@ Gravité : **C** critique · **G** grave · **M** moyen · **m** mineur.
   branche commence par `agent/` » pour `atlas-compatibilite` ; « une copie tourne
   déjà » sans la nommer). **Statut : rapporté.**
 - **D-21 (M) — Propositions « Travail sans modification » sur des branches
+  *Corrigé le 11/10 : « Rien n'a été livré » ou « Travail non commité », sans action de fusion.*
   vides.** Preuve : 4 propositions `commits: []` acceptées, titres du type
   « personne (agent/feuille-route) », résumés tronqués au milieu d'un mot.
   **Statut : rapporté.**
@@ -283,6 +289,7 @@ Gravité : **C** critique · **G** grave · **M** moyen · **m** mineur.
 ### Gardiens et santé
 
 - **D-22 (G) — Les gestes de réparation sont refusés sans motif lisible.**
+  *Corrigé le 11/10 : le motif du refus est écrit au journal unique.*
   Preuve : 184 `relancer_wikichat` refusés le 27/09, un toutes les ~65 s ;
   `relancer_atelier` refusé 3 fois. Dans le code, le refus a un motif
   (`executeur.py:503-512` : à blanc, `ATELIER_GARDIENS_GESTES=0`,
@@ -343,6 +350,7 @@ Gravité : **C** critique · **G** grave · **M** moyen · **m** mineur.
 ### Mémoire et file « À valider »
 
 - **D-34 (G) — La file ne se vide pas et se pollue.** 49 propositions en attente
+  *Corrigé en partie le 11/10 : les quasi-doublons de la mémoire se fusionnent à l'entrée. Reste : expiration, acceptation en lot, exiger une citation.*
   sur 56, 4 jours sans tri ; doublons sémantiques (empreinte sur le texte exact) ;
   tâches ou demandes produit prises pour des préférences ; 21 pour
   `wikichat-memory`, 6 pour des projets rangés ; deux propositions identiques sans
@@ -354,6 +362,7 @@ Gravité : **C** critique · **G** grave · **M** moyen · **m** mineur.
 ### Outils de lecture et projets
 
 - **D-35 (M) — `atelier_transcript` refuse les identifiants courts** que
+  *Corrigé le 11/10 : les outils de conversation acceptent l'identifiant court (8 caractères) ; un préfixe ambigu ne devine pas.*
   `atelier_fiche` accepte ; sortie en JSONL brut tronqué, sans pagination.
   **Statut : rapporté.**
 - **D-36 (m) — `atelier_journal` et `atelier_a_valider` dépassent la limite de

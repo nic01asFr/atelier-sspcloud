@@ -188,7 +188,7 @@ def evenements_de(entrees: list[dict[str, Any]], cwd: str = "") -> tuple[list[di
     Rend `(evenements, tronque)`. Les textes restent bruts ici : le filtre des
     secrets s'applique à la sortie (`transcript_filtre`).
     """
-    from mcp_gateway.atelier.journal import texte_dune_entree
+    from mcp_gateway.atelier.journal import est_synthetique, texte_dune_entree
 
     sortie: list[dict[str, Any]] = []
     tronque = False
@@ -221,7 +221,10 @@ def evenements_de(entrees: list[dict[str, Any]], cwd: str = "") -> tuple[list[di
             if texte:
                 if len(texte) > TEXTE_MAX:
                     tronque = True
-                ajouter({**base, "role": "personne", "texte": _court(texte, TEXTE_MAX)})
+                # Ni résumé de compaction, ni message de l'Atelier : ce n'est pas la
+                # personne qui l'a dit, et la mémoire ne doit rien en retenir d'elle.
+                role = "systeme" if est_synthetique(e, texte) else "personne"
+                ajouter({**base, "role": role, "texte": _court(texte, TEXTE_MAX)})
         elif genre == "assistant":
             if isinstance(contenu, str):
                 if contenu.strip():

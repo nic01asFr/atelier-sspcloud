@@ -74,6 +74,27 @@ def est_machinal(texte: str) -> bool:
     return normaliser(texte).startswith(MARQUEURS_MECANIQUES)
 
 
+# Ce qui s'écrit au nom de la personne sans qu'elle l'ait dit : le résumé qu'une
+# compaction injecte, un message de l'Atelier (reprise après une veille, reprise
+# de main), un rappel du CLI. La mémoire de nuit et les compteurs lisaient tout
+# cela comme des paroles (registre D-14) : des préférences venues du résumé du
+# modèle étaient prêtées à la personne.
+DEBUTS_SYNTHETIQUES = (
+    "[Atelier]",
+    "This session is being continued from a previous conversation",
+    # La phrase que l'écran du navigateur écrit à l'agent quand la personne lui
+    # rend la main : composée par l'Atelier, à la première personne.
+    "J'ai pris la main sur ton navigateur",
+)
+
+
+def est_synthetique(entree: dict[str, Any], texte: str = "") -> bool:
+    """Vrai si cette entrée « utilisateur » n'est pas un mot de la personne."""
+    if entree.get("isSynthetic") or entree.get("isMeta") or entree.get("isCompactSummary"):
+        return True
+    return normaliser(texte or texte_dune_entree(entree)).startswith(DEBUTS_SYNTHETIQUES)
+
+
 def _entrees(chemin: Path) -> list[dict[str, Any]]:
     if not chemin.is_file():
         return []

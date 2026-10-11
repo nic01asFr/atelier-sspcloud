@@ -45,6 +45,36 @@ STATUTS = (EN_ATTENTE, ACCEPTEE, REFUSEE)
 PREFIXE_PILOTE = "pilote:"
 
 
+# La mémoire de nuit propose la même idée sous des mots voisins : « Messages très
+# courts et directs », « Travaille par messages courts et directs ». L'empreinte
+# du texte exact ne les rapprochait pas, et la file gardait 49 propositions dont
+# des quasi-doublons (registre D-34). On compare les mots qui comptent, par leur
+# début (le pluriel ne change rien) ; deux propositions qui en partagent la
+# plupart sont la même.
+_MOTS_VIDES = frozenset(
+    "avec dans pour sans plus tres tout tous cette cela comme aussi mais donc alors "
+    "etre avoir faire fait veut vise cherche personne utilisateur aime prefere "
+    "travaille attend demande".split()
+)
+SEUIL_DE_PROXIMITE = 0.6
+
+
+def _mots_qui_comptent(titre: str) -> frozenset[str]:
+    import re
+    import unicodedata
+
+    corps = str(titre or "").split(" : ", 1)[-1]  # « Retenir (préférence) : … » : on lit après les deux-points
+    sans_accents = unicodedata.normalize("NFKD", corps.casefold()).encode("ascii", "ignore").decode("ascii")
+    return frozenset(m[:5] for m in re.findall(r"[a-z]{4,}", sans_accents) if m not in _MOTS_VIDES)
+
+
+def sont_proches(titre_a: str, titre_b: str, seuil: float = SEUIL_DE_PROXIMITE) -> bool:
+    a, b = _mots_qui_comptent(titre_a), _mots_qui_comptent(titre_b)
+    if len(a) < 2 or len(b) < 2:
+        return False
+    return len(a & b) / len(a | b) >= seuil
+
+
 class ErreurAValider(ValueError):
     """Une proposition mal formée, inconnue, ou déjà tranchée."""
 
@@ -165,7 +195,10 @@ class FileAValider:
         cle = empreinte or calculer_empreinte(source, projet, titre, action)
         with self._verrou:
             for p in self.toutes():
-                if p.statut == EN_ATTENTE and p.source == source and p.empreinte == cle:
+                meme = p.empreinte == cle or (
+                    source == "memoire" and p.projet == projet and sont_proches(p.titre, titre)
+                )
+                if p.statut == EN_ATTENTE and p.source == source and meme:
                     p.occurrences += 1
                     p.modifiee_le = maintenant()
                     self._ecrire(p)

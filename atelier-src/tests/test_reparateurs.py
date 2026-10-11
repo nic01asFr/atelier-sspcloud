@@ -181,6 +181,41 @@ def test_sans_correction_un_diagnostic_sans_action(reglages: AtelierSettings) ->
         assert p.titre.startswith("Diagnostic sans correction") and p.action is None
 
 
+def test_un_agent_qui_n_a_rien_livre_ne_propose_pas_de_fusion(reglages: AtelierSettings) -> None:
+    """Registre D-21 : quatre propositions « sans modification » à fusionner une branche vide."""
+    _depot(reglages)
+    with TestClient(build_app(settings=reglages, use_fake=True), base_url=ORIGINE) as client:
+        r = _reparer(
+            client, origine="wikichat:routine:nettoyage", nom="nettoyeur",
+            branche="agent/routine-nettoyage/vide", reparation=None,
+        )
+        ident = r.json()["lancement"]["id"]
+        client.app.state.lancements.attendre(ident, 20)
+        (p,) = client.app.state.a_valider.lister()
+        assert p.titre.startswith("Rien n'a été livré : nettoyeur"), p.titre
+        assert p.action is None, "rien à fusionner : accepter ne lance aucune fusion"
+        assert "rien à fusionner" in p.detail["fusion"]
+        assert "git merge" not in p.detail["fusion"]
+        assert client.app.state.lancements.lire(ident).conclusion["livre"] is False
+
+
+def test_des_fichiers_non_commites_sont_dits_pas_perdus(reglages: AtelierSettings) -> None:
+    projet, distant = _depot(reglages)
+    with TestClient(build_app(settings=reglages, use_fake=True), base_url=ORIGINE) as client:
+        def ecrit_sans_commiter(*, cwd: Path, **_: Any) -> None:
+            (Path(cwd) / "calcul.py").write_text("def double(x):\n    return x + x\n", encoding="utf-8")
+
+        client.app.state.harness.pendant_le_tour = ecrit_sans_commiter
+        r = _reparer(
+            client, origine="wikichat:routine:nettoyage", nom="nettoyeur",
+            branche="agent/routine-nettoyage/non-commite", reparation=None,
+        )
+        client.app.state.lancements.attendre(r.json()["lancement"]["id"], 20)
+        (p,) = client.app.state.a_valider.lister()
+        assert p.titre.startswith("Travail non commité : nettoyeur"), p.titre
+        assert "non commités" in p.detail["fusion"] and p.action is None
+
+
 def test_une_reparation_travaille_toujours_sur_une_branche_gardien(reglages: AtelierSettings) -> None:
     _depot(reglages)
     with TestClient(build_app(settings=reglages, use_fake=True), base_url=ORIGINE) as client:
@@ -231,3 +266,28 @@ def test_un_agent_planifie_sur_branche_agent_propose_sa_fusion(reglages: Atelier
         # Un agent qui n'est pas un gardien ne prend pas une branche gardien/.
         r = _reparer(client, origine="wikichat:routine:x", branche="gardien/x/y", reparation=None)
         assert r.status_code == 403 and "agent/" in r.json()["erreur"]
+
+
+def test_l_apercu_dit_quand_la_mission_cite_des_chemins_hors_de_la_copie(reglages: AtelierSettings) -> None:
+    """Registre D-16 : « lis /home/onyxia/work/… » sur une branche mène à un refus, puis à une solution manuelle."""
+    _depot(reglages)
+    with TestClient(build_app(settings=reglages, use_fake=True), base_url=ORIGINE) as client:
+        lanceur = client.app.state.lancements
+        mission = (
+            "Lis /home/onyxia/work/wikichat-memory/assistant/sessions/x/rapport.html puis écris "
+            "dans /home/onyxia/work/projects/outil/artifacts/explainer/index.html."
+        )
+        avec = lanceur.apercu({"projet": "outil", "branche": "agent/x", "message": mission}, "wikichat:trigger:x")
+        textes = " ".join(avec["avertissements"])
+        assert "chemins absolus" in textes and "/home/onyxia/work/wikichat-memory" in textes
+        assert "chemins relatifs" in textes, "l'aperçu dit quoi faire à la place"
+
+        relatif = lanceur.apercu(
+            {"projet": "outil", "branche": "agent/x", "message": "Lis docs/rapport.html et écris artifacts/explainer/index.html."},
+            "wikichat:trigger:x",
+        )
+        assert "chemins absolus" not in " ".join(relatif["avertissements"])
+
+        # Sans branche, l'agent travaille dans le projet : ses chemins sont les siens.
+        sans = lanceur.apercu({"projet": "outil", "message": mission}, "wikichat:trigger:x")
+        assert "chemins absolus" not in " ".join(sans["avertissements"])
