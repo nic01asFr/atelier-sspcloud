@@ -46,6 +46,8 @@ OUTILS_CODE = {
     # Vague 3 (équipe M) : les fiches des conversations de son projet.
     "atelier_rappel",
     "atelier_fiche",
+    # Un agent lancé en supervision interroge son lanceur sans bloquer.
+    "atelier_demander_au_lanceur",
 }
 
 
@@ -585,3 +587,33 @@ def test_l_assistant_n_expose_pas_une_adresse_publique_par_la_passerelle(porte: 
     )
     assert "réservé à la personne" in json.dumps(charge, ensure_ascii=False), charge
     assert porte.pool.appels == [], "rien n'est parti vers Onyxia"
+
+
+def test_un_agent_lance_interroge_son_lanceur_par_la_porte_mcp(porte: Porte, monkeypatch: pytest.MonkeyPatch) -> None:
+    """De bout en bout : la commande, le relais, la conversation du lanceur."""
+    from mcp_gateway.atelier.lancements import Lancement
+
+    atelier = porte.atelier
+    lanceur_id = _conversation_de_l_assistant(atelier)
+    enfant = conversation(atelier, "demo")
+
+    # Une conversation ouverte par la personne n'a pas de lanceur : la question va à la personne.
+    charge, erreur = porte.appeler("atelier_demander_au_lanceur", {"question": "Quel format ?"}, profil="code", conv=enfant)
+    assert erreur and "pose ta question à la personne" in json.dumps(charge, ensure_ascii=False)
+
+    envois: list[tuple[str, str]] = []
+    monkeypatch.setattr(atelier.app.state.store, "send", lambda sid, texte, **_k: envois.append((sid, texte)))
+    atelier.app.state.lancements._ecrire(  # noqa: SLF001
+        Lancement(id="lc-20261011-abcd1234", origine=f"conversation:{lanceur_id}", acteur=f"conversation:{lanceur_id}",
+                  projet="demo", nom="verif", conversation=enfant, supervise=True)
+    )
+    charge, erreur = porte.appeler("atelier_demander_au_lanceur", {"question": "Quel format ?"}, profil="code", conv=enfant)
+    assert not erreur, charge
+    import time
+
+    for _ in range(50):  # le message part dans un fil
+        if envois:
+            break
+        time.sleep(0.05)
+    assert envois and envois[0][0] == lanceur_id
+    assert "Quel format ?" in envois[0][1] and envois[0][1].startswith("[Atelier]")

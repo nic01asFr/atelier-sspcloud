@@ -61,6 +61,7 @@ from mcp_gateway.atelier.commandes.modele import (
     ENGAGEANTE,
     LECTURE,
     RESERVEE,
+    REVERSIBLE,
     Commande,
     Contexte,
     Effet,
@@ -225,6 +226,8 @@ class Lancement:
     conclusion: dict[str, Any] = field(default_factory=dict)
     # La question qui le fait dormir (état `en_attente`).
     attend: str = ""
+    # Ce que le relais a déjà dit à son lanceur (`relais_au_lanceur`) : une fois chacun.
+    relayees: list[str] = field(default_factory=list)
 
     def en_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -392,6 +395,8 @@ class Lanceur:
         self._fils: dict[str, threading.Thread] = {}
         # Rappelé quand un lancement atteint un état final (les notifications).
         self.avis: Any = None
+        # Le relais vers le lanceur (`relais_au_lanceur`), posé par l'application.
+        self.relais: Any = None
 
     # ── stockage ────────────────────────────────────────────────────────
 
@@ -1197,6 +1202,7 @@ class Lanceur:
 # ── Les commandes ────────────────────────────────────────────────────────────
 
 NOM_LANCER = "atelier_lancer_agent"
+NOM_DEMANDER_AU_LANCEUR = "atelier_demander_au_lanceur"
 NOM_LISTER = "atelier_lancements"
 NOM_FUSIONNER = "atelier_reparation_fusionner"
 
@@ -1291,6 +1297,47 @@ def inscrire_les_commandes(catalogue: Any, lanceur: Lanceur) -> None:
                 "mode du projet ; bypassPermissions seulement par une définition de routine ou de trigger et si le projet l'accorde",
                 "plafonds tenus par l'Atelier : simultanés, par jour, par origine, durée",
                 "sur une branche : copie de travail, jamais main, jamais d'envoi",
+            ],
+        )
+    )
+
+    def demander_au_lanceur(ctx: Contexte, arguments: dict[str, Any]) -> Effet:
+        from mcp_gateway.atelier.outils_conversation import CONVERSATION_APPELANTE
+
+        conversation = CONVERSATION_APPELANTE.get() or ""
+        if not conversation:
+            raise Refus("cette commande est celle d'un agent lancé : elle suit sa conversation")
+        relais = lanceur.relais
+        if relais is None:
+            raise Refus("le relais vers le lanceur n'est pas disponible")
+        rendu = relais.demander(conversation, str(arguments.get("question") or ""))
+        return Effet(
+            charge=rendu,
+            objet_id=conversation,
+            titre="Question à son lanceur",
+            resume=str(arguments.get("question") or "")[:140],
+        )
+
+    catalogue.ajouter(
+        Commande(
+            nom=NOM_DEMANDER_AU_LANCEUR,
+            description=(
+                "Pose une question à l'agent qui t'a lancé, sans attendre : elle part comme message, "
+                "sa réponse te relance. Pour une décision qui n'est pas la tienne, pas pour une autorisation "
+                "(celles-là sont posées d'elles-mêmes)."
+            ),
+            objet="agent",
+            classe=REVERSIBLE,
+            executer=demander_au_lanceur,
+            schema={
+                "type": "object",
+                "properties": {"question": {"type": "string", "description": "Ta question, complète : le lanceur n'a que ce texte."}},
+                "required": ["question"],
+            },
+            regles=[
+                "seulement pour un agent lancé en supervision par un autre agent",
+                "ne bloque pas : l'agent lancé continue ou termine son tour",
+                "au plus 30 messages par lancement, une même question une seule fois",
             ],
         )
     )
@@ -1523,6 +1570,7 @@ __all__ = [
     "Lancement",
     "Lanceur",
     "NOM_FUSIONNER",
+    "NOM_DEMANDER_AU_LANCEUR",
     "NOM_LANCER",
     "Plafonds",
     "assurer_la_cle",

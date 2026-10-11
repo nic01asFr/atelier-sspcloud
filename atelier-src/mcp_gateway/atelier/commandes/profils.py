@@ -76,8 +76,12 @@ OUTILS_CREATIONS = (
 # La mémoire des conversations de son projet (fiches de projet, A-7) : le
 # projet est cadré comme pour les créations.
 OUTILS_MEMOIRE_DU_PROJET = ("atelier_rappel", "atelier_fiche")
+# Interroger l'agent qui l'a lancé : il ne sert que dans un lancement supervisé,
+# et refuse ailleurs en le disant.
 OUTILS_DU_PROFIL_CODE = frozenset(
-    OUTILS_CREATIONS + ("atelier_montrer", "atelier_navigateur_ouvrir") + OUTILS_MEMOIRE_DU_PROJET
+    OUTILS_CREATIONS
+    + ("atelier_montrer", "atelier_navigateur_ouvrir", "atelier_demander_au_lanceur")
+    + OUTILS_MEMOIRE_DU_PROJET
 )
 
 # Les commandes de conversation d'avant la délégation (lot D) : l'Assistant
