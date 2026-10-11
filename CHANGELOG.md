@@ -13,6 +13,13 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- **Onyxia, mise à jour du 11/10** : le service plafonne désormais un `exec` synchrone à
+  40 s (le `timeout` au-delà est ignoré). L'Atelier ajoute aux résultats d'un `exec`
+  trop long ou coupé l'indice « relancez avec `background=true`, puis `job_poll` », pour
+  que l'agent n'en conclue pas que le pod est lent ou en panne. Les arguments des
+  autres outils sont inchangés ; le catalogue d'outils mis en cache par la passerelle
+  de l'Atelier doit être rafraîchi (Connecteurs → actualiser) pour voir la nouvelle
+  description.
 - **Attendre sans refuser** (`docs/vision/attendre-sans-refuser.md`) : une question à la
   personne n'est plus jamais un refus. Quand personne ne répond à temps (10 minutes par
   défaut, `veille_apres_s`), ou quand personne ne regarde le tour (agent lancé, client

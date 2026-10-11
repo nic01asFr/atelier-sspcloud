@@ -65,6 +65,10 @@ NOM_DU_SERVEUR = "onyxia-atelier"
 # avant ce délai : un `session_status` par appel doublerait chaque aller-retour.
 SESSION_VERIFIEE_S = 60.0
 
+# Le plafond d'un `exec` synchrone, tel qu'Onyxia le dit dans sa description
+# (mise à jour du 11/10) : au-delà, `background=true` et `job_poll`.
+PLAFOND_EXEC_SYNCHRONE_S = 40
+
 
 class RefusOnyxia(Exception):
     """L'appel ne part pas vers Onyxia ; le message dit pourquoi à l'agent."""
@@ -474,6 +478,8 @@ class MandataireOnyxia:
         self, profil: Profil, borne: Borne | None, nom: str, arguments: dict[str, Any]
     ) -> dict[str, Any]:
         resultat = await self._appeler_filtre(profil, borne, nom, arguments)
+        if nom == "exec" and not arguments.get("background"):
+            resultat = self._dire_le_plafond_de_exec(arguments, resultat)
         if nom.startswith("gpu_"):
             self._noter(profil, borne, nom, arguments, resultat)
             if nom == "gpu_switch" and resultat.get("isError") and borne is not None and borne.gpu:
@@ -496,6 +502,40 @@ class MandataireOnyxia:
                     ],
                 }
         return resultat
+
+    @staticmethod
+    def _dire_le_plafond_de_exec(arguments: dict[str, Any], resultat: dict[str, Any]) -> dict[str, Any]:
+        """Un `exec` synchrone est plafonné par Onyxia (mise à jour du 11/10).
+
+        Le `timeout` au-delà du plafond est ignoré sans bruit : l'agent croit
+        avoir laissé 5 minutes à sa commande, elle est coupée à 40 s, et il en
+        conclut que le pod est lent ou en panne. L'indice vient avec le
+        résultat, au moment où il sert — l'agent n'a rien à retenir.
+        """
+        texte = " ".join(
+            str(b.get("text") or "")
+            for b in (resultat.get("content") or [])
+            if isinstance(b, dict) and b.get("type") == "text"
+        ).lower()
+        demande = arguments.get("timeout")
+        trop_long = isinstance(demande, (int, float)) and demande > PLAFOND_EXEC_SYNCHRONE_S
+        coupe = resultat.get("isError") and ("timeout" in texte or "timed out" in texte or "délai" in texte)
+        if not (trop_long or coupe):
+            return resultat
+        return {
+            **resultat,
+            "content": [
+                *(resultat.get("content") or []),
+                {
+                    "type": "text",
+                    "text": (
+                        f"Onyxia plafonne un `exec` synchrone à {PLAFOND_EXEC_SYNCHRONE_S} s : un "
+                        "`timeout` au-delà est ignoré. Pour une tâche plus longue, relancez avec "
+                        "`background=true`, puis suivez-la avec `job_poll`."
+                    ),
+                },
+            ],
+        }
 
     def _noter(
         self, profil: Profil, borne: Borne | None, outil: str, arguments: dict[str, Any], resultat: dict[str, Any]
