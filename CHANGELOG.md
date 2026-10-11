@@ -13,6 +13,9 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- `docs/vision/registre-des-defauts.md` : registre des défauts relevés (revue de code,
+  essais sur le pod, étude de ~110 conversations réelles), synthèse en sept causes,
+  et principe de correction par le natif de Claude Code et le harnais de l'Atelier ;
 - `docs/vision/etat-des-lieux-et-roles.md` : état des lieux du 11/10 et plan de
   dispensation par rôle (un rôle = une définition compilée vers les mécanismes
   natifs de Claude Code, preuve à chaque tour, plancher dans l'image, jeton par
