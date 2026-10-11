@@ -13,6 +13,10 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- `docs/vision/etat-des-lieux-et-roles.md` : état des lieux du 11/10 et plan de
+  dispensation par rôle (un rôle = une définition compilée vers les mécanismes
+  natifs de Claude Code, preuve à chaque tour, plancher dans l'image, jeton par
+  conversation, kit) ;
 - « Nouveau projet » ouvre une fenêtre qui demande le nom : rien n'est créé avant
   sa validation (plus de `projet-sans-nom-8`), un nom vide ou déjà pris est
   refusé dans la fenêtre, et le projet créé s'ouvre avec le composeur prêt, où le
