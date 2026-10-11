@@ -13,6 +13,17 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- **Des fins qui disent vrai** (registre D-09, D-10, D-11, D-14, D-16, D-21, D-22, D-34, D-35) :
+  une conversation dont le tour finit sur une erreur du CLI est « en échec » (elle restait « au
+  repos » parce que le processus gardé rend 0), et un agent lancé dans ce cas est « échec », pas
+  « fini » ; interrompre une conversation au repos ne la marque plus « interrompue » et dit
+  « rien à interrompre » ; un lancement arrêté ou coupé garde son motif ; un agent qui n'a rien
+  livré dépose « Rien n'a été livré » ou « Travail non commité » au lieu de proposer de fusionner
+  une branche vide ; l'aperçu d'un lancement sur branche avertit des chemins absolus que la mission
+  cite ; le motif d'un geste de gardien refusé est écrit au journal ; les résumés de compaction et
+  les messages de l'Atelier ne sont plus comptés ni mémorisés comme des paroles de la personne ;
+  les quasi-doublons de la mémoire se fusionnent dans « À valider » ; les outils de conversation
+  acceptent l'identifiant court.
 - **Notifications et application installable (PWA)** : l'Atelier a un manifeste, des icônes et un
   service worker, et prévient la personne quand un agent a besoin d'elle, application fermée. Une
   cloche dans l'en-tête ouvre un panneau simple : activer cet appareil, choisir ce qui compte

@@ -250,6 +250,42 @@ def test_aucun_geste_quand_ils_sont_interdits(tmp_path: Path, ctx: Contexte) -> 
     assert not drapeau.exists()
 
 
+def test_un_geste_refuse_dit_pourquoi_au_journal_unique(tmp_path: Path, ctx: Contexte) -> None:
+    """184 relances refusées, aucune raison écrite : le motif existait, il se perdait avant l'écriture."""
+    ctx.http = lambda url, entetes=None, delai=5.0: ReponseHttp(0, "", "refus")
+    ctx.env = {"ATELIER_GARDIENS_GESTES": "0"}
+    publies: list[dict] = []
+    ex = executeur(
+        tmp_path, ctx, [sonde("sante.wikichat", si_constat="geste", geste="relancer_wikichat")],
+        reglages={"scripts": {"wikichat": {"argv": faux_script(tmp_path, tmp_path / "d")}}},
+        publier=publies.append,
+    )
+    c = ex.controles["sante.wikichat"]
+    ex.passer(c)
+    ex.passer(c)
+    gestes = [e for e in publies if e["source"] == "geste"]
+    assert gestes and gestes[-1]["resultat"] == "refuse"
+    assert gestes[-1]["action"]["motif"] == "ATELIER_GARDIENS_GESTES=0"
+
+
+def test_un_geste_qui_a_eu_lieu_n_a_pas_de_motif(tmp_path: Path, ctx: Contexte) -> None:
+    drapeau = tmp_path / "en-route"
+    ctx.http = service_factice(drapeau)
+    horloge = Horloge()
+    publies: list[dict] = []
+    ex = executeur(
+        tmp_path, ctx, [sonde("sante.wikichat", si_constat="geste", geste="relancer_wikichat")], horloge,
+        reglages={"scripts": {"wikichat": {"argv": faux_script(tmp_path, drapeau)}}},
+        permettre_gestes=True, attente_apres_geste_s=5, publier=publies.append,
+    )
+    c = ex.controles["sante.wikichat"]
+    ex.passer(c)
+    horloge.t += 60
+    ex.passer(c)
+    gestes = [e for e in publies if e["source"] == "geste"]
+    assert gestes[-1]["resultat"] == "fait" and gestes[-1]["action"]["motif"] is None
+
+
 def test_l_atelier_n_est_relance_qu_apres_cinq_minutes_de_silence(tmp_path: Path, ctx: Contexte) -> None:
     drapeau = tmp_path / "atelier-en-route"
     ctx.http = service_factice(drapeau)

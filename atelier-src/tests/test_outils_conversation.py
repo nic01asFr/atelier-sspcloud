@@ -121,6 +121,9 @@ class _MagasinQuiTraine:
         self.settings = SimpleNamespace(default_slug="default")
         self.fiche = SimpleNamespace(session_id="conv", state="running", slug="default")
 
+    def resoudre(self, identifiant: str) -> str:
+        return identifiant
+
     def get(self, session_id: str):
         return self.fiche if session_id == "conv" else None
 

@@ -612,7 +612,7 @@ class OutilsAtelier:
         }
 
     def _outil_envoyer(self, args: dict[str, Any]) -> Any:
-        identifiant = (args.get("conversation") or "").strip()
+        identifiant = self.store.resoudre((args.get("conversation") or "").strip())
         message = args.get("message") or ""
         if not message.strip():
             raise _Refus("message vide")
@@ -712,7 +712,7 @@ class OutilsAtelier:
         return defaut
 
     def _outil_suivre(self, args: dict[str, Any]) -> Any:
-        identifiant = (args.get("conversation") or "").strip()
+        identifiant = self.store.resoudre((args.get("conversation") or "").strip())
         rec = self.store.get(identifiant)
         if rec is None:
             raise _Refus(f"conversation inconnue : {identifiant}")
@@ -778,14 +778,18 @@ class OutilsAtelier:
         return sortie
 
     def _outil_interrompre(self, args: dict[str, Any]) -> Any:
-        identifiant = (args.get("conversation") or "").strip()
+        identifiant = self.store.resoudre((args.get("conversation") or "").strip())
         if self.store.get(identifiant) is None:
             raise _Refus(f"conversation inconnue : {identifiant}")
-        rec = self.store.interrupt(identifiant)
-        return {"conversation": identifiant, "etat": rec.state}
+        rec, tournait = self.store.interrompre(identifiant)
+        sortie: dict[str, Any] = {"conversation": identifiant, "etat": rec.state}
+        if not tournait:
+            sortie["rien_a_interrompre"] = True
+            sortie["note"] = "Aucun tour ne tournait : rien n'a été coupé, l'état de la conversation est inchangé."
+        return sortie
 
     def _outil_transcript(self, args: dict[str, Any]) -> Any:
-        identifiant = (args.get("conversation") or "").strip()
+        identifiant = self.store.resoudre((args.get("conversation") or "").strip())
         if self.store.get(identifiant) is None:
             raise _Refus(f"conversation inconnue : {identifiant}")
         derniers = max(200, min(int(args.get("derniers") or 4000), 40000))

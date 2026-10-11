@@ -31,6 +31,9 @@ class _Magasin:
         self.vus: dict[str, Any] = {}
         self.parti = threading.Event()
 
+    def resoudre(self, identifiant: str) -> str:
+        return identifiant
+
     def get(self, session_id: str):
         return self.fiche if session_id == "conv" else None
 

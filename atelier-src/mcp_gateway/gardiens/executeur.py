@@ -360,7 +360,10 @@ class Executeur:
                 "source": "geste",
                 "objet": {"type": c.portee or "atelier", "id": action.get("nom", "")},
                 "action": {"commande": action.get("nom", ""), "classe": "reversible", "origine": c.gardien,
-                           "avant": action.get("avant"), "apres": action.get("apres")},
+                           "avant": action.get("avant"), "apres": action.get("apres"),
+                           # Pourquoi le geste n'a pas eu lieu : 184 refus de relance
+                           # sont restés sans raison au journal (registre D-22).
+                           "motif": action.get("refuse") or None},
                 "resultat": "refuse" if action.get("refuse") else "fait",
                 "empreinte": "",
             })

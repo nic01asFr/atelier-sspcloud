@@ -626,6 +626,36 @@ class Lanceur:
             raise Refus(f"nom de branche invalide : {branche}")
         return branche
 
+    # Les chemins absolus d'une mission : ceux qui visent le dépôt du projet, ou
+    # tout autre endroit du volume, quand l'agent travaille dans une copie.
+    _CHEMIN_ABSOLU = re.compile(r"(?<![\w./-])/(?:home/onyxia|work|tmp|mnt|data)[^\s\"'`)>\]]*")
+
+    def _chemins_hors_copie(self, message: str, slug: str, branche: str) -> list[str]:
+        """Les avertissements d'une mission qui cite des chemins hors de la copie de travail.
+
+        L'agent sur branche travaille dans `<projet>/.atelier/reparations/<id>/` et ne
+        peut ni lire ni écrire en dehors : une mission qui dit « lis /chemin/absolu/x »
+        ou « écris dans le dossier artifacts du projet, en chemin absolu » le conduit à un refus,
+        puis à une « solution manuelle » (registre D-16). On le dit à l'aperçu, quand la
+        personne ou le lanceur peut encore reformuler.
+        """
+        if not branche:
+            return []
+        vus: list[str] = []
+        for trouve in self._CHEMIN_ABSOLU.findall(message or ""):
+            chemin = trouve.rstrip(".,;:")
+            if "/.atelier/reparations/" in chemin or chemin in vus:
+                continue
+            vus.append(chemin)
+        if not vus:
+            return []
+        exemples = ", ".join(f"`{c}`" for c in vus[:3]) + (" …" if len(vus) > 3 else "")
+        return [
+            f"la mission cite des chemins absolus ({exemples}) : sur une branche, l'agent travaille "
+            f"dans une copie de {slug} et ne peut ni lire ni écrire ailleurs. Donnez des chemins "
+            "relatifs au projet, et copiez d'abord dans le projet ce qu'il doit lire."
+        ]
+
     # ── lancer ─────────────────────────────────────────────────────────
 
     def apercu(self, demande: dict[str, Any], origine: str) -> dict[str, Any]:
@@ -639,6 +669,7 @@ class Lanceur:
                 "sans branche : l'agent modifie directement le projet. Passez `branche` "
                 "(`agent/<sujet>`) pour qu'il travaille dans une copie et propose son résultat."
             )
+        avertissements.extend(self._chemins_hors_copie(str(demande.get("message") or ""), slug, branche))
         return {
             "projet": slug,
             "nom": str(demande.get("nom") or "").strip() or None,
@@ -664,6 +695,9 @@ class Lanceur:
             raise Refus(f"nom d'agent invalide ou générique : {nom!r}")
         mode, avertissements = self._mode(dossier, demande, origine)
         duree = self._duree(demande, exiger_duree, avertissements)
+        avertissements.extend(
+            self._chemins_hors_copie(message, slug, str(demande.get("branche") or ""))
+        )
         outils = [str(o) for o in (demande.get("outils") or []) if str(o).strip()][:50]
         identifiant = f"lc-{datetime.now(timezone.utc):%Y%m%d}-{secrets.token_hex(4)}"
         branche = self._branche(demande, origine, identifiant)
@@ -829,7 +863,7 @@ class Lanceur:
                     "(son message attend dans le tour en cours)",
                 )
             elif etat_fiche == "interrupted":
-                etat = ARRETE
+                etat, erreur = ARRETE, "tour interrompu"
             elif any(e.kind == "systeme" and e.cause == "veille" for e in resultat.events):
                 # L'agent attend la personne : ni fini, ni échec. « Fini »
                 # mentirait ; c'est sa réponse qui le relancera.
@@ -850,8 +884,12 @@ class Lanceur:
             minuterie.cancel()
         with self._verrou:
             lancement = self.lire(identifiant) or lancement
-            if lancement.etat == ARRETE:
-                etat = ARRETE
+            # Un arrêt demandé, ou une durée dépassée, a écrit son motif pendant
+            # le tour : la fin du tour ne l'efface pas (registre D-11 : « arrêté »
+            # sans motif ni acteur).
+            if lancement.etat in (ARRETE, DELAI):
+                etat = lancement.etat
+                erreur = lancement.erreur or erreur
             lancement.etat = etat
             lancement.texte = texte[-4000:]
             lancement.erreur = erreur[:500]
@@ -890,12 +928,21 @@ class Lanceur:
         if lancement is None or lancement.etat != EN_COURS:
             return
         log.warning("lancement %s : durée dépassée, interruption", identifiant)
+        with self._verrou:
+            lancement = self.lire(identifiant) or lancement
+            if lancement.etat == EN_COURS:
+                lancement.etat = DELAI
+                lancement.erreur = lancement.erreur or (
+                    f"durée dépassée ({int(lancement.plafonds.get('duree_s') or 0)} s)"
+                )
+                self._ecrire(lancement)
         try:
             self.store.interrupt(lancement.conversation)
         except (KeyError, OSError):
             pass
 
-    def arreter(self, identifiant: str) -> Lancement:
+    def arreter(self, identifiant: str, par: str = "") -> Lancement:
+        """Arrête un agent lancé. `par` dit qui : « arrêté » sans motif ne disait rien."""
         with self._verrou:
             lancement = self.lire(identifiant)
             if lancement is None:
@@ -905,6 +952,7 @@ class Lanceur:
             etait_en_attente = lancement.etat == ATTEND
             lancement.etat = ARRETE
             lancement.attend = ""
+            lancement.erreur = lancement.erreur or (f"arrêté par {par}" if par else "arrêté sur demande")
             if etait_en_attente:
                 lancement.fini_le = _maintenant()
             self._ecrire(lancement)
@@ -983,6 +1031,8 @@ class Lanceur:
             "commits": commits,
             "non_commite": bool(sale.strip()),
         }
+        # Livré = quelque chose à fusionner. « Fini » ne le dit pas (registre D-09).
+        conclusion["livre"] = bool(commits) and base_intacte
         lancement.conclusion = conclusion
         if not base_intacte:
             # Ne peut arriver qu'en contournant les gardes. On ne propose rien
@@ -1003,8 +1053,19 @@ class Lanceur:
             titre = f"Travail à fusionner : {qui} ({lancement.branche})"
         elif gardien:
             titre = f"Diagnostic sans correction : {titre_constat or lancement.branche}"
+        elif conclusion["non_commite"]:
+            titre = f"Travail non commité : {qui} ({lancement.branche})"
         else:
-            titre = f"Travail sans modification : {qui} ({lancement.branche})"
+            titre = f"Rien n'a été livré : {qui} ({lancement.branche})"
+        if commits:
+            fusion = f"git merge --no-ff {lancement.branche} dans {lancement.base}, sans envoi"
+        elif conclusion["non_commite"]:
+            fusion = (
+                "des fichiers modifiés restent non commités dans la copie : rien à fusionner "
+                "tant que l'agent ne les a pas commités"
+            )
+        else:
+            fusion = "aucune modification dans la copie : rien à fusionner"
         detail = {
             "lancement": lancement.id,
             "conversation": lancement.conversation,
@@ -1027,7 +1088,7 @@ class Lanceur:
                 "base_apres": base_apres,
             },
             "verification": reparation.get("verification") or "",
-            "fusion": f"git merge --no-ff {lancement.branche} dans {lancement.base}, sans envoi",
+            "fusion": fusion,
         }
         if self.journal is not None and getattr(self.journal, "filtre", None) is not None:
             try:
@@ -1041,10 +1102,13 @@ class Lanceur:
         if base_intacte and commits:
             action = {"commande": NOM_FUSIONNER, "arguments": {"lancement": lancement.id}}
         source = "gardien" if lancement.origine.startswith(PREFIXE_GARDIEN) else "agent"
+        resume = lancement.texte[-1500:] or titre_constat
+        if not commits and lancement.erreur:
+            resume = f"État du tour : {lancement.etat} ({lancement.erreur}). " + resume
         p = self.file.deposer(
             source,
             titre,
-            lancement.texte[-1500:] or titre_constat,
+            resume,
             acteur=f"conversation:{lancement.conversation}",
             projet=lancement.projet,
             detail=detail,
@@ -1383,7 +1447,7 @@ def construire_le_routeur(app: Any) -> Any:
     ) -> dict[str, Any]:
         _lecteur(request, cle, authorization)
         try:
-            lancement = app.state.lancements.arreter(identifiant)
+            lancement = app.state.lancements.arreter(identifiant, par="la personne ou le lanceur (API)")
         except Refus as exc:
             raise HTTPException(404, str(exc)) from None
         return {"lancement": lancement.en_dict()}

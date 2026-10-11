@@ -136,7 +136,7 @@ PREAMBULES_SYNTHETIQUES = (
 # résumée. Écrit du point de vue de qui reprend : il ne se souvient plus du
 # détail, seulement du résumé qu'on vient de lui faire.
 MESSAGE_DE_REPRISE = (
-    "Ton tour précédent a été arrêté : la conversation devenait trop lourde "
+    "[Atelier] Ton tour précédent a été arrêté : la conversation devenait trop lourde "
     "pour le modèle, et elle vient d'être résumée. Reprends où tu en étais, "
     "à partir de ce résumé. Si tu ne sais plus où tu en étais, dis-le et "
     "attends plutôt que de recommencer."
@@ -577,6 +577,22 @@ class SessionStore:
 
         rec.permission_mode = mode_de_la_conversation(self._claude_cli_id(rec))
         return rec
+
+    def resoudre(self, identifiant: str) -> str:
+        """L'identifiant complet d'une conversation, depuis l'identifiant ou ses premiers caractères.
+
+        `atelier_fiche` et `atelier_rappel` donnent des identifiants de huit
+        caractères ; `atelier_transcript` exigeait l'identifiant entier et
+        répondait « conversation inconnue » (registre D-35). Un préfixe
+        ambigu ne devine pas : il rend l'identifiant tel quel, donc inconnu.
+        """
+        brut = (identifiant or "").strip()
+        if not brut or self.get(brut) is not None:
+            return brut
+        if len(brut) < 8:
+            return brut
+        proches = [r.session_id for r in self.list_sessions(include_archived=True) if r.session_id.startswith(brut)]
+        return proches[0] if len(proches) == 1 else brut
 
     def list_sessions(
         self,
@@ -1762,6 +1778,15 @@ class SessionStore:
         elif result.exit_code != 0 and any(e.kind == "erreur" for e in result.events):
             rec.state = "failed"
             rec.cause = next(e.cause for e in result.events if e.kind == "erreur")
+        elif any(e.kind == "erreur" and e.raw_type == "result" for e in result.events):
+            # Le CLI a conclu le tour par une erreur (`is_error`) : un modèle qui
+            # ne répond plus, un contexte saturé qui se remplit en boucle. Le
+            # processus, lui, vit encore et rend un code 0 : se fier au code
+            # laissait « au repos » une conversation morte (registre D-10).
+            rec.state = "failed"
+            rec.cause = next(
+                e.cause for e in result.events if e.kind == "erreur" and e.raw_type == "result"
+            )
         else:
             rec.state = "idle"
             rec.cause = ""
@@ -1825,14 +1850,30 @@ class SessionStore:
         return build_session_mcp_payload(self.settings, rec, upstream)
 
     def interrupt(self, session_id: str) -> SessionRecord:
+        return self.interrompre(session_id)[0]
+
+    def interrompre(self, session_id: str) -> tuple[SessionRecord, bool]:
+        """Arrête ce qui tourne, et dit s'il y avait quelque chose à arrêter.
+
+        Interrompre une conversation au repos la marquait « interrompue » alors
+        que rien n'avait été coupé (registre D-11) : son état, et celui du
+        lancement qui l'avait portée, se contredisaient. Seul un tour qui
+        travaillait passe à « interrompu » ; une conversation qui dort en
+        attendant la personne abandonne sa question et revient au repos.
+        """
         rec = self.get(session_id)
         if not rec:
             raise KeyError(session_id)
+        tournait = rec.state == "running" or self.harness.tour_en_cours(session_id)
         self.harness.interrupt(session_id)
-        rec.state = "interrupted"
-        rec.cause = "interrupted"
+        if tournait:
+            rec.state = "interrupted"
+            rec.cause = "interrupted"
+        elif rec.en_attente_de:
+            self.harness.decisions.oublier_les_questions(session_id)
+            rec.en_attente_de = ""
         self.save(rec)
-        return rec
+        return rec, bool(tournait or False)
 
     def registres_de(self, rec: SessionRecord) -> list[Path]:
         """Les endroits où cette conversation s'est écrite.
