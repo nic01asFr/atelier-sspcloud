@@ -240,6 +240,9 @@ class Contexte:
     ecoutes: Callable[[], list[Ecoute]] = ecoutes_du_pod
     processus: Callable[[], list[Processus]] = processus_du_pod
     disque: Callable[[Path], tuple[int, int]] = lambda p: _disque(p)  # (total, libre) en octets
+    # (mémoire de travail, plafond) en octets, ou None si le conteneur n'en dit rien.
+    memoire: Callable[[], tuple[int, int] | None] = lambda: memoire_du_conteneur()
+    zombies: Callable[[], int] = lambda: zombies_du_pod()
     maintenant: Callable[[], float] = time.time
     env: dict[str, str] = field(default_factory=lambda: dict(os.environ))
     # Ce que l'exécuteur sait de ses propres contrôles (G0 les inventorie).
@@ -286,6 +289,58 @@ def _disque(chemin: Path) -> tuple[int, int]:
 
     u = shutil.disk_usage(chemin)
     return u.total, u.free
+
+
+def _entier(chemin: Path) -> int | None:
+    try:
+        texte = chemin.read_text(encoding="utf-8").strip()
+        return None if texte in ("", "max") else int(texte)
+    except (OSError, ValueError):
+        return None
+
+
+def memoire_du_conteneur(cgroup: Path = Path("/sys/fs/cgroup")) -> tuple[int, int] | None:
+    """(mémoire de travail, plafond) du conteneur, comme Kubernetes la compte.
+
+    La mémoire de travail est l'usage moins le cache inactif : le cache de
+    fichiers est libérable, il ne déclenche pas l'OOM et fausserait l'alerte
+    (2,4 Go de cache sur 2,9 Go « utilisés » à vide, mesuré le 11/10).
+    """
+    plafond = _entier(cgroup / "memory.max")
+    usage = _entier(cgroup / "memory.current")
+    inactif = 0
+    if plafond is None or usage is None:  # cgroup v1
+        plafond = _entier(cgroup / "memory/memory.limit_in_bytes")
+        usage = _entier(cgroup / "memory/memory.usage_in_bytes")
+        stat = cgroup / "memory/memory.stat"
+        cle = "total_inactive_file"
+    else:
+        stat = cgroup / "memory.stat"
+        cle = "inactive_file"
+    if plafond is None or usage is None or plafond >= 1 << 60:
+        return None
+    try:
+        for ligne in stat.read_text(encoding="utf-8").splitlines():
+            nom, _, valeur = ligne.partition(" ")
+            if nom == cle:
+                inactif = int(valeur)
+                break
+    except (OSError, ValueError):
+        pass
+    return max(usage - inactif, 0), plafond
+
+
+def zombies_du_pod(proc: Path = Path("/proc")) -> int:
+    n = 0
+    for dossier in glob.glob(str(proc / "[0-9]*")):
+        try:
+            for ligne in (Path(dossier) / "status").read_text().splitlines():
+                if ligne.startswith("State:"):
+                    n += ligne.split()[1] == "Z"
+                    break
+        except OSError:
+            continue
+    return n
 
 
 def lire_json(chemin: Path) -> Any:

@@ -179,3 +179,37 @@ def disque(ctx: Contexte, c: Any) -> dict[str, Any]:
         return resultat([constat(f"{c.id}:se-remplit", str(chemin), f"disque plein à {pris:.0f} %", "", "attention")], **donnees)
     return resultat([], **donnees)
 
+
+
+def memoire(ctx: Contexte, c: Any) -> dict[str, Any]:
+    """Le conteneur se rapproche de son plafond : le noyau tuerait un processus,
+    et si c'est le premier, tout le pod redémarre (D-60)."""
+    mesure = ctx.memoire()
+    if mesure is None:
+        return resultat([constat(f"{c.id}:inconnue", "conteneur", "mémoire du conteneur illisible", "", "attention")])
+    travail, plafond = mesure
+    pris = 100.0 * travail / plafond if plafond else 0.0
+    donnees = {"pris_pct": round(pris, 1), "travail_go": round(travail / 1e9, 2), "plafond_go": round(plafond / 1e9, 2)}
+    alerte = float(c.params.get("seuil_alerte_pct", 92))
+    attention = float(c.params.get("seuil_attention_pct", 80))
+    detail = f"{donnees['travail_go']} Go sur {donnees['plafond_go']} Go. Ne lancez pas d'application ni de navigateur de plus."
+    if pris >= alerte:
+        return resultat([constat(f"{c.id}:saturee", "conteneur", f"mémoire à {pris:.0f} % du plafond", detail, "alerte")], **donnees)
+    if pris >= attention:
+        return resultat([constat(f"{c.id}:haute", "conteneur", f"mémoire à {pris:.0f} % du plafond", detail, "attention")], **donnees)
+    return resultat([], **donnees)
+
+
+def zombies(ctx: Contexte, c: Any) -> dict[str, Any]:
+    """Des processus terminés que personne n'a ramassés : sans `tini` en PID 1,
+    ils s'accumulent (D-59)."""
+    n = ctx.zombies()
+    donnees = {"zombies": n}
+    alerte = int(c.params.get("seuil_alerte", 200))
+    attention = int(c.params.get("seuil_attention", 20))
+    detail = "L'image n'a pas `tini` comme processus 1 : redéployer avec l'image à jour."
+    if n >= alerte:
+        return resultat([constat(f"{c.id}:nombreux", "pod", f"{n} processus zombies", detail, "alerte")], **donnees)
+    if n >= attention:
+        return resultat([constat(f"{c.id}:presents", "pod", f"{n} processus zombies", detail, "attention")], **donnees)
+    return resultat([], **donnees)

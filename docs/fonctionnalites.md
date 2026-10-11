@@ -732,6 +732,8 @@ l'heure (homme mort).
 | `sante.creations` | l'état des créations serveur au superviseur (`en_echec`) | |
 | `sante.ci-main`, `sante.image-main` | CI de `main` et image publiée | |
 | `sante.disque` | la place | |
+| `sante.memoire` | la mémoire de travail du conteneur (sans le cache libérable) face à son plafond : attention à 80 %, alerte à 92 % | |
+| `sante.zombies` | les processus terminés non ramassés (signe d'une image sans `tini`) | |
 | `securite.ecoutes` | ports en écoute non déclarés, `0.0.0.0` | |
 | `securite.secrets-en-clair` | jetons dans les fichiers que lisent Claude Code ou git (par empreinte) | |
 | `securite.droits` | droits des fichiers de secrets (0600) | |

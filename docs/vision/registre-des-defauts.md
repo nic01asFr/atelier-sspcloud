@@ -456,12 +456,13 @@ l'événement et agit, l'agent n'a rien de plus à retenir. Chaque entrée dit o
   les messages, les canaux et le sel d'identité ; les faits, fiches, vecteurs et les trois
   déclencheurs semés au démarrage sont recalculés. Constaté le 11/10 : `agents/` et `projects/`
   vides, `migration-w2.json` daté du démarrage ; l'archive du 27/09 n'a aucun état de wikichat.
-  **Statut : vérifié.** Correction écrite (`donnees_wikichat.py`, appelée par l'init avant
-  wikichat) : copie vérifiée vers `~/work/wikichat/donnees`, ancien dossier gardé en
+  **Statut : corrigé et déployé le 11/10.** `donnees_wikichat.py`, appelé par l'init avant
+  wikichat : copie vérifiée vers `~/work/wikichat/donnees`, ancien dossier gardé en
   `.wikichat.avant-migration`, puis lien ; jamais de suppression, retour arrière automatique.
-  **Elle ne protège pas le premier redémarrage** : le pod en marche porte l'ancien init et le
-  conteneur neuf n'aura plus rien à migrer. Avant ce redémarrage-là, copier `~/.wikichat` dans
-  `~/work/wikichat/donnees` (le lien du conteneur neuf la reprend), puis supprimer le pod aussitôt.
+  Le premier redémarrage a demandé une copie préalable à la main (le pod en marche portait
+  l'ancien init, le conteneur neuf n'avait plus rien à migrer) : faite, vérifiée par `diff -r`,
+  archive de secours sur le volume. Après redémarrage, `~/.wikichat` est bien un lien et tout y
+  est. **Reste à prouver** : un déclencheur créé survit à un prochain redémarrage.
 - **D-54 (G) — L'environnement d'un agent est une copie de celui de l'Atelier.**
   `harness._env` part de `os.environ.copy()` : un agent qui a Bash lit `ATELIER_OWNER_KEY`,
   `ATELIER_GITHUB_TOKEN`, `ATELIER_LLM_API_KEY`. `~/work/gateway/owner_key.txt` est lisible par
@@ -486,14 +487,18 @@ l'événement et agit, l'agent n'a rien de plus à retenir. Chaque entrée dit o
 - **D-59 (m) — Les processus orphelins ne sont pas ramassés.** PID 1 est l'application Python,
   qui ne fait pas `waitpid` sur les orphelins : 50 zombies une heure après le démarrage (six par
   session du navigateur de l'agent : `bash`, `npm`, `node` ×3, `chrome-devtools`, `sh`). Sans
-  effet visible à l'heure, mais croissant sur un pod qui reste des jours. **Statut : vérifié.** Correction écrite : `tini` est le processus 1
-  de l'image (`deploy/Dockerfile`) ; effective au prochain déploiement de l'image, à mesurer ensuite.
+  effet visible à l'heure, mais croissant sur un pod qui reste des jours. **Statut : vérifié.** Corrigé et déployé le 11/10 : `tini` est le processus 1 de l'image
+  (`deploy/Dockerfile`) ; zéro zombie constaté au démarrage, à re-mesurer après quelques heures ;
+  le contrôle `sante.zombies` le surveille.
 - **D-60 (G) — Les plafonds de l'Atelier ne tiennent pas dans la mémoire du pod.** 4 applications
   de 1,5 Gio, 6 Chrome, 3 CLI persistants, 3 lancements simultanés et la voix (2,2 Go), plus le
   socle (0,7 Go) : de l'ordre de 12 à 15 Gio pour un plafond de 8 Gi. Aucun contrôle de santé ne
   surveille la mémoire. Un dépassement est tué par le noyau ; si c'est PID 1, le conteneur
   redémarre (et le store de wikichat disparaît, D-53). Les lignes Chrome et CLI sont des
-  estimations à mesurer sous charge. **Statut : rapporté (calcul sur les plafonds).**
+  estimations à mesurer sous charge. **Statut : rapporté (calcul sur les plafonds).** Livré : les
+  contrôles `sante.memoire` (mémoire de travail du conteneur, cache libérable exclu ; attention
+  à 80 %, alerte à 92 %) et `sante.zombies`. Reste : le budget global qui met en attente un
+  démarrage plutôt que d'attendre l'alerte, et la révision des plafonds après une mesure sous charge.
 
 ## 5. Déjà corrigés (pour mémoire)
 
