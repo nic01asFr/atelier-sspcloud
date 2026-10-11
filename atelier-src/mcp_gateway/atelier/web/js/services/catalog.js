@@ -138,7 +138,14 @@ async function questionsRestees(state, sessionId) {
   }
   // Les demandes dont le tour a disparu : une seule ligne repliée, pas une
   // carte chacune avec des boutons qui ne servent plus (lot H).
-  const orphelines = liste?.orphelines || [];
+  // Une question dont le tour s'est endormi en attendant (ou que le service
+  // précédent a laissée) reste une vraie question : sa réponse relance
+  // l'agent. Les plus anciennes seulement sont rangées, repliées.
+  const reveillees = (liste?.orphelines || []).filter((d) => d.veille);
+  for (const d of reveillees) {
+    cartes.push({ role: "system", blocks: [{ type: "decision", demande: d, etat: "en_attente" }] });
+  }
+  const orphelines = (liste?.orphelines || []).filter((d) => !d.veille);
   if (orphelines.length) {
     cartes.push({ role: "system", blocks: [{ type: "perimees", demandes: orphelines }] });
   }

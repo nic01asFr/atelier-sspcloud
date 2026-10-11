@@ -183,7 +183,11 @@ export async function decisionsEnAttente(token, sessionId = "") {
 }
 
 /** Rend la décision au tour qui l'attend. */
-export async function repondreDecision(token, requestId, { decision, motif, portee, reponses } = {}) {
+export async function repondreDecision(
+  token,
+  requestId,
+  { decision, motif, portee, reponses, reprendre = true } = {}
+) {
   const res = await fetch(`/v1/decisions/${encodeURIComponent(requestId)}`, {
     method: "POST",
     headers: jsonHeaders(token),
@@ -192,6 +196,8 @@ export async function repondreDecision(token, requestId, { decision, motif, port
       motif: motif || "",
       portee: portee || "une_fois",
       reponses: reponses || null,
+      // Faux pour « classer » : retirer une demande ne réveille pas l'agent.
+      reprendre,
     }),
   });
   if (!res.ok) await parseError(res);
@@ -481,6 +487,9 @@ export function messageSysteme(obj) {
   return "";
 }
 
+/** La marque des messages que l'Atelier écrit lui-même (`decisions.MARQUE_DE_L_ATELIER`). */
+const MARQUE_DE_L_ATELIER = "[Atelier]";
+
 export function messagesFromTranscript(transcriptText) {
   const messages = [];
   if (!transcriptText) return messages;
@@ -623,7 +632,14 @@ export function messagesFromTranscript(transcriptText) {
         }
       }
       const dit = dits.join("\n\n").trim();
-      if (dit && !obj.isMeta) {
+      if (dit && !obj.isMeta && (obj.isSynthetic === true || dit.startsWith(MARQUE_DE_L_ATELIER))) {
+        // Un message de l'Atelier (la reprise après une veille) : ni la
+        // personne ne l'a tapé, ni une application. Dit comme une note du
+        // service, dans la réponse qu'il relance.
+        flushText();
+        flushThink();
+        blocks.push({ type: "systeme", text: dit.replace(MARQUE_DE_L_ATELIER, "").trim() });
+      } else if (dit && !obj.isMeta) {
         // Un mot de l'utilisateur clôt la réponse en cours.
         pushAssistant();
         messages.push({

@@ -41,6 +41,7 @@ from mcp_gateway.atelier.gateway_overview import build_mcp_overview
 from mcp_gateway.atelier.gateway_runtime import gateway_shutdown, gateway_startup
 from mcp_gateway.atelier.mcp_endpoint import register_mcp_endpoint
 from mcp_gateway.atelier.decisions import (
+    message_de_reprise,
     permissions_a_retenir,
     regles_suggerees,
     reponse_aux_questions,
@@ -286,6 +287,9 @@ class DecisionBody(BaseModel):
     # règle que le CLI suggère lui-même, et la question ne revient plus dans
     # cette conversation.
     portee: str = "une_fois"
+    # Faux pour « classer » : retirer une demande d'un tour disparu ne doit pas
+    # réveiller l'agent pour lui dire non.
+    reprendre: bool = True
     # Quand la demande est une question, c'est ceci qu'on renvoie : une liste
     # de réponses, une par question posée, chacune pouvant en porter plusieurs
     # si le modèle a demandé un choix multiple.
@@ -1416,6 +1420,11 @@ def build_app(
         # : elle attend quelqu'un. La liste doit le dire, sinon l'agent reste
         # bloqué cinq minutes avant qu'on ouvre le fil — mesuré.
         en_attente = {d.session_id for d in harness.decisions.en_attente()}
+        # Et celles qui dorment en attendant la personne : leur tour est arrêté,
+        # mais elles attendent tout autant.
+        en_attente |= {s.session_id for s in sessions if s.en_attente_de}
+        # Ou dont la question a été laissée par le service précédent.
+        en_attente |= {d.session_id for d in harness.decisions.orphelines() if d.veille}
         return {
             "sessions": [
                 {**s.to_dict(), "attend_une_decision": s.session_id in en_attente}
@@ -1808,6 +1817,49 @@ def build_app(
             raise HTTPException(404, "session not found") from None
         return rec.to_dict()
 
+    def relancer_apres_la_decision(session_id: str, message: str) -> bool:
+        """Relance le travail d'une conversation qui dormait en attendant la personne.
+
+        Le tour part dans un fil, comme celui d'un envoi : ses événements
+        rejoignent le flux en direct de la conversation, que l'écran écoute
+        déjà. Il peut attendre une autre question — qui s'endormira à son tour.
+        """
+
+        def publier(ev: AtelierEvent) -> None:
+            diffusion.publier(session_id, ev)
+
+        publier(
+            AtelierEvent(
+                kind="systeme",
+                session_id=session_id,
+                cause="message_systeme",
+                text="Reprise : l'agent repart là où il attendait votre réponse.",
+            )
+        )
+
+        # Un agent lancé qui dormait reprend sous son lancement : sa fin sera
+        # classée comme celle de n'importe quel tour.
+        lanceur = getattr(app.state, "lancements", None)
+        if lanceur is not None and lanceur.reprendre_apres_veille(session_id, message, publier):
+            return True
+
+        def travail() -> None:
+            try:
+                store.send(
+                    session_id,
+                    message,
+                    on_event=publier,
+                    peut_attendre=True,
+                )
+            except Exception as exc:  # noqa: BLE001 — la reprise ne doit pas disparaître en silence
+                diffusion.publier(
+                    session_id,
+                    AtelierEvent(kind="erreur", session_id=session_id, cause=str(exc)),
+                )
+
+        threading.Thread(target=travail, daemon=True, name=f"reprise-{session_id[:8]}").start()
+        return True
+
     @router.get("/decisions")
     def decisions_en_attente(
         session_id: str = "",
@@ -1883,19 +1935,34 @@ def build_app(
                 retenues.append(regle.to_dict())
             retenue = retenues[0] if retenues else None
 
-        # Le tour ne reprendra pas s'il n'attendait plus : on le dit, plutôt
-        # que de laisser croire qu'on vient de le débloquer. La décision, elle,
-        # est prise — et retenue si on l'a demandé.
+        # Un tour qui attendait vraiment est réveillé là où il s'était arrêté.
         repris = harness.decisions.repondre(request_id, reponse) if vivante else False
+        relance = False
         if not repris:
             harness.decisions.clore(request_id)
+            # Plus personne n'attendait : le tour s'était endormi (veille) ou le
+            # service a redémarré. La réponse ne se perd pas — elle relance le
+            # travail, avec un message écrit par l'Atelier. Sans conversation
+            # (supprimée), il n'y a rien à relancer.
+            if body.reprendre and store.get(demande.session_id) is not None:
+                if choix == "allow" and demande.genre != "question" and not retenues:
+                    # « Pour cette fois » : cette action, une seule fois. Une
+                    # règle « toujours » retenue plus haut vaut déjà.
+                    harness.decisions.accorder_une_fois(demande)
+                relance = relancer_apres_la_decision(
+                    demande.session_id,
+                    message_de_reprise(
+                        demande, choix, motif=body.motif or "", reponses=body.reponses
+                    ),
+                )
         return {
             "ok": True,
             "request_id": request_id,
             "decision": choix,
             "regle": retenue,
             "regles": retenues,
-            "reprise": repris,
+            "reprise": repris or relance,
+            "relance": relance,
         }
 
     @router.get("/sessions/{session_id}/regles")

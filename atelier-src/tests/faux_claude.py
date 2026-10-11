@@ -11,7 +11,10 @@ d'erreur ; `dors N` met N secondes à répondre ; `bavard N` écrit N réponses
 d'affilée avant de conclure, pour éprouver ce qui compte le poids d'un tour ;
 `mode ?` répond le mode de permission en vigueur (celui de `--permission-mode`,
 changé par un `control_request` `set_permission_mode`, que le faux consigne
-dans `FAUX_CLAUDE_CONTROLES` s'il est posé).
+dans `FAUX_CLAUDE_CONTROLES` s'il est posé) ; `demande OUTIL commande...` pose
+une demande d'autorisation sur sa sortie, comme le vrai, puis attend la
+réponse sur son entrée : `fait:commande` si on l'accorde, `refuse:commande:motif`
+sinon.
 """
 
 from __future__ import annotations
@@ -73,6 +76,37 @@ def main() -> None:
         if premier:
             print(json.dumps({"type": "system", "subtype": "init", "mcp_servers": []}))
             premier = False
+        if texte.startswith("demande "):
+            _, outil, *reste = texte.split(" ", 2)
+            commande = reste[0] if reste else ""
+            print(
+                json.dumps(
+                    {
+                        "type": "control_request",
+                        "request_id": "q" + str(os.getpid()),
+                        "request": {
+                            "subtype": "can_use_tool",
+                            "tool_name": outil,
+                            "input": {"command": commande},
+                            "description": commande,
+                            "tool_use_id": "t1",
+                        },
+                    },
+                    separators=(",", ":"),
+                )
+            )
+            sys.stdout.flush()
+            reponse_du_pont = sys.stdin.readline()
+            if not reponse_du_pont:
+                return
+            try:
+                verdict = json.loads(reponse_du_pont)["response"]["response"]
+            except (ValueError, KeyError, TypeError):
+                verdict = {}
+            if verdict.get("behavior") == "allow":
+                texte = f"fait:{commande}"
+            else:
+                texte = f"refuse:{commande}:{verdict.get('message', '')}"
         if texte.startswith("dors "):
             time.sleep(float(texte.split()[1]))
         if texte.startswith("bavard "):

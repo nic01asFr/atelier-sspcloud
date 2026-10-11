@@ -252,16 +252,16 @@ class _FauxProcessus:
         return None
 
 
-def test_un_tour_que_personne_ne_regarde_refuse_au_lieu_d_attendre(tmp_path) -> None:
-    """Le garde-fou : sans lui, un agent resterait figé pour toujours.
+def test_un_tour_que_personne_ne_regarde_s_endort_au_lieu_de_refuser(tmp_path) -> None:
+    """Une question n'est jamais un refus.
 
     Les agents et les scripts passent par la route bloquante, qui ne sait rien
-    montrer. Le canal y transformerait chaque refus d'autrefois en attente
-    sans fin. On refuse donc d'office — exactement ce que faisait le CLI avant
-    que ce canal existe — et le motif part au modèle.
+    montrer. Refuser faisait conclure à l'agent que l'outil était en panne ;
+    attendre aurait figé un processus pour rien. On pose la question, on la
+    garde sur le disque, et le tour s'endort : la réponse le relancera.
     """
     from mcp_gateway.atelier.config import AtelierSettings
-    from mcp_gateway.atelier.harness import SANS_INTERLOCUTEUR, ClaudeHarness
+    from mcp_gateway.atelier.harness import ClaudeHarness
 
     harnais = ClaudeHarness(AtelierSettings(work_dir=tmp_path / "work"))
     proc = _FauxProcessus()
@@ -272,11 +272,14 @@ def test_un_tour_que_personne_ne_regarde_refuse_au_lieu_d_attendre(tmp_path) -> 
     )
 
     assert attendu == 0.0, "on n'a pas attendu, donc rien à rendre à l'échéance"
-    assert harnais.decisions.en_attente() == [], "aucune question ne doit rester posée"
-    assert vus == ["refus_automatique"]
-    envoye = json.loads(proc.recu[0])
-    assert envoye["response"]["response"]["behavior"] == "deny"
-    assert SANS_INTERLOCUTEUR in envoye["response"]["response"]["message"]
+    assert harnais.decisions.en_attente() == [], "plus de processus pour l'attendre"
+    gardees = harnais.decisions.orphelines()
+    assert [d.request_id for d in gardees] == ["r9"], "la question reste posée"
+    assert gardees[0].veille is True
+    assert vus == ["veille"]
+    assert proc.recu == [], "rien n'est rendu au CLI : aucun refus n'atteint le modèle"
+    assert harnais._prendre_la_veille("s9") == "r9"
+    assert harnais._prendre_la_veille("s9") == "", "la veille se lit une seule fois"
 
 
 def test_un_tour_suivi_par_l_interface_attend_bel_et_bien(tmp_path) -> None:

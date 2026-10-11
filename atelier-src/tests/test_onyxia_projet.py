@@ -401,3 +401,39 @@ def test_un_refus_du_filtre_est_aussi_journalise() -> None:
     _appel(m, "code", _borne(gpu=True), "gpu_switch", {"preempt": True})
     assert [(e["outil"], e["ok"]) for e in ecrit] == [("gpu_switch", False)]
     assert "refus" in ecrit[0]["resultat"]
+
+
+# ── Le plafond d'un exec synchrone (mise à jour d'Onyxia du 11/10) ──────
+
+
+def test_un_exec_synchrone_plus_long_que_le_plafond_recoit_l_indice() -> None:
+    faux = FauxOnyxia({"proj-carte": POD})
+    resultat = _appel(
+        _mandataire(faux), "code", _borne(), "exec", {"code": "sleep 200", "lang": "bash", "timeout": 300}
+    )
+    assert not resultat["isError"]
+    texte = " ".join(b["text"] for b in resultat["content"])
+    assert "40 s" in texte and "background=true" in texte and "job_poll" in texte
+
+
+def test_un_exec_court_ou_en_arriere_plan_reste_tel_quel() -> None:
+    faux = FauxOnyxia({"proj-carte": POD})
+    m = _mandataire(faux)
+    court = _appel(m, "code", _borne(), "exec", {"code": "ls", "timeout": 10})
+    assert len(court["content"]) == 1
+    fond = _appel(m, "code", _borne(), "exec", {"code": "train.py", "background": True, "timeout": 3600})
+    assert len(fond["content"]) == 1, "en arrière-plan le plafond ne s'applique pas"
+
+
+def test_un_exec_coupe_par_le_delai_dit_comment_faire_autrement() -> None:
+    class Coupe(FauxOnyxia):
+        async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            if outil == "exec":
+                return _texte({"error": {"code": "TIMEOUT", "message": "timed out after 40s"}}, erreur=True)
+            return await super().appeler(outil, arguments)
+
+    resultat = _appel(
+        _mandataire(Coupe({"proj-carte": POD})), "code", _borne(), "exec", {"code": "make"}
+    )
+    assert resultat["isError"]
+    assert "background=true" in " ".join(b["text"] for b in resultat["content"])

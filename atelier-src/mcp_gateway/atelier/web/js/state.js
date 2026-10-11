@@ -736,7 +736,9 @@ export function etatLisible(etat) {
 
 export function sessionMetaLine(session) {
   const parts = [];
-  if (session?.attend_une_decision) parts.push("autorisation demandée");
+  if (session?.attend_une_decision) {
+    parts.push(session?.en_attente_de ? "en attente de vous" : "autorisation demandée");
+  }
   else if (session?.state) parts.push(etatLisible(session.state));
   if (session?.turns != null) {
     parts.push(session.turns === 1 ? "1 tour" : `${session.turns} tours`);

@@ -331,7 +331,11 @@ const BAS_DU_FIL = 1e9;
     const classees = new Set();
     for (const id of requestIds) {
       try {
-        await api.repondreDecision(state.token, id, { decision: "deny", motif: "classée sans réponse" });
+        await api.repondreDecision(state.token, id, {
+          decision: "deny",
+          motif: "classée sans réponse",
+          reprendre: false,
+        });
         classees.add(id);
       } catch (e) {
         // Déjà close ailleurs : elle est classée quand même.

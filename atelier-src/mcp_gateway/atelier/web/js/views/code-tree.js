@@ -48,7 +48,9 @@ export function createCodeTreeView(ctx) {
   function sessionTone(session) {
     // Attendre une autorisation n'est pas répondre : l'agent est arrêté
     // jusqu'à ce qu'on vienne. Cela se voit d'abord, avant tout état.
-    if (session?.attend_une_decision) return ["warn", "autorisation demandée"];
+    if (session?.attend_une_decision) {
+      return ["warn", session?.en_attente_de ? "en attente de vous" : "autorisation demandée"];
+    }
     const dit = S.etatLisible(session?.state) || "au repos";
     switch (session?.state) {
       case "running":

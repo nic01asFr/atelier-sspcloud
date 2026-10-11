@@ -254,10 +254,12 @@ class AtelierSettings(BaseSettings):
 
     # Combien de temps on garde le processus garé pendant qu'une question
     # attend. Ce n'est pas la durée de vie de la décision — elle, ne périme
-    # pas : passé ce délai on relâche le processus et la trace prend le
-    # relais. Une heure laisse largement le temps de revenir à l'écran, et
-    # un tour garé coûte environ 130 Mo qu'aucun échange ne récupère.
-    attente_vive_max_s: int = 3600
+    # pas : passé ce délai le tour **s'endort** (le processus est rendu, la
+    # question reste posée, rien n'est refusé) et la réponse, quand elle
+    # vient, relance le travail. Un tour garé coûte environ 130 Mo qu'aucun
+    # échange ne récupère, ce pod n'ayant pas de zone d'échange : dix minutes
+    # laissent le temps de répondre sans quitter l'écran.
+    veille_apres_s: int = 600
 
     @property
     def decisions_dir(self) -> Path:
