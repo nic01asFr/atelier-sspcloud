@@ -41,6 +41,12 @@
     {"id": "sante.disque", "gardien": "sante", "portee": "pod", "quand": {"toutes_les_min": 60},
      "commande": ["interne", "sante.disque"], "delai_s": 10, "si_constat": "signaler",
      "params": {"seuil_attention_pct": 85, "seuil_alerte_pct": 95}},
+    {"id": "sante.memoire", "gardien": "sante", "portee": "pod", "quand": {"toutes_les_min": 5},
+     "commande": ["interne", "sante.memoire"], "delai_s": 10, "si_constat": "signaler",
+     "params": {"seuil_attention_pct": 80, "seuil_alerte_pct": 92}},
+    {"id": "sante.zombies", "gardien": "sante", "portee": "pod", "quand": {"toutes_les_min": 15},
+     "commande": ["interne", "sante.zombies"], "delai_s": 10, "si_constat": "signaler",
+     "params": {"seuil_attention": 20, "seuil_alerte": 200}},
 
     {"id": "securite.ecoutes", "gardien": "securite", "portee": "pod", "quand": {"toutes_les_min": 5},
      "commande": ["interne", "securite.ecoutes"], "delai_s": 20, "si_constat": "signaler"},

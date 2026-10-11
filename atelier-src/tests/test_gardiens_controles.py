@@ -279,3 +279,46 @@ def test_inventaire_des_automates(ctx: Contexte) -> None:
     constats = {c["objet"] for c in res["constats"]}
     assert constats == {"wikichat.trigger.r1", "wikichat.trigger.m", "wikichat.routine.paradox", "demon.port-9999"}
     assert res["etat"] == "attention"
+
+
+def test_memoire_seuils_et_conseil(ctx: Contexte) -> None:
+    ctx.memoire = lambda: (4 * 10**9, 10 * 10**9)
+    assert sante.memoire(ctx, controle("sante.memoire"))["etat"] == "ok"
+    ctx.memoire = lambda: (85 * 10**8, 10 * 10**9)
+    res = sante.memoire(ctx, controle("sante.memoire"))
+    assert res["etat"] == "attention" and "Ne lancez pas" in res["constats"][0]["preuve"]
+    ctx.memoire = lambda: (95 * 10**8, 10 * 10**9)
+    assert sante.memoire(ctx, controle("sante.memoire"))["etat"] == "alerte"
+    ctx.memoire = lambda: None
+    assert sante.memoire(ctx, controle("sante.memoire"))["constats"][0]["empreinte"] == "sante.memoire:inconnue"
+
+
+def test_memoire_du_conteneur_ignore_le_cache_inactif(tmp_path: Path) -> None:
+    from mcp_gateway.gardiens.controles.commun import memoire_du_conteneur
+
+    cg = tmp_path / "cg"
+    cg.mkdir()
+    (cg / "memory.max").write_text("8589934592\n")
+    (cg / "memory.current").write_text("3000000000\n")
+    (cg / "memory.stat").write_text("anon 500\ninactive_file 2400000000\nfile 2500000000\n")
+    assert memoire_du_conteneur(cg) == (600_000_000, 8_589_934_592)
+    (cg / "memory.max").write_text("max\n")
+    assert memoire_du_conteneur(cg) is None
+
+
+def test_zombies_seuils_et_comptage(ctx: Contexte, tmp_path: Path) -> None:
+    from mcp_gateway.gardiens.controles.commun import zombies_du_pod
+
+    ctx.zombies = lambda: 3
+    assert sante.zombies(ctx, controle("sante.zombies"))["etat"] == "ok"
+    ctx.zombies = lambda: 50
+    res = sante.zombies(ctx, controle("sante.zombies"))
+    assert res["etat"] == "attention" and "tini" in res["constats"][0]["preuve"]
+    ctx.zombies = lambda: 300
+    assert sante.zombies(ctx, controle("sante.zombies"))["etat"] == "alerte"
+
+    proc = tmp_path / "proc"
+    for pid, etat in (("1", "S"), ("2", "Z"), ("3", "Z")):
+        (proc / pid).mkdir(parents=True)
+        (proc / pid / "status").write_text(f"Name:\tx\nState:\t{etat} (x)\n")
+    assert zombies_du_pod(proc) == 2

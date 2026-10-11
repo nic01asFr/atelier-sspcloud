@@ -17,6 +17,8 @@ REGISTRE: dict[str, Callable[..., dict[str, Any]]] = {
     "sante.ci": sante.ci_main,
     "sante.image": sante.image_main,
     "sante.disque": sante.disque,
+    "sante.memoire": sante.memoire,
+    "sante.zombies": sante.zombies,
     "securite.ecoutes": securite.ecoutes,
     "securite.secrets": securite.secrets_en_clair,
     "securite.droits": securite.droits,
