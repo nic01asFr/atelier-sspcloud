@@ -14,6 +14,10 @@ dependencies = [
   "python-multipart>=0.0.9",
   # Les artefacts Markdown arrivent rendus en HTML ; sans lui, en texte brut.
   "mistune>=3.0",
+  # Les notifications de l'application installée (Web Push : chiffrement RFC 8291
+  # et signature VAPID). Sans lui l'Atelier fonctionne, et dit que les
+  # notifications sont indisponibles.
+  "pywebpush>=2.0",
 ]
 
 [project.urls]

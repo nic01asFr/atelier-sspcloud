@@ -390,6 +390,8 @@ class Lanceur:
         self.dossier = Path(settings.work_dir) / ".atelier-etat" / "lancements"
         self._verrou = threading.RLock()
         self._fils: dict[str, threading.Thread] = {}
+        # Rappelé quand un lancement atteint un état final (les notifications).
+        self.avis: Any = None
 
     # ── stockage ────────────────────────────────────────────────────────
 
@@ -870,8 +872,18 @@ class Lanceur:
                 lancement.conclusion = {"erreur": f"{type(exc).__name__}: {exc}"}
                 self._ecrire(lancement)
         self._journaliser(lancement, lancement.etat)
+        self._avertir(lancement)
         with self._verrou:
             self._fils.pop(identifiant, None)
+
+    def _avertir(self, lancement: Lancement) -> None:
+        """Dit à la personne qu'un agent a fini ou s'est arrêté. Ne lève jamais."""
+        if self.avis is None:
+            return
+        try:
+            self.avis(lancement)
+        except Exception:  # noqa: BLE001 — prévenir ne doit jamais faire échouer le lancement
+            log.exception("avis du lancement %s non rendu", lancement.id)
 
     def _couper(self, identifiant: str) -> None:
         lancement = self.lire(identifiant)

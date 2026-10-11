@@ -671,7 +671,25 @@ def build_app(
         except OSError as exc:
             log.warning("applications orphelines : %s", exc)
         service_apps.superviseur.lancer()
+        # Les alertes graves des gardiens (autre processus) : on les lit, et on
+        # prévient des nouvelles. Pas en mode factice : pas de gardiens à lire.
+        surveillance_des_alertes = None
+        if not use_fake:
+            from mcp_gateway.atelier.carte import adresse_des_gardiens, lire_json
+
+            async def lire_les_alertes() -> Any:
+                return await lire_json(f"{adresse_des_gardiens()}/alertes")
+
+            surveillance_des_alertes = asyncio.create_task(
+                app.state.notifieur.surveiller_les_alertes(lire_les_alertes)
+            )
         yield
+        if surveillance_des_alertes is not None:
+            surveillance_des_alertes.cancel()
+            try:
+                await surveillance_des_alertes
+            except asyncio.CancelledError:
+                pass
         await service_apps.superviseur.fermer()
         etat_apps = getattr(getattr(app.state.app_apps, "interne", None), "state", None)
         if etat_apps is not None:
@@ -711,6 +729,14 @@ def build_app(
     app.state.use_fake = use_fake
     app.state.apps = service_apps
     app.state.diffusion = diffusion  # l'écran du navigateur relance l'agent en direct (navigateur_routes)
+    # Les notifications : prévenir quand un agent attend la personne, ou a fini.
+    # Branchées sur le crochet `avis` du harnais ; sans appareil inscrit, rien
+    # ne part et rien ne coûte.
+    from mcp_gateway.atelier.push import Notifieur
+
+    notifieur = Notifieur(app.state.db, settings, auth.owner_key, store=store)
+    app.state.notifieur = notifieur
+    harness.avis = notifieur.avis  # type: ignore[attr-defined]
     # L'application de l'hôte des applications, servie sur son propre port
     # par `app.main` (voir `apps.serveur`). Construite ici pour partager les
     # magasins de ce processus ; rien de ses routes ne vit dans celle-ci.
@@ -1881,17 +1907,11 @@ def build_app(
         ]
         return {"vives": vives, "orphelines": orphelines}
 
-    @router.post("/decisions/{request_id}")
-    def repondre_a_une_decision(
-        request_id: str,
-        body: DecisionBody,
-        _owner: str = Depends(require_owner),
-    ) -> dict[str, Any]:
-        """Rend la réponse au tour qui l'attend.
+    def appliquer_la_decision(request_id: str, body: DecisionBody) -> dict[str, Any]:
+        """Rend la réponse au tour qui l'attend — ou, s'il dort, le relance.
 
-        Un 409 dit que plus personne n'attendait : tour terminé, interrompu, ou
-        service redémarré depuis. La question a beau rester lisible sur le
-        disque, ce tour-là ne reprendra pas — le rejeu est un autre palier.
+        Partagée par la route de l'interface et par celle de la notification :
+        deux portes, une seule façon de trancher.
         """
         choix = (body.decision or "").strip().lower()
         if choix not in ("allow", "deny"):
@@ -1955,6 +1975,8 @@ def build_app(
                         demande, choix, motif=body.motif or "", reponses=body.reponses
                     ),
                 )
+        # Les autres appareils : la notification de cette question se referme.
+        notifieur.decision_prise(request_id, choix == "allow")
         return {
             "ok": True,
             "request_id": request_id,
@@ -1964,6 +1986,24 @@ def build_app(
             "reprise": repris or relance,
             "relance": relance,
         }
+
+    def trancher_depuis_la_notification(request_id: str, accordee: bool) -> dict[str, Any]:
+        """Le bouton d'une notification : « pour cette fois », comme le bouton de l'écran."""
+        return appliquer_la_decision(
+            request_id,
+            DecisionBody(decision="allow" if accordee else "deny", portee="une_fois"),
+        )
+
+    @router.post("/decisions/{request_id}")
+    def repondre_a_une_decision(
+        request_id: str,
+        body: DecisionBody,
+        _owner: str = Depends(require_owner),
+    ) -> dict[str, Any]:
+        """Tranche une question. Un tour qui l'attend repart là où il s'était arrêté ;
+        un tour endormi (ou perdu par un redémarrage) est relancé avec un message
+        de l'Atelier (`reprise` dans la réponse)."""
+        return appliquer_la_decision(request_id, body)
 
     @router.get("/sessions/{session_id}/regles")
     def regles_de_la_conversation(
@@ -2738,8 +2778,16 @@ def build_app(
         return await pilote_delete(settings, f"/pilote/api/agent/{agent_id}")
 
     app.include_router(router)
+    from mcp_gateway.atelier.push_routes import construire_le_routeur_push
+
+    for routes_push in construire_le_routeur_push(
+        app, settings, require_owner, trancher_depuis_la_notification
+    ):
+        app.include_router(routes_push)
     enregistrer_les_commandes(app)
     enregistrer_les_lancements(app)
+    # Un agent lancé qui finit ou se bloque : la personne en est prévenue.
+    app.state.lancements.avis = notifieur.lancement
     enregistrer_les_routes_des_processus(app)
     enregistrer_les_automates(app)
     enregistrer_les_accords(app)
@@ -2783,6 +2831,29 @@ def build_app(
                     "Content-Security-Policy": politique_interface(settings.apps_public_url),
                 },
             )
+
+        # La PWA : le manifeste, le service worker (à la racine, pour que sa
+        # portée couvre l'application) et les icônes. Rien de secret : ces
+        # fichiers se chargent avant toute connexion, comme la page.
+        @app.get("/sw.js", include_in_schema=False)
+        def service_worker() -> FileResponse:
+            return FileResponse(
+                WEB_DIR / "sw.js",
+                media_type="application/javascript; charset=utf-8",
+                headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"},
+            )
+
+        @app.get("/manifest.webmanifest", include_in_schema=False)
+        def manifeste() -> FileResponse:
+            return FileResponse(
+                WEB_DIR / "manifest.webmanifest",
+                media_type="application/manifest+json; charset=utf-8",
+                headers={"Cache-Control": "no-cache"},
+            )
+
+        icons_dir = WEB_DIR / "icons"
+        if icons_dir.is_dir():
+            app.mount("/icons", StaticFiles(directory=icons_dir), name="atelier-icons")
 
         css_dir = WEB_DIR / "css"
         js_dir = WEB_DIR / "js"

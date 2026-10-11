@@ -56,6 +56,7 @@ document le contredit, c'est le document qui a tort, et
 | [`vision/kit-atelier.md`](vision/kit-atelier.md) | le kit commun de l'Atelier : commandes `/verifier`, `/reprendre`…, hooks `PostToolUse` et garde d'édition, sous-agents ; mesures sur le CLI en headless et ordre de réalisation |
 | [`vision/etat-des-lieux-et-roles.md`](vision/etat-des-lieux-et-roles.md) | l'état des lieux du 11/10 (ce qui marche, ce qui ne tient pas, vérifié sur le code et le pod) et le plan pour que chaque rôle d'agent reçoive, par les mécanismes natifs de Claude Code, ce qu'il lui faut : un rôle = une définition compilée, preuve à chaque tour, plancher dans l'image, jeton par conversation, kit |
 | [`vision/registre-des-defauts.md`](vision/registre-des-defauts.md) | le registre des défauts du 11/10 (≈ 50 défauts classés, avec preuve, zone de code et statut vérifié/rapporté), la synthèse des causes, et le principe de correction : le natif de Claude Code d'abord, puis le harnais de l'Atelier (hooks, indices, contexte), en une seule chaîne par rôle |
+| [`vision/attendre-sans-refuser.md`](vision/attendre-sans-refuser.md) | la conception « attendre sans refuser » : veille et reprise d'un tour en attente d'une réponse, notifications PWA avec réponse depuis la notification, cadre des rôles (d'office / à demander / interdit), projets d'essai |
 | [`vision/gpu-arbitrage.md`](vision/gpu-arbitrage.md) | protocole commun pour le GPU partagé du namespace : bail, priorités, préemption coopérative, compensation des échecs ; à proposer à la Passerelle et aux autres services |
 
 ## Historique

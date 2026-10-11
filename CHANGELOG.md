@@ -13,6 +13,15 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- **Notifications et application installable (PWA)** : l'Atelier a un manifeste, des icônes et un
+  service worker, et prévient la personne quand un agent a besoin d'elle, application fermée. Une
+  cloche dans l'en-tête ouvre un panneau simple : activer cet appareil, choisir ce qui compte
+  (accord attendu, question, agent bloqué, agent terminé, alerte grave), heures calmes sans son,
+  discrétion sur l'écran verrouillé, essai honnête, liste des appareils. Une demande d'accord arrive
+  avec **Autoriser** et **Refuser** : la réponse part de la notification, sans ouvrir l'application,
+  avec un jeton signé qui ne vaut que pour cette question. S'appuie sur la veille (`harness.avis`) et
+  sur `pywebpush` (nouvelle dépendance) ; le crochet `Lanceur.avis` prévient quand un agent lancé a
+  fini ou s'est bloqué.
 - **Onyxia, mise à jour du 11/10** : le service plafonne désormais un `exec` synchrone à
   40 s (le `timeout` au-delà est ignoré). L'Atelier ajoute aux résultats d'un `exec`
   trop long ou coupé l'indice « relancez avec `background=true`, puis `job_poll` », pour

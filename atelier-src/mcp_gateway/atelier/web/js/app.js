@@ -34,6 +34,7 @@ import { createComposerInputController } from "./controllers/composer-input.js";
 import { createAuthController } from "./controllers/auth.js";
 import { createReglagesFil } from "./controllers/reglages-fil.js";
 import { createTheme } from "./controllers/theme.js";
+import { createNotifications } from "./controllers/notifications.js";
 import { installerRaccourcis } from "./ui/raccourcis.js";
 
 function createApp() {
@@ -251,6 +252,15 @@ function createApp() {
     },
   });
 
+  // « Notifications » : être prévenu quand un agent a besoin de vous.
+  const notifications = createNotifications({
+    token: () => state.token,
+    erreur: (msg) => {
+      S.setError(state, msg);
+      render();
+    },
+  });
+
   // « Affichage » : le thème, suivi du système par défaut, clair ou sombre.
   const theme = createTheme({
     api,
@@ -441,6 +451,7 @@ function createApp() {
     bindContextMenu(state);
     reglagesFil.bind();
     theme.bind();
+    notifications.bind();
     installerRaccourcis({
       state,
       naviguer: (v) => navigateView(v),
@@ -449,6 +460,7 @@ function createApp() {
       fermerLesPanneaux: () => {
         reglagesFil.fermer({ rendreLeFocus: true });
         theme.fermer({ rendreLeFocus: true });
+        notifications.fermer({ rendreLeFocus: true });
       },
     });
   }

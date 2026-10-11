@@ -6067,3 +6067,101 @@ li[role="button"]:focus-visible {
 .tour-etapes[open] ~ .tour-visibles > .tour-etapes-echec {
   display: none;
 }
+
+/* ── Notifications : la cloche de l'en-tête et son panneau ───────────── */
+.zone-notifs {
+  flex: none;
+}
+
+#btn-notifs {
+  font-size: 1rem;
+}
+
+.popover-notifs {
+  width: min(25rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 5rem);
+  overflow-y: auto;
+}
+
+.notifs-choix,
+.notifs-calme {
+  margin: var(--esp-3) 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.notifs-choix legend,
+.notifs-calme legend,
+.popover-sous-titre {
+  padding: 0;
+  margin: var(--esp-3) 0 var(--esp-1);
+  color: var(--texte-2);
+  font-size: var(--t-s);
+  font-weight: 600;
+}
+
+.notifs-situation.notifs-actif {
+  color: var(--ok);
+}
+
+.notifs-situation.notifs-bloque,
+.notifs-situation.notifs-indisponible,
+.notifs-situation.notifs-non_supporte {
+  color: var(--attention-texte);
+}
+
+.notifs-plage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--esp-3);
+  margin-top: var(--esp-1);
+}
+
+.notifs-heure input {
+  font: inherit;
+  color: inherit;
+  background: var(--surface-2);
+  border: 1px solid var(--bordure-champ);
+  border-radius: var(--rayon-2);
+  padding: 0.15rem 0.35rem;
+}
+
+.notifs-essai {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--esp-3);
+  margin-top: var(--esp-3);
+}
+
+.notifs-essai .popover-note {
+  margin: 0;
+}
+
+.notifs-appareils {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.notifs-appareils li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--esp-2);
+  padding: 0.2rem 0;
+  font-size: var(--t-s);
+}
+
+/* Sur un téléphone, le panneau des notifications occupe la largeur de l'écran :
+   ancré à sa cloche, il débordait à gauche (l'en-tête y est étroit). */
+@media (max-width: 720px) {
+  .popover-notifs {
+    position: fixed;
+    top: 3.4rem;
+    left: var(--esp-3);
+    right: var(--esp-3);
+    width: auto;
+    max-height: calc(100dvh - 4.5rem);
+  }
+}

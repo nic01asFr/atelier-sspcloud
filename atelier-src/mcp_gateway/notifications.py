@@ -141,6 +141,7 @@ def prevenir(
     url: str = "/",
     tag: str = "passerelle",
     run_id: str = "",
+    extra: dict[str, Any] | None = None,
 ) -> int:
     """Pousse vers tous les appareils enregistrés. Retourne le nombre atteint.
 
@@ -159,8 +160,10 @@ def prevenir(
         return 0
 
     privee, _ = cles_vapid(conn)
+    # `extra` : ce que l'Atelier ajoute (actions, jeton de décision, silence…).
+    # Il ne peut pas écraser les cinq champs de base.
     charge = json.dumps(
-        {"titre": titre, "corps": corps, "url": url, "tag": tag, "run_id": run_id},
+        {**(extra or {}), "titre": titre, "corps": corps, "url": url, "tag": tag, "run_id": run_id},
         ensure_ascii=False,
     )
     atteints = 0
