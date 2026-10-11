@@ -4,6 +4,14 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Atelier</title>
+  <!-- L'application installable : manifeste, couleur de barre, icône iOS. -->
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#121519" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Atelier" />
   <!-- Le thème avant le premier rendu : voir js/theme-initial.js. -->
   <script src="/js/theme-initial.js?v=20260926-theme"></script>
   <link rel="stylesheet" href="/css/jetons.css?v=20260926-theme" />
@@ -47,6 +55,13 @@
               <label class="case"><input type="radio" name="theme" value="sombre" /> <span>Sombre</span></label>
             </fieldset>
             <p class="popover-note">Retenu pour vous, sur chacun de vos appareils.</p>
+          </div>
+        </div>
+        <div id="notifs-zone" class="reglages-fil-zone zone-notifs">
+          <button type="button" id="btn-notifs" class="icon-btn" aria-expanded="false" aria-controls="notifs" aria-haspopup="dialog" aria-label="Notifications" title="Notifications : être prévenu quand un agent a besoin de vous"><span class="icone" aria-hidden="true"><svg class="icone-svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span><span id="notifs-pastille" class="notifs-pastille" hidden></span></button>
+          <div id="notifs" class="popover popover-notifs" role="dialog" aria-labelledby="notifs-titre" hidden>
+            <p id="notifs-titre" class="popover-titre">Notifications</p>
+            <div id="notifs-contenu" aria-live="polite"></div>
           </div>
         </div>
         <button type="button" id="btn-logout" class="ghost">Quitter</button>

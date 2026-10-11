@@ -29,7 +29,7 @@ Pour un agent, la version courte et opérationnelle de ce guide est le socle des
 3. [Profils d'accès](#3-profils-daccès)
 4. [L'Assistant](#4-lassistant)
 5. [Commandes de l'Atelier](#5-commandes-de-latelier)
-6. [« À valider », journal, annulation](#6--à-valider--journal-annulation)
+6. [« À valider », journal, annulation, veille et notifications](#6--à-valider--journal-annulation)
 7. [Créations, panneau, bureaux](#7-créations-panneau-bureaux)
 8. [Le navigateur de l'agent](#8-le-navigateur-de-lagent)
 9. [Connecteurs et passerelle MCP](#9-connecteurs-et-passerelle-mcp)
@@ -386,12 +386,54 @@ remplacées partout. *La personne* : vue Journal, en phrases, filtrable par proj
 applique une fois l'inverse notée au journal. Quand l'auteur de l'action ou la personne annule,
 son geste vaut accord pour une inverse engageante ; une inverse réservée reste refusée à un modèle.
 
-**Ce que ça ne fait pas.** Pas d'avant/après visuel des créations (attend J8) ; pas de
-notification hors de l'Atelier.
+### 6.1 Attendre sans refuser : la veille et la reprise
+
+Une question à la personne n'est **jamais** un refus. Quand un agent demande une autorisation
+ou pose une question :
+
+- si on répond dans les **10 minutes** (`veille_apres_s`), le tour repart là où il s'était arrêté ;
+- sinon, ou tout de suite quand personne ne regarde le tour (agent lancé, client distant), le tour
+  **s'endort** : le processus est rendu, la question reste posée sur le disque, **rien n'est répondu
+  au modèle**. La conversation affiche « en attente de vous » ;
+- la réponse, **quand elle vient** (dans une heure, après un redémarrage), **relance le travail** :
+  un nouveau tour part avec `--resume` et un message de l'Atelier (« Tu attendais l'accord de la
+  personne pour : … »). « Pour cette fois » est une règle à usage unique, consommée à l'usage ;
+  « Toujours » reste la règle que le CLI suggère lui-même ;
+- un **agent lancé** qui dort est « en attente de vous » (jamais « fini ») et repart sous le même
+  lancement ; l'arrêter ferme sa question ; « Classer » une demande ne réveille pas l'agent.
+
+### 6.2 Notifications (PWA)
+
+L'Atelier est installable (manifeste, icônes, service worker) et **prévient la personne** quand un
+agent a besoin d'elle, application fermée. La cloche de l'en-tête ouvre le panneau :
+
+- **Me prévenir sur cet appareil** : demande la permission au navigateur, jamais avant. Sur iPhone
+  et iPad, le panneau dit d'abord d'ajouter l'Atelier à l'écran d'accueil (condition d'Apple) ;
+- **Me prévenir quand** : une action attend mon accord · un agent me pose une question · un agent
+  a terminé (coupé par défaut) · un agent est bloqué · une alerte grave ;
+- **Heures calmes** : pas de son ni de vibration, la notification reste lisible ;
+- **Montrer ce que l'agent demande sur l'écran verrouillé** (coupable : discrétion) ;
+- **Envoyer un essai** : dit honnêtement « reçu sur N appareils » ou pourquoi rien n'est parti ;
+- la liste des appareils, avec « Retirer ».
+
+Une demande d'accord arrive avec ses boutons **Autoriser** et **Refuser** (Android, ordinateur) :
+la réponse part **sans ouvrir l'application**. Elle porte un *jeton de décision* — la question, une
+échéance, une signature dérivée de la clé du propriétaire — qui ne permet de répondre qu'à **cette**
+question, « pour cette fois ». Le jeton ne voyage que dans la charge chiffrée de bout en bout vers
+l'appareil. Une question (`AskUserQuestion`) s'ouvre au toucher : on ne répond pas à l'aveugle. La
+notification se referme quand on a répondu ailleurs.
+
+**Ce que ça ne fait pas.** Pas d'avant/après visuel des créations (attend J8) ; pas de mode hors
+ligne (le service worker ne met rien en cache) ; l'envoi dépend de la sortie du pod vers les
+services de poussée (FCM, Mozilla, Apple) — c'est ce que vérifie « Envoyer un essai » ;
+`pywebpush` doit être installé (sinon le panneau dit « indisponible »).
 
 **Code** : `commandes/a_valider.py`, `commandes/journal.py`, `commandes/natives.py`,
-`commandes/routes.py` ; `web/js/views/a-valider.js`, `journal.js`, `assistant-cartes.js`.
-**Doc** : [`vision/architecture-transverse.md`](vision/architecture-transverse.md) §1.7 et §1.8.
+`commandes/routes.py`, `decisions.py`, `push.py`, `push_routes.py`, `notifications.py` ;
+`web/sw.js`, `web/manifest.webmanifest`, `web/js/controllers/notifications.js`,
+`web/js/views/a-valider.js`, `journal.js`, `assistant-cartes.js`.
+**Doc** : [`vision/architecture-transverse.md`](vision/architecture-transverse.md) §1.7 et §1.8 ;
+[`vision/attendre-sans-refuser.md`](vision/attendre-sans-refuser.md).
 
 ---
 

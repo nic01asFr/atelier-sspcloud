@@ -204,6 +204,54 @@ export async function repondreDecision(
   return res.json();
 }
 
+// ── Les notifications ────────────────────────────────────────────────────
+
+/** Tout ce que l'écran des notifications montre : disponibilité, clé, appareils, réglages. */
+export async function pushEtat(token) {
+  const res = await fetch("/v1/push/etat", { headers: jsonHeaders(token) });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Inscrit cet appareil. L'inscription est idempotente : la refaire ne coûte rien. */
+export async function pushAbonner(token, abonnement, appareil) {
+  const res = await fetch("/v1/push/abonnements", {
+    method: "POST",
+    headers: jsonHeaders(token),
+    body: JSON.stringify({ abonnement, appareil }),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Retire un appareil, par son adresse (cet appareil) ou son identifiant (un autre). */
+export async function pushDesabonner(token, { endpoint = "", id = "" } = {}) {
+  const res = await fetch("/v1/push/abonnements", {
+    method: "DELETE",
+    headers: jsonHeaders(token),
+    body: JSON.stringify({ endpoint, id }),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+export async function pushPreferences(token, patch) {
+  const res = await fetch("/v1/push/preferences", {
+    method: "PUT",
+    headers: jsonHeaders(token),
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Une notification d'essai, et ce qui s'est réellement passé. */
+export async function pushEssai(token) {
+  const res = await fetch("/v1/push/essai", { method: "POST", headers: jsonHeaders(token) });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
 export async function patchSessionMcp(token, sessionId, { overlay } = {}) {
   const res = await fetch(`/v1/sessions/${encodeURIComponent(sessionId)}/mcp`, {
     method: "PATCH",
