@@ -331,6 +331,23 @@ def test_les_anciennes_commandes_de_conversation_ne_sont_pas_declarees_mais_rest
     assert profils.HORS_LISTE_ASSISTANT <= porte.noms()
 
 
+def test_un_appel_mal_forme_passe_par_les_memes_gardes_et_rappelle_la_forme(porte: Porte) -> None:
+    """Arguments à plat ou en texte : compris, et le garde du profil s'applique toujours."""
+    conv_assistant = _conversation_de_l_assistant(porte.atelier)
+    charge, erreur = porte.appeler(
+        "gateway_call_tool", {"name": "atelier_conversations", "arguments": "{}"}, profil="assistant", conv=conv_assistant
+    )
+    assert not erreur, charge
+    assert "objet JSON" in json.dumps(charge, ensure_ascii=False)
+    conv = conversation(porte.atelier)
+    # Le détour par la forme tolérante n'ouvre rien : le profil code refuse toujours.
+    charge, erreur = porte.appeler(
+        "gateway_call_tool", {"tool": "atelier_journal", "parameters": {}}, profil="code", conv=conv
+    )
+    assert erreur and "profil code" in json.dumps(charge, ensure_ascii=False)
+    assert porte.pool.appels == []
+
+
 def test_sans_conversation_rien_ne_change_et_c_est_note(
     porte: Porte, caplog: pytest.LogCaptureFixture
 ) -> None:

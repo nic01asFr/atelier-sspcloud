@@ -482,7 +482,8 @@ l'événement et agit, l'agent n'a rien de plus à retenir. Chaque entrée dit o
 - **D-59 (m) — Les processus orphelins ne sont pas ramassés.** PID 1 est l'application Python,
   qui ne fait pas `waitpid` sur les orphelins : 50 zombies une heure après le démarrage (six par
   session du navigateur de l'agent : `bash`, `npm`, `node` ×3, `chrome-devtools`, `sh`). Sans
-  effet visible à l'heure, mais croissant sur un pod qui reste des jours. **Statut : vérifié.**
+  effet visible à l'heure, mais croissant sur un pod qui reste des jours. **Statut : vérifié.** Correction écrite : `tini` est le processus 1
+  de l'image (`deploy/Dockerfile`) ; effective au prochain déploiement de l'image, à mesurer ensuite.
 - **D-60 (G) — Les plafonds de l'Atelier ne tiennent pas dans la mémoire du pod.** 4 applications
   de 1,5 Gio, 6 Chrome, 3 CLI persistants, 3 lancements simultanés et la voix (2,2 Go), plus le
   socle (0,7 Go) : de l'ordre de 12 à 15 Gio pour un plafond de 8 Gi. Aucun contrôle de santé ne

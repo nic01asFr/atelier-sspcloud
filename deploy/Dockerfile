@@ -41,7 +41,7 @@ ENV ATELIER_CODE_SERVER_DIR=/opt/atelier/outils/code-server-${CODE_SERVER_VERSIO
 ARG CHROME_MCP_VERSION=1.10.1
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-      ca-certificates fonts-liberation libasound2t64 libatk-bridge2.0-0t64 \
+      tini ca-certificates fonts-liberation libasound2t64 libatk-bridge2.0-0t64 \
       libatk1.0-0t64 libcairo2 libcups2t64 libdbus-1-3 libexpat1 libfontconfig1 \
       libgbm1 libglib2.0-0t64 libgtk-3-0t64 libnspr4 libnss3 libpango-1.0-0 \
       libpangocairo-1.0-0 libx11-6 libx11-xcb1 libxcb1 libxcomposite1 \
@@ -76,4 +76,7 @@ ENV ATELIER_DEPOT="" \
     ATELIER_WORK=/home/onyxia/work
 
 EXPOSE 8787
-ENTRYPOINT ["bash", "/opt/atelier/bin/atelier-init.sh"]
+# `tini` est le processus 1 : il ramasse les orphelins. Sans lui, c'est
+# l'application Python qui l'est, et elle ne le fait pas : 50 zombies après une
+# heure (6 par session du navigateur de l'agent), D-59.
+ENTRYPOINT ["tini", "--", "bash", "/opt/atelier/bin/atelier-init.sh"]
