@@ -158,7 +158,9 @@ Gravité : **C** critique · **G** grave · **M** moyen · **m** mineur.
 
 ### Permissions et confirmation
 
-- **D-01 (C) — Permission sans réponse : 1 h d'attente, message opaque.**
+- **D-01 (C) — Permission sans réponse : 1 h d'attente, message opaque.** *Corrigé par la
+  veille et la reprise (voir `attendre-sans-refuser.md` § 4) ; reste à faire : le message de
+  refus d'un vrai refus, et la liste d'outils par rôle (§ 6).*
   Preuves : 6c36f388 (`pip install torch` attend 20:07 → 21:07, l'agent conclut
   « l'installation n'aboutit pas »), 16da076d (sous-agents bouclant une nuit sur
   `echo test`), 7113b90b, a7b0d0b6, ffb218d2 (commandes de lecture `find`,

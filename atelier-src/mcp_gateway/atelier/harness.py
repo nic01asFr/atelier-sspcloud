@@ -34,6 +34,7 @@ from mcp_gateway.atelier.config import (
     fenetre_du_modele,
 )
 from mcp_gateway.atelier.decisions import (
+    MARQUE_DE_L_ATELIER,
     Demande,
     RegistreDesDecisions,
     reglages_cli,
@@ -97,22 +98,21 @@ def enregistrement_utilisateur(message: str, session_id: str, horodatage: str) -
     reponses, et les messages de la personne restent dans le navigateur qui
     les a tapes.
     """
-    return (
-        json.dumps(
-            {
-                "type": "user",
-                "message": {
-                    "role": "user",
-                    "content": [{"type": "text", "text": message}],
-                },
-                "session_id": session_id,
-                "timestamp": horodatage,
-                "parent_tool_use_id": None,
-            },
-            ensure_ascii=False,
-        )
-        + chr(10)
-    )
+    ligne: dict[str, Any] = {
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": [{"type": "text", "text": message}],
+        },
+        "session_id": session_id,
+        "timestamp": horodatage,
+        "parent_tool_use_id": None,
+    }
+    if message.startswith(MARQUE_DE_L_ATELIER):
+        # Écrit par l'Atelier, pas par la personne : la mémoire et les
+        # compteurs ne doivent pas le lui prêter (registre des défauts D-14).
+        ligne["isSynthetic"] = True
+    return json.dumps(ligne, ensure_ascii=False) + chr(10)
 
 
 @dataclass
@@ -288,6 +288,7 @@ class FakeHarness(Harness):
         self.appels.append(
             {
                 "session_id": session_id,
+                "message": message,
                 "cwd": str(cwd),
                 "permission_mode": permission_mode,
                 "timeout_s": timeout_s,
@@ -393,15 +394,6 @@ from mcp_gateway.atelier.modes_permission import (  # noqa: E402
 MODE_SANS_INTERLOCUTEUR = MODE_PERMISSION_DEFAUT
 NIVEAUX_EFFORT = ("low", "medium", "high", "xhigh", "max")
 # Les niveaux acceptés partout, et celui par défaut : voir `config.py`.
-
-
-# Ce qu'on répond quand la question ne peut atteindre personne. Le motif part
-# au modèle : mieux vaut qu'il lise pourquoi on l'a arrêté plutôt que de voir
-# un refus muet.
-SANS_INTERLOCUTEUR = (
-    "Refusé sans être demandé : ce tour ne passe pas par l'interface, "
-    "personne ne pouvait répondre. Relancez-le depuis l'Atelier pour décider."
-)
 
 
 @dataclass
@@ -606,6 +598,18 @@ class ClaudeHarness(Harness):
         # la réponse depuis un autre fil.
         self.decisions = RegistreDesDecisions(settings.decisions_dir)
         self.messages = FileDesMessages()
+        # Les conversations dont le tour doit s'arrêter parce qu'il a été mis
+        # en veille (conversation → question), et ce que l'Atelier fait savoir
+        # quand une question se pose ou s'endort (notifications, journal) : une
+        # fonction qui ne lève jamais.
+        self._veilles_demandees: dict[str, str] = {}
+        self.avis: Callable[[str, Demande], None] | None = None
+        # Les questions laissées par le service précédent restent
+        # répondables, et leur réponse relance le travail.
+        try:
+            self.decisions.reveiller_les_traces()
+        except OSError:
+            pass
 
     def _variables_du_projet(self, cwd: Path | None) -> dict[str, str]:
         """Ce que le projet demande par `.atelier/env.json` (voir `env_projet`)."""
@@ -864,6 +868,9 @@ class ClaudeHarness(Harness):
         # automatique — ce que l'utilisateur a accordé, il l'a accordé.
         regle = self.decisions.regle_qui_couvre(demande)
         if regle is not None:
+            if regle.portee == "une_fois":
+                # « Pour cette fois » : elle vient de servir.
+                self.decisions.consommer(regle)
             self._repondre_au_cli(
                 proc, demande.request_id, reponse_autorisee(demande.arguments)
             )
@@ -879,21 +886,12 @@ class ClaudeHarness(Harness):
             return 0.0
 
         if not peut_attendre:
-            # Personne au bout du fil : ce tour ne remonte pas par l'interface.
-            # Attendre le figerait pour toujours ; on refuse, ce qui est très
-            # exactement ce que le CLI faisait avant que ce canal existe.
-            self._repondre_au_cli(
-                proc, demande.request_id, reponse_refusee(SANS_INTERLOCUTEUR)
-            )
-            emettre(
-                AtelierEvent(
-                    kind="decision_rendue",
-                    session_id=demande.session_id,
-                    tool=demande.outil,
-                    tool_id=demande.request_id,
-                    cause="refus_automatique",
-                )
-            )
+            # Personne ne regarde ce tour : ni écran, ni flux. Le refuser
+            # ferait conclure à l'agent que l'outil est en panne ; l'attendre
+            # figerait un processus pour rien. On pose la question, on prévient
+            # la personne, et le tour s'endort — sa réponse le relancera.
+            self.decisions.deposer_en_veille(demande)
+            self._endormir(demande, emettre)
             return 0.0
 
         signal_recu = self.decisions.poser(demande)
@@ -906,33 +904,33 @@ class ClaudeHarness(Harness):
                 tool_id=demande.request_id,
             )
         )
+        self._avertir("attendue", demande)
         debut = time.monotonic()
-        limite = max(60, int(self.settings.attente_vive_max_s))
-        relachee = False
+        limite = max(1, int(self.settings.veille_apres_s))
+        endormie = False
         while not signal_recu.wait(timeout=self.BATTEMENT_ATTENTE):
             if proc.poll() is not None:
                 break
             if time.monotonic() - debut > limite:
-                # On rend la mémoire du processus garé, pas la décision : la
-                # trace reste sur le disque, et y répondre plus tard la
-                # retiendra comme règle. Seul le chemin rapide expire.
-                relachee = True
-                self.decisions.relacher(demande.request_id)
+                # Personne n'a répondu à temps. On ne répond **pas** à la place
+                # de la personne : le processus garé est rendu (il coûte ~130 Mo
+                # qu'aucun échange ne récupère), la question reste posée, et le
+                # tour s'endort. La réponse, quand elle viendra, le relancera.
+                endormie = True
                 break
             emettre(AtelierEvent(kind="heartbeat", session_id=demande.session_id))
 
+        if endormie:
+            en_veille = self.decisions.mettre_en_veille(demande.request_id)
+            self._endormir(en_veille or demande, emettre)
+            return time.monotonic() - debut
+
         reponse = self.decisions.reponse(demande.request_id)
         if reponse is None:
-            # Le tour s'est arrêté, ou l'attente vive a été relâchée. On refuse
-            # plutôt que de laisser le CLI attendre quelqu'un qui ne viendra
-            # plus.
-            reponse = reponse_refusee(
-                "Personne n'a répondu à temps ; la question reste posée dans l'Atelier."
-                if relachee
-                else "Le tour s'est arrêté avant qu'on réponde."
-            )
-        if not relachee:
-            self.decisions.clore(demande.request_id)
+            # Le processus est mort pendant l'attente : rien ne lit plus la
+            # réponse. On referme la question sans bruit.
+            reponse = reponse_refusee("Le tour s'est arrêté avant qu'on réponde.")
+        self.decisions.clore(demande.request_id)
 
         self._repondre_au_cli(proc, demande.request_id, reponse)
 
@@ -951,10 +949,49 @@ class ClaudeHarness(Harness):
                     if demande.genre == "question"
                     else ""
                 ),
-                cause="relachee" if relachee else str(reponse.get("behavior") or ""),
+                cause=str(reponse.get("behavior") or ""),
             )
         )
         return time.monotonic() - debut
+
+    def _endormir(
+        self,
+        demande: Demande,
+        emettre: Callable[[AtelierEvent], AtelierEvent],
+    ) -> None:
+        """Le tour va s'arrêter ici, sans réponse : on le dit, et on prévient.
+
+        La boucle de lecture voit la demande de veille et éteint le processus.
+        Rien n'est rendu au CLI : l'agent ne saura jamais qu'on a attendu, il
+        trouvera à la reprise un message de l'Atelier.
+        """
+        with self._verrou:
+            self._veilles_demandees[demande.session_id] = demande.request_id
+        emettre(
+            AtelierEvent(
+                kind="systeme",
+                session_id=demande.session_id,
+                cause="veille",
+                tool=demande.outil,
+                tool_id=demande.request_id,
+                text=json.dumps(demande.to_dict(), ensure_ascii=False),
+            )
+        )
+        self._avertir("veille", demande)
+
+    def _avertir(self, quoi: str, demande: Demande) -> None:
+        """Fait savoir qu'une question se pose ou s'endort. Ne lève jamais."""
+        if self.avis is None:
+            return
+        try:
+            self.avis(quoi, demande)
+        except Exception:  # noqa: BLE001 — prévenir ne doit jamais faire échouer le tour
+            log.exception("avis « %s » non rendu", quoi)
+
+    def _prendre_la_veille(self, session_id: str) -> str:
+        """La question qui a mis ce tour en veille, une seule fois."""
+        with self._verrou:
+            return self._veilles_demandees.pop(session_id, "")
 
 
     def run_turn(
@@ -1091,6 +1128,7 @@ class ClaudeHarness(Harness):
             self._en_tour.add(session_id)
         depuis = len(vivant.erreurs)
         termine = False
+        en_veille = False
         abandonnes = 0
         # L'entrée reste ouverte après l'envoi : c'est par elle que remontent
         # les réponses aux demandes d'autorisation, et que partent les messages
@@ -1161,6 +1199,13 @@ class ClaudeHarness(Harness):
                             deadline += self._attendre_la_decision(
                                 demande, proc, emettre, peut_attendre
                             )
+                            if self._prendre_la_veille(session_id):
+                                # Le tour s'endort ici : on éteint le processus
+                                # sans rien lui répondre. La réponse de la
+                                # personne relancera le travail (`--resume`).
+                                en_veille = True
+                                self._eteindre(session_id, de_force=True)
+                                break
                             continue
                         if ligne_a_conserver(line):
                             tf.write(line)
@@ -1237,12 +1282,16 @@ class ClaudeHarness(Harness):
                 if termine:
                     code = None
                     vivant.laisser_arriver_les_erreurs()
+                elif en_veille:
+                    # Éteint exprès : son code de sortie et ses derniers mots ne
+                    # sont pas une erreur du tour.
+                    code = 0
                 else:
                     code = proc.wait(timeout=5)
                     vivant.attendre_les_erreurs()
                 # La sortie d'erreur est lue par un fil à part : `read()` ici
                 # attendrait la fin du processus, qui ne vient plus.
-                err = "".join(vivant.erreurs[depuis:])
+                err = "" if en_veille else "".join(vivant.erreurs[depuis:])
                 if err:
                     lf.write(err)
                     if "[claude-code:unrecognized_model]" not in err and "Error:" in err:
@@ -1285,7 +1334,11 @@ class ClaudeHarness(Harness):
                     text=str(abandonnes),
                 )
             )
-        if not any(e.kind == "fin" for e in events) and code == 0:
+        if en_veille:
+            # Le tour s'arrête ici, sans erreur : les écrans qui suivent ce
+            # tour peuvent le refermer. Ce n'est pas une fin de travail.
+            emettre(AtelierEvent(kind="fin", session_id=session_id, cause="veille"))
+        elif not any(e.kind == "fin" for e in events) and code == 0:
             emettre(AtelierEvent(kind="fin", session_id=session_id, cause="exit_0"))
         if code not in (0, None) and not any(e.kind == "erreur" for e in events):
             emettre(

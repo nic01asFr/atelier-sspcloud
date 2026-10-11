@@ -128,7 +128,7 @@ export function texteAssemble(stream) {
 export function ouvreUnTour(ev) {
   if (!ev) return false;
   if (ev.kind === "texte") return !!ev.text && ev.raw_type !== "result_text";
-  if (ev.kind === "systeme") return ev.cause === "message_systeme";
+  if (ev.kind === "systeme") return ev.cause === "message_systeme" || ev.cause === "veille";
   return ev.kind === "outil_debut" || ev.kind === "decision_attendue";
 }
 
@@ -449,6 +449,28 @@ function appliquerEvenement(ctx, stream, ev) {
         // se retire et son verdict rejoint la ligne de l'outil.
         if (S.rattacherUnVerdict(state, ev.tool_id, verdictDeLaCause(ev.cause))) views.codeChat.renderThread();
       }
+    } else if (ev.kind === "systeme" && ev.cause === "veille") {
+      // Personne n'a répondu : le tour s'est endormi, sans rien refuser. La
+      // question reste posée et répondable ; la réponse relancera l'agent.
+      const demande = ev.text ? tryParseJson(ev.text) : null;
+      if (demande && typeof demande === "object" && demande.request_id) {
+        const deja = stream.decisions.some((d) => d.demande?.request_id === demande.request_id);
+        if (!deja) {
+          // Un tour que personne ne regardait : la carte n'a jamais été posée.
+          const bloc = { type: "decision", demande, etat: "en_attente" };
+          S.noterLaDemande(state, demande);
+          stream.decisions.push(bloc);
+          stream.blocs.push(bloc);
+        }
+      }
+      stream.blocs.push({
+        type: "systeme",
+        text: "L’agent s’est mis en veille en attendant votre réponse. Il reprendra dès que vous aurez répondu.",
+      });
+      stream.phase = "decision";
+      pushStreamToUi(state, stream);
+      views.codeChat.renderThread();
+      refreshSessions(state).then(render);
     } else if (ev.kind === "systeme" && ev.cause === "message_systeme" && ev.text) {
       // Ce qu'un hook dit à la personne : une relance de wikichat, le plus
       // souvent (« tour prolongé — réponse attendue par… »). Dit à sa place

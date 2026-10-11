@@ -473,6 +473,10 @@ class SessionRecord:
     # (« Librarian ») garde son nom en passant par l'Atelier, et son courrier
     # le trouve.
     nom_wikichat: str = ""
+    # La question qui a mis le dernier tour « en veille » : le tour s'est arrêté
+    # sans réponse, la conversation attend la personne, et sa réponse relance le
+    # travail (`decisions.message_de_reprise`). Vide sinon.
+    en_attente_de: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -1516,6 +1520,7 @@ class SessionStore:
         courante.cause = rec.cause
         courante.turns = rec.turns
         courante.last_text = rec.last_text
+        courante.en_attente_de = rec.en_attente_de
         if rec.claude_session_id:
             courante.claude_session_id = rec.claude_session_id
         self.save(courante)
@@ -1619,6 +1624,9 @@ class SessionStore:
         if resume:
             self._compacter_si_besoin(rec, claude_cli_id)
         rec.state = "running"
+        # Un nouveau tour part : la veille d'avant est terminée (c'est
+        # peut-être justement la réponse qui le relance).
+        rec.en_attente_de = ""
         self.save(rec)
         mcp_config_path: Path | None = None
         try:
@@ -1732,9 +1740,19 @@ class SessionStore:
         # non nul et une erreur. Juger sur ces seuls signes affichait « en
         # erreur » une conversation qu'on venait d'arrêter soi-même.
         sur_disque = self.get(session_id)
+        en_veille = next(
+            (e for e in result.events if e.kind == "systeme" and e.cause == "veille"), None
+        )
         if sur_disque is not None and sur_disque.state == "interrupted":
             rec.state = "interrupted"
             rec.cause = "interrupted"
+        elif en_veille is not None:
+            # Le tour s'est arrêté pour attendre la personne, sans rien refuser :
+            # ce n'est ni un échec ni une fin. La conversation dort ; sa réponse
+            # la relancera.
+            rec.state = "idle"
+            rec.cause = ""
+            rec.en_attente_de = en_veille.tool_id
         elif plafond_atteint:
             rec.state = "timeout"
             rec.cause = "contexte_plafond"

@@ -74,6 +74,11 @@ NOM_DU_FICHIER_DE_CLE = "atelier_lanceur_key"
 ORIGINE_AUTOMATE = "automate"
 
 EN_COURS = "en_cours"
+# L'agent s'est endormi en attendant la personne (une autorisation, une
+# question). Ce n'est ni un échec ni une fin : sa réponse le relancera. Il ne
+# compte pas parmi les agents qui tournent (plus de processus), mais il tient
+# sa copie de travail.
+ATTEND = "en_attente"
 FINI = "fini"
 ECHEC = "echec"
 DELAI = "delai"
@@ -218,6 +223,8 @@ class Lancement:
     # Ce que l'Atelier a conclu : la proposition déposée, ou pourquoi aucune.
     proposition: str = ""
     conclusion: dict[str, Any] = field(default_factory=dict)
+    # La question qui le fait dormir (état `en_attente`).
+    attend: str = ""
 
     def en_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -597,7 +604,8 @@ class Lanceur:
                     f"plafond atteint : {len(reparations)} réparations aujourd'hui "
                     f"(au plus {self.plafonds.reparations_par_jour})"
                 )
-        if branche and any(l.projet == slug and l.branche for l in en_cours):
+        occupantes = [l for l in tous if l.etat in (EN_COURS, ATTEND)]
+        if branche and any(l.projet == slug and l.branche for l in occupantes):
             raise Refus(f"une copie de travail tourne déjà pour {slug} : une à la fois par projet")
 
     def _branche(self, demande: dict[str, Any], origine: str, identifiant: str) -> str:
@@ -767,7 +775,15 @@ class Lanceur:
 
     # ── jouer le tour ──────────────────────────────────────────────────
 
-    def _jouer(self, identifiant: str) -> None:
+    def _jouer(
+        self,
+        identifiant: str,
+        message: str | None = None,
+        on_event: Any = None,
+    ) -> None:
+        """Joue le lancement. `message` et `on_event` servent à la reprise :
+        la réponse de la personne relance le même lancement, avec le message de
+        l'Atelier, et ses événements rejoignent le flux de la conversation."""
         lancement = self.lire(identifiant)
         if lancement is None:
             return
@@ -786,16 +802,17 @@ class Lanceur:
         minuterie = threading.Timer(duree + 30, self._couper, args=(identifiant,))
         minuterie.daemon = True
         minuterie.start()
-        etat, texte, erreur = FINI, "", ""
+        etat, texte, erreur, attend = FINI, "", "", ""
         try:
             resultat = self.store.send(
                 lancement.conversation,
-                lancement.message,
-                peut_attendre=lancement.supervise,
+                message if message is not None else lancement.message,
+                peut_attendre=lancement.supervise or message is not None,
                 mode=lancement.mode,
                 delai_s=duree,
                 regles=regles or None,
                 env_tour=env or None,
+                **({"on_event": on_event} if on_event is not None else {}),
             )
             texte = resultat.text or ""
             fiche = self.store.get(lancement.conversation)
@@ -811,6 +828,15 @@ class Lanceur:
                 )
             elif etat_fiche == "interrupted":
                 etat = ARRETE
+            elif any(e.kind == "systeme" and e.cause == "veille" for e in resultat.events):
+                # L'agent attend la personne : ni fini, ni échec. « Fini »
+                # mentirait ; c'est sa réponse qui le relancera.
+                etat = ATTEND
+                attend = next(
+                    e.tool_id
+                    for e in resultat.events
+                    if e.kind == "systeme" and e.cause == "veille"
+                )
             elif cause == "timeout_mural" or etat_fiche == "timeout":
                 etat, erreur = DELAI, f"durée dépassée ({duree} s)"
             elif etat_fiche == "failed" or resultat.exit_code != 0:
@@ -827,8 +853,15 @@ class Lanceur:
             lancement.etat = etat
             lancement.texte = texte[-4000:]
             lancement.erreur = erreur[:500]
-            lancement.fini_le = _maintenant()
+            lancement.attend = attend if etat == ATTEND else ""
+            lancement.fini_le = "" if etat == ATTEND else _maintenant()
             self._ecrire(lancement)
+        if etat == ATTEND:
+            # Il dort : pas de conclusion, la copie reste à lui.
+            self._journaliser(lancement, ATTEND)
+            with self._verrou:
+                self._fils.pop(identifiant, None)
+            return
         if lancement.branche and lancement.copie:
             try:
                 self._conclure(lancement)
@@ -855,15 +888,63 @@ class Lanceur:
             lancement = self.lire(identifiant)
             if lancement is None:
                 raise Refus(f"lancement inconnu : {identifiant}")
-            if lancement.etat != EN_COURS:
+            if lancement.etat not in (EN_COURS, ATTEND):
                 return lancement
+            etait_en_attente = lancement.etat == ATTEND
             lancement.etat = ARRETE
+            lancement.attend = ""
+            if etait_en_attente:
+                lancement.fini_le = _maintenant()
             self._ecrire(lancement)
         try:
             self.store.interrupt(lancement.conversation)
         except (KeyError, OSError):
             pass
+        if etait_en_attente:
+            # Plus de tour pour jouer la fin : on la joue ici, et la question
+            # qui le faisait dormir n'a plus d'objet.
+            decisions = getattr(getattr(self.store, "harness", None), "decisions", None)
+            if decisions is not None:
+                decisions.oublier_les_questions(lancement.conversation)
+            if lancement.branche and lancement.copie:
+                try:
+                    self._conclure(lancement)
+                except Exception as exc:  # noqa: BLE001
+                    log.exception("conclusion de %s", identifiant)
+                    lancement.conclusion = {"erreur": f"{type(exc).__name__}: {exc}"}
+                    self._ecrire(lancement)
+            self._journaliser(lancement, ARRETE)
         return lancement
+
+    def reprendre_apres_veille(self, conversation: str, message: str, on_event: Any = None) -> bool:
+        """La réponse de la personne arrive : le lancement qui dormait repart.
+
+        Le même lancement, le même fil de suivi : la fin du tour repris sera
+        classée comme celle de n'importe quel tour (fini, bloqué, ou de
+        nouveau en attente). Faux quand aucun lancement ne dort pour cette
+        conversation.
+        """
+        with self._verrou:
+            dormeur = next(
+                (l for l in self.tous() if l.conversation == conversation and l.etat == ATTEND),
+                None,
+            )
+            if dormeur is None:
+                return False
+            dormeur.etat = EN_COURS
+            dormeur.attend = ""
+            dormeur.fini_le = ""
+            self._ecrire(dormeur)
+            fil = threading.Thread(
+                target=self._jouer,
+                args=(dormeur.id, message, on_event),
+                name=f"lancement-{dormeur.id}",
+                daemon=True,
+            )
+            self._fils[dormeur.id] = fil
+        self._journaliser(dormeur, "reprend")
+        fil.start()
+        return True
 
     def attendre(self, identifiant: str, delai_s: float = 10.0) -> Lancement | None:
         """Attend la fin du fil d'un lancement (tests, arrêt propre)."""
@@ -972,6 +1053,8 @@ class Lanceur:
             raise Refus(f"aucune branche à fusionner pour {identifiant}")
         if lancement.etat == EN_COURS:
             raise Refus("l'agent travaille encore sur cette branche")
+        if lancement.etat == ATTEND:
+            raise Refus("l'agent attend votre réponse : répondez-lui d'abord, ou arrêtez-le")
         projet = Path(self.settings.projects_dir) / lancement.projet
         code, courante = _git(projet, "symbolic-ref", "--short", "HEAD")
         if code != 0 or courante != lancement.base:

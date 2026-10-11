@@ -13,6 +13,7 @@ import { dateHumaine, libelleControle } from "./gardiens.js";
 
 const ETATS = {
   en_cours: { texte: "En cours", ton: "busy" },
+  en_attente: { texte: "En attente de vous", ton: "warn" },
   fini: { texte: "Terminé", ton: "ok" },
   echec: { texte: "Échec", ton: "err" },
   delai: { texte: "Arrêté : trop long", ton: "warn" },
@@ -57,8 +58,8 @@ export function dureeHumaine(debut, fin, maintenant = Date.now()) {
 export function trierLancements(liste, garder = 12) {
   const tous = [...(liste || [])];
   tous.sort((a, b) => {
-    const ea = a.etat === "en_cours" ? 0 : 1;
-    const eb = b.etat === "en_cours" ? 0 : 1;
+    const ea = a.etat === "en_cours" || a.etat === "en_attente" ? 0 : 1;
+    const eb = b.etat === "en_cours" || b.etat === "en_attente" ? 0 : 1;
     if (ea !== eb) return ea - eb;
     return String(b.cree_le || "").localeCompare(String(a.cree_le || ""));
   });
@@ -128,7 +129,7 @@ export function listeLancements(conteneur, donnees, { actions, enCours = "", mai
     sous.className = "agent-queue-sub";
     const bouts = [];
     if (l.projet) bouts.push(`projet ${l.projet}`);
-    bouts.push(`${l.etat === "en_cours" ? "depuis" : "durée"} ${dureeHumaine(l.cree_le, l.fini_le, maintenant)}`);
+    bouts.push(`${l.etat === "en_cours" || l.etat === "en_attente" ? "depuis" : "durée"} ${dureeHumaine(l.cree_le, l.fini_le, maintenant)}`);
     if (l.cree_le) bouts.push(`lancé ${dateHumaine(l.cree_le, maintenant)}`);
     if (l.branche) bouts.push(`branche ${l.branche}`);
     sous.textContent = bouts.join(" · ");
@@ -155,7 +156,7 @@ export function listeLancements(conteneur, donnees, { actions, enCours = "", mai
     if (l.conversation) {
       btns.appendChild(bouton("Ouvrir", "ghost btn-sm", () => actions.ouvrirConversation?.(l.projet, l.conversation)));
     }
-    if (l.etat === "en_cours") {
+    if (l.etat === "en_cours" || l.etat === "en_attente") {
       btns.appendChild(bouton("Arrêter", "ghost btn-sm gardien-couper", () => actions.arreter?.(l.id), enCours === l.id));
     }
     li.appendChild(btns);

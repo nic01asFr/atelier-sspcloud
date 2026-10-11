@@ -13,6 +13,18 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- **Attendre sans refuser** (`docs/vision/attendre-sans-refuser.md`) : une question à la
+  personne n'est plus jamais un refus. Quand personne ne répond à temps (10 minutes par
+  défaut, `veille_apres_s`), ou quand personne ne regarde le tour (agent lancé, client
+  distant), le tour **s'endort** : le processus est rendu, la question reste posée, rien
+  n'est répondu au modèle. La réponse, quand elle vient (même après un redémarrage),
+  **relance le travail** avec un message de l'Atelier (« Tu attendais l'accord de la
+  personne pour : … »), et « pour cette fois » devient une règle à usage unique qui se
+  consomme. Les agents lancés prennent l'état **« en attente de vous »** (jamais « fini »)
+  et repartent sous le même lancement ; la liste des conversations dit « en attente de
+  vous ». « Classer » une demande ne réveille pas l'agent. Avant : un refus « Personne n'a
+  répondu à temps » au bout d'une heure, qui faisait conclure à l'agent que l'outil était
+  en panne (registre des défauts D-01, D-03, D-09).
 - `docs/vision/registre-des-defauts.md` : registre des défauts relevés (revue de code,
   essais sur le pod, étude de ~110 conversations réelles), synthèse en sept causes,
   et principe de correction par le natif de Claude Code et le harnais de l'Atelier ;

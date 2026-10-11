@@ -17,10 +17,17 @@ sert à rien tant que tout va bien — et à tout le jour où le service redéma
 la question reste affichable, donc répondable. C'est elle qui rend tenable la
 promesse qu'une décision en attente peut le rester.
 
-Ce que ce module ne fait pas encore : rejouer un tour dont le processus a
-disparu. La trace le permettra ; le rejeu est un autre palier, avec sa propre
-prudence — un tour rejoué refait ce que l'agent avait déjà fait avant la
-question.
+Une question n'est jamais un refus. Quand personne ne répond à temps, le tour
+ne reçoit **rien** : on arrête le processus garé, la conversation passe « en
+veille » et la question reste posée. La réponse, quand elle vient — tout de
+suite, dans une heure, après un redémarrage —, **relance le travail** : un
+nouveau tour part avec `--resume` et un message écrit par l'Atelier
+(`message_de_reprise`). L'agent n'a rien lu dans ses consignes, la personne n'a
+rien eu à rappeler.
+
+Ce qu'on ne fait pas : rejouer le tour. La reprise demande à l'agent de
+relancer *une* action, après sa dernière réponse enregistrée. Rejouer refairait
+ce qu'il avait déjà fait avant la question.
 """
 
 from __future__ import annotations
@@ -71,6 +78,11 @@ class Demande:
     tool_use_id: str = ""
     posee_le: str = field(default_factory=_maintenant)
     vive: bool = True
+    # Le tour a été arrêté en attendant : cette question est « en veille », et
+    # la réponse relance le travail. Vrai aussi pour une trace trouvée au
+    # démarrage (`reveiller_les_traces`) : son processus a disparu de la même
+    # façon.
+    veille: bool = False
     # « autorisation » : peut-on faire ceci ? « question » : que répondez-vous ?
     # Deux cartes différentes à l'écran, un seul canal en dessous.
     genre: str = "autorisation"
@@ -191,10 +203,19 @@ class Regle:
     valeur: str
     posee_le: str = field(default_factory=_maintenant)
     outil: str = ""
+    # Pour la portée `une_fois` : les arguments exacts de l'action accordée.
+    arguments: dict[str, Any] = field(default_factory=dict)
 
     def couvre(self, demande: Demande) -> bool:
         if demande.session_id != self.session_id:
             return False
+        if self.portee == "une_fois":
+            # « Pour cette fois » : cet outil, avec ces arguments, et rien
+            # d'autre. La règle se consomme à l'usage (`consommer`) — c'est ce
+            # qui la distingue de « toujours ».
+            return demande.genre != "question" and (
+                demande.outil == self.outil and demande.arguments == self.arguments
+            )
         # Une question ne s'accorde pas d'avance. L'autoriser sans réponse ne
         # rendrait rien au modèle, et « ne plus me demander » n'a aucun sens
         # quand ce qu'on demande, c'est un avis.
@@ -371,6 +392,69 @@ def reponse_refusee(motif: str = "") -> dict[str, Any]:
     aller-retour, pas un frein ; c'est `interrupt` qui arrête un tour.
     """
     return {"behavior": "deny", "message": motif or "Refusé par l'utilisateur."}
+
+
+# Ce qu'on met sous les yeux de la personne, et de l'agent à la reprise : la
+# commande ou le fichier, pas un dictionnaire.
+_CHAMPS_DE_L_ACTION = ("command", "file_path", "path", "url", "notebook_path", "pattern", "query")
+LONGUEUR_DE_L_ACTION = 220
+MARQUE_DE_L_ATELIER = "[Atelier]"
+
+
+def resume_de_l_action(demande: Demande) -> str:
+    """L'action en une ligne : « Bash — pip install torch »."""
+    outil = demande.affichage or demande.outil or "outil"
+    detail = ""
+    for champ in _CHAMPS_DE_L_ACTION:
+        valeur = demande.arguments.get(champ)
+        if isinstance(valeur, str) and valeur.strip():
+            detail = valeur
+            break
+    if not detail:
+        detail = demande.description
+    detail = " ".join(str(detail).split())
+    if len(detail) > LONGUEUR_DE_L_ACTION:
+        detail = detail[: LONGUEUR_DE_L_ACTION - 1] + "…"
+    return f"{outil} — {detail}" if detail else outil
+
+
+def message_de_reprise(
+    demande: Demande,
+    choix: str,
+    motif: str = "",
+    reponses: list[list[str]] | None = None,
+) -> str:
+    """Ce que l'Atelier dit à l'agent quand la réponse arrive après la veille.
+
+    Écrit par l'Atelier, jamais par l'agent ni par la personne : c'est ce qui
+    permet à la réponse de relancer le travail sans que personne n'ait à
+    rappeler quoi que ce soit. La marque en tête dit d'où vient le message —
+    ni la personne ne l'a tapé, ni une application.
+    """
+    if demande.genre == "question":
+        reponse = reponse_aux_questions(demande, reponses or [])
+        if reponse["message"].startswith("Réponse de l'utilisateur"):
+            return (
+                f"{MARQUE_DE_L_ATELIER} La personne a répondu à ta question pendant que tu "
+                "attendais.\n\n" + reponse["message"].replace("Réponse de l'utilisateur :", "Sa réponse :", 1)
+                + "\n\nPoursuis à partir de là."
+            )
+        return (
+            f"{MARQUE_DE_L_ATELIER} La personne n'a pas répondu à ta question. "
+            "Poursuis sans, en disant ce que tu as supposé."
+        )
+    action = resume_de_l_action(demande)
+    if choix == "allow":
+        return (
+            f"{MARQUE_DE_L_ATELIER} Tu attendais l'accord de la personne pour : {action}. "
+            "Elle l'a accordé. Relance exactement cette action, puis poursuis ce que tu faisais."
+        )
+    raison = f" ({motif.strip()})" if motif and motif.strip() else ""
+    return (
+        f"{MARQUE_DE_L_ATELIER} Tu attendais l'accord de la personne pour : {action}. "
+        f"Elle l'a refusé{raison}. Ne relance pas cette action : dis ce que tu fais à la place, "
+        "ou ce qu'il te manque pour avancer."
+    )
 
 
 class RegistreDesDecisions:
@@ -579,6 +663,96 @@ class RegistreDesDecisions:
             self._reponses.pop(request_id, None)
             self._signaux.pop(request_id, None)
         return demande
+
+    def mettre_en_veille(self, request_id: str) -> Demande | None:
+        """Cesse d'attendre sans rien répondre : la question passe en veille.
+
+        Contrairement à `relacher`, la trace est réécrite pour dire que le
+        tour a été arrêté *pour* cette question — c'est ce qui autorise la
+        réponse à relancer le travail. Aucun refus n'est rendu au modèle.
+        """
+        with self._verrou:
+            demande = self._vives.pop(request_id, None)
+            self._reponses.pop(request_id, None)
+            self._signaux.pop(request_id, None)
+        if demande is None:
+            return None
+        demande.veille = True
+        demande.vive = False
+        self._ecrire(demande)
+        return demande
+
+    def deposer_en_veille(self, demande: Demande) -> None:
+        """Pose une question qui n'aura jamais de processus pour l'attendre.
+
+        Pour un tour que personne ne regarde : plutôt que de refuser, on écrit
+        la trace et on s'en va. La personne sera prévenue, et sa réponse
+        relancera le travail.
+        """
+        demande.veille = True
+        demande.vive = False
+        self._ecrire(demande)
+
+    def reveiller_les_traces(self, age_max_s: float = 7 * 24 * 3600) -> int:
+        """Au démarrage : les questions que le service précédent a laissées.
+
+        Leur processus a disparu, exactement comme pour une mise en veille :
+        y répondre peut relancer le travail. On ne le propose pas pour des
+        traces très anciennes — un tour d'il y a un mois n'a plus de sens, et
+        elles restent rangées parmi les demandes périmées.
+        """
+        maintenant = datetime.now(timezone.utc)
+        reveillees = 0
+        for demande in self.orphelines():
+            if demande.veille or demande.vive:
+                continue
+            try:
+                age = (maintenant - datetime.fromisoformat(demande.posee_le)).total_seconds()
+            except ValueError:
+                continue
+            if age > age_max_s:
+                continue
+            demande.veille = True
+            demande.vive = False
+            self._ecrire(demande)
+            reveillees += 1
+        return reveillees
+
+    def accorder_une_fois(self, demande: Demande) -> Regle:
+        """« Pour cette fois » : cette action, avec ces arguments, une seule fois.
+
+        La règle n'est pas passée au CLI (`pour_le_cli` rend vide) : le CLI
+        posera donc la question, le pont la reconnaîtra, répondra « autorisé »
+        et la consommera. Elle ne devient jamais une permission durable.
+        """
+        regle = Regle(
+            demande.session_id,
+            "une_fois",
+            demande.request_id,
+            outil=demande.outil,
+            arguments=dict(demande.arguments),
+        )
+        self.retenir(regle)
+        return regle
+
+    def consommer(self, regle: Regle) -> None:
+        """Une règle à usage unique vient de servir : elle disparaît."""
+        deja = [
+            r
+            for r in self.regles(regle.session_id)
+            if not (r.portee == regle.portee and r.valeur == regle.valeur)
+        ]
+        with self._verrou:
+            self._regles[regle.session_id] = deja
+        try:
+            chemin = self._chemin_regles(regle.session_id)
+            chemin.parent.mkdir(parents=True, exist_ok=True)
+            chemin.write_text(
+                json.dumps([r.to_dict() for r in deja], ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
 
     def demande_tracee(self, request_id: str) -> Demande | None:
         """Relit une question sur le disque, même si plus personne ne l'attend.
