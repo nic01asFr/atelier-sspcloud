@@ -113,7 +113,7 @@ Un hook `PreToolUse` refuse, sur toutes les surfaces, et dit pourquoi :
 | `killall`, `pkill` sur un motif non ancré, `kill $(pgrep …)`, `pgrep … \| xargs kill` (le motif attrape les processus des autres) | `kill "$(cat run.pid)"`, `pkill -F run.pid`, au pire `pkill -f '^…$'` |
 | écoute sur `0.0.0.0` ou `::` (`--host`, `-b`, `HOST=`, `--ip`, `bind-addr`, `uvicorn`, `gunicorn`, `flask`) | `127.0.0.1`, ou une création serveur |
 | `python -m http.server` sans `-b 127.0.0.1` | `python -m http.server 8000 -b 127.0.0.1` |
-| navigateur vers `file://`, `localhost`, le réseau interne | `atelier_navigateur_ouvrir` |
+| `file://`, `localhost` (navigateur) | `atelier_navigateur_ouvrir` |
 
 Un refus ne se contourne pas (autre syntaxe, script intermédiaire) : si tu as
 une vraie raison, dis-la à la personne.
