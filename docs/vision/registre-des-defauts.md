@@ -552,6 +552,54 @@ l'événement et agit, l'agent n'a rien de plus à retenir. Chaque entrée dit o
   script évalué dans la page peut composer l'adresse ; la frontière physique est E5 de
   `organisation-cible.md` (conteneur d'exécution sans accès à l'état).
 
+### Ce que le travail sur les pods du 12/10 a appris (à rendre au harnais, pas à la mémoire de quelqu'un)
+
+Quatre constats venus d'un même après-midi, deux pods et un agent de projet bloqué. Ils ont un point
+commun : la personne ou un agent les a résolus *à la main*, par de l'expérience. La règle est de les
+rendre **faisables sans cette expérience** : un guide chargé à la demande (§2.2 de
+`cadrage-des-agents.md`, intention « Déployer sur pod »), et une vérification là où l'erreur se
+produit.
+
+- **D-65 (G) — Un pod déclaré pour un projet n'est pas vérifié ; l'agent s'y bloque et dit « noyau
+  mort ».** Constaté sur `proj-mobscidata` : le pod avait deux minutes, `~/work` était vide, le
+  pont d'exécution (`~/work/.pont`, le petit serveur Jupyter que `exec` appelle) n'avait jamais été
+  installé. `project_bind` réussit (il n'attache que la session) ; ensuite chaque `exec` attend
+  60 s puis « The operation timed out », cinq fois de suite, et l'agent conclut que le noyau est
+  mort et propose à la personne de le redémarrer : ce n'est pas le remède, il n'a jamais démarré.
+  **Statut : constaté, à corriger.** Correction : (1) `atelier_projet_deployer_declarer` essaie un
+  `exec` trivial et dit « pod pas prêt : le pont n'est pas installé » plutôt que d'écrire une
+  déclaration qui ne marchera pas ; (2) le filtre Onyxia de l'Atelier renvoie à l'agent une phrase
+  qui dit quoi faire (« le pod n'est pas prêt ; ne réessaie pas ; dis-le à la personne ») dès que
+  `session_status` annonce `kernel_alive: false`, au lieu de laisser courir les délais.
+- **D-66 (m) — Une application lancée dans un pod sur `127.0.0.1` répond 502 derrière l'adresse
+  publique.** Constaté sur `annotation-603783` : `app.run(host='127.0.0.1', port=5000)` (écrit pour
+  un poste) ; le service arrive sur l'adresse du pod, pas sur la boucle locale. En local tout
+  répondait 200, seule l'adresse publique échouait. **Statut : constaté, résolu à la main ; à
+  capitaliser.** Règles du guide « publier un service d'un pod » : écouter sur `0.0.0.0` ; les
+  ports et chemins sont ceux de l'ingress (`kubectl get ingress` : ici `/forme`→5000, `/`→5001) ;
+  **vérifier par l'adresse publique, pas par `localhost`** ; ne jamais conclure d'un 200 en local ;
+  deux interfaces distinctes (l'app et la forme) se vérifient chacune, par leurs données (D-68) ;
+  **ne pas tuer par motif** (`pkill -f motif` dans un `bash -c` qui contient le motif se tue
+  lui-même : deux fois le 12/10) — tuer par numéro de processus lu dans `ps`.
+- **D-67 (m) — Un service lancé à la main dans un pod ne survit pas à son redémarrage.** `$HOME` du
+  pod est recréé à chaque démarrage, seul `~/work` persiste ; le script d'initialisation d'Onyxia
+  est celui de la release, il n'a pas de crochet dans `~/work`. **Statut : constaté.** Faisable
+  sans l'Atelier : un lanceur idempotent (`~/work/.lancer_<service>.sh`, ne démarre que ce qui ne
+  répond pas) et un surveillant (une boucle de 30 s, un seul à la fois) ; après un redémarrage du
+  pod il faut le relancer, ou le faire appeler par le script d'initialisation de la release. À
+  rendre automatique par l'Atelier : les « services de pod » déclarés (`services.json` existe déjà)
+  relancés à la reprise du pod.
+- **D-68 (m) — Une interface de traitement de données doit dire où elle en est.** Vérifié le 12/10
+  sur les deux écrans d'annotation (données exactes : 329 images à forme = 318 faites + 11 à
+  faire, 602 classées) : l'écran qui *finit* le travail (`/forme`) dit « Fait : N », « i / N à
+  faire » et « Terminé : plus aucune image sans forme » ; celui qui le *commence* (`/`) n'a ni
+  total, ni état final : quand tout est classé il montre une liste vide et « Sélectionnez un
+  dossier ». Et une copie de point de contrôle Jupyter (`.ipynb_checkpoints/*.jpeg`) se retrouve
+  dans tout parcours récursif du dossier de données. **Statut : constaté, rapporté à la personne.**
+  Règle pour le guide : un écran de traitement par lots montre le **fait**, le **reste** et un
+  **état final** distinct de l'état vide ; la vérité des chiffres se contrôle sur le disque, pas
+  sur l'écran.
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue
