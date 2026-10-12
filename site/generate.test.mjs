@@ -76,7 +76,7 @@ test("localiser résout les traductions et les gabarits", () => {
 test("ce qui se lit dans le code est lu dans le code", () => {
   assert.match(lireVersions().chart, /^\d+\.\d+\.\d+$/);
   const vues = lireVues();
-  assert.deepEqual(vues, ["Code", "Assistant", "Connecteurs", "Agents", "À valider", "Journal", "Ma mémoire"]);
+  assert.deepEqual(vues, ["Code", "Assistant", "Connecteurs", "Agents", "À valider", "Journal", "Ma mémoire", "Réglages"]);
   assert.ok(lireControles() > 0);
   const jetons = lireJetons();
   assert.match(jetons, /:root\[data-theme="clair"\]/);
@@ -169,7 +169,7 @@ test("la page anglaise ne reprend aucun texte français de la vitrine", () => {
   assert.deepEqual(trahisons, []);
   // Les noms des vues restent en français (ce sont ceux de l'interface) ;
   // aucune phrase française ne doit passer ailleurs.
-  const texte = en.replace(/<[^>]+>/g, " ").replace(/Ma mémoire|À valider|Connecteurs|Journal/g, "");
+  const texte = en.replace(/<[^>]+>/g, " ").replace(/Ma mémoire|Réglages|À valider|Connecteurs|Journal/g, "");
   assert.doesNotMatch(texte, /\b(le|la|les|des|une|avec|pour|dans)\b [a-zà-ÿ]/, "mot français courant sur la page anglaise");
 });
 

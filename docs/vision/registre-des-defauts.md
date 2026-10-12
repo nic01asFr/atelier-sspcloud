@@ -546,7 +546,7 @@ l'événement et agit, l'agent n'a rien de plus à retenir. Chaque entrée dit o
   (wikichat) répond, et `/vscode/proxy/<port>` relaie vers n'importe quel port. `garde_bash`
   refuse `.secrets` dans une commande mais ne voit pas une page `file:///…/.secrets/` : le
   navigateur le contourne. Prévu depuis le cadrage des agents (« jamais `file://` ni
-  `127.0.0.1` ») mais jamais posé. **Statut : vérifié.** Corrigé : hook `garde_navigation`
+  `127.0.0.1` ») mais jamais posé. **Statut : vérifié.** Corrigé et **vérifié sur le pod le 12/10** (une vraie conversation d'agent refusée sur `file:///etc/hostname` puis `127.0.0.1:3777`, avec le message et la marche à suivre) : hook `garde_navigation`
   (`PreToolUse` sur `new_page`, `navigate_page`, `evaluate_script`, `WebFetch`), sans porte de
   sortie, avec des refus qui disent quoi faire. **Limite dite** : garde-fou, pas frontière — un
   script évalué dans la page peut composer l'adresse ; la frontière physique est E5 de

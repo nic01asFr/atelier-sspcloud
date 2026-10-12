@@ -126,6 +126,19 @@ modèles sûrs se listent dans `outils_natifs` (par défaut `gpt-oss-120b`).
 Cette voie ne passe pas par les fournisseurs d'Onyxia : leur
 clé n'arrive à l'Atelier qu'à l'installation, et un seul modèle avec elle.
 
+**Depuis l'interface** : l'onglet **Réglages** montre SSPCloud, Albert et les fournisseurs déclarés
+(adresse, état, modèles), sans jamais afficher une clé (on voit seulement qu'elle est présente). On y
+donne la clé d'Albert, et on **ajoute un fournisseur à la main** : un nom, l'adresse de base
+(`https://…/v1`) et la clé. « Tester et chercher les modèles » interroge le fournisseur
+(`GET <adresse>/models`), garde les modèles de conversation (plongements, voix et reclassement
+écartés) et dit pourquoi quand ça ne marche pas : clé refusée, adresse injoignable, pas de liste de
+modèles à cette adresse. La clé est écrite dans `<id>_api_key` en 0600, jamais dans
+`fournisseurs.json`. Une adresse qui mène au pod ou à son réseau interne est refusée (https
+seulement, ni identifiants dans l'adresse, résolution DNS comprise). Seule **la session de la
+personne** règle ici : la clé du propriétaire, qu'un agent lit, lit la configuration mais n'écrit
+rien. Chaque geste est au journal, sans la clé. Pas de redémarrage : le relais relit les
+fournisseurs à chaque appel.
+
 `gemma4-26b-moe` n'est plus proposé à Claude Code (ni créneau opus, ni repli) :
 mesuré le 25/09/2026, il échoue dès le premier tour (`'None' has no attribute
 'split'`). Un pod installé avant garde son `settings.json` ; l'Atelier l'en

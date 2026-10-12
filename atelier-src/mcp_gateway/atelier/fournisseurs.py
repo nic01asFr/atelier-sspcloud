@@ -60,23 +60,44 @@ def _lire_cle(chemin: Path) -> str:
         return ""
 
 
+def declarations(settings: AtelierSettings) -> dict[str, dict]:
+    """Tous les fournisseurs déclarés, clé ou non : Albert (intégré), puis `fournisseurs.json`.
+
+    Chaque entrée porte `integre` (Albert : son adresse et ses réglages sont ceux du
+    code ; seule sa clé se change) et `declare` (une ligne de `fournisseurs.json`).
+    """
+    declares: dict[str, dict] = {
+        "albert": {
+            "nom": "Albert API",
+            "base_url": ALBERT_URL,
+            "outils_natifs": list(ALBERT_OUTILS_NATIFS),
+            "integre": True,
+        }
+    }
+    try:
+        lu = json.loads((settings.secrets_dir / "fournisseurs.json").read_text(encoding="utf-8"))
+        if isinstance(lu, dict):
+            for identifiant, d in lu.items():
+                if isinstance(d, dict):
+                    declares[identifiant] = {**d, "integre": False} if identifiant != "albert" else {**declares["albert"], **d, "integre": True}
+    except (OSError, json.JSONDecodeError):
+        pass
+    return declares
+
+
+def declaration_valide(identifiant: str, d: dict) -> bool:
+    base = str(d.get("base_url") or "").strip().rstrip("/")
+    return identifiant != SOURCE_SSPCLOUD and bool(_IDENTIFIANT.match(identifiant)) and base.startswith("https://")
+
+
 def charger_fournisseurs(settings: AtelierSettings) -> list[Fournisseur]:
     """Les fournisseurs OpenAI déclarés qui ont une clé. Jamais d'exception."""
     dossier = settings.secrets_dir
-    declares: dict[str, dict] = {
-        "albert": {"nom": "Albert API", "base_url": ALBERT_URL, "outils_natifs": list(ALBERT_OUTILS_NATIFS)}
-    }
-    try:
-        lu = json.loads((dossier / "fournisseurs.json").read_text(encoding="utf-8"))
-        if isinstance(lu, dict):
-            declares.update({k: v for k, v in lu.items() if isinstance(v, dict)})
-    except (OSError, json.JSONDecodeError):
-        pass
     sortie: list[Fournisseur] = []
-    for identifiant, d in declares.items():
-        base = str(d.get("base_url") or "").strip().rstrip("/")
-        if identifiant == SOURCE_SSPCLOUD or not _IDENTIFIANT.match(identifiant) or not base.startswith("https://"):
+    for identifiant, d in declarations(settings).items():
+        if not declaration_valide(identifiant, d):
             continue
+        base = str(d.get("base_url") or "").strip().rstrip("/")
         cle = _lire_cle(dossier / f"{identifiant}_api_key")
         natifs = d.get("outils_natifs")
         natifs = frozenset(str(m) for m in natifs) if isinstance(natifs, list) else frozenset()

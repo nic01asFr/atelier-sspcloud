@@ -6165,3 +6165,134 @@ li[role="button"]:focus-visible {
     max-height: calc(100dvh - 4.5rem);
   }
 }
+
+/* ── Réglages : fournisseurs de modèles ───────────────────────────────────── */
+
+.reglages-section {
+  margin: 1.2rem 0;
+}
+
+.reglages-section-tete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.6rem;
+}
+
+.reglages-section-tete h3 {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.reglages-aide {
+  color: var(--texte-3);
+  font-size: 0.8rem;
+}
+
+.reglages-ok {
+  color: var(--ok-texte);
+  font-size: 0.85rem;
+  margin: 0.3rem 0;
+}
+
+.reglages-etat {
+  min-height: 1.2rem;
+}
+
+.reglages-cartes {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.8rem;
+}
+
+.reglages-carte {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+}
+
+.reglages-carte-tete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+}
+
+.reglages-carte-tete h4 {
+  margin: 0;
+  flex: 1 1 auto;
+}
+
+.reglages-adresse {
+  margin: 0.25rem 0;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.reglages-modeles summary {
+  cursor: pointer;
+  color: var(--texte-2);
+  font-size: 0.85rem;
+}
+
+.reglages-liste-modeles {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.82rem;
+}
+
+.reglages-tag {
+  margin-left: 0.4rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--accent-dim);
+  border-radius: 999px;
+  color: var(--accent);
+  font-size: 0.72rem;
+}
+
+.reglages-gestes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.reglages-formulaire {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0.8rem 0;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--accent-dim);
+  border-radius: 8px;
+  background: var(--surface-legere);
+}
+
+.reglages-formulaire h4 {
+  margin: 0;
+}
+
+.reglages-champ {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.reglages-etiquette {
+  font-size: 0.85rem;
+  color: var(--texte-2);
+}
+
+.reglages-test {
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.reglages-avance summary {
+  cursor: pointer;
+  color: var(--texte-3);
+  font-size: 0.8rem;
+}
