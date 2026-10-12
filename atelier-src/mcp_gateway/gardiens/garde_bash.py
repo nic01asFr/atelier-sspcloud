@@ -163,7 +163,7 @@ def main_hook(entree: str) -> int:
 RACINE_DU_CODE = Path(__file__).resolve().parents[2]
 
 
-def commande_du_hook(python: str | None = None, racine: Path | str | None = None) -> str:
+def commande_du_hook(python: str | None = None, racine: Path | str | None = None, module: str = MODULE) -> str:
     """La commande que Claude Code lance, quel que soit le dossier du projet.
 
     Mesuré sur le pod le 25/09 (audit G2) : `python -m mcp_gateway…` lancé
@@ -176,19 +176,20 @@ def commande_du_hook(python: str | None = None, racine: Path | str | None = None
     chemin = Path(racine) if racine is not None else RACINE_DU_CODE
     return (
         f"PYTHONPATH={shlex.quote(chemin.as_posix())} "
-        f"{shlex.quote(python or sys.executable)} -m {MODULE}"
+        f"{shlex.quote(python or sys.executable)} -m {module}"
     )
 
 
-def poser(chemin: Path, python: str | None = None) -> str:
-    """Ajoute (ou met à jour) le hook dans le fichier de réglages. Rend ce qui a été fait.
+def poser_un_hook(chemin: Path, *, module: str, matcher: str, python: str | None = None) -> str:
+    """Ajoute (ou met à jour) un hook `PreToolUse` du socle. Rend ce qui a été fait.
 
     On écrit dans le fichier **physique** (le lien est suivi), par un fichier
     provisoire renommé : le lien `~/.claude/settings.json` reste un lien. Un
     fichier absent ou illisible n'est pas créé ni écrasé : l'Atelier et
     l'installation en sont les auteurs. Les hooks des autres (wikichat) ne sont
     pas touchés ; notre commande ne contient pas « wikichat », pour que la
-    fusion de `claude_home` ne la range pas dans sa famille.
+    fusion de `claude_home` ne la range pas dans sa famille. Chaque hook se
+    reconnaît à son module : deux hooks du socle cohabitent sans se confondre.
     """
     physique = Path(os.path.realpath(chemin))
     try:
@@ -198,7 +199,7 @@ def poser(chemin: Path, python: str | None = None) -> str:
         return "absent ou illisible : rien posé"
     if not isinstance(donnees, dict):
         return "illisible : rien posé"
-    voulu = commande_du_hook(python)
+    voulu = commande_du_hook(python, module=module)
     hooks = donnees.get("hooks")
     if not isinstance(hooks, dict):
         hooks = {}
@@ -214,7 +215,7 @@ def poser(chemin: Path, python: str | None = None) -> str:
             continue
         garde = []
         for h in groupe["hooks"]:
-            if isinstance(h, dict) and MODULE in str(h.get("command", "")):
+            if isinstance(h, dict) and module in str(h.get("command", "")):
                 if trouve:
                     change = True
                     continue  # un doublon : un seul suffit
@@ -228,7 +229,7 @@ def poser(chemin: Path, python: str | None = None) -> str:
         else:
             change = True
     if not trouve:
-        nouveaux.append({"matcher": "Bash", "hooks": [{"type": "command", "command": voulu, "timeout": 10}]})
+        nouveaux.append({"matcher": matcher, "hooks": [{"type": "command", "command": voulu, "timeout": 10}]})
         change = True
     if not change:
         return "déjà posé"
@@ -238,6 +239,11 @@ def poser(chemin: Path, python: str | None = None) -> str:
     provisoire.write_text(json.dumps(donnees, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     os.replace(provisoire, physique)
     return "posé" if not trouve else "mis à jour"
+
+
+def poser(chemin: Path, python: str | None = None) -> str:
+    """Pose le hook `garde_bash` (voir `poser_un_hook`)."""
+    return poser_un_hook(chemin, module=MODULE, matcher="Bash", python=python)
 
 
 def reglages_par_defaut() -> Path:

@@ -45,6 +45,10 @@ ils ne remplacent pas le modèle ci-dessus.
   refusée ([`docs/fonctionnalites.md`](docs/fonctionnalites.md) §5).
 - **Hook `garde_bash`** : les commandes qui tuent par motif ou écoutent sur
   `0.0.0.0` sont refusées avant de partir.
+- **Hook `garde_navigation`** : le navigateur d'un agent (et `WebFetch`) n'ouvre
+  que des pages web hors du pod : ni `file://` ni `chrome://`, ni `localhost`,
+  réseau interne ou `/vscode/proxy/<port>`, écritures détournées comprises. Un
+  garde-fou, pas une frontière étanche (un script peut composer l'adresse).
 - **Gardiens de sécurité** : ports non déclarés, jetons en clair dans les
   fichiers que lisent Claude Code ou git, droits des secrets, processus sans
   garde-fou.
