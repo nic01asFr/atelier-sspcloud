@@ -182,6 +182,12 @@ Gravité : **C** critique · **G** grave · **M** moyen · **m** mineur.
   (rapporté) 15 refus « jeton invalide » dont une partie vient d'arguments
   modifiés entre l'aperçu et l'appel — renvoyer le diff. *Touche la sécurité :
   décision de la personne avant de coder.*
+  **Revu le 12/10, en direct** (essai dans Chrome sur le pod) : l'Assistant a présenté l'aperçu
+  d'un lancement, la personne a cliqué « Oui » (lancement `ee21a044`), puis, six secondes plus
+  tard, le même modèle a **repassé son propre jeton** dans le même tour et lancé le même agent une
+  seconde fois (`d0b473a4`, acteur `conversation:…`). Le bouton « Oui » de la carte ne fait que
+  confirmer côté serveur ; rien n'oblige un modèle à attendre un accord. Au tour suivant, avec une
+  consigne « attends mon Oui », il a attendu : c'est une affaire de modèle, pas de garde.
 - **D-03 (G) — Le texte du refus de permission laisse croire que la personne a
   refusé.** Preuve : 20eaf5d2 (« Refusé par l'utilisateur » 42 s après l'appel,
   c'était une règle). Conséquence : une « préférence » fausse dans la mémoire

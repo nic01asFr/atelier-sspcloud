@@ -116,7 +116,14 @@ lancé, dans le périmètre du lanceur, deviennent un message de l'Atelier adres
 inactif, il est relancé pour y répondre (`atelier_decider`) ; s'il travaille, il les voit par
 `atelier_suivre` et, passé 20 s, le message est mis en file. Réciproquement, l'agent lancé interroge
 son lanceur sans bloquer par `atelier_demander_au_lanceur`, et la fin de l'agent lancé est dite au
-lanceur inactif. Reste du geste unique `demander` : viser un projet ou un agent quelconque (pas
+lanceur inactif. **Vérifié sur le pod le 12/10** (essai dans Chrome, interface réelle, journal à l'appui) : l'Assistant
+prépare un lancement supervisé, la personne dit « Oui », l'agent lancé demande l'autorisation d'un
+`touch` dans sa copie, **l'Assistant, au repos, est relancé par le message de l'Atelier et répond
+`atelier_decider allow` 13 secondes après le lancement**, l'agent reprend et finit en 26 secondes ; sa
+fin est dite au lanceur. Deux défauts sont sortis de cet essai et sont corrigés (origine perdue quand la
+personne confirme, D-61 ; consigne tronquée, D-63), un troisième attend ta décision (D-02).
+
+Reste du geste unique `demander` : viser un projet ou un agent quelconque (pas
 seulement celui qu'on a lancé), la réponse persistée et liée à sa requête, la provenance dans le tour
 de la cible.
 
