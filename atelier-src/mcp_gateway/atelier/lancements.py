@@ -228,6 +228,9 @@ class Lancement:
     attend: str = ""
     # Ce que le relais a déjà dit à son lanceur (`relais_au_lanceur`) : une fois chacun.
     relayees: list[str] = field(default_factory=list)
+    # La conversation d'agent qui a demandé ce lancement, même quand la personne a
+    # confirmé l'aperçu (alors `origine` vaut « personne ») : c'est elle que le relais prévient.
+    lanceur: str = ""
 
     def en_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -687,7 +690,9 @@ class Lanceur:
             "plafonds": asdict(self.plafonds),
         }
 
-    def lancer(self, demande: dict[str, Any], *, acteur: str, origine: str, exiger_duree: bool) -> Lancement:
+    def lancer(
+        self, demande: dict[str, Any], *, acteur: str, origine: str, exiger_duree: bool, demandeur: str = ""
+    ) -> Lancement:
         message = str(demande.get("message") or "")
         if not message.strip():
             raise Refus("message vide")
@@ -745,6 +750,7 @@ class Lanceur:
                 message=message[:2000],
                 outils=outils,
                 supervise=self._supervise(demande, origine),
+                lanceur=_conversation_du(demandeur) or _conversation_du(origine),
                 branche=branche,
                 reparation=demande.get("reparation") if isinstance(demande.get("reparation"), dict) else None,
             )
@@ -1207,6 +1213,12 @@ NOM_LISTER = "atelier_lancements"
 NOM_FUSIONNER = "atelier_reparation_fusionner"
 
 
+def _conversation_du(acteur: str) -> str:
+    """L'identifiant d'une conversation d'agent (`conversation:<id>`), sinon « »."""
+    acteur = (acteur or "").strip()
+    return acteur[len("conversation:"):].strip() if acteur.startswith("conversation:") else ""
+
+
 def _origine_du_contexte(ctx: Contexte, arguments: dict[str, Any]) -> str:
     if ctx.origine == ORIGINE_AUTOMATE:
         return str(arguments.get("origine") or ctx.acteur).strip()[:160]
@@ -1266,6 +1278,7 @@ def inscrire_les_commandes(catalogue: Any, lanceur: Lanceur) -> None:
             acteur=ctx.acteur,
             origine=_origine_du_contexte(ctx, arguments),
             exiger_duree=automate,
+            demandeur=ctx.demandeur,
         )
         return Effet(
             charge={"lancement": l.en_dict()},

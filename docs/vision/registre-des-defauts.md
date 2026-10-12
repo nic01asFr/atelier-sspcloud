@@ -500,6 +500,20 @@ l'événement et agit, l'agent n'a rien de plus à retenir. Chaque entrée dit o
   à 80 %, alerte à 92 %) et `sante.zombies`. Reste : le budget global qui met en attente un
   démarrage plutôt que d'attendre l'alerte, et la révision des plafonds après une mesure sous charge.
 
+- **D-61 (G) — Un lancement confirmé par la personne perd la conversation qui l'a demandé.**
+  Quand l'Assistant propose un lancement et que la personne clique « Oui », l'appel s'exécute en
+  son nom : `origine` vaut `personne`, et le relais vers le lanceur (`relais_au_lanceur.py`)
+  ne savait plus qui prévenir. Trouvé par l'essai de bout en bout dans Chrome le 12/10, pas par
+  les tests unitaires (ils posaient l'origine à la main). **Statut : vérifié.** Corrigé : la fiche
+  du lancement porte `lanceur` (la conversation qui avait demandé l'aperçu, transmise par le jeton
+  via `Contexte.demandeur`) ; `origine` ne change pas (plafonds, libellés).
+- **D-62 (m) — Le périmètre du lanceur juge « illisible » une commande dont un argument entre
+  guillemets contient une parenthèse.** `python3 -c "print(6*7)"` : le découpage par séparateurs ne
+  tient pas compte des guillemets, `shlex` échoue, la demande reste à la personne. C'est le sens
+  sûr (dans le doute, la personne décide), mais un lanceur ne répond jamais à ce genre de commande.
+  **Statut : vérifié, laissé en l'état** : un analyseur de sécurité ne se rend pas plus permissif
+  sans cas d'usage ni tests adverses.
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue

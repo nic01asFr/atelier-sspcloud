@@ -341,3 +341,23 @@ def test_un_lancement_sur_une_conversation_occupee_n_est_pas_fini(reglages: Atel
             store._reservees.discard(premier["conversation"])
         assert fin["etat"] == "echec", fin
         assert "travaillait déjà" in fin["erreur"]
+
+
+def test_un_lancement_confirme_par_la_personne_retient_la_conversation_qui_l_a_demande(reglages: AtelierSettings) -> None:
+    """L'Assistant propose, la personne dit « Oui » : l'origine est la personne, le lanceur reste l'Assistant."""
+    import asyncio
+
+    from mcp_gateway.atelier.commandes.catalogue import contexte_interface
+    from mcp_gateway.atelier.commandes.modele import ORIGINE_MCP, Contexte
+
+    _projet(reglages, "alpha")
+    with _client(reglages) as client:
+        catalogue = client.app.state.commandes
+        modele = Contexte(acteur="conversation:assistant-1", origine=ORIGINE_MCP)
+        arguments = {"projet": "alpha", "message": "Corrige le test", "supervise": True, "duree_min": 5}
+        apercu = asyncio.run(catalogue.executer("atelier_lancer_agent", arguments, modele))
+        reponse = asyncio.run(catalogue.confirmer(apercu.charge["confirmation"], contexte_interface()))
+        lance = reponse.charge["lancement"]
+        assert lance["origine"] == "personne" and lance["lanceur"] == "assistant-1"
+        assert lance["supervise"] is True
+        _fin(client, lance["id"])

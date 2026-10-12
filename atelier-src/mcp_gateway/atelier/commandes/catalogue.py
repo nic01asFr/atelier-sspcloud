@@ -29,6 +29,7 @@ quand même, en classe `reversible`, et le journal le dit (`objet: "non_declare"
 from __future__ import annotations
 
 import copy
+import dataclasses
 import inspect
 import json
 import logging
@@ -587,6 +588,8 @@ class Catalogue:
             return Reponse(REFUSE, {"erreur": "jeton inconnu ou expiré"})
         arguments = dict(trouve.arguments)
         arguments[ARGUMENT_CONFIRMATION] = jeton
+        if trouve.acteur and trouve.acteur != ctx.acteur and not ctx.demandeur:
+            ctx = dataclasses.replace(ctx, demandeur=trouve.acteur)
         return await self.executer(trouve.nom, arguments, ctx)
 
 

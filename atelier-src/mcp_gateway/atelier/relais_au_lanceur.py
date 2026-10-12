@@ -49,6 +49,11 @@ RELAIS_MAX = 30
 DELAI_LANCEUR_OCCUPE_S = 20.0
 
 
+def lanceur_de(lancement: Any) -> str:
+    """La conversation qui a lancé : celle que la fiche retient, sinon celle de l'origine."""
+    return (getattr(lancement, "lanceur", "") or "").strip() or conversation_du_lanceur(lancement.origine)
+
+
 def conversation_du_lanceur(origine: str) -> str:
     """L'identifiant de la conversation qui a lancé, ou « » (automate, gardien, personne)."""
     origine = (origine or "").strip()
@@ -93,7 +98,7 @@ class RelaisAuLanceur:
         lancement = self._lancement_de(demande.session_id)
         if lancement is None or not lancement.supervise:
             return
-        lanceur_id = conversation_du_lanceur(lancement.origine)
+        lanceur_id = lanceur_de(lancement)
         if not lanceur_id or lanceur_id == lancement.conversation or self.store.get(lanceur_id) is None:
             return
         from mcp_gateway.atelier.perimetre_du_lanceur import hors_perimetre, resume_de_la_demande
@@ -141,7 +146,7 @@ class RelaisAuLanceur:
                 "cette conversation n'a pas été lancée en supervision par un agent : "
                 "pose ta question à la personne."
             )
-        lanceur_id = conversation_du_lanceur(lancement.origine)
+        lanceur_id = lanceur_de(lancement)
         if not lanceur_id or self.store.get(lanceur_id) is None:
             raise Refus(
                 "ton lanceur n'est pas un agent que l'Atelier peut joindre (automate, gardien, personne) : "
@@ -178,7 +183,7 @@ class RelaisAuLanceur:
     def _fin(self, lancement: Any) -> None:
         if not lancement.supervise:
             return
-        lanceur_id = conversation_du_lanceur(lancement.origine)
+        lanceur_id = lanceur_de(lancement)
         if not lanceur_id or self.store.get(lanceur_id) is None:
             return
         # Un lanceur qui travaille voit la fin par atelier_suivre / atelier_lancements :

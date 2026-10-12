@@ -371,3 +371,22 @@ def test_le_refus_du_jeton_dit_pourquoi_et_quoi_faire(tmp_path: Path) -> None:
         catalogue.executer("atelier_essai_engageant", {"valeur": 5, "confirmation": jeton}, _modele())
     )
     assert "expiré" in expire.charge["erreur"] and engageant.appels == []
+
+
+def test_le_oui_de_la_personne_garde_celui_qui_avait_demande(tmp_path: Path) -> None:
+    """Un lancement demandé par l'Assistant et confirmé par la personne sait qui l'a demandé."""
+    catalogue = Catalogue(journal=Journal(tmp_path / "journal"))
+    vus: list[tuple[str, str]] = []
+
+    def executer(ctx: Contexte, args: dict[str, Any]) -> Effet:
+        vus.append((ctx.acteur, ctx.demandeur))
+        return Effet(charge={"ok": True}, objet_id="x", titre="t", resume="r")
+
+    catalogue.ajouter(
+        Commande(nom="atelier_essai_demandeur", description="e", objet="essai", classe=ENGAGEANTE, executer=executer)
+    )
+    jeton = _executer(
+        catalogue.executer("atelier_essai_demandeur", {"valeur": 1}, _modele("conversation:assistant-7"))
+    ).charge["confirmation"]
+    _executer(catalogue.confirmer(jeton, contexte_interface()))
+    assert vus == [("personne", "conversation:assistant-7")]
