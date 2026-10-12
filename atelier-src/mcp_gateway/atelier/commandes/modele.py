@@ -51,6 +51,10 @@ class Contexte:
     # Accord donné pour cet appel : un jeton de confirmation valide, ou le
     # « Oui » de la personne dans l'interface.
     confirme: bool = False
+    # Quand la personne confirme l'aperçu qu'un agent avait demandé, l'acteur de
+    # l'appel est la personne ; `demandeur` garde celui qui avait demandé (la
+    # conversation de l'Assistant, par exemple).
+    demandeur: str = ""
 
     @property
     def est_la_personne(self) -> bool:

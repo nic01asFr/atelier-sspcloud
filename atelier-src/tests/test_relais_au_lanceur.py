@@ -230,3 +230,16 @@ def test_sans_lanceur_agent_la_question_va_a_la_personne(tmp_path: Path) -> None
         _relais(tmp_path, _Store(), _Lanceur(_lancement())).demander("enfant-1", "  ")
     with pytest.raises(Refus):  # une conversation qui n'est pas un lancement
         _relais(tmp_path, _Store(), _Lanceur()).demander("enfant-1", "Quoi ?")
+
+
+def test_un_lancement_confirme_par_la_personne_relaie_quand_meme_a_la_conversation_qui_l_a_demande(tmp_path: Path) -> None:
+    """Le cas courant : l'Assistant propose, la personne clique « Oui » (origine : personne)."""
+    fiche = _lancement(origine="personne", acteur="personne", lanceur="lanceur-1")
+    store = _Store()
+    _relais(tmp_path, store, _Lanceur(fiche)).demande("attendue", _demande(tmp_path))
+    assert [e[0] for e in store.envois] == ["lanceur-1"]
+    # Sans lanceur enregistré et origine « personne » : personne à prévenir.
+    sans = _lancement(origine="personne", acteur="personne")
+    s2 = _Store()
+    _relais(tmp_path, s2, _Lanceur(sans)).demande("attendue", _demande(tmp_path))
+    assert s2.envois == []
