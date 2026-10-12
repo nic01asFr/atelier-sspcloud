@@ -281,7 +281,7 @@ d'action. La vérification a lieu dans `Catalogue.executer`, à chaque appel.
 |---|---|---|
 | `lecture` | exécutée, sans carte ni ligne au journal (sauf refus et erreurs) | exécutée |
 | `reversible` | exécutée ; carte avec « Annuler » | idem |
-| `engageante` | **aperçu et jeton**, rien n'est fait ; le « Oui » de la personne confirme (jeton d'usage unique, 10 minutes, mêmes arguments) | idem, ou confirmation du jeton d'un agent |
+| `engageante` | **aperçu et jeton**, rien n'est fait ; le « Oui » de la personne confirme (jeton d'usage unique, 10 minutes, mêmes arguments) | idem, ou confirmation du jeton d'un agent **seulement si la personne a écrit depuis l'aperçu** (sinon refus qui dit quoi faire, D-02) |
 | `reservee` | **refusée** (non exposée en MCP) | exécutée, depuis l'interface |
 
 La clé du propriétaire en HTTP compte comme un modèle pour les commandes réservées : seule la

@@ -91,6 +91,8 @@ class _Jeton:
     empreinte: str
     acteur: str
     expire: float
+    # Quand l'aperçu a été rendu : la personne doit avoir écrit après (D-02).
+    emis: float = 0.0
 
 
 @dataclass
@@ -335,6 +337,7 @@ class Catalogue:
                 empreinte=empreinte(nom, arguments),
                 acteur=acteur,
                 expire=maintenant_s + JETON_DUREE_S,
+                emis=maintenant_s,
             )
         return jeton
 
@@ -356,6 +359,31 @@ class Catalogue:
             if trouve.acteur != ctx.acteur and not ctx.est_la_personne:
                 return None
             return self._jetons.pop(jeton)
+
+    def _accord_manquant(self, jeton: str, ctx: Contexte) -> str:
+        """Le motif du refus si un agent passe son jeton sans que la personne ait répondu.
+
+        Ne vaut que pour une conversation de l'Atelier : on y voit les messages
+        de la personne. La personne elle-même (le « Oui » de l'interface), un
+        client distant ou une conversation ouverte hors de l'Atelier gardent
+        leur chemin : l'Atelier n'a rien à y observer.
+        """
+        suivi = getattr(self, "messages_humains", None)
+        if suivi is None or ctx.est_la_personne or not ctx.acteur.startswith("conversation:"):
+            return ""
+        conversation = ctx.acteur[len("conversation:"):]
+        store = getattr(self.outils, "store", None)
+        if store is None or store.get(conversation) is None:
+            return ""
+        with self._verrou:
+            trouve = self._jetons.get(jeton)
+        if trouve is None or suivi.dernier(conversation) > trouve.emis:
+            return ""
+        return (
+            "cette commande engage : elle attend l'accord de la personne, pas le tien. Montre-lui "
+            "l'aperçu et attends qu'elle réponde (ou qu'elle clique « Oui » sur la carte) ; ne repasse "
+            "pas le jeton toi-même. Rien n'a été fait."
+        )
 
     def _raison_du_refus_du_jeton(
         self, jeton: str, nom: str, arguments: dict[str, Any], ctx: Contexte
@@ -505,6 +533,9 @@ class Catalogue:
             )
         if classe == ENGAGEANTE and not ctx.confirme:
             if confirmation:
+                sans_accord = self._accord_manquant(str(confirmation), ctx)
+                if sans_accord:
+                    return refuser(sans_accord)
                 if self._consommer_jeton(str(confirmation), nom, arguments, ctx) is None:
                     return refuser(self._raison_du_refus_du_jeton(str(confirmation), nom, arguments, ctx))
             else:

@@ -617,3 +617,40 @@ def test_un_agent_lance_interroge_son_lanceur_par_la_porte_mcp(porte: Porte, mon
         time.sleep(0.05)
     assert envois and envois[0][0] == lanceur_id
     assert "Quel format ?" in envois[0][1] and envois[0][1].startswith("[Atelier]")
+
+
+def test_seule_la_session_de_l_interface_compte_comme_message_de_la_personne(atelier: TestClient) -> None:
+    """La clé du propriétaire est lue par les agents du pod : elle ne prouve pas une personne (D-02)."""
+    conv = conversation(atelier, "demo")
+    suivi = atelier.app.state.messages_humains
+    assert suivi.dernier(conv) == 0.0
+
+    r = atelier.post(f"/v1/sessions/{conv}/messages", json={"message": "écrit avec la clé"}, headers=porteur(atelier))
+    assert r.status_code == 200, r.text
+    assert suivi.dernier(conv) == 0.0, "un message porté par la clé n'est pas un message de la personne"
+
+    from mcp_gateway.atelier.vscode_bridge import COOKIE_NAME
+
+    sid = atelier.app.state.auth.ouvrir_session()
+    personne = {"Cookie": f"{COOKIE_NAME}={sid}", "X-Atelier-Interface": "1", "Origin": ATELIER}
+    r = atelier.post(f"/v1/sessions/{conv}/messages", json={"message": "écrit par la personne"}, headers=personne)
+    assert r.status_code == 200, r.text
+    assert suivi.dernier(conv) > 0.0
+
+
+def test_le_message_ecrit_dans_l_interface_par_le_flux_compte_aussi(atelier: TestClient) -> None:
+    """C'est la route que l'interface emploie vraiment : le message part par `/events?message=`."""
+    from mcp_gateway.atelier.vscode_bridge import COOKIE_NAME
+
+    conv = conversation(atelier, "demo")
+    suivi = atelier.app.state.messages_humains
+    sid = atelier.app.state.auth.ouvrir_session()
+    atelier.cookies.set(COOKIE_NAME, sid)
+    with atelier.stream(
+        "GET", f"/v1/sessions/{conv}/events", params={"message": "bonjour", "envoi": "e1"},
+        headers={"Origin": ATELIER, "X-Atelier-Interface": "1", "Sec-Fetch-Site": "same-origin", "Sec-Fetch-Dest": "empty"},
+    ) as flux:
+        assert flux.status_code == 200
+        for _ in flux.iter_lines():
+            pass
+    assert suivi.dernier(conv) > 0.0

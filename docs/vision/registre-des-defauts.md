@@ -182,6 +182,21 @@ Gravité : **C** critique · **G** grave · **M** moyen · **m** mineur.
   (rapporté) 15 refus « jeton invalide » dont une partie vient d'arguments
   modifiés entre l'aperçu et l'appel — renvoyer le diff. *Touche la sécurité :
   décision de la personne avant de coder.*
+  **Revu le 12/10, en direct** (essai dans Chrome sur le pod) : l'Assistant a présenté l'aperçu
+  d'un lancement, la personne a cliqué « Oui » (lancement `ee21a044`), puis, six secondes plus
+  tard, le même modèle a **repassé son propre jeton** dans le même tour et lancé le même agent une
+  seconde fois (`d0b473a4`, acteur `conversation:…`). Le bouton « Oui » de la carte ne fait que
+  confirmer côté serveur ; rien n'oblige un modèle à attendre un accord. Au tour suivant, avec une
+  consigne « attends mon Oui », il a attendu : c'est une affaire de modèle, pas de garde.
+**Corrigé le 12/10 (option choisie par la personne : jeton refusé sans message humain).** Un agent
+  qui passe son jeton avant que la personne ait écrit reçoit un refus qui dit quoi faire (« montre
+  l'aperçu et attends sa réponse, ou son clic sur « Oui » ») ; rien n'est exécuté. « Après » veut
+  dire : un message arrivé **par la session de l'interface** (`messages_humains.py`) après
+  l'émission du jeton ; la clé du propriétaire, lue par les agents du pod, ne prouve pas une
+  personne ; le message d'avant l'aperçu (la demande de départ) ne vaut pas accord. Le bouton
+  « Oui » reste un accord (il confirme côté serveur). Hors champ, faute de pouvoir y observer la
+  personne : un client distant (claude.ai a sa propre confirmation), la clé du propriétaire et une
+  conversation ouverte hors de l'Atelier.
 - **D-03 (G) — Le texte du refus de permission laisse croire que la personne a
   refusé.** Preuve : 20eaf5d2 (« Refusé par l'utilisateur » 42 s après l'appel,
   c'était une règle). Conséquence : une « préférence » fausse dans la mémoire

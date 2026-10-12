@@ -116,6 +116,8 @@ def construire(app: Any) -> Catalogue:
             pilote_decider=pilote_decider,
         ),
     )
+    # Un agent ne confirme pas seul son aperçu : il lui faut un message de la personne (D-02).
+    catalogue.messages_humains = getattr(app.state, "messages_humains", None)
     app.state.commandes = catalogue
     app.state.a_valider = file
     app.state.journal_unique = journal

@@ -723,6 +723,11 @@ def build_app(
     # demandée à l'écran. Monté avant le reste pour ne rien masquer.
     app.include_router(oauth_router)
     app.state.store = store
+    # Quand la personne a écrit, par conversation : un agent ne se confirme pas seul (D-02).
+    from mcp_gateway.atelier.messages_humains import MessagesHumains
+
+    messages_humains = MessagesHumains(Path(settings.work_dir) / ".atelier-etat" / "messages-humains")
+    app.state.messages_humains = messages_humains
     app.state.projects = projects
     app.state.auth = auth
     app.state.harness = harness
@@ -1568,6 +1573,8 @@ def build_app(
             raise HTTPException(404, "session not found")
         if not body.message.strip() and not body.attachments:
             raise HTTPException(400, "message or attachments required")
+        if _owner == "session":
+            messages_humains.noter(session_id)
         try:
             result = store.send(session_id, body.message, attachment_ids=body.attachments)
         except KeyError:
@@ -1730,12 +1737,14 @@ def build_app(
         qu'un identifiant révocable. Le paramètre n'est plus accepté : le
         laisser pour compatibilité reviendrait à garder la fuite ouverte.
         """
-        auth.check_navigation(
+        qui = auth.check_navigation(
             bearer_from_header(authorization), request.cookies.get(COOKIE_NAME)
         )
 
         if not store.get(session_id):
             raise HTTPException(404, "session not found")
+        if qui == "session" and (message or attachments):
+            messages_humains.noter(session_id)
         # Les pièces jointes se lisent avant d'être exigées : le test les
         # employait une ligne trop tôt, et un message vide accompagné d'un
         # fichier levait un UnboundLocalError rendu en 500.
