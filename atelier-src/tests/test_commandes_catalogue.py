@@ -390,3 +390,71 @@ def test_le_oui_de_la_personne_garde_celui_qui_avait_demande(tmp_path: Path) -> 
     ).charge["confirmation"]
     _executer(catalogue.confirmer(jeton, contexte_interface()))
     assert vus == [("personne", "conversation:assistant-7")]
+
+
+# ── D-02 : un agent ne se confirme pas seul ─────────────────────────────────
+
+
+class _MagasinConnu:
+    """Un magasin de conversations qui connaît `c1` : l'Atelier peut y voir les messages de la personne."""
+
+    def get(self, identifiant: str) -> Any:
+        return object() if identifiant == "c1" else None
+
+
+def _catalogue_gardé(tmp_path: Path):
+    from mcp_gateway.atelier.messages_humains import MessagesHumains
+
+    catalogue, engageant, _ = _catalogue(tmp_path)
+    catalogue.outils = type("Outils", (), {"store": _MagasinConnu()})()
+    catalogue.messages_humains = MessagesHumains(tmp_path / "humains")
+    return catalogue, engageant
+
+
+def test_un_agent_ne_confirme_pas_son_propre_apercu(tmp_path: Path) -> None:
+    catalogue, engageant = _catalogue_gardé(tmp_path)
+    jeton = _executer(catalogue.executer("atelier_essai_engageant", {"valeur": 5}, _modele("conversation:c1"))).charge["confirmation"]
+    seul = _executer(
+        catalogue.executer("atelier_essai_engageant", {"valeur": 5, "confirmation": jeton}, _modele("conversation:c1"))
+    )
+    assert seul.statut == REFUSE and engageant.appels == []
+    assert "accord de la personne" in seul.charge["erreur"] and "Rien n'a été fait" in seul.charge["erreur"]
+
+
+def test_apres_un_message_de_la_personne_le_jeton_vaut(tmp_path: Path) -> None:
+    catalogue, engageant = _catalogue_gardé(tmp_path)
+    jeton = _executer(catalogue.executer("atelier_essai_engageant", {"valeur": 5}, _modele("conversation:c1"))).charge["confirmation"]
+    catalogue.messages_humains.noter("c1", quand=catalogue._jetons[jeton].emis + 1)  # noqa: SLF001
+    fait = _executer(
+        catalogue.executer("atelier_essai_engageant", {"valeur": 5, "confirmation": jeton}, _modele("conversation:c1"))
+    )
+    assert fait.statut == FAIT and engageant.appels == [{"valeur": 5}]
+
+
+def test_le_message_d_avant_l_apercu_ne_vaut_pas_accord(tmp_path: Path) -> None:
+    """La demande de départ de la personne n'est pas un « oui » à l'aperçu qui en découle."""
+    catalogue, engageant = _catalogue_gardé(tmp_path)
+    catalogue.messages_humains.noter("c1")
+    jeton = _executer(catalogue.executer("atelier_essai_engageant", {"valeur": 5}, _modele("conversation:c1"))).charge["confirmation"]
+    seul = _executer(
+        catalogue.executer("atelier_essai_engageant", {"valeur": 5, "confirmation": jeton}, _modele("conversation:c1"))
+    )
+    assert seul.statut == REFUSE and engageant.appels == []
+
+
+def test_le_oui_de_la_personne_vaut_sans_message(tmp_path: Path) -> None:
+    catalogue, engageant = _catalogue_gardé(tmp_path)
+    jeton = _executer(catalogue.executer("atelier_essai_engageant", {"valeur": 5}, _modele("conversation:c1"))).charge["confirmation"]
+    fait = _executer(catalogue.confirmer(jeton, contexte_interface()))
+    assert fait.statut == FAIT and engageant.appels == [{"valeur": 5}]
+
+
+def test_la_garde_ne_vise_que_les_conversations_que_l_atelier_voit(tmp_path: Path) -> None:
+    catalogue, engageant = _catalogue_gardé(tmp_path)
+    # Un client distant, la clé du propriétaire, une conversation inconnue : leur chemin n'a pas changé.
+    for acteur in ("client-distant", "cle-proprietaire", "conversation:ouverte-hors-atelier"):
+        jeton = _executer(catalogue.executer("atelier_essai_engageant", {"valeur": 1}, _modele(acteur))).charge["confirmation"]
+        fait = _executer(
+            catalogue.executer("atelier_essai_engageant", {"valeur": 1, "confirmation": jeton}, _modele(acteur))
+        )
+        assert fait.statut == FAIT, acteur
