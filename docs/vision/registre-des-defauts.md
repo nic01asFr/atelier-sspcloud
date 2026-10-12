@@ -507,12 +507,25 @@ l'événement et agit, l'agent n'a rien de plus à retenir. Chaque entrée dit o
   les tests unitaires (ils posaient l'origine à la main). **Statut : vérifié.** Corrigé : la fiche
   du lancement porte `lanceur` (la conversation qui avait demandé l'aperçu, transmise par le jeton
   via `Contexte.demandeur`) ; `origine` ne change pas (plafonds, libellés).
-- **D-62 (m) — Le périmètre du lanceur juge « illisible » une commande dont un argument entre
-  guillemets contient une parenthèse.** `python3 -c "print(6*7)"` : le découpage par séparateurs ne
-  tient pas compte des guillemets, `shlex` échoue, la demande reste à la personne. C'est le sens
-  sûr (dans le doute, la personne décide), mais un lanceur ne répond jamais à ce genre de commande.
-  **Statut : vérifié, laissé en l'état** : un analyseur de sécurité ne se rend pas plus permissif
-  sans cas d'usage ni tests adverses.
+- **D-62 (m) — Une commande avec du code en ligne (`python3 -c`, `node -e`) n'est jamais
+  au lanceur : l'essai du 12/10 l'a heurté.** Deux protections se superposent dans
+  `perimetre_du_lanceur.py` : le découpage par séparateurs ignore les guillemets (la commande
+  devient « illisible » dès qu'un argument entre guillemets contient une parenthèse), et le code en
+  ligne est refusé **exprès** (« on ne sait pas ce qu'il fait »). Ma première lecture (un défaut de
+  découpage) était incomplète : rendre le découpage sensible aux guillemets ne ferait pas passer
+  `python3 -c "print(6*7)"`, il changerait seulement le motif affiché. **Statut : voulu, aucune
+  correction.** Pour qu'un lanceur réponde, la commande doit être simple (`echo`, `ls`, `grep`,
+  un script du projet). Rien ne le disait à l'agent lancé : il demandait ce que son lanceur ne
+  pouvait pas lui accorder. **Corrigé** : un agent supervisé par un agent reçoit, après sa tâche,
+  une note qui dit jusqu'où son lanceur répond et comment lui parler (`NOTE_DE_SUPERVISION`,
+  `lancements.py`). Un découpage sensible aux guillemets reste possible, mais il ne vaut qu'avec des
+  tests adverses : à ne faire que s'il manque en pratique.
+- **D-63 (m) — Une consigne de lancement de plus de 2000 caractères était tronquée à l'envoi.**
+  `lancer` accepte 60 000 caractères mais gardait `message[:2000]` sur la fiche, et le tour
+  jouait ce champ : un brief long perdait sa fin (critères de fin, périmètre) sans erreur ni
+  avertissement. Trouvé en préparant la note de supervision. **Statut : vérifié (test qui
+  échouait avant).** Corrigé : la fiche garde un extrait (elle se liste), la consigne entière est
+  écrite à côté (`<id>.consigne.txt`) et c'est elle que l'agent reçoit.
 
 ## 5. Déjà corrigés (pour mémoire)
 

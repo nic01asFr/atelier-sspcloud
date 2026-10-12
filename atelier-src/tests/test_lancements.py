@@ -361,3 +361,42 @@ def test_un_lancement_confirme_par_la_personne_retient_la_conversation_qui_l_a_d
         assert lance["origine"] == "personne" and lance["lanceur"] == "assistant-1"
         assert lance["supervise"] is True
         _fin(client, lance["id"])
+
+
+def test_une_consigne_longue_arrive_entiere_a_l_agent(reglages: AtelierSettings) -> None:
+    """Le plafond annoncé est 60 000 caractères : la fiche en garde un extrait, le tour reçoit tout."""
+    _projet(reglages, "alpha")
+    longue = "Étape. " * 1200 + "FIN-DE-LA-CONSIGNE"
+    assert len(longue) > 2000
+    with _client(reglages) as client:
+        r = _lance(client, projet="alpha", message=longue)
+        assert r.status_code == 202, r.text
+        appel = client.app.state.harness.appels[-1]
+        assert appel["message"].startswith("Étape.") and appel["message"].endswith("FIN-DE-LA-CONSIGNE")
+        fiche = r.json()["lancement"]
+        assert len(fiche["message"]) <= 2000, "la fiche reste lisible : un extrait"
+
+
+def test_un_agent_supervise_par_un_agent_sait_ce_que_son_lanceur_peut_lui_repondre(reglages: AtelierSettings) -> None:
+    import asyncio
+
+    from mcp_gateway.atelier.commandes.catalogue import contexte_interface
+    from mcp_gateway.atelier.commandes.modele import ORIGINE_MCP, Contexte
+
+    _projet(reglages, "alpha")
+    with _client(reglages) as client:
+        catalogue = client.app.state.commandes
+        modele = Contexte(acteur="conversation:assistant-1", origine=ORIGINE_MCP)
+        arguments = {"projet": "alpha", "message": "Corrige le test", "supervise": True, "duree_min": 5}
+        apercu = asyncio.run(catalogue.executer("atelier_lancer_agent", arguments, modele))
+        reponse = asyncio.run(catalogue.confirmer(apercu.charge["confirmation"], contexte_interface()))
+        _fin(client, reponse.charge["lancement"]["id"])
+        recu = client.app.state.harness.appels[-1]["message"]
+        assert recu.startswith("Corrige le test")  # la tâche d'abord, intacte
+        assert "[Atelier]" in recu and "supervision" in recu
+        assert "atelier_demander_au_lanceur" in recu and "python -c" in recu
+
+    # Sans lanceur agent (une personne, wikichat) : le texte de l'agent ne change pas.
+    with _client(reglages) as client:
+        r = _lance(client, projet="alpha", message="Relève ton courrier.", supervise=True)
+        assert client.app.state.harness.appels[-1]["message"] == "Relève ton courrier."
