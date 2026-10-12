@@ -768,6 +768,20 @@ la fusion des réglages. `ATELIER_GARDIENS_HOOKS=0` empêche la pose ;
 `--verifier <commande>` dit si une commande serait refusée. Si le module ne s'importe pas, le hook
 échoue sans bloquer.
 
+**Le hook de navigation** : `garde_navigation`, posé de la même façon (matcher
+`mcp__chrome-devtools-mcp__(navigate_page|new_page|evaluate_script)|WebFetch`), refuse que le
+navigateur d'un agent ou `WebFetch` ouvre autre chose qu'une page web hors du pod. Refusés : un
+schéma qui n'est pas `http`/`https` (`file:`, `chrome:`, `devtools:`, `javascript:`…), une adresse du
+pod ou de son réseau (`localhost`, `127.0.0.1`, `0.0.0.0`, `[::1]`, réseaux privés et link-local, noms
+internes `*.svc`, `*.cluster.local`, un nom sans point), y compris sous leurs écritures détournées
+(entier, hexadécimal, octal, `%`-encodée, `\`, points pleine chasse), et `/vscode/proxy/<port>`
+(`/proxy/<port>`, `/absproxy/<port>`) sur n'importe quel hôte. Chaque refus dit quoi faire :
+`atelier_artefact_creer`, puis `atelier_navigateur_ouvrir`. `evaluate_script` est relu au mieux (une
+adresse refusée en toutes lettres dans le script l'est aussi). **Aucune porte de sortie** : ni
+variable ni réglage de projet ne le désactive. Mesuré sur le pod le 12/10 avant le hook : un Chrome
+d'agent lisait `file:///etc/hostname` et atteignait wikichat sur `127.0.0.1:3777`. La cohérence le
+vérifie à blanc comme `garde_bash` (`file://` doit sortir en code 2).
+
 **Ce que ça ne fait pas.** Le contrôle de cohérence ne vérifie qu'un projet par profil (la
 vérification complète se lance à la main, §14) et ne répare rien ; pas de vérification des
 créations par le navigateur ; pas de notification hors de

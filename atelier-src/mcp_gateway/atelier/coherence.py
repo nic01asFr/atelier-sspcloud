@@ -640,10 +640,18 @@ def version_de_l_extension() -> str:
     return ".".join(str(n) for n in _version(binaire.parents[2]))
 
 
-def verifier_le_hook_de_garde(dossier: Path) -> dict[str, Any]:
-    """Lance à blanc, depuis le dossier du projet, le hook `garde_bash` posé dans les réglages.
+# Ce que chaque hook du socle doit refuser à blanc : (module, appel d'outil).
+_HOOKS_DU_SOCLE = {
+    "garde_bash": {"tool_name": "Bash", "tool_input": {"command": "killall node"}},
+    "garde_navigation": {"tool_name": "WebFetch", "tool_input": {"url": "file:///etc/hostname"}},
+}
 
-    Il doit refuser `killall node` par le code 2 (audit G2). Rend `{pose, code}`.
+
+def verifier_le_hook_de_garde(dossier: Path, module: str = "garde_bash") -> dict[str, Any]:
+    """Lance à blanc, depuis le dossier du projet, un hook du socle posé dans les réglages.
+
+    `garde_bash` doit refuser `killall node` par le code 2 (audit G2) ;
+    `garde_navigation`, une page `file://`. Rend `{pose, code}`.
     """
     donnees = _json(Path.home() / ".claude" / "settings.json")
     commandes = [
@@ -651,13 +659,11 @@ def verifier_le_hook_de_garde(dossier: Path) -> dict[str, Any]:
         for g in ((donnees.get("hooks") or {}).get("PreToolUse") or [])
         if isinstance(g, dict)
         for h in (g.get("hooks") or [])
-        if isinstance(h, dict) and "garde_bash" in str(h.get("command", ""))
+        if isinstance(h, dict) and module in str(h.get("command", ""))
     ]
     if not commandes:
         return {"pose": False, "code": None}
-    appel = json.dumps(
-        {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "killall node"}}
-    )
+    appel = json.dumps({"hook_event_name": "PreToolUse", **_HOOKS_DU_SOCLE[module]})
     env = {k: v for k, v in _os.environ.items() if k != "PYTHONPATH"}
     try:
         fini = _subprocess.run(
@@ -843,6 +849,11 @@ def verifier_reel(
                 ecarts.append("hook garde_bash absent des réglages")
             elif garde["code"] != 2:
                 ecarts.append(f"hook garde_bash lancé depuis le projet : code {garde['code']}, attendu 2")
+            navigation = verifier_le_hook_de_garde(dossier.chemin, "garde_navigation")
+            if not navigation["pose"]:
+                ecarts.append("hook garde_navigation absent des réglages")
+            elif navigation["code"] != 2:
+                ecarts.append(f"hook garde_navigation lancé depuis le projet : code {navigation['code']}, attendu 2")
             rapport["dossiers"].append(
                 {
                     "slug": dossier.slug,

@@ -93,12 +93,17 @@ def main(argv: list[str] | None = None) -> int:
     dossier = ctx.work / ".atelier-etat" / "gardiens"
     journal = Journal(dossier / "journal", filtre)
     if os.environ.get("ATELIER_GARDIENS_HOOKS", "1") != "0":
+        from mcp_gateway.gardiens import garde_navigation
         from mcp_gateway.gardiens.garde_bash import poser, reglages_par_defaut
 
         try:
             log.info("hook du socle : %s", poser(reglages_par_defaut()))
         except OSError as exc:
             log.warning("hook du socle non posé : %s", exc)
+        try:
+            log.info("hook de navigation : %s", garde_navigation.poser(reglages_par_defaut()))
+        except OSError as exc:
+            log.warning("hook de navigation non posé : %s", exc)
     executeur = Executeur(declaration, ctx, journal, dossier, publier=journal_unique(ctx))
     try:
         # Le jeton du pilotage : seul l'Atelier le relit, pour lancer, couper

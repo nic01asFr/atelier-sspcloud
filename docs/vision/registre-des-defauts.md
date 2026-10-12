@@ -541,6 +541,16 @@ l'événement et agit, l'agent n'a rien de plus à retenir. Chaque entrée dit o
   avertissement. Trouvé en préparant la note de supervision. **Statut : vérifié (test qui
   échouait avant).** Corrigé : la fiche garde un extrait (elle se liste), la consigne entière est
   écrite à côté (`<id>.consigne.txt`) et c'est elle que l'agent reçoit.
+- **D-64 (G) — Le navigateur d'un agent lit les fichiers du pod et atteint ses services.**
+  Mesuré le 12/10 avec le Chrome du pod : `file:///etc/hostname` s'ouvre, `127.0.0.1:3777`
+  (wikichat) répond, et `/vscode/proxy/<port>` relaie vers n'importe quel port. `garde_bash`
+  refuse `.secrets` dans une commande mais ne voit pas une page `file:///…/.secrets/` : le
+  navigateur le contourne. Prévu depuis le cadrage des agents (« jamais `file://` ni
+  `127.0.0.1` ») mais jamais posé. **Statut : vérifié.** Corrigé : hook `garde_navigation`
+  (`PreToolUse` sur `new_page`, `navigate_page`, `evaluate_script`, `WebFetch`), sans porte de
+  sortie, avec des refus qui disent quoi faire. **Limite dite** : garde-fou, pas frontière — un
+  script évalué dans la page peut composer l'adresse ; la frontière physique est E5 de
+  `organisation-cible.md` (conteneur d'exécution sans accès à l'état).
 
 ## 5. Déjà corrigés (pour mémoire)
 
