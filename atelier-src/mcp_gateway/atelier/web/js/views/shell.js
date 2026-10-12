@@ -12,6 +12,7 @@ const VIEW_IDS = {
   "a-valider": "view-a-valider",
   journal: "view-journal",
   memoire: "view-memoire",
+  reglages: "view-reglages",
 };
 
 /**
@@ -94,6 +95,9 @@ export function createShellView(ctx) {
       showBanner(state.error);
     } else if (state.view === "memoire") {
       ctx.views.memoire?.render();
+      showBanner(state.error);
+    } else if (state.view === "reglages") {
+      ctx.views.reglages?.render();
       showBanner(state.error);
     } else {
       showBanner(state.error);

@@ -15,6 +15,7 @@ import { createAgentView } from "./views/agent.js?v=vague2";
 import { rendreAValider } from "./views/a-valider.js";
 import { rendreJournal } from "./views/journal.js";
 import { createMemoireActions, rendreMemoire } from "./views/memoire.js";
+import { createReglagesActions, rendreReglages } from "./views/reglages.js";
 import { createComposerMcpView } from "./views/composer-mcp.js";
 import { createPanneauView } from "./views/panneau.js";
 import { createFilsView } from "./views/fils.js";
@@ -219,6 +220,8 @@ function createApp() {
   const journal = { render: () => rendreJournal($("journal-corps"), state, validation) };
   const memoireActions = createMemoireActions({ state, api, render, naviguer: (v) => navigateView(v) });
   const memoire = { render: () => rendreMemoire($("memoire-corps"), state, memoireActions) };
+  const reglagesActions = createReglagesActions({ state, api, render });
+  const reglages = { render: () => rendreReglages($("reglages-corps"), state, reglagesActions) };
   const assistantActions = createAssistantActions({ state, render, writeQuery, api });
   // Une conversation neuve de l'Assistant abandonne, elle aussi, une lecture
   // en route (voir `abandonnerLOuverture`).
@@ -240,7 +243,7 @@ function createApp() {
       render();
     },
   });
-  ctx.views = { codeTree, codeChat, connectors, composerMcp, agent, panneau, fils, aValider, journal, assistant, memoire };
+  ctx.views = { codeTree, codeChat, connectors, composerMcp, agent, panneau, fils, aValider, journal, assistant, memoire, reglages };
 
   // « Détails techniques » : raisonnement et actions brutes, dans le fil.
   const reglagesFil = createReglagesFil({
@@ -323,6 +326,8 @@ function createApp() {
       validation.chargerJournal();
     } else if (view === "memoire") {
       memoireActions.charger();
+    } else if (view === "reglages") {
+      reglagesActions.charger();
     }
   }
 

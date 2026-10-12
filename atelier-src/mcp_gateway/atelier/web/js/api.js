@@ -1544,3 +1544,44 @@ export async function reglerAccueilAssistant(actif) {
   if (!res.ok) await parseError(res);
   return res.json();
 }
+
+
+// ── Les fournisseurs de modèles (onglet Réglages) ────────────────────────────
+
+/** Ce qui est configuré, sans jamais une clé. `actualiser` interroge chaque fournisseur. */
+export async function lireFournisseurs(actualiser = false) {
+  const res = await fetch(`/v1/fournisseurs${actualiser ? "?actualiser=true" : ""}`, { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Interroge un fournisseur sans rien enregistrer : ses modèles, ou pourquoi pas. */
+export async function testerFournisseur(corps) {
+  const res = await fetch("/v1/fournisseurs/tester", {
+    method: "POST",
+    headers: jsonHeaders(),
+    body: JSON.stringify(corps),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Ajoute ou règle un fournisseur. La clé part une fois, l'Atelier ne la rend jamais. */
+export async function reglerFournisseur(identifiant, corps) {
+  const res = await fetch(`/v1/fournisseurs/${encodeURIComponent(identifiant)}`, {
+    method: "PUT",
+    headers: jsonHeaders(),
+    body: JSON.stringify(corps),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+export async function retirerFournisseur(identifiant) {
+  const res = await fetch(`/v1/fournisseurs/${encodeURIComponent(identifiant)}`, {
+    method: "DELETE",
+    headers: jsonHeaders(),
+  });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
