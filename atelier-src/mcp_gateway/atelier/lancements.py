@@ -422,6 +422,39 @@ class Lanceur:
                     raise
                 time.sleep(0.02)
 
+    # La fiche ne garde qu'un extrait de la consigne (elle se liste, elle s'affiche) ;
+    # ce que l'agent reçoit est la consigne entière, écrite à côté.
+    EXTRAIT_MAX = 2000
+
+    def _chemin_consigne(self, identifiant: str) -> Path:
+        return self._chemin(identifiant).with_suffix(".consigne.txt")
+
+    def _ecrire_la_consigne(self, identifiant: str, message: str) -> None:
+        if len(message) <= self.EXTRAIT_MAX:
+            return
+        try:
+            self._chemin_consigne(identifiant).write_text(message, encoding="utf-8")
+        except OSError:
+            log.exception("consigne complète de %s non écrite : l'agent recevra l'extrait", identifiant)
+
+    def _consigne(self, lancement: "Lancement") -> str:
+        """Ce que l'agent reçoit : la consigne entière, sinon l'extrait de la fiche."""
+        try:
+            entiere = self._chemin_consigne(lancement.id).read_text(encoding="utf-8")
+        except (OSError, Refus):
+            return lancement.message
+        return entiere or lancement.message
+
+    def _avec_la_note_de_supervision(self, texte: str, lancement: "Lancement") -> str:
+        """Dit à un agent supervisé par un agent ce que son lanceur peut lui répondre.
+
+        Ajoutée APRÈS la tâche : la tâche reste ce que la personne ou le lanceur a écrit.
+        Rien n'est ajouté quand personne ne répondra à sa place (une personne, wikichat).
+        """
+        if not lancement.supervise or not lancement.lanceur:
+            return texte
+        return texte.rstrip() + "\n\n" + NOTE_DE_SUPERVISION
+
     def lire(self, identifiant: str) -> Lancement | None:
         try:
             brut = json.loads(self._chemin(identifiant).read_text(encoding="utf-8"))
@@ -747,7 +780,7 @@ class Lanceur:
                 avertissements=avertissements,
                 plafonds={"duree_s": duree, **({"jetons": jetons} if jetons is not None else {})},
                 cree_le=_maintenant(),
-                message=message[:2000],
+                message=message[: self.EXTRAIT_MAX],
                 outils=outils,
                 supervise=self._supervise(demande, origine),
                 lanceur=_conversation_du(demandeur) or _conversation_du(origine),
@@ -769,6 +802,7 @@ class Lanceur:
             self.store.save(rec)
             lancement.conversation = rec.session_id
             self._ecrire(lancement)
+            self._ecrire_la_consigne(lancement.id, message)
             fil = threading.Thread(target=self._jouer, args=(lancement.id,), name=f"lancement-{lancement.id}", daemon=True)
             self._fils[lancement.id] = fil
         self._journaliser(lancement, "lance")
@@ -853,7 +887,7 @@ class Lanceur:
         try:
             resultat = self.store.send(
                 lancement.conversation,
-                message if message is not None else lancement.message,
+                message if message is not None else self._avec_la_note_de_supervision(self._consigne(lancement), lancement),
                 peut_attendre=lancement.supervise or message is not None,
                 mode=lancement.mode,
                 delai_s=duree,
@@ -1207,6 +1241,17 @@ class Lanceur:
 
 # ── Les commandes ────────────────────────────────────────────────────────────
 
+# Ce que l'agent lancé en supervision par un agent doit savoir sans l'essayer :
+# jusqu'où son lanceur répond (`perimetre_du_lanceur`), et comment lui parler.
+NOTE_DE_SUPERVISION = (
+    "[Atelier] Tu es lancé en supervision : c'est l'agent qui t'a lancé qui répond à tes demandes "
+    "d'autorisation, et il est prévenu de chacune. Il répond à ce qui reste dans ton projet : lire et "
+    "écrire dans ta copie, des commandes simples (ls, cat, grep, git de lecture ou de commit, un script "
+    "du projet). Il ne répond pas au code écrit dans la commande (python -c, node -e), au réseau, aux "
+    "installations, aux clés ni à git push : cela attend la personne, donc évite-le. Une demande en "
+    "attente ne te bloque pas : tu t'endors et tu reprends à la réponse. Pour poser une question à ton "
+    "lanceur : atelier_demander_au_lanceur(question) ; sa réponse te relance."
+)
 NOM_LANCER = "atelier_lancer_agent"
 NOM_DEMANDER_AU_LANCEUR = "atelier_demander_au_lanceur"
 NOM_LISTER = "atelier_lancements"
