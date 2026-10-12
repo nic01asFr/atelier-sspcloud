@@ -94,6 +94,19 @@ log = logging.getLogger("atelier.api")
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
 
+class FournisseurBody(BaseModel):
+    nom: str = ""
+    base_url: str = ""
+    cle: str = ""
+    outils_natifs: list[str] | None = None
+
+
+class FournisseurTestBody(BaseModel):
+    base_url: str
+    cle: str = ""
+    identifiant: str = ""
+
+
 class CreateSessionBody(BaseModel):
     slug: str | None = None
     model: str | None = None
@@ -810,6 +823,85 @@ def build_app(
     def list_models(_owner: str = Depends(require_owner)) -> dict[str, Any]:
         # Seule route qui interroge l'API (cache de 5 min) ; /meta n'attend jamais le réseau.
         return _models_payload(en_direct=True)
+
+    # ── Les fournisseurs de modèles : voir, ajouter, tester, retirer ─────────────
+    #
+    # Lire est ouvert à la clé comme à l'interface (rien de secret n'est rendu).
+    # Écrire est réservé à la session de la personne : la clé du propriétaire, un
+    # agent la lit, et il ne doit pas pouvoir rediriger le trafic des modèles.
+
+    def require_personne(_qui: str = Depends(require_owner)) -> str:
+        if _qui != "session":
+            raise HTTPException(
+                403, "Réservé à la personne : à faire depuis l'interface de l'Atelier (onglet Modèles), pas avec la clé."
+            )
+        return _qui
+
+    def _noter_fournisseur(action: str, identifiant: str, resultat: str, **details: Any) -> None:
+        """Une ligne au journal unique : jamais la clé, seulement qu'elle a été donnée."""
+        journal = getattr(app.state, "journal_unique", None)
+        if journal is None:
+            return
+        from mcp_gateway.atelier.commandes.journal import Evenement, nouvel_identifiant
+
+        try:
+            journal.ecrire(
+                Evenement(
+                    id=nouvel_identifiant(),
+                    source="commande",
+                    acteur="personne",
+                    objet={"type": "fournisseur", "id": identifiant},
+                    action={"commande": action, "origine": "interface", "arguments": details},
+                    resultat=resultat,
+                )
+            )
+        except OSError:
+            pass
+
+    @router.get("/fournisseurs")
+    def lire_les_fournisseurs(actualiser: bool = False, _owner: str = Depends(require_owner)) -> dict[str, Any]:
+        """Ce qui est configuré, SSPCloud et Albert compris ; `actualiser` interroge chaque fournisseur."""
+        from mcp_gateway.atelier import fournisseurs_gestion
+
+        return fournisseurs_gestion.configuration(settings, en_direct=actualiser)
+
+    @router.post("/fournisseurs/tester")
+    def tester_un_fournisseur(body: FournisseurTestBody, _personne: str = Depends(require_personne)) -> dict[str, Any]:
+        from mcp_gateway.atelier import fournisseurs_gestion as g
+
+        try:
+            return g.tester(settings, base_url=body.base_url, cle=body.cle, identifiant=body.identifiant)
+        except g.ErreurFournisseur as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @router.put("/fournisseurs/{identifiant}")
+    def regler_un_fournisseur(
+        identifiant: str, body: FournisseurBody, _personne: str = Depends(require_personne)
+    ) -> dict[str, Any]:
+        from mcp_gateway.atelier import fournisseurs_gestion as g
+
+        resume = {"nom": body.nom, "base_url": body.base_url, "authentifie": bool(body.cle.strip())}
+        try:
+            ligne = g.enregistrer(
+                settings, identifiant, nom=body.nom, base_url=body.base_url, cle=body.cle, outils_natifs=body.outils_natifs
+            )
+        except g.ErreurFournisseur as exc:
+            _noter_fournisseur("fournisseur_enregistrer", identifiant, "refus", motif=str(exc)[:200], **resume)
+            raise HTTPException(400, str(exc)) from None
+        _noter_fournisseur("fournisseur_enregistrer", identifiant, "fait", **resume)
+        return ligne
+
+    @router.delete("/fournisseurs/{identifiant}")
+    def retirer_un_fournisseur(identifiant: str, _personne: str = Depends(require_personne)) -> dict[str, Any]:
+        from mcp_gateway.atelier import fournisseurs_gestion as g
+
+        try:
+            rendu = g.retirer(settings, identifiant)
+        except g.ErreurFournisseur as exc:
+            _noter_fournisseur("fournisseur_retirer", identifiant, "refus", motif=str(exc)[:200])
+            raise HTTPException(400, str(exc)) from None
+        _noter_fournisseur("fournisseur_retirer", identifiant, "fait")
+        return rendu
 
     def _lire_secret_interne() -> str:
         """Le secret partagé, ou une chaîne vide s'il n'a pas été posé."""

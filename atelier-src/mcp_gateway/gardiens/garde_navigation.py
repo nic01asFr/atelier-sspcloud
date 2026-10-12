@@ -134,6 +134,16 @@ def _hote_interne(hote: str) -> bool:
     return "." not in hote
 
 
+def est_hote_interne(hote: str) -> bool:
+    """Vrai si cet hôte désigne le pod ou son réseau (écritures détournées comprises)."""
+    return _hote_interne(hote)
+
+
+def adresse_interne(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Vrai si cette adresse IP est celle du pod ou de son réseau interne."""
+    return _adresse_interne(ip)
+
+
 def raison_de_refus_url(url: str) -> str | None:
     """La raison du refus, ou None si l'adresse peut être ouverte."""
     brut = unicodedata.normalize("NFKC", str(url or "")).strip()
