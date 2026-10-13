@@ -483,14 +483,18 @@ class OutilsAtelier:
                     "Donne à ton navigateur (outils chrome) l'accès aux créations de ton projet, "
                     "pour les vérifier. Rend une adresse d'entrée à usage unique, valable deux "
                     "minutes : ouvre-la aussitôt avec ton outil de navigation. Elle ne vaut que "
-                    "pour le projet de ta conversation, jamais pour l'Atelier lui-même."
+                    "pour un projet, jamais pour l'Atelier lui-même."
                 ),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "projet": {
                             "type": "string",
-                            "description": "Slug du projet ; défaut et seule valeur admise : celui de ta conversation.",
+                            "description": (
+                                "Slug du projet. Agent de projet : défaut et seule valeur admise, celui de ta "
+                                "conversation. Assistant : obligatoire, le projet que tu veux regarder "
+                                "(tu n'as pas de projet à toi)."
+                            ),
                         },
                         "chemin": {
                             "type": "string",
@@ -1180,13 +1184,20 @@ class OutilsAtelier:
             raise _Refus("pas d'hôte des applications sur cette installation")
         rec = self._conversation_appelante()
         if self._est_assistant(rec):
-            raise _Refus(
-                "Tu es l'Assistant : ton navigateur n'ouvre que les créations du projet de ta conversation, "
-                "et tu n'en as pas. Pour que la personne voie une création : "
-                "atelier_montrer(projet, nom). Pour la vérifier : atelier_artefact_verifier(projet, nom), "
-                "ou délègue à un agent code du projet (atelier_lancer_agent)."
-            )
-        projet = self._projet_de(rec, args)
+            # Il n'a pas de projet à lui : il ouvre celui qu'il nomme (comme atelier_montrer), pour le
+            # regarder — le code ne donne que la lecture d'un projet, deux minutes, une fois.
+            projet = (args.get("projet") or "").strip()
+            if not projet:
+                raise _Refus(
+                    "précise `projet` : tu es l'Assistant, tu n'as pas de projet à toi. "
+                    "atelier_projets liste les projets, atelier_artefacts(projet) leurs créations."
+                )
+            try:
+                service.racine_projet(projet)
+            except LookupError as exc:
+                raise _Refus(str(exc)) from None
+        else:
+            projet = self._projet_de(rec, args)
         try:
             chemin = chemin_valide(str(args.get("chemin") or ""))
         except VueInvalide as exc:

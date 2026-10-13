@@ -151,7 +151,7 @@ def _claude_file_reference(meta: AttachmentMeta) -> str:
     """Mention `@fichier` de Claude Code, avec le chemin ABSOLU.
 
     Le 13/10, `@.atelier/uploads/…` (relatif) a été lu par un modèle non-Claude depuis son HOME
-    (`/home/onyxia/.atelier/uploads/…`) : « File does not exist », deux lectures perdues avant qu'il devine le
+    (`$HOME/.atelier/uploads/…`) : « File does not exist », deux lectures perdues avant qu'il devine le
     bon chemin. Un chemin absolu se lit pareil depuis n'importe quel dossier, pour n'importe quel modèle.
     """
     return "@" + meta.abs_path.replace("\\", "/").lstrip("@")
