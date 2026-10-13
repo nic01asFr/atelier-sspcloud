@@ -119,8 +119,13 @@ class Session:
         raise AssertionError("fiche jamais conforme : " + (self.fiche.read_text(encoding="utf-8") if self.fiche.exists() else "absente"))
 
     def poser_la_main(self, **contenu: Any) -> None:
+        # Comme l'Atelier (`ecran._ecrire_json`) : écrit à côté, puis renomme. Un `write_text` direct tronque
+        # le fichier avant de le remplir ; le filtre, qui le relit en continu, y lisait parfois du vide et
+        # ratait la note (échec de la CI du 13/10, sans rapport avec le changement testé).
         self.main.parent.mkdir(parents=True, exist_ok=True)
-        self.main.write_text(json.dumps(contenu), encoding="utf-8")
+        provisoire = self.main.with_name(self.main.name + ".tmp")
+        provisoire.write_text(json.dumps(contenu), encoding="utf-8")
+        os.replace(provisoire, self.main)
 
     def fermer(self) -> int:
         self.p.stdin.close()
