@@ -205,12 +205,44 @@ _EQUIVALENTS_ANCIENS = {
 }
 
 
+# Un dépôt cloné depuis GitHub est celui de quelqu'un d'autre (ou le nôtre, ailleurs) : son
+# .gitignore ne nous appartient pas. Ce fichier, dans `.git/`, le dit à tout ce qui y touche.
+MARQUE_CLONE = "atelier-clone.json"
+
+
+def est_un_clone(chemin: Path) -> bool:
+    return (chemin / ".git" / MARQUE_CLONE).is_file()
+
+
+def exclure_localement(chemin: Path) -> list[str]:
+    """Écrit les lignes de l'Atelier dans `.git/info/exclude`, pas dans le .gitignore du dépôt.
+
+    Même effet pour git sur cette copie (ces fichiers ne sont jamais ajoutés), sans modifier ni
+    ajouter de fichier suivi : un commit de l'agent n'embarque pas un .gitignore que personne
+    n'a demandé. Rend les lignes ajoutées.
+    """
+    exclude = chemin / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(parents=True, exist_ok=True)
+    contenu = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
+    presentes = {l.strip() for l in contenu.splitlines()}
+    manquantes = [l for l in LIGNES_DE_L_ATELIER if l not in presentes]
+    if not manquantes:
+        return []
+    ajout = "" if contenu.endswith(chr(10)) or not contenu else chr(10)
+    ajout += "# Déposé par l'Atelier, à ne pas versionner." + chr(10) + chr(10).join(manquantes) + chr(10)
+    exclude.write_text(contenu + ajout, encoding="utf-8")
+    return manquantes
+
+
 def completer_le_gitignore(chemin: Path) -> list[str]:
     """Ajoute au .gitignore les dépôts de l'Atelier qui y manquent.
 
     N'écrit rien d'autre : le reste du fichier appartient au projet. Rend
-    les lignes ajoutées, pour le dire.
+    les lignes ajoutées, pour le dire. Un dépôt cloné reçoit ces lignes dans
+    `.git/info/exclude` (voir `exclure_localement`), jamais dans son .gitignore.
     """
+    if est_un_clone(chemin):
+        return exclure_localement(chemin)
     gitignore = chemin / ".gitignore"
     if not gitignore.is_file():
         gitignore.write_text(GITIGNORE, encoding="utf-8")
@@ -398,9 +430,21 @@ def _jeton(settings: AtelierSettings) -> str:
         return ""
 
 
+def proprietaire(settings: AtelierSettings) -> str:
+    """Le compte GitHub propriétaire : le réglage s'il existe, sinon le compte connecté dans Réglages."""
+    voulu = settings.github_owner.strip()
+    if voulu:
+        return voulu
+    try:
+        lu = json.loads((settings.secrets_dir / "github.json").read_text(encoding="utf-8"))
+        return str(lu.get("login") or "").strip()
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
 def publication_possible(settings: AtelierSettings) -> bool:
     """Y a-t-il de quoi publier ? L'interface le demande avant de proposer."""
-    return bool(_jeton(settings) and settings.github_owner.strip())
+    return bool(_jeton(settings) and proprietaire(settings))
 
 
 def _appel_github(settings: AtelierSettings, methode: str, route: str, corps: dict | None = None):
@@ -430,7 +474,7 @@ def _appel_github(settings: AtelierSettings, methode: str, route: str, corps: di
 
 
 def _proprietaire_est_une_organisation(settings: AtelierSettings) -> bool:
-    compte = _appel_github(settings, "GET", f"/users/{settings.github_owner.strip()}")
+    compte = _appel_github(settings, "GET", f"/users/{proprietaire(settings)}")
     return str(compte.get("type") or "").lower() == "organization"
 
 
@@ -448,9 +492,9 @@ def publier(
     devenir public parce qu'on a cliqué : ouvrir est un geste de travail,
     publier en est un autre, et c'est celui-là qui ne se rattrape pas.
     """
-    proprietaire = settings.github_owner.strip()
-    if not proprietaire:
-        raise ErreurDepot("aucun propriétaire GitHub configuré (ATELIER_GITHUB_OWNER)")
+    proprio = proprietaire(settings)
+    if not proprio:
+        raise ErreurDepot("aucun compte GitHub connecté (Réglages) ni propriétaire configuré (ATELIER_GITHUB_OWNER)")
     if not (chemin / ".git").is_dir():
         initialiser(settings, chemin)
 
@@ -470,7 +514,7 @@ def publier(
         )
 
     route = (
-        f"/orgs/{proprietaire}/repos"
+        f"/orgs/{proprio}/repos"
         if _proprietaire_est_une_organisation(settings)
         else "/user/repos"
     )
@@ -481,14 +525,14 @@ def publier(
             route,
             {"name": nom, "description": description[:350], "private": bool(prive)},
         )
-        log.info("dépôt GitHub créé : %s/%s", proprietaire, nom)
+        log.info("dépôt GitHub créé : %s/%s", proprio, nom)
     except ErreurDepot as exc:
         # Un dépôt qui existe déjà n'est pas une erreur : c'est le cas d'une
         # seconde publication. Tout le reste en est une.
         if "already exists" not in str(exc) and "name already" not in str(exc):
             raise
 
-    url = f"https://github.com/{proprietaire}/{nom}.git"
+    url = f"https://github.com/{proprio}/{nom}.git"
     if _git(chemin, "remote", "get-url", "origin", verifier=False):
         _git(chemin, "remote", "set-url", "origin", url)
     else:
@@ -538,7 +582,7 @@ def _pousser(settings: AtelierSettings, chemin: Path) -> None:
         "HEAD",
         plus={
             "GIT_ASKPASS": str(_askpass(settings)),
-            "ATELIER_GIT_USER": settings.github_owner.strip(),
+            "ATELIER_GIT_USER": proprietaire(settings) or "x-access-token",
             "ATELIER_GIT_TOKEN_FILE": str(settings.github_token_path),
         },
     )

@@ -1585,3 +1585,36 @@ export async function retirerFournisseur(identifiant) {
   if (!res.ok) await parseError(res);
   return res.json();
 }
+
+
+// ── GitHub (onglet Réglages) ─────────────────────────────────────────────────
+
+/** L'état de la connexion : `{connecte, login, nom, type, depuis}`. Jamais le jeton. */
+export async function lireGithub() {
+  const res = await fetch("/v1/github", { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Connecte le compte : le jeton part une fois, l'Atelier le vérifie auprès de GitHub puis le garde. */
+export async function connecterGithub(corps) {
+  const res = await fetch("/v1/github", { method: "PUT", headers: jsonHeaders(), body: JSON.stringify(corps) });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+export async function deconnecterGithub() {
+  const res = await fetch("/v1/github", { method: "DELETE", headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Les dépôts du compte, publics et privés : `{depots: [...], total, tronque}`. */
+export async function lireDepotsGithub(recherche = "", actualiser = false) {
+  const q = new URLSearchParams();
+  if (recherche) q.set("q", recherche);
+  if (actualiser) q.set("actualiser", "true");
+  const res = await fetch(`/v1/github/depots${q.toString() ? `?${q}` : ""}`, { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}

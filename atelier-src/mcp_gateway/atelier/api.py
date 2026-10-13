@@ -101,6 +101,10 @@ class FournisseurBody(BaseModel):
     outils_natifs: list[str] | None = None
 
 
+class GithubBody(BaseModel):
+    jeton: str = ""
+
+
 class FournisseurTestBody(BaseModel):
     base_url: str
     cle: str = ""
@@ -838,7 +842,10 @@ def build_app(
         return _qui
 
     def _noter_fournisseur(action: str, identifiant: str, resultat: str, **details: Any) -> None:
-        """Une ligne au journal unique : jamais la clé, seulement qu'elle a été donnée."""
+        _noter_personne("fournisseur", action, identifiant, resultat, **details)
+
+    def _noter_personne(type_objet: str, action: str, identifiant: str, resultat: str, **details: Any) -> None:
+        """Une ligne au journal unique : jamais la clé ni le jeton, seulement qu'ils ont été donnés."""
         journal = getattr(app.state, "journal_unique", None)
         if journal is None:
             return
@@ -850,7 +857,7 @@ def build_app(
                     id=nouvel_identifiant(),
                     source="commande",
                     acteur="personne",
-                    objet={"type": "fournisseur", "id": identifiant},
+                    objet={"type": type_objet, "id": identifiant},
                     action={"commande": action, "origine": "interface", "arguments": details},
                     resultat=resultat,
                 )
@@ -902,6 +909,49 @@ def build_app(
             raise HTTPException(400, str(exc)) from None
         _noter_fournisseur("fournisseur_retirer", identifiant, "fait")
         return rendu
+
+    # ── Le compte GitHub : se connecter, voir ses dépôts ─────────────────────────
+    #
+    # Le jeton se colle ici, une fois. Lire l'état est ouvert (il ne porte jamais le jeton) ;
+    # connecter, déconnecter et lister les dépôts (dont les privés) sont réservés à la personne.
+    # Les agents de l'Assistant passent par les commandes du catalogue, pas par ces routes.
+
+    @router.get("/github")
+    def github_etat(_owner: str = Depends(require_owner)) -> dict[str, Any]:
+        from mcp_gateway.atelier import github_compte
+
+        return github_compte.etat(settings)
+
+    @router.put("/github")
+    def github_connecter(body: GithubBody, _personne: str = Depends(require_personne)) -> dict[str, Any]:
+        from mcp_gateway.atelier import github_compte as g
+
+        try:
+            rendu = g.connecter(settings, body.jeton)
+        except g.ErreurGithub as exc:
+            _noter_personne("github", "github_connecter", "compte", "refus", motif=str(exc)[:200])
+            raise HTTPException(400, str(exc)) from None
+        _noter_personne("github", "github_connecter", "compte", "fait", login=rendu.get("login", ""), type=rendu.get("type", ""))
+        return rendu
+
+    @router.delete("/github")
+    def github_deconnecter(_personne: str = Depends(require_personne)) -> dict[str, Any]:
+        from mcp_gateway.atelier import github_compte as g
+
+        rendu = g.deconnecter(settings)
+        _noter_personne("github", "github_deconnecter", "compte", "fait")
+        return rendu
+
+    @router.get("/github/depots")
+    def github_depots(
+        q: str = "", actualiser: bool = False, _personne: str = Depends(require_personne)
+    ) -> dict[str, Any]:
+        from mcp_gateway.atelier import github_compte as g
+
+        try:
+            return g.depots(settings, q, actualiser=actualiser)
+        except g.ErreurGithub as exc:
+            raise HTTPException(400, str(exc)) from None
 
     def _lire_secret_interne() -> str:
         """Le secret partagé, ou une chaîne vide s'il n'a pas été posé."""
@@ -1186,7 +1236,7 @@ def build_app(
         return {
             **etat.to_dict(),
             "can_publish": git_repos.publication_possible(settings),
-            "owner": settings.github_owner.strip(),
+            "owner": git_repos.proprietaire(settings),
         }
 
     @router.post("/projects/{slug}/git/init")

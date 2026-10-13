@@ -6296,3 +6296,52 @@ li[role="button"]:focus-visible {
   color: var(--texte-3);
   font-size: 0.8rem;
 }
+
+/* ── GitHub dans Réglages : compte, recherche, liste des dépôts ── */
+.github-compte {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.8rem;
+  margin: 0.5rem 0;
+}
+
+.github-compte p {
+  margin: 0;
+}
+
+.github-recherche {
+  width: 100%;
+  max-width: 28rem;
+  margin: 0.4rem 0 0.6rem;
+}
+
+.github-depots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.github-depot {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+}
+
+.github-depot-tete {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+}
+
+.github-depot-tete code {
+  overflow-wrap: anywhere;
+}
+
+.github-depot .reglages-aide {
+  margin: 0.25rem 0;
+}
