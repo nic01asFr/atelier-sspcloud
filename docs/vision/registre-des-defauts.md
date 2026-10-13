@@ -612,6 +612,17 @@ produit.
 - **D-71 (G) — GitHub : se connecter, voir ses dépôts, en ouvrir un comme projet.** Demandé le 12/10. **Statut : phase 1
   faite le 13/10 (tests ; à vérifier sur le pod).** Voir `fonctionnalites.md` §2. **Reste** : mettre à jour un dépôt
   ouvert (`pull`), pousser sur `agent/*` seulement, jamais sur `main` sans confirmation, le jeton jamais exposé aux agents.
+- **D-72 (G) — Un projet au nom long n'obtient jamais son pod GPU.** Constaté le 13/10 sur
+  `gaussian-splatting-capture-render` : le release Helm `proj-<slug>-gpu` donne un statefulset de 64+ caractères ;
+  Kubernetes refuse le pod (nom et label de révision limités à 63) et le slot GPU reste « tenu » par un statefulset
+  sans pod. Quatre pannes se sont enchaînées : dépôt Helm introuvable (D-65, corrigé), nom trop long, puis le serveur
+  Onyxia de production (déploiement `mcp`, image `ghcr.io/nic01asfr/sspcloud-mcp`) qui ne connaît pas encore le
+  correctif et, à `gpu_switch`, **met à zéro le pod qu'on vient de lancer** (il ne retrouve pas le projet derrière le
+  nom court). **Statut : corrigé dans la copie de travail du pod `passerelle-mcp-dev` (`gpu_broker.py` : nom court
+  stable + table `~/work/.gpu_aliases.json`) ; PAS dans l'image de production.** Reste à reporter dans le dépôt
+  `sspcloud-mcp` (`sspcloud_mcp/_helm.py` + `gpu_broker.py`, et la copie `passerelle/mcp/gpu_broker.py`), reconstruire
+  l'image et relancer le déploiement `mcp`. D'ici là, ne pas appeler `gpu_switch` pour un projet au nom de plus de
+  23 caractères : lancer le pod depuis `passerelle-mcp-dev` (`gpu_broker.ensure_slot`).
 
 ## 5. Déjà corrigés (pour mémoire)
 
