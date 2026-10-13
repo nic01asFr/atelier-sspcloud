@@ -80,6 +80,60 @@ def _lignes(avertissements: list[str]) -> list[str]:
     return avertissements[:MAX_AVERTISSEMENTS] + [f"… et {reste} autres"]
 
 
+# Les appels qu'une page d'application serveur adresse à son propre serveur.
+_ATTRIBUT_ABSOLU = re.compile(r"""\b(?:href|src|action|poster)\s*=\s*["'](/(?!/)[^"'\s>]*)""", re.IGNORECASE)
+_APPEL_ABSOLU = re.compile(
+    r"""(?:\bfetch|\.open|\bEventSource|\bWebSocket|\bsendBeacon|\baxios(?:\.\w+)?|\$\.(?:get|post|ajax|getJSON))\s*\(\s*(?:['"`]\w+['"`]\s*,\s*)?['"`](/(?!/)[^'"`\s)]*)"""
+)
+_LOCATION_ABSOLUE = re.compile(r"""\blocation(?:\.href)?\s*=\s*['"`](/(?!/)[^'"`\s]*)""")
+_SUFFIXES_DE_PAGE = frozenset({".html", ".htm", ".js", ".mjs", ".jinja", ".j2"})
+_A_IGNORER = frozenset({"node_modules", ".venv", "venv", "__pycache__", ".git", "data", "dist-info", "site-packages"})
+MAX_FICHIERS_LUS = 200
+MAX_FICHIER_OCTETS = 1024 * 1024
+
+
+def verifier_serveur(dossier: Path, *, nom: str = "") -> list[str]:
+    """Les chemins qui commencent par `/` dans les pages d'une application serveur.
+
+    Une application est servie sous `/<projet>/<nom>/` : un `fetch('/train')` ou un `href="/viewer"` part à la
+    racine de l'Atelier, pas vers l'application. La page s'affiche, les boutons ne font rien — constaté le 13/10 :
+    « Lancer le training » et les journaux de l'app de capture ne répondaient plus. L'agent ne le voit pas, la page
+    étant servie sans erreur ; on le lui dit avant qu'il annonce que c'est prêt.
+    """
+    nom = nom or dossier.name
+    if not dossier.is_dir():
+        return []
+    trouves: list[tuple[str, str]] = []
+    lus = 0
+    for chemin in sorted(dossier.rglob("*")):
+        if lus >= MAX_FICHIERS_LUS:
+            break
+        rel = chemin.relative_to(dossier)
+        if any(p in _A_IGNORER for p in rel.parts) or not chemin.is_file() or chemin.suffix.lower() not in _SUFFIXES_DE_PAGE:
+            continue
+        try:
+            if chemin.stat().st_size > MAX_FICHIER_OCTETS:
+                continue
+            texte = chemin.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        lus += 1
+        vus: set[str] = set()
+        for motif in (_ATTRIBUT_ABSOLU, _APPEL_ABSOLU, _LOCATION_ABSOLUE):
+            for m in motif.finditer(texte):
+                adresse = m.group(1)
+                if adresse not in vus:
+                    vus.add(adresse)
+                    trouves.append((rel.as_posix(), adresse))
+    avertissements = [
+        f"{fichier} : chemin absolu {adresse[:100]} — l'application est servie sous /<projet>/{nom}/, un chemin "
+        f"qui commence par / part à la racine de l'Atelier, pas vers ton serveur. Écris-le relatif "
+        f"(./{adresse.lstrip('/')[:100]})."
+        for fichier, adresse in trouves
+    ]
+    return _lignes(avertissements)
+
+
 def verifier_references(dossier: Path, *, nom: str = "") -> list[str]:
     """Les phrases qui disent ce que la page `index.html` de `dossier` ne chargera pas.
 

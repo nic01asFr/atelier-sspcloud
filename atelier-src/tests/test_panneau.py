@@ -435,10 +435,24 @@ def test_l_agent_de_projet_cree_toujours_sa_creation(atelier: TestClient) -> Non
     assert (atelier.app.state.settings.projects_dir / "demo" / "artifacts" / "neuf").is_dir()
 
 
-def test_le_navigateur_de_l_assistant_est_refuse_avec_la_voie_a_suivre(atelier: TestClient) -> None:
+def test_le_navigateur_de_l_assistant_ouvre_le_projet_qu_il_nomme(atelier: TestClient) -> None:
+    """L'Assistant n'a pas de projet à lui : l'outil ne le renvoie pas à un refus, il ouvre celui qu'il nomme."""
     conv = conversation_assistant(atelier)
-    charge, erreur = appeler(outils(atelier), "atelier_navigateur_ouvrir", conv, projet="demo")
-    assert erreur and "atelier_montrer" in charge["erreur"] and "atelier_lancer_agent" in charge["erreur"]
+    charge, erreur = appeler(outils(atelier), "atelier_navigateur_ouvrir", conv, projet="demo", chemin="site/")
+    assert not erreur, charge
+    assert charge["adresse"].startswith(f"{APPS}/_atelier/entree?code=") and charge["portee"] == "demo"
+    # La session qui en sort ne voit que ce projet-là, comme celle d'un agent de projet.
+    session = atelier.app.state.apps.passage.session(entrer(hote(atelier), charge["adresse"]))
+    assert session is not None and session.acteur == f"agent:{conv}" and session.portees == frozenset({"demo"})
+
+
+def test_le_navigateur_de_l_assistant_veut_un_projet_qui_existe(atelier: TestClient) -> None:
+    conv = conversation_assistant(atelier)
+    o = outils(atelier)
+    charge, erreur = appeler(o, "atelier_navigateur_ouvrir", conv)
+    assert erreur and "précise `projet`" in charge["erreur"] and "atelier_projets" in charge["erreur"]
+    charge, erreur = appeler(o, "atelier_navigateur_ouvrir", conv, projet="nulle-part")
+    assert erreur and "nulle-part" in charge["erreur"]
 
 
 def test_montrer_dit_ce_que_la_page_ne_tient_pas(atelier: TestClient) -> None:

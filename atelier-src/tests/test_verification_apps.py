@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mcp_gateway.atelier.apps.verification import MAX_AVERTISSEMENTS, verifier_references
+from mcp_gateway.atelier.apps.verification import MAX_AVERTISSEMENTS, verifier_references, verifier_serveur
 
 
 def _creation(tmp_path: Path, html: str | None, *autres: str) -> Path:
@@ -88,3 +88,57 @@ def test_une_page_mal_formee_ne_fait_pas_echouer(tmp_path: Path) -> None:
 def test_un_dossier_absent_est_dit(tmp_path: Path) -> None:
     (phrase,) = verifier_references(tmp_path / "artifacts" / "nulle-part")
     assert "n'existe pas" in phrase
+
+
+# ── Une application serveur : les chemins qui partent à la racine de l'Atelier ──────────────────────────
+# Constaté le 13/10 : l'app de capture 3DGS appelait `fetch('/train')`, `fetch('/logs')`, `window.open('/export')`.
+# Servie sous /<projet>/<nom>/, la page s'affichait, les boutons ne faisaient rien.
+
+
+def _appli(tmp_path: Path, **fichiers: str) -> Path:
+    dossier = tmp_path / "artifacts" / "capture"
+    for nom, texte in fichiers.items():
+        chemin = dossier / nom
+        chemin.parent.mkdir(parents=True, exist_ok=True)
+        chemin.write_text(texte, encoding="utf-8")
+    return dossier
+
+
+def test_un_appel_a_la_racine_est_signale_avec_son_equivalent_relatif(tmp_path: Path) -> None:
+    html = "<script>fetch('/train', {method:'POST'}); fetch(`/logs`); window.open('/export');</script>"
+    phrases = verifier_serveur(_appli(tmp_path, **{"app/templates/capture.html": html}), nom="capture")
+    assert len(phrases) == 3
+    assert any("/train" in p and "./train" in p for p in phrases)
+    assert all(p.startswith("app/templates/capture.html : ") for p in phrases)
+
+
+def test_attributs_et_navigation_a_la_racine(tmp_path: Path) -> None:
+    html = '<a href="/viewer">v</a><form action="/envoyer"></form><img src="/static/a.png"><script>location.href = "/x"</script>'
+    phrases = verifier_serveur(_appli(tmp_path, **{"index.html": html}), nom="capture")
+    assert [p.split(" — ")[0].split("absolu ")[1] for p in phrases] == ["/viewer", "/envoyer", "/static/a.png", "/x"]
+
+
+def test_xhr_et_websocket_a_la_racine(tmp_path: Path) -> None:
+    js = "const x = new XMLHttpRequest(); x.open('GET', '/api/etat'); new EventSource('/flux'); new WebSocket('/ws');"
+    phrases = verifier_serveur(_appli(tmp_path, **{"app.js": js}))
+    assert len(phrases) == 3
+
+
+def test_les_chemins_relatifs_et_les_adresses_completes_passent(tmp_path: Path) -> None:
+    html = (
+        "<script>fetch('./train'); fetch('status'); fetch(BASE + '/logs'); fetch(`${prefix}/x`);"
+        " fetch('//cdn.exemple.fr/a.js'); fetch('https://exemple.fr/api');</script>"
+        '<a href="./viewer">v</a><a href="#haut">h</a><a href="mailto:a@b.fr">m</a>'
+    )
+    assert verifier_serveur(_appli(tmp_path, **{"index.html": html})) == []
+
+
+def test_une_application_sans_page_ou_inexistante_ne_dit_rien(tmp_path: Path) -> None:
+    assert verifier_serveur(_appli(tmp_path, **{"main.py": "fetch('/x')"})) == [], "seules les pages sont lues"
+    assert verifier_serveur(tmp_path / "nulle-part") == []
+
+
+def test_les_dossiers_techniques_ne_sont_pas_lus(tmp_path: Path) -> None:
+    mauvais = "fetch('/x')"
+    dossier = _appli(tmp_path, **{"node_modules/lib/a.js": mauvais, "data/page.html": mauvais, ".venv/b.js": mauvais})
+    assert verifier_serveur(dossier) == []

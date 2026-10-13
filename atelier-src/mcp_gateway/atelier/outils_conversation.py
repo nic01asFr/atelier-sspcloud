@@ -483,14 +483,18 @@ class OutilsAtelier:
                     "Donne à ton navigateur (outils chrome) l'accès aux créations de ton projet, "
                     "pour les vérifier. Rend une adresse d'entrée à usage unique, valable deux "
                     "minutes : ouvre-la aussitôt avec ton outil de navigation. Elle ne vaut que "
-                    "pour le projet de ta conversation, jamais pour l'Atelier lui-même."
+                    "pour un projet, jamais pour l'Atelier lui-même."
                 ),
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "projet": {
                             "type": "string",
-                            "description": "Slug du projet ; défaut et seule valeur admise : celui de ta conversation.",
+                            "description": (
+                                "Slug du projet. Agent de projet : défaut et seule valeur admise, celui de ta "
+                                "conversation. Assistant : obligatoire, le projet que tu veux regarder "
+                                "(tu n'as pas de projet à toi)."
+                            ),
                         },
                         "chemin": {
                             "type": "string",
@@ -1023,7 +1027,7 @@ class OutilsAtelier:
         import httpx
 
         from mcp_gateway.atelier.apps.manifeste import dossier_artefact, lister_artefacts
-        from mcp_gateway.atelier.apps.verification import verifier_references
+        from mcp_gateway.atelier.apps.verification import verifier_references, verifier_serveur
 
         service = self._service_apps()
         projet = (args.get("projet") or "").strip()
@@ -1044,8 +1048,9 @@ class OutilsAtelier:
             fiche = service.fiche(projet, nom, valides.get(nom), erreurs.get(nom, ""))
             cible = service.superviseur.cible(projet, nom)
             m = valides.get(nom)
-            if not erreurs.get(nom) and (m is None or not m.service):
-                avertissements = verifier_references(dossier_artefact(racine, nom), nom=nom)
+            if not erreurs.get(nom):
+                verif = verifier_serveur if (m is not None and m.service) else verifier_references
+                avertissements = verif(dossier_artefact(racine, nom), nom=nom)
                 if avertissements:
                     fiche["avertissements"] = avertissements
             if cible is not None and cible.port and m is not None:
@@ -1108,7 +1113,7 @@ class OutilsAtelier:
 
     def _outil_montrer(self, args: dict[str, Any]) -> Any:
         from mcp_gateway.atelier.apps.manifeste import dossier_artefact
-        from mcp_gateway.atelier.apps.verification import verifier_references
+        from mcp_gateway.atelier.apps.verification import verifier_references, verifier_serveur
         from mcp_gateway.atelier.panneau import VueInvalide
 
         service = self._service_apps()
@@ -1152,19 +1157,20 @@ class OutilsAtelier:
             raise _Refus(str(exc)) from None
         log.info("montrer : agent:%s montre %s/%s", rec.session_id, projet, nom)
         retour: dict[str, Any] = {"vue": vue, "suite": "Le panneau de la conversation s'ouvre sur cette création."}
-        if manifeste is None or not manifeste.service:
-            # Le panneau est ouvert quoi qu'il arrive ; l'agent apprend ce que la
-            # personne va voir, avant de lui annoncer que c'est prêt.
-            try:
-                avertissements = verifier_references(dossier_artefact(service.racine_projet(projet), nom), nom=nom)
-            except (LookupError, OSError):
-                avertissements = []
-            if avertissements:
-                retour["avertissements"] = avertissements
-                retour["suite"] += (
-                    " Mais la page promet ce qu'elle ne tient pas (voir avertissements) : corrige avant "
-                    "d'annoncer que c'est prêt."
-                )
+        # Le panneau est ouvert quoi qu'il arrive ; l'agent apprend ce que la personne va voir, avant de lui
+        # annoncer que c'est prêt. Une page autonome : ses fichiers et ressources ; une application serveur :
+        # les chemins qui partent à la racine de l'Atelier au lieu de son serveur.
+        verif = verifier_serveur if (manifeste is not None and manifeste.service) else verifier_references
+        try:
+            avertissements = verif(dossier_artefact(service.racine_projet(projet), nom), nom=nom)
+        except (LookupError, OSError):
+            avertissements = []
+        if avertissements:
+            retour["avertissements"] = avertissements
+            retour["suite"] += (
+                " Mais la page promet ce qu'elle ne tient pas (voir avertissements) : corrige avant "
+                "d'annoncer que c'est prêt."
+            )
         return retour
 
     def _outil_navigateur_ouvrir(self, args: dict[str, Any]) -> Any:
@@ -1178,13 +1184,20 @@ class OutilsAtelier:
             raise _Refus("pas d'hôte des applications sur cette installation")
         rec = self._conversation_appelante()
         if self._est_assistant(rec):
-            raise _Refus(
-                "Tu es l'Assistant : ton navigateur n'ouvre que les créations du projet de ta conversation, "
-                "et tu n'en as pas. Pour que la personne voie une création : "
-                "atelier_montrer(projet, nom). Pour la vérifier : atelier_artefact_verifier(projet, nom), "
-                "ou délègue à un agent code du projet (atelier_lancer_agent)."
-            )
-        projet = self._projet_de(rec, args)
+            # Il n'a pas de projet à lui : il ouvre celui qu'il nomme (comme atelier_montrer), pour le
+            # regarder — le code ne donne que la lecture d'un projet, deux minutes, une fois.
+            projet = (args.get("projet") or "").strip()
+            if not projet:
+                raise _Refus(
+                    "précise `projet` : tu es l'Assistant, tu n'as pas de projet à toi. "
+                    "atelier_projets liste les projets, atelier_artefacts(projet) leurs créations."
+                )
+            try:
+                service.racine_projet(projet)
+            except LookupError as exc:
+                raise _Refus(str(exc)) from None
+        else:
+            projet = self._projet_de(rec, args)
         try:
             chemin = chemin_valide(str(args.get("chemin") or ""))
         except VueInvalide as exc:
