@@ -23,7 +23,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from mcp_gateway.atelier import git_repos, onyxia_projet
+from mcp_gateway.atelier import git_repos, onyxia_projet, projets_aide
 from mcp_gateway.atelier.commandes import structure
 from mcp_gateway.atelier.commandes.catalogue import Catalogue
 from mcp_gateway.atelier.commandes.modele import ENGAGEANTE, Commande, Contexte, Effet, Refus
@@ -47,9 +47,9 @@ def inscrire_le_deploiement(app: Any, catalogue: Catalogue) -> None:
             raise Refus("projet requis")
         slug = slug.strip()
         if slug == settings.assistant_slug:
-            raise Refus("le dossier de l'Assistant n'est pas un projet qui se déploie")
+            raise Refus(projets_aide.espace_de_l_assistant(settings))
         if structure.slugifier(slug) != slug or not racine(slug).is_dir():
-            raise Refus(f"projet inconnu : {slug}")
+            raise Refus(projets_aide.projet_inconnu(settings, slug))
         return slug
 
     def fiche(slug: str) -> structure.ProjetJson:
@@ -92,6 +92,18 @@ def inscrire_le_deploiement(app: Any, catalogue: Catalogue) -> None:
         gpu = ", et le GPU du projet" if deploiement.gpu else ""
         return f"les agents code du projet reçoivent Onyxia borné à {cible}{gpu}"
 
+    def avertissement_du_pod(sonde: Any) -> str:
+        """Ce que la personne doit savoir si le pod ne répond pas : la déclaration est écrite, l'exécution ne marchera pas."""
+        if not isinstance(sonde, dict) or sonde.get("etat") in (None, "pret", "sans_pod"):
+            return ""
+        if sonde["etat"] == "muet":
+            return (
+                " — ATTENTION : le pod ne répond pas à une commande simple (son pont d'exécution, ~/work/.pont, "
+                "n'est probablement pas démarré). La liaison est écrite, mais les agents ne pourront pas y exécuter "
+                "tant qu'il ne répond pas."
+            )
+        return f" — le pod n'a pas pu être testé ({sonde.get('etat')} : {sonde.get('detail', '')})."
+
     def apercu(ctx: Contexte, args: dict[str, Any]) -> dict[str, Any]:
         slug = projet_existant(args)
         apres = voulu(args)
@@ -116,6 +128,9 @@ def inscrire_le_deploiement(app: Any, catalogue: Catalogue) -> None:
             try:
                 lien = await mandataire.lier(borne)
                 liaison = {"session": borne.session, "pod": lien.get("pod", nouveau.pod)}
+                # Le pod répond-il à une commande triviale ? La personne le lit tout de suite, au lieu que le
+                # premier agent perde cinq minutes en délais (constaté le 12/10 : pod neuf, pont absent).
+                liaison["execution"] = await mandataire.sonder(borne)
             except onyxia_projet.RefusOnyxia as exc:
                 raise Refus(str(exc)) from None
             except Exception as exc:  # noqa: BLE001 — Onyxia absent : liée au premier appel
@@ -155,7 +170,7 @@ def inscrire_le_deploiement(app: Any, catalogue: Catalogue) -> None:
             charge={"projet": slug, "deploiement": apres, "avant": avant, "liaison": liaison},
             objet_id=slug,
             titre="Déploiement déclaré" if apres else "Déploiement retiré",
-            resume=ce_que_recoivent_les_agents(nouveau),
+            resume=ce_que_recoivent_les_agents(nouveau) + avertissement_du_pod(liaison.get("execution")),
             voir=f"/?slug={slug}",
             preuve={"commit": commit, "fichier": structure.CHEMIN.as_posix(), **liaison},
             avant=avant,

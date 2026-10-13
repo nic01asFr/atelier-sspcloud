@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
-from mcp_gateway.atelier import git_repos
+from mcp_gateway.atelier import git_repos, github_compte
+from mcp_gateway.atelier import projets_aide
 from mcp_gateway.atelier.commandes import structure
 from mcp_gateway.atelier.commandes.a_valider import (
     ACCEPTEE,
@@ -94,9 +95,9 @@ def inscrire_les_natives(catalogue: Catalogue, s: Services) -> None:
     def projet_existant(args: dict[str, Any]) -> str:
         slug = _texte(args, "projet", requis=True, maximum=60) or ""
         if slug == settings.assistant_slug:
-            raise Refus("le dossier de l'Assistant n'est pas un projet qu'on modifie par commande")
+            raise Refus(projets_aide.espace_de_l_assistant(settings))
         if not racine(slug).is_dir():
-            raise Refus(f"projet inconnu : {slug}")
+            raise Refus(projets_aide.projet_inconnu(settings, slug))
         return slug
 
     def pool() -> dict[str, Any]:
@@ -424,6 +425,89 @@ def inscrire_les_natives(catalogue: Catalogue, s: Services) -> None:
                 "required": ["projet"],
             },
             exposee_mcp=False,
+        )
+    )
+
+    # ── GitHub : voir ses dépôts, en ouvrir un comme projet ─────────────
+
+    def github_depots(ctx: Contexte, args: dict[str, Any]) -> Effet:
+        recherche = _texte(args, "recherche", maximum=100) or ""
+        try:
+            rendu = github_compte.depots(settings, recherche)
+        except github_compte.ErreurGithub as exc:
+            raise Refus(str(exc)) from None
+        return Effet(charge=rendu)
+
+    catalogue.ajouter(
+        Commande(
+            nom="atelier_github_depots",
+            description=(
+                "Les dépôts GitHub de la personne (publics et privés, ceux que son jeton atteint), "
+                "le plus récent d'abord : nom, privé ou non, branche, dernière activité, projet qui "
+                "l'a déjà ouvert. `recherche` filtre par nom ou description. Demande qu'un compte "
+                "GitHub soit connecté dans Réglages."
+            ),
+            objet="github",
+            classe=LECTURE,
+            executer=github_depots,
+            schema={"type": "object", "properties": {"recherche": {"type": "string"}}},
+        )
+    )
+
+    def projet_depuis_github(ctx: Contexte, args: dict[str, Any]) -> Effet:
+        depot = _texte(args, "depot", requis=True, maximum=140) or ""
+        titre = _texte(args, "titre", maximum=120) or ""
+        try:
+            clone = github_compte.cloner(settings, depot)
+        except github_compte.ErreurGithub as exc:
+            raise Refus(str(exc)) from None
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise Refus(f"le dépôt n'a pas pu être ouvert : {type(exc).__name__}") from None
+        slug = clone["slug"]
+        s.projects.create(slug, kind="code", title=titre or slug)
+        liaison = lier(racine(slug), None)
+        return Effet(
+            charge={"projet": slug, "depot": clone["depot"], "branche": clone["branche"], "dossier": clone["dossier"]},
+            objet_id=slug,
+            titre="Dépôt ouvert comme projet",
+            resume=(
+                f"{clone['depot']} ({'privé' if clone['prive'] else 'public'}), branche {clone['branche']}, "
+                f"dans le projet « {slug} »"
+            ),
+            voir=_lien_projet(slug),
+            preuve={"commit": git_repos.dernier_commit(racine(slug)), "ecriture": clone["ecriture"], **liaison},
+            avant=None,
+            apres={"projet": slug, "depot": clone["depot"]},
+            inverse_arguments={"projet": slug},
+        )
+
+    catalogue.ajouter(
+        Commande(
+            nom="atelier_projet_depuis_github",
+            description=(
+                "Ouvre un dépôt GitHub de la personne comme projet : le clone dans ~/work/projects/<slug>, "
+                "sans secret dans son adresse, et le déclare à l'Atelier. Le dépôt n'est pas restructuré "
+                "(atelier_projet_structurer pour l'encadrer, au choix de la personne). Annuler range le "
+                "projet, rien n'est supprimé."
+            ),
+            objet="projet",
+            classe=REVERSIBLE,
+            inverse="atelier_projet_ranger",
+            regles=[
+                "nom validé proprietaire/depot, taille plafonnée",
+                "le jeton ne passe ni par l'adresse ni par une commande : GIT_ASKPASS",
+                "les fichiers de l'Atelier vont dans .git/info/exclude, pas dans le .gitignore du dépôt",
+                "le dépôt cloné est noté : c'est lui que l'Atelier mettra à jour ou poussera",
+            ],
+            executer=projet_depuis_github,
+            schema={
+                "type": "object",
+                "properties": {
+                    "depot": {"type": "string", "description": "proprietaire/depot, comme dans atelier_github_depots."},
+                    "titre": {"type": "string", "description": "Le nom affiché ; le nom du dépôt sinon."},
+                },
+                "required": ["depot"],
+            },
         )
     )
 

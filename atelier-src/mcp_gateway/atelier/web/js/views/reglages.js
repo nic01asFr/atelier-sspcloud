@@ -14,6 +14,8 @@
  * jamais « provider » ni « endpoint ».
  */
 
+import { createGithubActions, rendreGithub } from "./github.js";
+
 const ETATS = {
   ok: ["mcp-badge mcp-badge-ok", "connecté"],
   sans_cle: ["mcp-badge mcp-badge-warn", "clé manquante"],
@@ -275,7 +277,7 @@ function formulaireDAjout(r, actions) {
 /**
  * L'écran. `actions` : `charger()`, `actualiser()`, `ouvrirLAjout()`, `modifier(f)`,
  * `fermerLeFormulaire()`, `tester()`, `enregistrer()`, `ouvrirLaCle(id)`, `fermerLaCle()`,
- * `enregistrerLaCle(f)`, `demanderRetrait(id|null)`, `retirer(id)`.
+ * `enregistrerLaCle(f)`, `demanderRetrait(id|null)`, `retirer(id)`, et `github` (voir `github.js`).
  */
 export function rendreReglages(corps, state, actions) {
   const r = state.reglages || {};
@@ -319,6 +321,7 @@ export function rendreReglages(corps, state, actions) {
   if (!r.charge) {
     if (!r.erreur) section.appendChild(el("p", "empty-hint", "Lecture des fournisseurs…"));
     corps.appendChild(section);
+    if (actions.github) rendreGithub(corps, state, actions.github);
     return corps;
   }
 
@@ -327,6 +330,7 @@ export function rendreReglages(corps, state, actions) {
   for (const f of r.fournisseurs || []) liste.appendChild(carte(f, r, actions));
   section.appendChild(liste);
   corps.appendChild(section);
+  if (actions.github) rendreGithub(corps, state, actions.github);
   return corps;
 }
 
@@ -382,8 +386,14 @@ export function createReglagesActions({ state, api, render }) {
     await lire(false);
   }
 
+  const github = createGithubActions({ state, api, render });
+
   return {
-    charger: () => lire(false),
+    github,
+    charger: () => {
+      github.charger();
+      return lire(false);
+    },
     actualiser: () => lire(true),
     ouvrirLAjout() {
       const etat = r();

@@ -28,6 +28,7 @@ qu'un agent de ce profil reçoit pour ce projet, ou None.
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import logging
@@ -68,6 +69,16 @@ SESSION_VERIFIEE_S = 60.0
 # Le plafond d'un `exec` synchrone, tel qu'Onyxia le dit dans sa description
 # (mise à jour du 11/10) : au-delà, `background=true` et `job_poll`.
 PLAFOND_EXEC_SYNCHRONE_S = 40
+
+# Un pod dont le pont d'exécution n'est pas démarré ne répond à rien : chaque appel attend la coupure de la
+# passerelle (60 s) puis « The operation timed out ». Constaté le 12/10 sur `proj-mobscidata` (pod de deux
+# minutes, `~/work` vide) : cinq `exec` de suite, cinq minutes perdues, et l'agent a conclu « noyau mort ».
+# Une attente de cette longueur, sur une commande courte, n'est pas le plafond d'exec : c'est un pod muet.
+OUTILS_D_EXECUTION = frozenset({"exec", "read_file", "write_file", "list_files", "job_poll"})
+SILENCE_DU_POD_S = 50.0  # une réponse qui met au moins ce temps à échouer est une absence de réponse
+SILENCES_MEMORISES_S = 300.0
+POD_MUET_APRES = 2  # silences d'affilée au bout desquels on cesse de faire attendre l'agent
+POD_MUET_PAUSE_S = 120.0  # puis un nouvel essai est permis
 
 
 class RefusOnyxia(Exception):
@@ -424,6 +435,8 @@ class MandataireOnyxia:
         self._outils_amont = outils_amont
         self._journal = journal
         self._sessions_verifiees: dict[tuple[str, str], float] = {}
+        self._silences: dict[str, list[float]] = {}  # session -> instants des appels restés sans réponse
+        self._noyaux: dict[str, Any] = {}  # session -> kernel_alive, tel que session_status l'a dit
 
     # Le protocole ---------------------------------------------------------
 
@@ -477,9 +490,18 @@ class MandataireOnyxia:
     async def appeler_outil(
         self, profil: Profil, borne: Borne | None, nom: str, arguments: dict[str, Any]
     ) -> dict[str, Any]:
+        suivi = profil == "code" and borne is not None and borne.pod is not None and nom in OUTILS_D_EXECUTION
+        if suivi:
+            muet = self._pod_muet(borne)
+            if muet:
+                return _refus_mcp(muet)
+        debut = time.monotonic()
         resultat = await self._appeler_filtre(profil, borne, nom, arguments)
+        duree = time.monotonic() - debut
+        if suivi:
+            resultat = self._noter_le_silence(borne, nom, duree, resultat)
         if nom == "exec" and not arguments.get("background"):
-            resultat = self._dire_le_plafond_de_exec(arguments, resultat)
+            resultat = self._dire_le_plafond_de_exec(arguments, resultat, duree)
         if nom.startswith("gpu_"):
             self._noter(profil, borne, nom, arguments, resultat)
             if nom == "gpu_switch" and resultat.get("isError") and borne is not None and borne.gpu:
@@ -504,7 +526,9 @@ class MandataireOnyxia:
         return resultat
 
     @staticmethod
-    def _dire_le_plafond_de_exec(arguments: dict[str, Any], resultat: dict[str, Any]) -> dict[str, Any]:
+    def _dire_le_plafond_de_exec(
+        arguments: dict[str, Any], resultat: dict[str, Any], duree: float | None = None
+    ) -> dict[str, Any]:
         """Un `exec` synchrone est plafonné par Onyxia (mise à jour du 11/10).
 
         Le `timeout` au-delà du plafond est ignoré sans bruit : l'agent croit
@@ -520,6 +544,8 @@ class MandataireOnyxia:
         demande = arguments.get("timeout")
         trop_long = isinstance(demande, (int, float)) and demande > PLAFOND_EXEC_SYNCHRONE_S
         coupe = resultat.get("isError") and ("timeout" in texte or "timed out" in texte or "délai" in texte)
+        if coupe and duree is not None and duree >= SILENCE_DU_POD_S:
+            coupe = False  # une commande coupée au plafond dure ~40 s ; plus long, c'est le pod qui ne répond pas
         if not (trop_long or coupe):
             return resultat
         return {
@@ -536,6 +562,85 @@ class MandataireOnyxia:
                 },
             ],
         }
+
+    @staticmethod
+    def _est_un_delai(resultat: dict[str, Any]) -> bool:
+        if not isinstance(resultat, dict) or not resultat.get("isError"):
+            return False
+        texte = " ".join(
+            str(b.get("text") or "") for b in (resultat.get("content") or []) if isinstance(b, dict)
+        ).lower()
+        return "timed out" in texte or "timeout" in texte or "délai" in texte
+
+    def _noter_le_silence(
+        self, borne: Borne, nom: str, duree: float, resultat: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Un appel resté sans réponse est dit comme tel ; un appel qui répond efface la mémoire des silences."""
+        cle = borne.session
+        if not (self._est_un_delai(resultat) and duree >= SILENCE_DU_POD_S):
+            if not (isinstance(resultat, dict) and resultat.get("isError")):
+                self._silences.pop(cle, None)
+            return resultat
+        maintenant = time.monotonic()
+        vus = [t for t in self._silences.get(cle, []) if maintenant - t < SILENCES_MEMORISES_S]
+        vus.append(maintenant)
+        self._silences[cle] = vus
+        noyau = self._noyaux.get(cle)
+        etat = f" (session_status : kernel_alive={str(bool(noyau)).lower()})" if noyau is not None else ""
+        reste = (
+            f"C'est le {len(vus)}e appel de suite sans réponse : n'insiste pas, " if len(vus) > 1 else "N'insiste pas : "
+        )
+        return {
+            **resultat,
+            "content": [
+                *(resultat.get("content") or []),
+                {
+                    "type": "text",
+                    "text": (
+                        f"Le pod {borne.pod} n'a pas répondu à `{nom}` en {duree:.0f} s{etat}. Ce n'est pas le plafond "
+                        "d'exec (la commande était courte) : le pod ou son pont d'exécution (~/work/.pont) ne répond pas. "
+                        f"{reste}dis-le à la personne en une phrase — « le pod {borne.pod} ne répond pas, son pont "
+                        "d'exécution n'est pas démarré » — et avance sur ce qui ne demande pas le pod (les fichiers du projet). "
+                        "Ne propose pas de « redémarrer le noyau » : il n'a pas démarré."
+                    ),
+                },
+            ],
+        }
+
+    def _pod_muet(self, borne: Borne) -> str:
+        """Le refus immédiat d'un appel au pod, s'il vient de rester sans réponse plusieurs fois d'affilée."""
+        maintenant = time.monotonic()
+        vus = [t for t in self._silences.get(borne.session, []) if maintenant - t < SILENCES_MEMORISES_S]
+        if len(vus) < POD_MUET_APRES or maintenant - vus[-1] >= POD_MUET_PAUSE_S:
+            return ""
+        restant = int(POD_MUET_PAUSE_S - (maintenant - vus[-1]))
+        return (
+            f"Le pod {borne.pod} n'a pas répondu à vos {len(vus)} derniers appels (le dernier il y a "
+            f"{int(maintenant - vus[-1])} s) : inutile de réessayer maintenant, ce serait attendre {int(SILENCE_DU_POD_S)} s "
+            "de plus pour rien. Son pont d'exécution n'est probablement pas démarré. Dites-le à la personne, et avancez "
+            f"sur ce qui ne demande pas le pod. Un nouvel essai est permis dans {restant} s."
+        )
+
+    async def sonder(self, borne: Borne, delai_s: float = 12.0) -> dict[str, Any]:
+        """Le pod répond-il à une commande triviale ? « muet » plutôt que de laisser le premier agent attendre 60 s."""
+        if borne.pod is None:
+            return {"etat": "sans_pod"}
+        try:
+            envoyes = filtrer_appel("code", borne, "exec", {"code": "echo ok", "lang": "bash", "timeout": 10})
+            resultat = await asyncio.wait_for(self._appeler("exec", envoyes), delai_s)
+        except asyncio.TimeoutError:
+            return {"etat": "muet", "detail": f"pas de réponse en {delai_s:.0f} s"}
+        except RefusOnyxia as exc:
+            return {"etat": "refuse", "detail": str(exc)}
+        except Exception as exc:  # noqa: BLE001
+            return {"etat": "injoignable", "detail": type(exc).__name__}
+        if self._est_un_delai(resultat):
+            return {"etat": "muet", "detail": "délai dépassé"}
+        if isinstance(resultat, dict) and resultat.get("isError"):
+            erreur = _erreur_de(resultat) or {}
+            return {"etat": "erreur", "detail": str(erreur.get("message") or erreur.get("code") or "erreur")[:200]}
+        self._silences.pop(borne.session, None)
+        return {"etat": "pret"}
 
     def _noter(
         self, profil: Profil, borne: Borne | None, outil: str, arguments: dict[str, Any], resultat: dict[str, Any]
@@ -604,6 +709,8 @@ class MandataireOnyxia:
                 raise RefusOnyxia(f"session du projet non attachée à {borne.pod} : {erreur}")
             etat = lien
         charge = _charge_de(etat)
+        if isinstance(charge, dict) and "kernel_alive" in charge:
+            self._noyaux[borne.session] = charge.get("kernel_alive")
         pod = charge.get("pod") if isinstance(charge, dict) else None
         if not isinstance(pod, str) or not borne.pod_admis(pod):
             raise RefusOnyxia(

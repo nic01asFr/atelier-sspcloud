@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from mcp_gateway.atelier import git_repos
+from mcp_gateway.atelier import git_repos, projets_aide
 from mcp_gateway.atelier.commandes import structure
 from mcp_gateway.atelier.commandes.catalogue import Catalogue
 from mcp_gateway.atelier.commandes.creations import booleen, texte
@@ -493,10 +493,10 @@ def inscrire_la_migration(app: Any, catalogue: Catalogue) -> None:
     def projet_existant(args: dict[str, Any]) -> tuple[str, Path]:
         slug = texte(args, "projet", requis=True, maximum=60) or ""
         if slug == settings.assistant_slug:
-            raise Refus("le dossier de l'Assistant n'est pas un dépôt de projet (S6)")
+            raise Refus(projets_aide.espace_de_l_assistant(settings))
         chemin = settings.projects_dir / slug
         if structure.slugifier(slug) != slug or not chemin.is_dir():
-            raise Refus(f"projet inconnu : {slug}")
+            raise Refus(projets_aide.projet_inconnu(settings, slug))
         return slug, chemin
 
     def titre_de(slug: str) -> str:

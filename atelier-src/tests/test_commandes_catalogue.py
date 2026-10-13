@@ -373,6 +373,29 @@ def test_le_refus_du_jeton_dit_pourquoi_et_quoi_faire(tmp_path: Path) -> None:
     assert "expiré" in expire.charge["erreur"] and engageant.appels == []
 
 
+def test_un_jeton_deja_servi_dit_que_la_commande_a_ete_executee(tmp_path: Path) -> None:
+    """Constaté le 12/10 : la personne clique « Oui », l'Assistant repasse son jeton et lit « rien n'a été fait »."""
+    catalogue, engageant, _ = _catalogue(tmp_path)
+    jeton = _executer(catalogue.executer("atelier_essai_engageant", {"valeur": 5}, _modele("conversation:assistant"))).charge[
+        "confirmation"
+    ]
+    _executer(catalogue.confirmer(jeton, contexte_interface()))
+    assert len(engageant.appels) == 1
+    rejoue = _executer(
+        catalogue.executer("atelier_essai_engageant", {"valeur": 5, "confirmation": jeton}, _modele("conversation:assistant"))
+    )
+    assert rejoue.statut == REFUSE and len(engageant.appels) == 1, "elle n'est pas exécutée deux fois"
+    erreur = rejoue.charge["erreur"]
+    assert "a déjà servi" in erreur and "par la personne" in erreur
+    assert "a été exécutée" in erreur and "ne la relance pas" in erreur
+    assert "Rien n'a été fait" not in erreur, "elle a été faite : ne pas dire le contraire"
+    # Un jeton jamais vu reste « inconnu », avec de quoi repartir.
+    inconnu = _executer(
+        catalogue.executer("atelier_essai_engageant", {"valeur": 5, "confirmation": "zzz"}, _modele("conversation:assistant"))
+    )
+    assert "inconnu" in inconnu.charge["erreur"] and "SANS `confirmation`" in inconnu.charge["erreur"]
+
+
 def test_le_oui_de_la_personne_garde_celui_qui_avait_demande(tmp_path: Path) -> None:
     """Un lancement demandé par l'Assistant et confirmé par la personne sait qui l'a demandé."""
     catalogue = Catalogue(journal=Journal(tmp_path / "journal"))
