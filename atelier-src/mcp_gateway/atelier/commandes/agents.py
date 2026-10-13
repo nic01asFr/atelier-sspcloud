@@ -34,6 +34,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from mcp_gateway.atelier import projets_aide
 from mcp_gateway.atelier.commandes import structure
 from mcp_gateway.atelier.commandes.catalogue import Catalogue
 from mcp_gateway.atelier.commandes.creations import entier, liste_de_noms, services_de, texte
@@ -214,10 +215,10 @@ def inscrire_les_agents(app: Any, catalogue: Catalogue) -> None:
     def dossier_de(projet: str | None, ident: str) -> Path:
         if projet:
             if projet == settings.assistant_slug:
-                raise Refus("le dossier de l'Assistant n'accueille pas d'agent planifié")
+                raise Refus(projets_aide.espace_de_l_assistant(settings))
             chemin = settings.projects_dir / projet
             if structure.slugifier(projet) != projet or not chemin.is_dir():
-                raise Refus(f"projet inconnu : {projet}")
+                raise Refus(projets_aide.projet_inconnu(settings, projet))
             return chemin
         # Un agent qui n'est dédié à aucun projet travaille dans un dossier à
         # lui, hors de la racine des projets (il n'encombre pas la liste de Code).

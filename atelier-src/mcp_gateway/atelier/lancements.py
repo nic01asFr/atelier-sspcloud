@@ -57,6 +57,7 @@ from typing import Any, Annotated
 from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from mcp_gateway.atelier import projets_aide
 from mcp_gateway.atelier.commandes.modele import (
     ENGAGEANTE,
     LECTURE,
@@ -551,7 +552,7 @@ class Lanceur:
             if (racine / slug / MARQUEUR_AGENT).is_file():
                 connus.add(slug)
             if slug not in connus:
-                raise Refus(f"projet inconnu : {slug}")
+                raise Refus(projets_aide.projet_inconnu(self.settings, slug))
             if any(p.slug == slug and getattr(p, "archived", False) for p in tous):
                 raise Refus(f"projet rangé : {slug} ; un agent lancé là ne se verrait pas")
         dossier = racine / slug

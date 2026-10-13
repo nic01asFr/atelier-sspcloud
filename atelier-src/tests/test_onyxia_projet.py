@@ -437,3 +437,112 @@ def test_un_exec_coupe_par_le_delai_dit_comment_faire_autrement() -> None:
     )
     assert resultat["isError"]
     assert "background=true" in " ".join(b["text"] for b in resultat["content"])
+
+
+# ── Un pod muet : le pont d'exécution n'est pas démarré (constaté le 12/10 sur proj-mobscidata) ──
+
+
+class PodMuet(FauxOnyxia):
+    """Un pod dont le pont ne répond à rien : chaque `exec` finit par « The operation timed out »."""
+
+    def __init__(self, sessions: dict[str, str] | None = None) -> None:
+        super().__init__(sessions)
+        self.execs = 0
+
+    async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if outil in ox.OUTILS_D_EXECUTION:
+            self.execs += 1
+            return {"content": [{"type": "text", "text": "The operation timed out."}], "isError": True}
+        if outil == "session_status":
+            return _texte({"session_id": arguments["session_id"], "pod": POD, "kernel_alive": False})
+        return await super().appeler(outil, arguments)
+
+
+def _textes(resultat: dict[str, Any]) -> str:
+    return " ".join(b["text"] for b in resultat["content"])
+
+
+@pytest.fixture()
+def silence_immediat(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sans attendre 50 s : tout délai compte comme un silence du pod."""
+    monkeypatch.setattr(ox, "SILENCE_DU_POD_S", 0.0)
+
+
+def test_un_pod_muet_est_dit_et_pas_le_plafond_d_exec(silence_immediat: None) -> None:
+    faux = PodMuet({"proj-carte": POD})
+    texte = _textes(_appel(_mandataire(faux), "code", _borne(), "exec", {"code": 'print("hello")', "lang": "python"}))
+    assert "n'a pas répondu à `exec`" in texte and "kernel_alive=false" in texte
+    assert "pont d'exécution" in texte and "redémarrer le noyau" in texte
+    assert "plafonne" not in texte, "une commande triviale qui reste sans réponse n'est pas le plafond d'exec"
+
+
+def test_apres_deux_silences_l_agent_n_attend_plus_pour_rien(silence_immediat: None) -> None:
+    faux = PodMuet({"proj-carte": POD})
+    m = _mandataire(faux)
+    _appel(m, "code", _borne(), "exec", {"code": "echo 1"})
+    deuxieme = _textes(_appel(m, "code", _borne(), "exec", {"code": "echo 2"}))
+    assert "2e appel de suite" in deuxieme and faux.execs == 2
+    refus = _appel(m, "code", _borne(), "read_file", {"path": "x"})
+    assert refus["isError"] and faux.execs == 2, "le troisième appel ne part pas : il ne ferait qu'attendre"
+    assert "inutile de réessayer" in _textes(refus) and "avancez" in _textes(refus)
+
+
+def test_le_silence_est_oublie_apres_la_pause(silence_immediat: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    faux = PodMuet({"proj-carte": POD})
+    m = _mandataire(faux)
+    for _ in range(2):
+        _appel(m, "code", _borne(), "exec", {"code": "echo"})
+    monkeypatch.setattr(ox, "POD_MUET_PAUSE_S", 0.0)
+    _appel(m, "code", _borne(), "exec", {"code": "echo"})
+    assert faux.execs == 3, "après la pause un nouvel essai est permis"
+
+
+def test_un_pod_qui_repond_efface_le_silence(silence_immediat: None) -> None:
+    class Revient(PodMuet):
+        muet = True
+
+        async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            if outil in ox.OUTILS_D_EXECUTION and not self.muet:
+                return _texte({"ok": outil})
+            return await super().appeler(outil, arguments)
+
+    faux = Revient({"proj-carte": POD})
+    m = _mandataire(faux)
+    _appel(m, "code", _borne(), "exec", {"code": "echo"})
+    faux.muet = False
+    assert not _appel(m, "code", _borne(), "exec", {"code": "echo"})["isError"]
+    faux.muet = True
+    texte = _textes(_appel(m, "code", _borne(), "exec", {"code": "echo"}))
+    assert "2e appel" not in texte and "1e" not in texte, "la série repart de zéro"
+
+
+def test_les_sessions_sans_pod_ni_l_assistant_ne_sont_pas_suivis(silence_immediat: None) -> None:
+    faux = PodMuet({"proj-carte": POD})
+    m = _mandataire(faux)
+    for _ in range(3):
+        _appel(m, "assistant", None, "exec", {"session_id": "proj-carte", "code": "echo"})
+    assert faux.execs == 3, "l'Assistant n'est pas borné par ce suivi"
+
+
+def test_une_commande_coupee_au_plafond_garde_son_indice_habituel() -> None:
+    """Coupée à ~40 s, elle dit le plafond d'exec : seul un silence de 50 s ou plus est un pod muet."""
+    faux = PodMuet({"proj-carte": POD})
+    texte = _textes(_appel(_mandataire(faux), "code", _borne(), "exec", {"code": "make"}))
+    assert "background=true" in texte and "n'a pas répondu" not in texte
+
+
+def test_sonder_dit_pret_muet_ou_refuse() -> None:
+    pret = asyncio.run(_mandataire(FauxOnyxia({"proj-carte": POD})).sonder(_borne()))
+    assert pret == {"etat": "pret"}
+
+    class Lent(FauxOnyxia):
+        async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            await asyncio.sleep(1)
+            return _texte({"ok": 1})
+
+    muet = asyncio.run(_mandataire(Lent({"proj-carte": POD})).sonder(_borne(), delai_s=0.05))
+    assert muet["etat"] == "muet" and "pas de réponse" in muet["detail"]
+    delai = asyncio.run(_mandataire(PodMuet({"proj-carte": POD})).sonder(_borne()))
+    assert delai["etat"] == "muet"
+    sans_pod = asyncio.run(_mandataire(FauxOnyxia()).sonder(ox.borne_du_projet("carte", structure.Deploiement(service="a.service.yml"))))
+    assert sans_pod == {"etat": "sans_pod"}

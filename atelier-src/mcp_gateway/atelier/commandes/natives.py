@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from mcp_gateway.atelier import git_repos, github_compte
+from mcp_gateway.atelier import projets_aide
 from mcp_gateway.atelier.commandes import structure
 from mcp_gateway.atelier.commandes.a_valider import (
     ACCEPTEE,
@@ -94,9 +95,9 @@ def inscrire_les_natives(catalogue: Catalogue, s: Services) -> None:
     def projet_existant(args: dict[str, Any]) -> str:
         slug = _texte(args, "projet", requis=True, maximum=60) or ""
         if slug == settings.assistant_slug:
-            raise Refus("le dossier de l'Assistant n'est pas un projet qu'on modifie par commande")
+            raise Refus(projets_aide.espace_de_l_assistant(settings))
         if not racine(slug).is_dir():
-            raise Refus(f"projet inconnu : {slug}")
+            raise Refus(projets_aide.projet_inconnu(settings, slug))
         return slug
 
     def pool() -> dict[str, Any]:

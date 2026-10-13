@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
+from mcp_gateway.atelier import projets_aide
 from mcp_gateway.atelier.apps.manifeste import (
     FICHIER_AUTEUR,
     FICHIER_MANIFESTE,
@@ -143,11 +144,9 @@ class ServiceApps:
     # ── Projets et manifestes ─────────────────────────────────────────
 
     def racine_projet(self, slug: str) -> Path:
-        if not slug_valide(slug):
-            raise ApplicationInconnue(f"projet inconnu : {slug}")
-        racine = self.settings.projects_dir / slug
-        if racine.is_symlink() or not racine.is_dir():
-            raise ApplicationInconnue(f"projet inconnu : {slug}")
+        racine = self.settings.projects_dir / slug if slug_valide(slug) else None
+        if racine is None or racine.is_symlink() or not racine.is_dir():
+            raise ApplicationInconnue(projets_aide.projet_inconnu(self.settings, slug))
         return racine
 
     def manifeste(self, slug: str, nom: str) -> Manifeste | None:

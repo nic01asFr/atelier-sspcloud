@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlsplit
 
+from mcp_gateway.atelier import projets_aide
 from mcp_gateway.atelier.commandes import structure
 from mcp_gateway.atelier.commandes.catalogue import Catalogue
 from mcp_gateway.atelier.commandes.creations import booleen, liste_de_noms, services_de, texte
@@ -159,10 +160,10 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
 
     def projet_existant(slug: str) -> Path:
         if slug == settings.assistant_slug:
-            raise Refus("le dossier de l'Assistant n'a pas de choix de connecteurs par commande")
+            raise Refus(projets_aide.espace_de_l_assistant(settings))
         chemin = settings.projects_dir / slug
         if structure.slugifier(slug) != slug or not chemin.is_dir():
-            raise Refus(f"projet inconnu : {slug}")
+            raise Refus(projets_aide.projet_inconnu(settings, slug))
         return chemin
 
     # ── Ajouter ─────────────────────────────────────────────────────────

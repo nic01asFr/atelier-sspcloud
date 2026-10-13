@@ -230,3 +230,39 @@ def test_le_point_d_entree_complet_sert_l_assistant(atelier, cle_du_proprietaire
 def test_sans_cle_refuse(atelier, chemin: str) -> None:  # noqa: ANN001
     assert _post(atelier, chemin, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, None).status_code == 401
     assert _post(atelier, chemin, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, "mauvaise").status_code == 401
+
+
+@besoin_de_git
+def test_declarer_un_pod_muet_l_ecrit_mais_previent_la_personne(atelier) -> None:  # noqa: ANN001
+    """Constaté le 12/10 : pod neuf, pont absent. La liaison est écrite, la carte dit que l'exécution ne marchera pas."""
+    from test_onyxia_projet import PodMuet
+
+    slug = _projet(atelier)
+    atelier.app.state.onyxia_mandataire.sonder.__func__  # la sonde est une méthode du mandataire
+    faux = PodMuet()
+    _brancher(atelier, faux)
+    original = ox.MandataireOnyxia.sonder
+
+    async def sonde_courte(self, borne, delai_s=12.0):  # noqa: ANN001, ANN202
+        return await original(self, borne, delai_s=0.05)
+
+    ox.MandataireOnyxia.sonder = sonde_courte  # type: ignore[method-assign]
+    try:
+        reponse = _executer(atelier, NOM, {"projet": slug, "pod": POD})
+    finally:
+        ox.MandataireOnyxia.sonder = original  # type: ignore[method-assign]
+    assert reponse.statut == FAIT, reponse.charge
+    assert _fiche(atelier, slug).deploiement is not None, "la liaison est écrite : la décision est celle de la personne"
+    carte = reponse.charge["carte"]
+    assert "ATTENTION" in carte["resume"] and "pont d'exécution" in carte["resume"]
+    assert carte["preuve"]["execution"]["etat"] == "muet"
+
+
+@besoin_de_git
+def test_declarer_un_pod_qui_repond_n_ajoute_aucun_avertissement(atelier) -> None:  # noqa: ANN001
+    slug = _projet(atelier)
+    _brancher(atelier, FauxOnyxia())
+    reponse = _executer(atelier, NOM, {"projet": slug, "pod": POD})
+    assert reponse.statut == FAIT
+    assert "ATTENTION" not in reponse.charge["carte"]["resume"]
+    assert reponse.charge["carte"]["preuve"]["execution"] == {"etat": "pret"}

@@ -167,6 +167,8 @@ class Catalogue:
         self._natives: dict[str, Commande] = {}
         self._declarations: dict[str, DeclarationOutil] = {}
         self._jetons: dict[str, _Jeton] = {}
+        # Les jetons déjà servis, pour dire « c'est fait » plutôt que « inconnu » à qui les repasse.
+        self._servis: dict[str, dict[str, Any]] = {}
         self._verrou = threading.Lock()
         # Rappelés après chaque commande réussie qui change quelque chose :
         # la carte de l'Atelier (§1.3) s'y branchera.
@@ -358,6 +360,15 @@ class Catalogue:
                 return None
             if trouve.acteur != ctx.acteur and not ctx.est_la_personne:
                 return None
+            maintenant_s = time.time()
+            for cle in [k for k, v in self._servis.items() if maintenant_s - v["quand"] > JETON_DUREE_S]:
+                self._servis.pop(cle, None)
+            self._servis[jeton] = {
+                "quand": maintenant_s,
+                "personne": ctx.est_la_personne,
+                "nom": trouve.nom,
+                "empreinte": trouve.empreinte,
+            }
             return self._jetons.pop(jeton)
 
     def _accord_manquant(self, jeton: str, ctx: Contexte) -> str:
@@ -394,9 +405,19 @@ class Catalogue:
         with self._verrou:
             trouve = self._jetons.get(jeton)
         if trouve is None:
+            with self._verrou:
+                servi = self._servis.get(jeton)
+            if servi is not None and servi["nom"] == nom:
+                quand = time.strftime("%H:%M:%S", time.localtime(servi["quand"]))
+                par = "la personne" if servi["personne"] else "un appel de cette conversation"
+                return (
+                    f"cette confirmation a déjà servi à {quand}, par {par} : la commande {nom} a été "
+                    "exécutée (ou tentée) — ne la relance pas. Regarde son résultat (atelier_journal avec "
+                    f"commande={nom}) ; ne redemande un aperçu que si tu veux la refaire."
+                )
             return (
-                "jeton de confirmation inconnu : déjà servi, ou l'aperçu s'est perdu "
-                f"(redémarrage de l'Atelier). {suite}"
+                "jeton de confirmation inconnu : l'aperçu s'est perdu (redémarrage de l'Atelier) ou le "
+                f"jeton est faux. {suite}"
             )
         if trouve.expire < time.time():
             return f"jeton de confirmation expiré (il vaut {JETON_DUREE_S // 60} minutes). {suite}"
