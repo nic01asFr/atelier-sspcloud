@@ -566,11 +566,11 @@ produit.
   installé. `project_bind` réussit (il n'attache que la session) ; ensuite chaque `exec` attend
   60 s puis « The operation timed out », cinq fois de suite, et l'agent conclut que le noyau est
   mort et propose à la personne de le redémarrer : ce n'est pas le remède, il n'a jamais démarré.
-  **Statut : constaté, à corriger.** Correction : (1) `atelier_projet_deployer_declarer` essaie un
-  `exec` trivial et dit « pod pas prêt : le pont n'est pas installé » plutôt que d'écrire une
-  déclaration qui ne marchera pas ; (2) le filtre Onyxia de l'Atelier renvoie à l'agent une phrase
-  qui dit quoi faire (« le pod n'est pas prêt ; ne réessaie pas ; dis-le à la personne ») dès que
-  `session_status` annonce `kernel_alive: false`, au lieu de laisser courir les délais.
+  **Statut : corrigé pour le diagnostic (13/10), pas pour l'installation du pont.** (1) `atelier_projet_deployer_declarer`
+  essaie un `exec` trivial (12 s) : la liaison est écrite, la carte dit « ATTENTION : le pod ne répond pas… » ;
+  (2) le filtre Onyxia dit à l'agent qu'un appel resté 50 s sans réponse est un pod muet (et non le plafond
+  d'exec), avec l'état `kernel_alive`, et après deux silences d'affilée ne le fait plus attendre pendant 2 minutes.
+  **Reste** : installer ou démarrer le pont, qui relève du serveur Onyxia (`sspcloud-mcp`), pas de l'Atelier.
 - **D-66 (m) — Une application lancée dans un pod sur `127.0.0.1` répond 502 derrière l'adresse
   publique.** Constaté sur `annotation-603783` : `app.run(host='127.0.0.1', port=5000)` (écrit pour
   un poste) ; le service arrive sur l'adresse du pod, pas sur la boucle locale. En local tout
@@ -599,6 +599,19 @@ produit.
   Règle pour le guide : un écran de traitement par lots montre le **fait**, le **reste** et un
   **état final** distinct de l'état vide ; la vérité des chiffres se contrôle sur le disque, pas
   sur l'écran.
+
+- **D-69 (M) — Un « projet » mal désigné rend « projet inconnu » sans rien dire de plus.** Journal du 12 et du
+  13/10 : l'Assistant passe l'identifiant de sa conversation, ou le slug de son propre espace (que `atelier_projets`
+  liste pourtant), reçoit un refus muet et conclut « l'Assistant n'a pas de projet ». **Statut : corrigé le 13/10
+  (tests).** `projets_aide` : tous les refus de désignation portent la liste des projets, le nom proche, et pour
+  l'espace de l'Assistant ou un identifiant de conversation pourquoi et quoi faire.
+- **D-70 (M) — Une confirmation déjà servie disait « rien n'a été fait ».** Journal du 12/10 : la personne clique
+  « Oui », l'Assistant repasse son jeton et lit « inconnu : déjà servi… Rien n'a été fait » — alors que c'était fait —
+  et redemande trois fois l'aperçu. **Statut : corrigé le 13/10 (test).** Le refus dit « a déjà servi à HH:MM, par la
+  personne : exécutée, ne la relance pas ».
+- **D-71 (G) — GitHub : se connecter, voir ses dépôts, en ouvrir un comme projet.** Demandé le 12/10. **Statut : phase 1
+  faite le 13/10 (tests ; à vérifier sur le pod).** Voir `fonctionnalites.md` §2. **Reste** : mettre à jour un dépôt
+  ouvert (`pull`), pousser sur `agent/*` seulement, jamais sur `main` sans confirmation, le jeton jamais exposé aux agents.
 
 ## 5. Déjà corrigés (pour mémoire)
 

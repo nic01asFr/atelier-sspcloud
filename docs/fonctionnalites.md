@@ -142,6 +142,17 @@ signale tout processus `claude` sans garde-fou sans fiche de l'Atelier.
 (`cli_inactivite_s`), trois au plus à la fois (`cli_processus_max`). Le modèle passe par le relais
 LLM local (port 8790), qui porte la compaction et corrige les réponses de la passerelle de modèles.
 
+**GitHub** (onglet Réglages). La personne colle une fois un jeton « fine-grained » (le plus étroit : dépôts
+choisis, contenu seulement) : l'Atelier le vérifie auprès de GitHub puis le garde en 0600 dans
+`~/work/.secrets/github_token`, ne le rend jamais (ni à l'écran, ni dans une erreur, ni au journal), et git le lit par
+`GIT_ASKPASS`, jamais par l'adresse ni par une commande. L'écran liste les dépôts publics et privés du compte (recherche,
+« Ouvrir comme projet »). `atelier_github_depots` (lecture) et `atelier_projet_depuis_github` (réversible : Annuler range
+le projet) font la même chose pour l'Assistant, et seulement pour lui. Le dépôt est cloné dans `~/work/projects/<slug>`
+(nom validé `proprietaire/depot`, taille plafonnée à 500 Mo, origine sans secret) ; les fichiers de l'Atelier
+(`.mcp.json`, `.atelier/…`) vont dans `.git/info/exclude`, jamais dans son `.gitignore` ; le dépôt ouvert est noté
+(`.git/atelier-clone.json`, `~/work/.atelier-etat/depots.json`). Le propriétaire de la publication se déduit du compte
+connecté. Pas encore : mettre à jour un dépôt ouvert, pousser sur `agent/*` (suite du lot).
+
 **Structure type d'un projet** (`atelier_projet_creer`, ou `atelier_projet_structurer` pour un
 projet ancien) : `CLAUDE.md` dont la première ligne importe `@.atelier/contexte.md`, `ETAT.md`
 (seul endroit de l'état : lot courant, « À décider », « Demandé à l'Atelier »…), `README.md`,
