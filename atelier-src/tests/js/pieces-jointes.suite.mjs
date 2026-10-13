@@ -22,6 +22,21 @@ const ID = "06d952d1-34ed-409c-aa3c-7aeb97c2d7d0";
 }
 
 {
+  // Depuis le 13/10 : chemin absolu (un modèle non-Claude lisait le relatif depuis son HOME), et une ligne de
+  // conseil pour les fichiers que Read ne lit pas tel quel.
+  const dossier = "/home/onyxia/work/wikichat-memory/assistant/sessions/abc";
+  const r = piecesJointesDuTexte(
+    `corrige-le\n@${dossier}/.atelier/uploads/${ID}_CANBT.html\n` +
+      `@${dossier}/.atelier/uploads/${ID.replace("06", "07")}_bilan 2025.xlsx\n` +
+      "(pièce jointe « bilan 2025.xlsx » — classeur : le lire avec python (`pandas.read_excel` ou `openpyxl`), jamais avec Read)"
+  );
+  egal(r.texte, "corrige-le", "ni le chemin absolu ni la ligne de conseil ne s'affichent");
+  egal(r.pieces.map((p) => p.name), ["CANBT.html", "bilan 2025.xlsx"], "le chemin absolu se lit par le nom du fichier");
+  const ancien = piecesJointesDuTexte(`@.atelier/uploads/${ID}_vieux.txt`);
+  egal(ancien.pieces, [{ name: "vieux.txt" }], "les messages d'avant (chemin relatif) se lisent encore");
+}
+
+{
   const sans = piecesJointesDuTexte("rien de joint ici, sauf un @utilisateur et un mail a@b.fr");
   egal(sans.pieces, [], "une mention ordinaire n'est pas un fichier");
   egal(sans.texte, "rien de joint ici, sauf un @utilisateur et un mail a@b.fr", "le texte n'est pas touché");

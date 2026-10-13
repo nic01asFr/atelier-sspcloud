@@ -1003,20 +1003,25 @@ function texteDeLaPersonne(texte) {
 /**
  * Les fichiers joints d'un message de la personne, d'après son texte.
  *
- * L'Atelier ajoute au message, pour Claude, une mention `@.atelier/uploads/
- * <id>_<nom>` par fichier — la mention `@fichier` de Claude Code. Relu depuis
- * la transcription, le message les porte en clair : on les rend en pastilles
+ * L'Atelier ajoute au message, pour l'agent, une mention `@<chemin absolu>/
+ * .atelier/uploads/<id>_<nom>` par fichier — la mention `@fichier` de Claude
+ * Code — et, pour un fichier que Read ne lit pas tel quel, une ligne
+ * `(pièce jointe « nom » — conseil)`. Les messages d'avant le 13/10 portaient
+ * le chemin relatif `@.atelier/uploads/…` : on lit les deux. Relu depuis la
+ * transcription, le message les porte en clair : on les rend en pastilles
  * nommées plutôt qu'avec un chemin technique.
  */
 export function piecesJointesDuTexte(texte) {
   const pieces = [];
-  const reste = String(texte || "").replace(
-    /^[ \t]*@\.atelier\/uploads\/[0-9A-Za-z-]{8,}_([^\r\n]+?)[ \t]*$/gm,
-    (_, nom) => {
-      pieces.push({ name: nom });
-      return "";
-    }
-  );
+  const reste = String(texte || "")
+    .replace(
+      /^[ \t]*@(?:\.|\/[^\r\n]*?\/\.)atelier\/uploads\/[0-9A-Za-z-]{8,}_([^\r\n]+?)[ \t]*$/gm,
+      (_, nom) => {
+        pieces.push({ name: nom });
+        return "";
+      }
+    )
+    .replace(/^[ \t]*\(pièce jointe « [^\r\n]* » — [^\r\n]*\)[ \t]*$/gm, "");
   return { texte: reste.replace(/\n{2,}/g, "\n").trim(), pieces };
 }
 

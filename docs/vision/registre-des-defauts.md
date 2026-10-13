@@ -623,6 +623,29 @@ produit.
   `sspcloud-mcp` (`sspcloud_mcp/_helm.py` + `gpu_broker.py`, et la copie `passerelle/mcp/gpu_broker.py`), reconstruire
   l'image et relancer le déploiement `mcp`. D'ici là, ne pas appeler `gpu_switch` pour un projet au nom de plus de
   23 caractères : lancer le pod depuis `passerelle-mcp-dev` (`gpu_broker.ensure_slot`).
+  **Chaîne 3DGS validée de bout en bout le 13/10** (14 photos → COLMAP 12 photos → 7000 itérations sur le T4 en
+  ~8 min → modèle de 300 Mo rapatrié) : le pod GPU porte un *worker* HTTP (`~/work/3dgs/worker.py`, FastAPI, un
+  calcul à la fois) derrière un Service du namespace (`gaussian-splatting-capture-render-gpu:8000`, même convention
+  que `albert-proxy-gpu`) ; l'app de capture, sur le pod de l'Atelier, lui envoie les photos, suit l'avancement et
+  rapatrie le `.ply` + un aperçu léger (250 000 points) pour le navigateur. Environnement du pod GPU : micromamba
+  (`~/work/.mamba/envs/splat` : `colmap` 4.x GPU, `libopenimageio=3.1`, `cuda-nvcc` 13.2), venv
+  `~/work/3dgs/venv` (`--system-site-packages`, torch du pod), rasterizer compilé pour sm_75 avec `#include
+  <cstdint>` ajouté, `convert.py` adapté aux options COLMAP 4 (`--FeatureExtraction.use_gpu`). Cette recette n'est
+  pas encore un outil : un agent la refait à la main.
+- **D-73 (G) — Une pièce jointe que l'agent ne retrouve pas, et des pages d'application dont les boutons ne
+  répondent pas.** Même cause : un chemin donné **relatif**, résolu depuis un autre dossier que celui de l'auteur.
+  (1) Le message portait `@.atelier/uploads/<id>_<nom>` ; un modèle non-Claude l'a lu depuis son HOME
+  (`/home/onyxia/.atelier/uploads/…`) : « File does not exist » ×2 avant de deviner le chemin absolu (conversation
+  `e7392b98`, `CANBT.html` + une capture). (2) L'app de capture appelait `fetch('/train')` : servie sous
+  `/<projet>/<nom>/`, la page s'affichait et plus rien ne répondait ; l'agent ne pouvait pas le voir, et le
+  vérificateur écartait les applications serveur. **Statut : corrigé le 13/10 (tests).** Les pièces jointes sont
+  citées en `@<chemin absolu>` ; chacune porte un genre (`texte`, `image`, `pdf` lus par Read ; `a_ouvrir` : Office,
+  archives, bases, audio, vidéo ; `inconnu`) et, quand Read ne suffit pas, une ligne de conseil (« classeur : le lire
+  avec pandas, jamais avec Read », « archive : `unzip -l` puis extraire », « gros fichier : par tranches »). L'écran
+  continue de les rendre en pastilles (ancien et nouveau format). `atelier_artefact_verifier` et `atelier_montrer`
+  lisent désormais aussi les pages des applications serveur et signalent tout chemin qui commence par `/`
+  (`fetch`, `href`, `src`, `action`, `window.open`, `EventSource`, `WebSocket`, `location`) avec son équivalent relatif.
+  **Règle** : tout chemin remis à un agent est absolu, tout chemin écrit dans une page est relatif.
 
 ## 5. Déjà corrigés (pour mémoire)
 
