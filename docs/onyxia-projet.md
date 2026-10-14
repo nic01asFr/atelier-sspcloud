@@ -145,9 +145,9 @@ l'entrée `mcpServers`, ou `None`. Le porteur est le même que celui du serveur 
 | Profil | Entrée | Outils |
 |---|---|---|
 | `code`, projet sans `deploiement` | `None` | aucun |
-| `code`, `deploiement.pod` | `http://127.0.0.1:<port>/mcp/onyxia/projet/<slug>` | `exec`, `job_poll`, `read_file`, `write_file`, `list_files`, `session_status`, `project_bind` ; `session_id` imposé à `proj-<slug>`, `project_bind` imposé à son pod |
+| `code`, `deploiement.pod` | `http://127.0.0.1:<port>/mcp/onyxia/projet/<slug>` | `exec`, `job_poll`, `read_file`, `write_file`, `list_files`, `session_status`, `project_bind` ; `session_id` imposé à `proj-<slug>` (pod CPU), `project_bind` imposé à son pod |
 | `code`, `deploiement.service` | idem | `service_status`, `service_deploy`, `service_stop`, `service_warm`, `service_provision` ; `yaml_path` imposé |
-| `code`, `gpu: true` | idem | en plus : `gpu_switch` (projet imposé, **sans préemption**), `gpu_release` (projet imposé), `gpu_status` |
+| `code`, `gpu: true` | idem | en plus : `gpu_switch` (projet imposé, **sans préemption**, session `proj-<slug>-gpu`), `gpu_release` (projet imposé), `gpu_status` (état du slot, sans session). Les outils d'exécution prennent alors `cible` : « cpu » (défaut) ou « gpu » |
 | `assistant` | `http://127.0.0.1:<port>/mcp/onyxia` | les 24 outils ; `expose_public` et `unexpose_public` en classe `reservee` |
 | tous, si le pool n'a pas `Onyxia` (`pool` fourni) | `None` | aucun |
 
@@ -161,9 +161,20 @@ Règles du filtre (`filtrer_appel`) :
   imposés sont retirés des schémas montrés à l'agent.
 - **`expose_public` et `unexpose_public` sont refusés à tout modèle**, dans les deux profils,
   avec l'invitation à passer par « À valider ».
-- **Avant un outil de session**, le mandataire vérifie que `proj-<slug>` vise bien le pod du
-  projet, ou un pod GPU `proj-<slug>-gpu-…`. Il l'attache par `project_bind` si elle n'existe
-  pas, et refuse si elle est partie ailleurs. Cette vérification est gardée 60 s.
+- **Un projet avec GPU a deux pods, donc deux sessions** (14/10) : `proj-<slug>` pour le pod CPU,
+  `proj-<slug>-gpu` pour le pod GPU. `exec`, `job_poll`, `read_file`, `write_file`, `list_files` et
+  `session_status` prennent `cible` (`cpu` par défaut, `gpu`) ; l'argument est montré à l'agent seulement
+  quand le projet a les deux pods, et n'est jamais envoyé à Onyxia. Sans pod CPU (service + GPU), la
+  cible par défaut est `gpu`. Avant, `gpu_switch` déplaçait l'unique session sur le GPU : le pod CPU
+  disparaissait, et un `exec` « cpu » pouvait partir sur le GPU sans le dire.
+- **Avant un outil de session**, le mandataire vérifie que la session visée vise bien son pod : le pod
+  déclaré pour `proj-<slug>`, un pod GPU `proj-<nom>-gpu-…` (nom court au-delà de 23 caractères, D-72)
+  pour `proj-<slug>-gpu`. Il l'attache par `project_bind` si elle n'existe pas (le pod GPU doit déjà
+  tourner : sinon le refus dit « lancez gpu_switch »), et refuse si elle est partie ailleurs. Cette
+  vérification est gardée 60 s, et oubliée à chaque `gpu_switch` ou `gpu_release`.
+- **Le pod muet se compte par pod** : un GPU qui ne répond pas ne rend pas le pod CPU muet.
+- **Un `exec` bash dans un pod neuf** : le serveur Onyxia le lance dans `…/projects/<projet>`, absent du
+  volume. Le mandataire crée ce dossier (celui de CE projet seulement), dans le pod visé, puis rejoue une fois.
 - La fiche est relue à chaque appel : une déclaration ou un retrait vaut dès l'appel suivant.
 
 ## 5. Ce qui est vérifié, et ce qui ne l'est pas

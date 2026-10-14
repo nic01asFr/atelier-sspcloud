@@ -51,7 +51,14 @@ def test_un_pod_seul_ne_promet_ni_service_ni_gpu(tmp_path: Path) -> None:
 def test_un_service_avec_gpu_promet_ce_qu_il_a(tmp_path: Path) -> None:
     ligne = _ligne_onyxia(_projet(tmp_path, {"service": "carte.service.yml", "gpu": True}))
     assert "carte.service.yml" in ligne and "GPU" in ligne
-    assert "exécuter du code" not in ligne  # pas de pod : pas d'exec
+    # Pas de pod CPU : l'exécution vise le pod GPU, et lui seul.
+    assert "pod GPU proj-carte-gpu-jupyter-pytorch-gpu-0" in ligne and "pod CPU" not in ligne
+
+
+def test_un_pod_avec_gpu_dit_les_deux_pods_et_la_cible(tmp_path: Path) -> None:
+    ligne = _ligne_onyxia(_projet(tmp_path, {"pod": POD, "gpu": True}))
+    assert f"pod CPU {POD}" in ligne and "pod GPU proj-carte-gpu-jupyter-pytorch-gpu-0" in ligne
+    assert "cible" in ligne and "gpu_switch" in ligne
 
 
 def test_une_fiche_cassee_n_est_pas_une_absence(tmp_path: Path) -> None:

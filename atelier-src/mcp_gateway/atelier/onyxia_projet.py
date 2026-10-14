@@ -115,6 +115,19 @@ def prefixe_des_pods_gpu(slug: str) -> str:
     return f"proj-{nom_gpu_du_projet(slug)}-gpu-"
 
 
+# Le chart GPU du courtier : le pod du projet s'appelle `<prefixe>jupyter-pytorch-gpu-0`.
+GPU_CHART = "jupyter-pytorch-gpu"
+
+
+def session_gpu_du_projet(slug: str) -> str:
+    """La session Onyxia du pod GPU d'un projet. Deux pods, deux sessions : celle du pod CPU ne bouge pas."""
+    return f"proj-{slug}-gpu"
+
+
+def pod_gpu_du_projet(slug: str) -> str:
+    return f"{prefixe_des_pods_gpu(slug)}{GPU_CHART}-0"
+
+
 @dataclass(frozen=True)
 class Borne:
     """Ce qu'un agent code du projet peut viser, et rien d'autre."""
@@ -132,6 +145,21 @@ class Borne:
         if self.pod is not None and pod == self.pod:
             return True
         return self.gpu and pod.startswith(prefixe_des_pods_gpu(self.slug))
+
+    # Un projet avec GPU a un pod CPU et un pod GPU : deux cibles, chacune sa session Onyxia.
+    @property
+    def cibles(self) -> tuple[str, ...]:
+        return tuple(c for c, present in (("cpu", self.pod is not None), ("gpu", self.gpu)) if present)
+
+    @property
+    def cible_par_defaut(self) -> str:
+        return "cpu" if self.pod is not None else "gpu"
+
+    def session_de(self, cible: str) -> str:
+        return self.session if cible == "cpu" else session_gpu_du_projet(self.slug)
+
+    def pod_de(self, cible: str) -> str:
+        return (self.pod or "") if cible == "cpu" else pod_gpu_du_projet(self.slug)
 
 
 def borne_du_projet(slug: str, deploiement: structure.Deploiement) -> Borne:
@@ -158,29 +186,34 @@ class Regle:
 
     libres: frozenset[str] = frozenset()
     imposes: dict[str, Any] = field(default_factory=dict)
+    # La session dépend de la cible choisie (`cpu` ou `gpu`) : `session_id` n'est pas figé ici mais résolu.
+    par_cible: bool = False
 
 
 def regles_code(borne: Borne) -> dict[str, Regle]:
     """Les outils d'un agent code, bornés à ce déploiement."""
     ns = {"namespace": borne.namespace}
     regles: dict[str, Regle] = {}
-    if borne.pod is not None:
-        session = {"session_id": borne.session}
+    if borne.cibles:
+        # Exécuter, lire, écrire, dans le pod CPU du projet et/ou dans son pod GPU : `cible` choisit.
+        def par_cible(libres: frozenset[str]) -> Regle:
+            return Regle(libres, {}, par_cible=True)
+
         regles.update(
             {
-                # Exécuter, lire, écrire, dans le pod du projet.
-                "exec": Regle(frozenset({"code", "lang", "timeout", "background"}), session),
-                "job_poll": Regle(frozenset({"job_id"}), session),
-                "read_file": Regle(frozenset({"path", "max_bytes"}), session),
-                "write_file": Regle(frozenset({"path", "content"}), session),
-                "list_files": Regle(frozenset({"path", "depth"}), session),
-                # État de sa session, et (ré)attachement à son pod.
-                "session_status": Regle(frozenset(), session),
-                "project_bind": Regle(
-                    frozenset(),
-                    {**session, "pod": borne.pod, "project": borne.slug, **ns},
-                ),
+                "exec": par_cible(frozenset({"code", "lang", "timeout", "background"})),
+                "job_poll": par_cible(frozenset({"job_id"})),
+                "read_file": par_cible(frozenset({"path", "max_bytes"})),
+                "write_file": par_cible(frozenset({"path", "content"})),
+                "list_files": par_cible(frozenset({"path", "depth"})),
+                # État d'une session.
+                "session_status": par_cible(frozenset()),
             }
+        )
+    if borne.pod is not None:
+        # (Ré)attachement de la session du pod CPU à son pod. Celle du GPU s'attache seule, ou par gpu_switch.
+        regles["project_bind"] = Regle(
+            frozenset(), {"session_id": borne.session, "pod": borne.pod, "project": borne.slug, **ns}
         )
     if borne.service is not None:
         yaml = {"yaml_path": borne.service}
@@ -197,24 +230,17 @@ def regles_code(borne: Borne) -> dict[str, Regle]:
     if borne.gpu:
         regles.update(
             {
-                # Son GPU : basculer le slot vers le pod GPU du projet, sans
-                # préempter celui d'un autre projet, et le rendre.
-                # `session_id` seulement s'il y a un pod : sans lui, `proj-<slug>`
-                # n'existe pas côté Onyxia et l'appel échouerait en NO_SESSION.
+                # Son GPU : basculer le slot vers le pod GPU du projet, sans préempter celui d'un autre projet, et
+                # le rendre. La session attachée est celle du GPU (`proj-<projet>-gpu`), jamais celle du pod CPU : les
+                # deux pods se travaillent dans le même tour, par `cible`.
                 "gpu_switch": Regle(
                     frozenset({"idle_minutes"}),
-                    {
-                        "project": borne.slug,
-                        **({"session_id": borne.session} if borne.pod is not None else {}),
-                        "preempt": False,
-                        **ns,
-                    },
+                    {"project": borne.slug, "session_id": session_gpu_du_projet(borne.slug), "preempt": False, **ns},
                 ),
                 "gpu_release": Regle(frozenset(), {"project": borne.slug, **ns}),
-                "gpu_status": Regle(
-                    frozenset(),
-                    {"session_id": borne.session} if borne.pod is not None else {**ns},
-                ),
+                # Sans argument : l'état du slot (qui le tient, charge, VRAM). `nvidia-smi` du pod : un `exec`
+                # sur la cible `gpu`.
+                "gpu_status": Regle(frozenset(), {**ns}),
             }
         )
     return regles
@@ -258,10 +284,23 @@ def filtrer_appel(
             f"{outil} n'est pas ouvert aux agents du projet {borne.slug} : seuls les outils "
             "bornés à son déploiement le sont"
         )
+    cible = arguments.pop("cible", None)
+    imposes = regle.imposes
+    if regle.par_cible:
+        cible = cible if cible is not None else borne.cible_par_defaut
+        if cible not in borne.cibles:
+            raise RefusOnyxia(
+                f"{outil} : cible={cible!r} n'existe pas pour le projet {borne.slug} "
+                f"(cibles : {', '.join(borne.cibles)})"
+                + (" — le projet n'a pas de GPU déclaré" if cible == "gpu" else " — le projet n'a pas de pod CPU déclaré")
+            )
+        imposes = {**imposes, "session_id": borne.session_de(cible)}
+    elif cible is not None:
+        raise RefusOnyxia(f"{outil} : argument 'cible' non admis")
     sortie: dict[str, Any] = {}
     for cle, valeur in arguments.items():
-        if cle in regle.imposes:
-            voulu = regle.imposes[cle]
+        if cle in imposes:
+            voulu = imposes[cle]
             if voulu is _ABSENT or valeur != voulu:
                 raise RefusOnyxia(
                     f"{outil} : {cle}={valeur!r} vise autre chose que le déploiement du projet "
@@ -271,7 +310,7 @@ def filtrer_appel(
         if cle not in regle.libres:
             raise RefusOnyxia(f"{outil} : argument {cle!r} non admis pour un agent de projet")
         sortie[cle] = valeur
-    for cle, voulu in regle.imposes.items():
+    for cle, voulu in imposes.items():
         if voulu is not _ABSENT:
             sortie[cle] = voulu
     return sortie
@@ -292,14 +331,27 @@ def outils_visibles(
                 continue
             copie = copy.deepcopy(outil)
             schema = copie.get("inputSchema") or {"type": "object", "properties": {}}
-            imposes = set(regles[nom].imposes)
+            imposes = set(regles[nom].imposes) | ({"session_id"} if regles[nom].par_cible else set())
             proprietes = schema.get("properties") or {}
             schema["properties"] = {
                 k: v for k, v in proprietes.items() if k in regles[nom].libres
             }
+            if regles[nom].par_cible and len(borne.cibles) > 1:  # type: ignore[union-attr]
+                schema["properties"]["cible"] = {
+                    "type": "string",
+                    "enum": list(borne.cibles),  # type: ignore[union-attr]
+                    "description": (
+                        f"Quel pod : « cpu » ({borne.pod}, défaut) ou « gpu » (le pod GPU du projet, "  # type: ignore[union-attr]
+                        "lancé par gpu_switch)."
+                    ),
+                }
             schema["required"] = [r for r in schema.get("required") or [] if r not in imposes]
             copie["inputSchema"] = schema
-            cible = borne.pod or borne.service  # type: ignore[union-attr]
+            cible = (
+                " + ".join(f"{c}: {borne.pod_de(c)}" for c in borne.cibles)  # type: ignore[union-attr]
+                if regles[nom].par_cible
+                else (borne.pod or borne.service)  # type: ignore[union-attr]
+            )
             copie["description"] = f"[projet {borne.slug}, {cible}] " + str(copie.get("description") or "")  # type: ignore[union-attr]
             sortie.append(copie)
             continue
@@ -507,18 +559,19 @@ class MandataireOnyxia:
     async def appeler_outil(
         self, profil: Profil, borne: Borne | None, nom: str, arguments: dict[str, Any]
     ) -> dict[str, Any]:
-        suivi = profil == "code" and borne is not None and borne.pod is not None and nom in OUTILS_D_EXECUTION
+        cible = self._cible_visee(borne, arguments)
+        suivi = profil == "code" and borne is not None and cible is not None and nom in OUTILS_D_EXECUTION
         if suivi:
-            muet = self._pod_muet(borne)
+            muet = self._pod_muet(borne, cible)  # type: ignore[arg-type]
             if muet:
                 return _refus_mcp(muet)
         debut = time.monotonic()
         resultat = await self._appeler_filtre(profil, borne, nom, arguments)
         if suivi and nom == "exec" and (arguments.get("lang") or "python") == "bash":
-            resultat = await self._rejouer_apres_dossier(profil, borne, arguments, resultat)
+            resultat = await self._rejouer_apres_dossier(profil, borne, arguments, resultat)  # type: ignore[arg-type]
         duree = time.monotonic() - debut
         if suivi:
-            resultat = self._noter_le_silence(borne, nom, duree, resultat)
+            resultat = self._noter_le_silence(borne, nom, duree, resultat, cible)  # type: ignore[arg-type]
         if nom == "exec" and not arguments.get("background"):
             resultat = self._dire_le_plafond_de_exec(arguments, resultat, duree)
         if nom.startswith("gpu_"):
@@ -544,6 +597,15 @@ class MandataireOnyxia:
                 }
         return resultat
 
+    @staticmethod
+    def _cible_visee(borne: Borne | None, arguments: dict[str, Any]) -> str | None:
+        """La cible (`cpu` ou `gpu`) d'un appel d'agent ; None sans borne, ou si l'argument n'est pas une cible du projet."""
+        if borne is None or not borne.cibles:
+            return None
+        cible = arguments.get("cible")
+        cible = borne.cible_par_defaut if cible is None else cible
+        return cible if cible in borne.cibles else None
+
     async def _rejouer_apres_dossier(
         self, profil: Profil, borne: Borne, arguments: dict[str, Any], resultat: dict[str, Any]
     ) -> dict[str, Any]:
@@ -567,7 +629,7 @@ class MandataireOnyxia:
         creation = await self._appeler(
             "exec",
             {
-                "session_id": borne.session,
+                "session_id": borne.session_de(self._cible_visee(borne, arguments) or borne.cible_par_defaut),
                 "lang": "python",
                 "code": f"import os\nos.makedirs({dossier!r}, exist_ok=True)\nprint('ok')",
             },
@@ -625,10 +687,11 @@ class MandataireOnyxia:
         return "timed out" in texte or "timeout" in texte or "délai" in texte
 
     def _noter_le_silence(
-        self, borne: Borne, nom: str, duree: float, resultat: dict[str, Any]
+        self, borne: Borne, nom: str, duree: float, resultat: dict[str, Any], cible: str = "cpu"
     ) -> dict[str, Any]:
         """Un appel resté sans réponse est dit comme tel ; un appel qui répond efface la mémoire des silences."""
-        cle = borne.session
+        cle = borne.session_de(cible)
+        pod = borne.pod_de(cible)
         if not (self._est_un_delai(resultat) and duree >= SILENCE_DU_POD_S):
             if not (isinstance(resultat, dict) and resultat.get("isError")):
                 self._silences.pop(cle, None)
@@ -649,9 +712,9 @@ class MandataireOnyxia:
                 {
                     "type": "text",
                     "text": (
-                        f"Le pod {borne.pod} n'a pas répondu à `{nom}` en {duree:.0f} s{etat}. Ce n'est pas le plafond "
+                        f"Le pod {pod} n'a pas répondu à `{nom}` en {duree:.0f} s{etat}. Ce n'est pas le plafond "
                         "d'exec (la commande était courte) : le pod ou son pont d'exécution (~/work/.pont) ne répond pas. "
-                        f"{reste}dis-le à la personne en une phrase — « le pod {borne.pod} ne répond pas, son pont "
+                        f"{reste}dis-le à la personne en une phrase — « le pod {pod} ne répond pas, son pont "
                         "d'exécution n'est pas démarré » — et avance sur ce qui ne demande pas le pod (les fichiers du projet). "
                         "Ne propose pas de « redémarrer le noyau » : il n'a pas démarré."
                     ),
@@ -659,15 +722,16 @@ class MandataireOnyxia:
             ],
         }
 
-    def _pod_muet(self, borne: Borne) -> str:
+    def _pod_muet(self, borne: Borne, cible: str = "cpu") -> str:
         """Le refus immédiat d'un appel au pod, s'il vient de rester sans réponse plusieurs fois d'affilée."""
         maintenant = time.monotonic()
-        vus = [t for t in self._silences.get(borne.session, []) if maintenant - t < SILENCES_MEMORISES_S]
+        pod = borne.pod_de(cible)
+        vus = [t for t in self._silences.get(borne.session_de(cible), []) if maintenant - t < SILENCES_MEMORISES_S]
         if len(vus) < POD_MUET_APRES or maintenant - vus[-1] >= POD_MUET_PAUSE_S:
             return ""
         restant = int(POD_MUET_PAUSE_S - (maintenant - vus[-1]))
         return (
-            f"Le pod {borne.pod} n'a pas répondu à vos {len(vus)} derniers appels (le dernier il y a "
+            f"Le pod {pod} n'a pas répondu à vos {len(vus)} derniers appels (le dernier il y a "
             f"{int(maintenant - vus[-1])} s) : inutile de réessayer maintenant, ce serait attendre {int(SILENCE_DU_POD_S)} s "
             "de plus pour rien. Son pont d'exécution n'est probablement pas démarré. Dites-le à la personne, et avancez "
             f"sur ce qui ne demande pas le pod. Un nouvel essai est permis dans {restant} s."
@@ -725,51 +789,82 @@ class MandataireOnyxia:
     ) -> dict[str, Any]:
         try:
             envoyes = filtrer_appel(profil, borne, nom, arguments)
-            if profil == "code" and borne is not None and "session_id" in regles_code(borne).get(nom, Regle()).imposes:
-                await self._assurer_la_session(borne, nom)
+            if profil == "code" and borne is not None:
+                regle = regles_code(borne).get(nom, Regle())
+                # Les outils de session (exécuter, lire…) : la session visée existe et vise le bon pod. gpu_switch
+                # l'attache lui-même ; project_bind est le geste qui répare celle du pod CPU.
+                if (regle.par_cible or "session_id" in regle.imposes) and "session_id" in envoyes:
+                    await self._assurer_la_session(borne, nom, envoyes["session_id"])
         except RefusOnyxia as exc:
             log.info("onyxia refusé (%s, %s) : %s", profil, nom, exc)
             return _refus_mcp(str(exc))
         try:
-            return await self._appeler(nom, envoyes)
+            resultat = await self._appeler(nom, envoyes)
         except Exception as exc:  # noqa: BLE001 — l'agent doit voir la panne, pas un 500
             return _refus_mcp(f"Onyxia injoignable : {type(exc).__name__}: {exc}")
+        if profil == "code" and borne is not None and borne.gpu and nom in ("gpu_switch", "gpu_release"):
+            # Le pod GPU vient d'être lancé, déplacé ou rendu : la vérification gardée de sa session ne vaut plus.
+            self._sessions_verifiees.pop((borne.slug, session_gpu_du_projet(borne.slug)), None)
+            self._silences.pop(session_gpu_du_projet(borne.slug), None)
+        return resultat
 
-    async def _assurer_la_session(self, borne: Borne, outil: str) -> None:
-        """La session du projet existe et vise son pod ; sinon on l'attache, ou on refuse.
+    async def _assurer_la_session(self, borne: Borne, outil: str, session: str | None = None) -> None:
+        """La session visée existe et vise son pod ; sinon on l'attache, ou on refuse.
 
-        Les sessions d'Onyxia sont globales : une autre conversation a pu
-        rattacher `proj-<slug>` ailleurs. On ne suit pas une session qui a
-        quitté le pod du projet.
+        Un projet a une session par pod : `proj-<slug>` (pod CPU) et `proj-<slug>-gpu` (pod GPU). Les sessions
+        d'Onyxia sont globales : une autre conversation a pu en rattacher une ailleurs. On ne suit pas une session
+        qui a quitté le pod du projet.
         """
-        if borne.pod is None or outil in ("project_bind", "gpu_switch"):
+        session = session or borne.session
+        if outil in ("project_bind", "gpu_switch"):
             return
-        cle = (borne.slug, borne.session)
+        cible = "gpu" if session == session_gpu_du_projet(borne.slug) and borne.gpu else "cpu"
+        if cible == "cpu" and borne.pod is None:
+            return
+        cle = (borne.slug, session)
         if time.monotonic() - self._sessions_verifiees.get(cle, -1e9) < SESSION_VERIFIEE_S:
             return
-        etat = await self._appeler("session_status", {"session_id": borne.session})
+        etat = await self._appeler("session_status", {"session_id": session})
         erreur = _erreur_de(etat)
         if erreur is not None:
             if erreur.get("code") != "NO_SESSION":
                 raise RefusOnyxia(f"session du projet illisible : {erreur}")
-            lien = await self._appeler(
-                "project_bind",
-                filtrer_appel("code", borne, "project_bind", {}),
-            )
+            lien = await self._appeler("project_bind", self._arguments_de_liaison(borne, cible))
             erreur = _erreur_de(lien)
             if erreur is not None:
+                if cible == "gpu":
+                    raise RefusOnyxia(
+                        f"le pod GPU du projet ({borne.pod_de('gpu')}) n'est pas joignable : lancez-le avec "
+                        f"gpu_switch (sans préemption), puis recommencez. Onyxia dit : {erreur}"
+                    )
                 raise RefusOnyxia(f"session du projet non attachée à {borne.pod} : {erreur}")
             etat = lien
         charge = _charge_de(etat)
         if isinstance(charge, dict) and "kernel_alive" in charge:
-            self._noyaux[borne.session] = charge.get("kernel_alive")
+            self._noyaux[session] = charge.get("kernel_alive")
         pod = charge.get("pod") if isinstance(charge, dict) else None
-        if not isinstance(pod, str) or not borne.pod_admis(pod):
+        if cible == "cpu":
+            admis = isinstance(pod, str) and pod == borne.pod
+            attendu = borne.pod
+        else:
+            admis = isinstance(pod, str) and pod.startswith(prefixe_des_pods_gpu(borne.slug))
+            attendu = borne.pod_de("gpu")
+        if not admis:
             raise RefusOnyxia(
-                f"la session {borne.session} vise {pod!r}, pas le pod du projet ({borne.pod}) : "
-                "rattachez-la par project_bind"
+                f"la session {session} vise {pod!r}, pas le pod {cible.upper()} du projet ({attendu}) : "
+                + ("rattachez-la par project_bind" if cible == "cpu" else "relancez gpu_switch")
             )
         self._sessions_verifiees[cle] = time.monotonic()
+
+    @staticmethod
+    def _arguments_de_liaison(borne: Borne, cible: str) -> dict[str, Any]:
+        """Les arguments de `project_bind` pour la session d'une cible. Le pod CPU passe par le filtre ; le GPU est calculé."""
+        if cible == "cpu":
+            return filtrer_appel("code", borne, "project_bind", {})
+        arguments = {"session_id": session_gpu_du_projet(borne.slug), "pod": borne.pod_de("gpu"), "project": borne.slug}
+        if borne.namespace:
+            arguments["namespace"] = borne.namespace
+        return arguments
 
     async def lier(self, borne: Borne) -> dict[str, Any]:
         """Attache la session du projet à son pod, par `project_bind` d'Onyxia.
@@ -812,6 +907,13 @@ class MandataireOnyxia:
         lignes = [f"Onyxia borné au déploiement du projet {borne.slug}."]
         if borne.pod:
             lignes.append(f"Pod : {borne.pod} ; session imposée : {borne.session}.")
+        if borne.pod and borne.gpu:
+            lignes.append(
+                f"Deux pods : « cpu » ({borne.pod}) et « gpu » ({borne.pod_de('gpu')}, lancé par gpu_switch) ; "
+                "exec, read_file, write_file, list_files, job_poll et session_status prennent `cible` (défaut « cpu »)."
+            )
+        elif borne.gpu and not borne.pod:
+            lignes.append(f"Pod GPU : {borne.pod_de('gpu')} (lancé par gpu_switch) ; les outils d'exécution y vont par défaut.")
         if borne.service:
             lignes.append(f"Service : {borne.service}.")
         if borne.commande:
@@ -819,7 +921,7 @@ class MandataireOnyxia:
         if borne.port:
             lignes.append(f"Port : {borne.port}.")
         if borne.gpu:
-            lignes.append("GPU : gpu_switch bascule le slot vers le pod GPU du projet, sans préempter.")
+            lignes.append("GPU : gpu_switch lance ou réveille le pod GPU du projet, sans préempter ; gpu_status dit qui tient le slot.")
         return " ".join(lignes)
 
     @staticmethod
