@@ -646,6 +646,26 @@ produit.
   lisent désormais aussi les pages des applications serveur et signalent tout chemin qui commence par `/`
   (`fetch`, `href`, `src`, `action`, `window.open`, `EventSource`, `WebSocket`, `location`) avec son équivalent relatif.
   **Règle** : tout chemin remis à un agent est absolu, tout chemin écrit dans une page est relatif.
+- **D-74 (G) — L'agent d'un projet ne pouvait pas opérer son pod : trois verrous, un par couche.** Constaté le
+  14/10 sur `gaussian-splatting-capture-render` (l'agent : « pas d'outils Onyxia configurés pour ce projet »).
+  (1) **Aucun déploiement déclaré** (`deploiement: null`) : aucun outil Onyxia pour ses agents. Déclaré le 14/10
+  (pod CPU du projet + GPU), à la demande de la personne. (2) **Le noyau Jupyter ne s'ouvrait pas** sur les pods en
+  image `py3.13.15` (quatre pods de projet au 14/10) : `ConnectionClosedError: no close frame received or sent`.
+  Le client du serveur Onyxia envoie des trames du protocole binaire v1 de Jupyter sans négocier le sous-protocole
+  `v1.kernel.websocket.jupyter.org` ; `jupyter_server` 2.21 applique alors l'ancien décodeur (décalages de 32 bits,
+  grand-boutiste), lit un « nombre de tampons » de 402 653 184 et coupe (`struct.error` dans les journaux du pod).
+  Les pods en `py3.13.13` toléraient l'omission. (3) **`exec` bash échouait pour toute commande** : le serveur la
+  lance dans `…/projects/<projet>`, absent d'un pod neuf (le code reste dans l'Atelier). En plus, le filtre de
+  l'Atelier ne reconnaissait pas le pod GPU au nom court (D-72) : une session rattachée à lui aurait été refusée.
+  **Statut : corrigé le 14/10.** (1) fait. (2) `subprotocols=[…]` dans `sspcloud_mcp/kernel_client.py` et
+  `passerelle/mcp/kernel_client.py` du pod `passerelle-mcp-dev` (serveur relancé) : **pas encore dans l'image de
+  production `mcp` ni dans le dépôt `sspcloud-mcp`** — à reporter avec D-72. (3) `onyxia_projet` : le mandataire crée le
+  dossier du projet quand un `exec` bash le dit absent (seulement celui de CE projet, un rejeu), et
+  `nom_gpu_du_projet` recopie la règle du nom court du courtier (exemple figé en test). **Vérifié** par le chemin d'un
+  agent (`/mcp/onyxia/projet/<slug>`) : `exec`, `session_status`, `write_file`, `read_file` répondent en moins d'une
+  seconde. **Pas vérifié** : un tour d'agent de bout en bout (le modèle du projet lisant `docs/exploitation-pod-gpu.md`
+  et menant `gpu_switch` → installation → calcul), et `gpu_switch` par le chemin d'un agent. Le projet porte
+  maintenant sa recette (`ops/gpu/`, `docs/exploitation-pod-gpu.md`), idempotente et éprouvée sur le pod GPU.
 
 ## 5. Déjà corrigés (pour mémoire)
 
