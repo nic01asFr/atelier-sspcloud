@@ -49,8 +49,15 @@ def _lignes_onyxia(chemin: Path, slug: str, pool_a_onyxia: bool = True) -> list[
         return [f"- Onyxia : aucun outil. {raison[0].upper()}{raison[1:]}."]
     ouverts = []
     regles = regles_code(borne)
-    if borne.pod is not None:
+    if borne.pod is not None and borne.gpu:
+        ouverts.append(
+            f"exécuter du code et lire ou écrire des fichiers dans deux pods : le pod CPU {borne.pod} (par défaut) et "
+            f"le pod GPU {borne.pod_de('gpu')} (`cible: \"gpu\"`, une fois lancé par gpu_switch)"
+        )
+    elif borne.pod is not None:
         ouverts.append(f"exécuter du code et lire ou écrire des fichiers dans le pod {borne.pod}")
+    elif borne.gpu:
+        ouverts.append(f"exécuter du code et lire ou écrire des fichiers dans le pod GPU {borne.pod_de('gpu')} (lancé par gpu_switch)")
     if borne.service is not None:
         ouverts.append(f"voir, démarrer et arrêter le service {borne.service}")
     if "gpu_switch" in regles:

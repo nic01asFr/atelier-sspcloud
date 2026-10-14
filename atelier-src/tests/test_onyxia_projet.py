@@ -220,8 +220,9 @@ def test_code_les_autres_outils_sont_refuses(outil: str) -> None:
 
 def test_code_gpu_borne_au_projet_et_sans_preemption() -> None:
     borne = _borne(gpu=True)
+    # La session attachée est celle du GPU, pas celle du pod CPU : les deux pods se travaillent dans le même tour.
     assert ox.filtrer_appel("code", borne, "gpu_switch", {}) == {
-        "project": "carte", "session_id": "proj-carte", "preempt": False,
+        "project": "carte", "session_id": "proj-carte-gpu", "preempt": False,
     }
     for arguments in ({"project": "autre"}, {"preempt": True}):
         with pytest.raises(ox.RefusOnyxia):
@@ -292,14 +293,23 @@ def test_le_mandataire_refuse_une_session_partie_sur_un_autre_pod() -> None:
     faux = FauxOnyxia({"proj-carte": "proj-autre-jupyter-python-0"})
     resultat = _appel(_mandataire(faux), "code", _borne(), "exec", {"code": "1"})
     assert resultat["isError"]
-    assert "pas le pod du projet" in _charge(resultat)["refus"]
+    assert "pas le pod CPU du projet" in _charge(resultat)["refus"]
     assert faux.envoyes("exec") == []
 
 
-def test_le_mandataire_admet_le_pod_gpu_du_projet() -> None:
+def test_le_mandataire_admet_le_pod_gpu_du_projet_sur_sa_session_gpu() -> None:
+    faux = FauxOnyxia({"proj-carte": POD, "proj-carte-gpu": "proj-carte-gpu-jupyter-pytorch-gpu-0"})
+    resultat = _appel(_mandataire(faux), "code", _borne(gpu=True), "exec", {"code": "1", "cible": "gpu"})
+    assert not resultat["isError"], resultat
+    assert faux.envoyes("exec") == [{"code": "1", "session_id": "proj-carte-gpu"}]
+
+
+def test_la_session_du_pod_cpu_n_est_pas_admise_sur_le_gpu() -> None:
+    """Avant les deux sessions, gpu_switch déplaçait `proj-<slug>` sur le GPU : une exécution « cpu » partait au GPU."""
     faux = FauxOnyxia({"proj-carte": "proj-carte-gpu-jupyter-pytorch-gpu-0"})
     resultat = _appel(_mandataire(faux), "code", _borne(gpu=True), "exec", {"code": "1"})
-    assert not resultat["isError"], resultat
+    assert resultat["isError"] and "pas le pod CPU" in _charge(resultat)["refus"]
+    assert faux.envoyes("exec") == []
 
 
 def test_le_mandataire_rend_le_refus_a_l_agent_sans_appeler_onyxia() -> None:
@@ -331,11 +341,11 @@ def test_une_panne_d_onyxia_revient_a_l_agent() -> None:
 # ── Le GPU : relecture du 03/10 ─────────────────────────────────────────
 
 
-def test_gpu_switch_sans_pod_n_impose_pas_de_session() -> None:
-    """Projet en `service` + `gpu` : il n'y a pas de session `proj-<slug>` à imposer."""
+def test_gpu_switch_sans_pod_cpu_attache_quand_meme_la_session_gpu() -> None:
+    """Projet en `service` + `gpu` : pas de session `proj-<slug>`, mais celle du GPU existe toujours."""
     borne = ox.borne_du_projet("carte", structure.Deploiement(service="carte.service.yml", gpu=True))
     envoye = ox.filtrer_appel("code", borne, "gpu_switch", {})
-    assert "session_id" not in envoye and envoye["preempt"] is False and envoye["project"] == "carte"
+    assert envoye == {"project": "carte", "session_id": "proj-carte-gpu", "preempt": False}
 
 
 def test_l_assistant_ne_preempte_pas_le_gpu_d_un_autre() -> None:
@@ -352,7 +362,7 @@ class OnyxiaGpu(FauxOnyxia):
     """Un GPU qu'on peut déclarer pris : `gpu_switch` échoue alors, et `gpu_release` se note."""
 
     def __init__(self, pris: bool) -> None:
-        super().__init__({"proj-carte": "proj-carte-gpu-jupyter-pytorch-gpu-0"})
+        super().__init__({"proj-carte": POD, "proj-carte-gpu": "proj-carte-gpu-jupyter-pytorch-gpu-0"})
         self.pris = pris
 
     async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -633,3 +643,167 @@ def test_un_exec_python_ou_en_arriere_plan_n_est_pas_rejoue_pour_un_dossier() ->
     faux = SansDossier()
     _appel(_mandataire(faux), "code", _borne(), "exec", {"code": "print(1)"})
     assert [a.get("lang") for a in faux.envoyes("exec")] == [None]
+
+
+# ── Un projet avec GPU : un pod CPU, un pod GPU, deux sessions, une `cible` (14/10) ────────────────────────
+# « Dans le cas d'un projet avec GPU, le projet peut avoir un pod CPU et un pod GPU. » Avant : une seule session
+# `proj-<projet>` que gpu_switch déplaçait sur le GPU ; l'agent ne voyait qu'un pod à la fois, et le CPU disparaissait.
+
+GPU_POD = "proj-carte-gpu-jupyter-pytorch-gpu-0"
+
+
+def test_la_borne_dit_ses_cibles_et_leurs_sessions() -> None:
+    deux = _borne(gpu=True)
+    assert deux.cibles == ("cpu", "gpu") and deux.cible_par_defaut == "cpu"
+    assert (deux.session_de("cpu"), deux.session_de("gpu")) == ("proj-carte", "proj-carte-gpu")
+    assert (deux.pod_de("cpu"), deux.pod_de("gpu")) == (POD, GPU_POD)
+    assert _borne().cibles == ("cpu",)
+    seul = ox.borne_du_projet("carte", structure.Deploiement(service="carte.service.yml", gpu=True))
+    assert seul.cibles == ("gpu",) and seul.cible_par_defaut == "gpu"
+    assert ox.borne_du_projet("carte", structure.Deploiement(service="carte.service.yml")).cibles == ()
+
+
+def test_la_cible_choisit_la_session_et_le_defaut_est_le_pod_cpu() -> None:
+    borne = _borne(gpu=True)
+    assert ox.filtrer_appel("code", borne, "exec", {"code": "1"})["session_id"] == "proj-carte"
+    assert ox.filtrer_appel("code", borne, "exec", {"code": "1", "cible": "cpu"})["session_id"] == "proj-carte"
+    envoye = ox.filtrer_appel("code", borne, "exec", {"code": "1", "cible": "gpu"})
+    assert envoye == {"code": "1", "session_id": "proj-carte-gpu"}, "`cible` n'est pas envoyé à Onyxia"
+    for outil, args in [("job_poll", {"job_id": "j"}), ("read_file", {"path": "/x"}), ("write_file", {"path": "/x", "content": ""}),
+                        ("list_files", {}), ("session_status", {})]:
+        assert ox.filtrer_appel("code", borne, outil, {**args, "cible": "gpu"})["session_id"] == "proj-carte-gpu"
+
+
+def test_sans_pod_cpu_les_outils_d_execution_vont_au_gpu() -> None:
+    seul = ox.borne_du_projet("carte", structure.Deploiement(service="carte.service.yml", gpu=True))
+    assert ox.filtrer_appel("code", seul, "exec", {"code": "1"}) == {"code": "1", "session_id": "proj-carte-gpu"}
+    with pytest.raises(ox.RefusOnyxia, match="pas de pod CPU"):
+        ox.filtrer_appel("code", seul, "exec", {"code": "1", "cible": "cpu"})
+
+
+@pytest.mark.parametrize(
+    "borne, args, motif",
+    [
+        (_borne(), {"cible": "gpu"}, "pas de GPU déclaré"),
+        (_borne(gpu=True), {"cible": "tpu"}, "n'existe pas"),
+        (_borne(gpu=True), {"cible": "gpu", "session_id": "proj-carte"}, "vise autre chose"),
+        (_borne(gpu=True), {"cible": "cpu", "session_id": "proj-carte-gpu"}, "vise autre chose"),
+    ],
+)
+def test_une_cible_hors_projet_ou_une_session_forcee_est_refusee(borne: ox.Borne, args: dict[str, Any], motif: str) -> None:
+    with pytest.raises(ox.RefusOnyxia, match=motif):
+        ox.filtrer_appel("code", borne, "exec", {"code": "1", **args})
+
+
+def test_cible_n_est_admis_que_sur_les_outils_d_execution() -> None:
+    borne = _borne(gpu=True)
+    for outil in ("gpu_switch", "gpu_release", "gpu_status", "project_bind"):
+        with pytest.raises(ox.RefusOnyxia, match="cible"):
+            ox.filtrer_appel("code", borne, outil, {"cible": "gpu"})
+
+
+def test_gpu_status_dit_le_slot_et_ne_vise_aucune_session() -> None:
+    assert ox.filtrer_appel("code", _borne(gpu=True), "gpu_status", {}) == {}
+
+
+def test_tools_list_montre_cible_seulement_quand_il_y_a_deux_pods() -> None:
+    def schema(borne: ox.Borne, nom: str) -> dict[str, Any]:
+        return next(o for o in ox.outils_visibles("code", borne, OUTILS_AMONT) if o["name"] == nom)["inputSchema"]
+
+    exec_deux = schema(_borne(gpu=True), "exec")
+    assert exec_deux["properties"]["cible"]["enum"] == ["cpu", "gpu"]
+    assert "session_id" not in exec_deux["properties"] and exec_deux["required"] == ["code"]
+    assert "cible" not in schema(_borne(), "exec")["properties"]
+    for outil in ("gpu_switch", "project_bind"):
+        assert "cible" not in schema(_borne(gpu=True), outil)["properties"]
+    description = next(o for o in ox.outils_visibles("code", _borne(gpu=True), OUTILS_AMONT) if o["name"] == "exec")["description"]
+    assert f"cpu: {POD}" in description and f"gpu: {GPU_POD}" in description
+
+
+def test_le_mandataire_attache_la_session_gpu_au_premier_appel_et_laisse_celle_du_cpu() -> None:
+    faux = FauxOnyxia()
+    m = _mandataire(faux)
+    resultat = _appel(m, "code", _borne(gpu=True), "exec", {"code": "nvidia-smi", "lang": "python", "cible": "gpu"})
+    assert not resultat["isError"], resultat
+    assert faux.envoyes("project_bind") == [{"session_id": "proj-carte-gpu", "pod": GPU_POD, "project": "carte"}]
+    assert faux.sessions == {"proj-carte-gpu": GPU_POD}, "la session du pod CPU n'est pas créée pour autant"
+    _appel(m, "code", _borne(gpu=True), "exec", {"code": "1"})
+    assert faux.sessions == {"proj-carte-gpu": GPU_POD, "proj-carte": POD}
+
+
+def test_le_mandataire_dit_de_lancer_le_gpu_quand_son_pod_n_existe_pas() -> None:
+    class SansPodGpu(FauxOnyxia):
+        async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            if outil == "project_bind" and arguments["session_id"].endswith("-gpu"):
+                self.appels.append((outil, dict(arguments)))
+                return _texte({"error": {"code": "POD_UNREACHABLE", "message": GPU_POD}}, erreur=True)
+            return await super().appeler(outil, arguments)
+
+    faux = SansPodGpu()
+    resultat = _appel(_mandataire(faux), "code", _borne(gpu=True), "exec", {"code": "1", "cible": "gpu"})
+    assert resultat["isError"]
+    refus = _charge(resultat)["refus"]
+    assert "gpu_switch" in refus and GPU_POD in refus and "POD_UNREACHABLE" in refus
+    assert faux.envoyes("exec") == []
+
+
+def test_une_session_gpu_partie_ailleurs_est_refusee() -> None:
+    faux = FauxOnyxia({"proj-carte-gpu": "proj-autre-gpu-jupyter-pytorch-gpu-0"})
+    resultat = _appel(_mandataire(faux), "code", _borne(gpu=True), "exec", {"code": "1", "cible": "gpu"})
+    assert resultat["isError"] and "pas le pod GPU du projet" in _charge(resultat)["refus"]
+    assert faux.envoyes("exec") == []
+
+
+def test_gpu_switch_et_gpu_release_font_reverifier_la_session_gpu() -> None:
+    faux = FauxOnyxia({"proj-carte": POD, "proj-carte-gpu": GPU_POD})
+    m = _mandataire(faux)
+    borne = _borne(gpu=True)
+    _appel(m, "code", borne, "exec", {"code": "1", "cible": "gpu"})
+    _appel(m, "code", borne, "exec", {"code": "2", "cible": "gpu"})
+    assert len(faux.envoyes("session_status")) == 1, "vérifiée une fois"
+    _appel(m, "code", borne, "gpu_release", {})
+    _appel(m, "code", borne, "exec", {"code": "3", "cible": "gpu"})
+    assert len(faux.envoyes("session_status")) == 2, "un GPU rendu ou relancé : la session est revue"
+    assert faux.envoyes("gpu_switch") == [] and faux.envoyes("gpu_release") == [{"project": "carte"}]
+
+
+def test_gpu_switch_attache_la_session_gpu_sans_toucher_au_cpu() -> None:
+    faux = FauxOnyxia({"proj-carte": POD})
+    _appel(_mandataire(faux), "code", _borne(gpu=True), "gpu_switch", {})
+    assert faux.envoyes("gpu_switch") == [{"project": "carte", "session_id": "proj-carte-gpu", "preempt": False}]
+    assert faux.sessions["proj-carte"] == POD
+
+
+def test_un_gpu_muet_ne_rend_pas_le_pod_cpu_muet(silence_immediat: None) -> None:
+    class DeuxPodsMuets(PodMuet):
+        async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            if outil == "session_status":  # chaque session dit son vrai pod
+                return _texte({"session_id": arguments["session_id"], "pod": self.sessions[arguments["session_id"]]})
+            return await super().appeler(outil, arguments)
+
+    faux = DeuxPodsMuets({"proj-carte": POD, "proj-carte-gpu": GPU_POD})
+    m = _mandataire(faux)
+    borne = _borne(gpu=True)
+    for _ in range(2):
+        _appel(m, "code", borne, "exec", {"code": "1", "cible": "gpu"})
+    resultat = _appel(m, "code", borne, "exec", {"code": "1", "cible": "gpu"})
+    assert GPU_POD in _textes(resultat) and "inutile de réessayer" in _textes(resultat)
+    cpu = _appel(m, "code", borne, "exec", {"code": "1"})
+    assert "inutile de réessayer" not in _textes(cpu), "le pod CPU a sa propre mémoire des silences"
+
+
+def test_le_dossier_manquant_est_cree_sur_la_session_de_la_cible() -> None:
+    faux = SansDossier()
+    faux.sessions = {"proj-carte": POD, "proj-carte-gpu": GPU_POD}
+    resultat = _appel(_mandataire(faux), "code", _borne(gpu=True), "exec", {"code": "echo", "lang": "bash", "cible": "gpu"})
+    assert _charge(resultat)["rc"] == 0
+    creation = [a for a in faux.envoyes("exec") if a["lang"] == "python"]
+    assert [a["session_id"] for a in creation] == ["proj-carte-gpu"], "le dossier se crée dans le pod visé"
+
+
+def test_les_instructions_parlent_des_deux_pods() -> None:
+    texte = ox.MandataireOnyxia._instructions("code", _borne(gpu=True))
+    assert "Deux pods" in texte and GPU_POD in texte and "cible" in texte
+    assert "Deux pods" not in ox.MandataireOnyxia._instructions("code", _borne())
+    seul = ox.borne_du_projet("carte", structure.Deploiement(service="carte.service.yml", gpu=True))
+    assert GPU_POD in ox.MandataireOnyxia._instructions("code", seul)

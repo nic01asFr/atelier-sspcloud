@@ -666,6 +666,12 @@ produit.
   seconde. **Pas vérifié** : un tour d'agent de bout en bout (le modèle du projet lisant `docs/exploitation-pod-gpu.md`
   et menant `gpu_switch` → installation → calcul), et `gpu_switch` par le chemin d'un agent. Le projet porte
   maintenant sa recette (`ops/gpu/`, `docs/exploitation-pod-gpu.md`), idempotente et éprouvée sur le pod GPU.
+  **Suite du 14/10 — deux pods, deux sessions** : « un projet avec GPU peut avoir un pod CPU et un pod GPU ». L'Atelier
+  n'en modélisait qu'un : une session `proj-<projet>` que `gpu_switch` déplaçait sur le GPU (le pod CPU disparaissait
+  pour l'agent, un `exec` « cpu » pouvait partir sur le GPU, `gpu_status` rendait « NO-GPU » depuis la session CPU).
+  Désormais `proj-<projet>` (CPU) et `proj-<projet>-gpu` (GPU), un argument `cible` (`cpu`, `gpu`) sur les outils
+  d'exécution, `gpu_switch` qui attache la session GPU sans toucher à l'autre, `gpu_status` qui dit le slot, un pod
+  muet compté par pod. Tests : `tests/test_onyxia_projet.py` (cibles), `tests/test_contexte_onyxia.py`.
 
 ## 5. Déjà corrigés (pour mémoire)
 
