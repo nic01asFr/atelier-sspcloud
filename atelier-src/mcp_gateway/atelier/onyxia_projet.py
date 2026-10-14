@@ -30,8 +30,10 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -93,9 +95,24 @@ def session_du_projet(slug: str) -> str:
     return f"proj-{slug}"
 
 
+# Kubernetes borne le nom d'un pod (et son label de révision) à 63 caractères : le statefulset
+# `proj-<nom>-gpu-jupyter-pytorch-gpu` n'admet que 23 caractères pour <nom>. Au-delà, le courtier GPU
+# (`sspcloud_mcp/gpu_broker.py`, D-72) donne au projet un nom court et stable : ses 14 premiers caractères,
+# puis les 8 premiers de l'empreinte SHA-1 du slug. Cette règle est la sienne, recopiée : si elle change là-bas,
+# elle change ici (`tests/test_onyxia_projet.py` en fige un exemple).
+NOM_GPU_MAX = 23
+
+
+def nom_gpu_du_projet(slug: str) -> str:
+    """Le nom qu'un projet porte dans ses pods GPU : le slug, ou son nom court s'il est trop long."""
+    if len(slug) <= NOM_GPU_MAX:
+        return slug
+    return f"{slug[: NOM_GPU_MAX - 9].rstrip('-')}-{hashlib.sha1(slug.encode()).hexdigest()[:8]}"
+
+
 def prefixe_des_pods_gpu(slug: str) -> str:
-    """Les pods GPU d'un projet (`gpu_broker` : release `proj-<projet>-gpu`)."""
-    return f"proj-{slug}-gpu-"
+    """Les pods GPU d'un projet (`gpu_broker` : release `proj-<nom>-gpu`)."""
+    return f"proj-{nom_gpu_du_projet(slug)}-gpu-"
 
 
 @dataclass(frozen=True)
@@ -497,6 +514,8 @@ class MandataireOnyxia:
                 return _refus_mcp(muet)
         debut = time.monotonic()
         resultat = await self._appeler_filtre(profil, borne, nom, arguments)
+        if suivi and nom == "exec" and (arguments.get("lang") or "python") == "bash":
+            resultat = await self._rejouer_apres_dossier(profil, borne, arguments, resultat)
         duree = time.monotonic() - debut
         if suivi:
             resultat = self._noter_le_silence(borne, nom, duree, resultat)
@@ -524,6 +543,39 @@ class MandataireOnyxia:
                     ],
                 }
         return resultat
+
+    async def _rejouer_apres_dossier(
+        self, profil: Profil, borne: Borne, arguments: dict[str, Any], resultat: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Un `exec` bash s'ouvre dans le dossier du projet ; un pod neuf ne l'a pas : on le crée, on rejoue.
+
+        Le serveur Onyxia lance la commande avec `cwd = …/projects/<projet>`. Dans le pod d'un projet (volume vide,
+        code resté dans l'Atelier) ce dossier n'existe pas : `[Errno 2] No such file or directory: '…/projects/<projet>'`,
+        pour toute commande, même `echo`. L'agent y voyait un pod cassé alors que le pod allait bien (14/10,
+        `gaussian-splatting-capture-render`). Le chemin vient de l'erreur elle-même, et n'est créé que s'il est bien le
+        dossier de CE projet. Un seul rejeu : si l'échec persiste, l'agent le lit tel quel.
+        """
+        texte = " ".join(
+            str(b.get("text") or "")
+            for b in (resultat.get("content") or [])
+            if isinstance(b, dict) and b.get("type") == "text"
+        )
+        m = re.search(r"No such file or directory: ['\\\"]+(/[^'\\\"]+)", texte)
+        if m is None or not m.group(1).rstrip("/").endswith(f"/projects/{borne.slug}"):
+            return resultat
+        dossier = m.group(1).rstrip("/")
+        creation = await self._appeler(
+            "exec",
+            {
+                "session_id": borne.session,
+                "lang": "python",
+                "code": f"import os\nos.makedirs({dossier!r}, exist_ok=True)\nprint('ok')",
+            },
+        )
+        if creation.get("isError") or "ok" not in json.dumps(creation):
+            return resultat
+        log.info("onyxia : dossier %s créé dans le pod de %s, commande rejouée", dossier, borne.slug)
+        return await self._appeler_filtre(profil, borne, "exec", arguments)
 
     @staticmethod
     def _dire_le_plafond_de_exec(

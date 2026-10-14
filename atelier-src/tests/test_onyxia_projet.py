@@ -546,3 +546,90 @@ def test_sonder_dit_pret_muet_ou_refuse() -> None:
     assert delai["etat"] == "muet"
     sans_pod = asyncio.run(_mandataire(FauxOnyxia()).sonder(ox.borne_du_projet("carte", structure.Deploiement(service="a.service.yml"))))
     assert sans_pod == {"etat": "sans_pod"}
+
+
+# ── Le GPU d'un projet au nom long, et le dossier du projet dans un pod neuf (14/10) ─────────────────────
+# `gaussian-splatting-capture-render` (33 caractères) : le pod GPU porte un nom court que le courtier GPU
+# calcule (D-72) ; sans lui, le filtre refusait la session rattachée au GPU du projet. Et son pod CPU, volume
+# vide, n'avait pas le dossier du projet : tout `exec` bash y échouait, même `echo`.
+
+LONG = "gaussian-splatting-capture-render"
+
+
+def test_le_nom_gpu_court_est_celui_du_courtier() -> None:
+    assert ox.nom_gpu_du_projet("carte") == "carte"
+    assert ox.nom_gpu_du_projet("a" * 23) == "a" * 23
+    # Figé : le pod réellement lancé le 13/10 s'appelle proj-gaussian-splat-a7bfea92-gpu-jupyter-pytorch-gpu-0.
+    assert ox.nom_gpu_du_projet(LONG) == "gaussian-splat-a7bfea92"
+    assert len(f"proj-{ox.nom_gpu_du_projet(LONG)}-gpu-jupyter-pytorch-gpu") + 11 <= 63
+    assert ox.nom_gpu_du_projet("x" * 14 + "-" + "y" * 20).startswith("x" * 14 + "-")
+
+
+def test_la_borne_admet_le_pod_gpu_au_nom_court_et_aucun_autre() -> None:
+    borne = ox.borne_du_projet(LONG, structure.Deploiement(pod="proj-g-jupyter-python-0", gpu=True))
+    assert borne.pod_admis("proj-gaussian-splat-a7bfea92-gpu-jupyter-pytorch-gpu-0")
+    assert borne.pod_admis("proj-g-jupyter-python-0")
+    assert not borne.pod_admis("proj-autre-projet-gpu-jupyter-pytorch-gpu-0")
+    assert not borne.pod_admis("proj-gaussian-splat-ffffffff-gpu-jupyter-pytorch-gpu-0"), "un autre projet au même début"
+    sans_gpu = ox.borne_du_projet(LONG, structure.Deploiement(pod="proj-g-jupyter-python-0"))
+    assert not sans_gpu.pod_admis("proj-gaussian-splat-a7bfea92-gpu-jupyter-pytorch-gpu-0")
+
+
+class SansDossier(FauxOnyxia):
+    """Un pod neuf : le dossier du projet n'existe pas tant qu'un `makedirs` ne l'a pas créé."""
+
+    def __init__(self, *, creation_ok: bool = True) -> None:
+        super().__init__()
+        self.cree = False
+        self.creation_ok = creation_ok
+
+    async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if outil == "exec" and arguments.get("session_id") in self.sessions:
+            self.appels.append((outil, dict(arguments)))
+            if arguments.get("lang") == "python" and "makedirs" in arguments["code"]:
+                self.cree = self.creation_ok
+                return _texte({"stdout": "ok\n"}) if self.creation_ok else _texte({"error": {"code": "X"}}, erreur=True)
+            if arguments.get("lang") == "bash" and not self.cree:
+                return _texte({"rc": -1, "stdout": "", "stderr": "[Errno 2] No such file or directory: '/work/projects/carte'"})
+            return _texte({"rc": 0, "stdout": "bonjour\n", "stderr": ""})
+        return await super().appeler(outil, arguments)
+
+
+def test_un_exec_bash_dans_un_pod_neuf_cree_le_dossier_du_projet_et_se_rejoue() -> None:
+    faux = SansDossier()
+    resultat = _appel(_mandataire(faux), "code", _borne(), "exec", {"code": "echo bonjour", "lang": "bash"})
+    assert _charge(resultat) == {"rc": 0, "stdout": "bonjour\n", "stderr": ""}
+    exec_ = faux.envoyes("exec")
+    assert [a["lang"] for a in exec_] == ["bash", "python", "bash"], "essai, création, rejeu"
+    assert "'/work/projects/carte'" in exec_[1]["code"]
+    # Une fois le dossier là, le geste suivant n'a plus rien à réparer.
+    _appel(_mandataire(faux), "code", _borne(), "exec", {"code": "ls", "lang": "bash"})
+    assert [a["lang"] for a in faux.envoyes("exec")][-1] == "bash" and len(faux.envoyes("exec")) == 4
+
+
+def test_la_creation_du_dossier_qui_echoue_laisse_l_erreur_telle_quelle() -> None:
+    faux = SansDossier(creation_ok=False)
+    resultat = _appel(_mandataire(faux), "code", _borne(), "exec", {"code": "echo", "lang": "bash"})
+    assert "No such file or directory" in _charge(resultat)["stderr"]
+    assert [a["lang"] for a in faux.envoyes("exec")] == ["bash", "python"], "pas de rejeu sans dossier"
+
+
+def test_un_autre_dossier_manquant_n_est_pas_cree() -> None:
+    """Seul le dossier de CE projet est créé : un chemin quelconque cité par une erreur ne l'est jamais."""
+
+    class AutreChemin(SansDossier):
+        async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            if outil == "exec" and arguments.get("lang") == "bash":
+                self.appels.append((outil, dict(arguments)))
+                return _texte({"rc": 1, "stdout": "", "stderr": "cat: /etc/secret: No such file or directory: '/etc/secret'"})
+            return await super().appeler(outil, arguments)
+
+    faux = AutreChemin()
+    _appel(_mandataire(faux), "code", _borne(), "exec", {"code": "cat /etc/secret", "lang": "bash"})
+    assert [a["lang"] for a in faux.envoyes("exec")] == ["bash"]
+
+
+def test_un_exec_python_ou_en_arriere_plan_n_est_pas_rejoue_pour_un_dossier() -> None:
+    faux = SansDossier()
+    _appel(_mandataire(faux), "code", _borne(), "exec", {"code": "print(1)"})
+    assert [a.get("lang") for a in faux.envoyes("exec")] == [None]
