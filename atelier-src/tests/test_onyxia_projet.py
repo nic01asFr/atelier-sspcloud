@@ -695,6 +695,11 @@ def test_une_cible_hors_projet_ou_une_session_forcee_est_refusee(borne: ox.Borne
         ox.filtrer_appel("code", borne, "exec", {"code": "1", **args})
 
 
+def test_une_cible_inconnue_n_accuse_pas_un_pod_cpu_absent() -> None:
+    with pytest.raises(ox.RefusOnyxia) as refus:
+        ox.filtrer_appel("code", _borne(gpu=True), "exec", {"code": "1", "cible": "tpu"})
+    assert "pas de pod CPU" not in str(refus.value) and "pas de GPU" not in str(refus.value)
+
 def test_cible_n_est_admis_que_sur_les_outils_d_execution() -> None:
     borne = _borne(gpu=True)
     for outil in ("gpu_switch", "gpu_release", "gpu_status", "project_bind"):

@@ -292,7 +292,10 @@ def filtrer_appel(
             raise RefusOnyxia(
                 f"{outil} : cible={cible!r} n'existe pas pour le projet {borne.slug} "
                 f"(cibles : {', '.join(borne.cibles)})"
-                + (" — le projet n'a pas de GPU déclaré" if cible == "gpu" else " — le projet n'a pas de pod CPU déclaré")
+                + {
+                    "gpu": " — le projet n'a pas de GPU déclaré",
+                    "cpu": " — le projet n'a pas de pod CPU déclaré",
+                }.get(cible, "")
             )
         imposes = {**imposes, "session_id": borne.session_de(cible)}
     elif cible is not None:
