@@ -1,5 +1,7 @@
 # Les acteurs de l'Atelier : qui agit, avec quel profil, quels accès
 
+Voir aussi [`distribution-des-acces.md`](distribution-des-acces.md) : comment la distribution est structurée dans le code.
+
 Carte du 16/10/2026, lue dans le code (`mcp_sync.py`, `commandes/profils.py`, `lancements.py`, `commandes/agents.py`, `automates.py`, `auth.py`, `gardiens/`) et dans `architecture-transverse.md` §1.1, `profils-acces.md`, `cadrage-des-agents.md`. Les §1 à §6 sont lus dans le code ; « doc » veut dire annoncé par un document, non retrouvé dans le code. Le §7 est un **relevé fait sur le pod le 16/10** (lecture seule, aucune valeur secrète affichée) ; le §8 décrit l'état visé.
 
 ## 1. Les acteurs
