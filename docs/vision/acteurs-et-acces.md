@@ -1,6 +1,6 @@
 # Les acteurs de l'Atelier : qui agit, avec quel profil, quels accès
 
-Carte du 16/10/2026, lue dans le code (`mcp_sync.py`, `commandes/profils.py`, `lancements.py`, `commandes/agents.py`, `automates.py`, `auth.py`, `gardiens/`) et dans `architecture-transverse.md` §1.1, `profils-acces.md`, `cadrage-des-agents.md`. Rien n'a été testé sur le pod pour ce document. Ce qui est dit « code » est lu dans le code ; « doc » veut dire annoncé par un document, non retrouvé dans le code.
+Carte du 16/10/2026, lue dans le code (`mcp_sync.py`, `commandes/profils.py`, `lancements.py`, `commandes/agents.py`, `automates.py`, `auth.py`, `gardiens/`) et dans `architecture-transverse.md` §1.1, `profils-acces.md`, `cadrage-des-agents.md`. Les §1 à §6 sont lus dans le code ; « doc » veut dire annoncé par un document, non retrouvé dans le code. Le §7 est un **relevé fait sur le pod le 16/10** (lecture seule, aucune valeur secrète affichée) ; le §8 décrit l'état visé.
 
 ## 1. Les acteurs
 
@@ -105,3 +105,68 @@ Une création en mode serveur : même utilisateur Unix que les agents, quatre au
 - Des **profils d'agent lancé** nommés (lecteur, rédacteur, déployeur), choisis à la création d'un agent déclaré, qui réduisent la distribution et non seulement les permissions.
 - **Capacités courtes par conversation** pour fermer le point 5.
 - Un **moule de mandataire borné** commun (point A1 de `n8n.md`) pour appliquer cette matrice à QGIS, Blender et n8n.
+
+## 7. Relevé sur le pod (16/10/2026)
+
+Mesuré dans `atelier-0`, par les fonctions mêmes de l'Atelier (`configuration_du_profil`, `herite_du_pool`) et par des appels réels à la porte `/mcp`.
+
+| Constat | Mesure |
+|---|---|
+| Conversations ouvertes | 59 de code (personne), 41 de l'Assistant, 27 lancées (13 par la personne, 12 par un client distant, 2 par une conversation) |
+| Projets qui **héritent de tout le pool** | **27 sur 40** (10 ou 11 connecteurs chacun) |
+| Connecteurs reçus par un agent de projet | `atelier` 40 · `wikichat` 40 · `filesystem` 33 · `chrome-devtools-mcp` 33 · `datagouv` 31 · `llm` 31 · `qgis` 29 · `blender` 28 · `gitlab` 28 · `grist-coder` 28 · `Onyxia` 4. `n8n` et `github` ne sont distribués nulle part |
+| Connecteurs reçus par l'Assistant | `Onyxia`, `atelier`, `chrome-devtools-mcp`, `filesystem`, `wikichat` |
+| `tools/list` de `/mcp`, Assistant | 52 outils : 43 `atelier_*` + 7 `gateway_*` |
+| `tools/list` de `/mcp`, agent de projet | **11** `atelier_*`, aucun `gateway_*` ; ni `lancer_agent`, ni `decider`, ni `a_valider`, ni `agent_creer`, ni `projet_deployer_declarer` |
+| Agent de projet qui annonce `X-Atelier-Profil: assistant` | reste à 11 : l'en-tête ne peut que restreindre (**bon**) |
+| Agent lancé (par la personne) | 11 `atelier_*`, comme un agent de projet |
+| **Appel avec la clé du propriétaire, sans conversation ni profil** | **57 outils**, dont `lancer_agent`, `decider`, `agent_creer`, `projet_deployer_declarer` ; 5 outils de plus que l'Assistant |
+| Appel sans clé | 401 |
+| `filesystem` | racine **`~/work` tout entier** (tous les projets, les secrets, l'état de l'Atelier), distribué à 33 projets et à l'Assistant |
+| `gitlab` | jeton personnel dans l'environnement du connecteur, distribué à 28 projets |
+| Agents déclarés (Pilote) | **0** ; 3 triggers de wikichat (2 « sans déclaration », 1 coupé), tous sans budget ; le gardien Entretien alerte deux fois « trigger actif sans budget déclaré » |
+| Lancements depuis l'origine | 27 : 13 personne, 12 client distant, 2 conversation. **Aucun** par un trigger, une routine ou un gardien. 16 supervisés, 9 sur branche, **0 avec liste d'outils**. Modes : `default` 13, `acceptEdits` 12, `plan` 2 ; jamais `bypass`. Aucune branche hors `agent/` ou `gardien/` |
+| Modes de permission des projets | `acceptEdits` 38, `default` 1, `bypassPermissions` 1 ; sur les fiches : `bypassPermissions` 9, `auto` 3 |
+| Gardiens | Sécurité ok · Santé « attention » (CI et commit de `main` illisibles, disque à 85 %, volume à 89 %) · Cohérence « alerte » : `wikichat` en échec pour l'Assistant et pour un agent de projet (cause non établie : wikichat tourne, son port répond) · Entretien « attention » |
+
+À retenir :
+- Le filtrage du **profil** marche : un agent de projet n'a que 11 outils de l'Atelier et ne peut pas s'élever par un en-tête.
+- Il ne tient qu'à un en-tête : sans lui, la clé du propriétaire ouvre **tout**. Or cette clé est dans la configuration de chaque agent (`${ATELIER_MCP_KEY}`) et le fichier est lisible par le même utilisateur Unix.
+- La distribution des **services** n'est pas bornée par rôle : 27 projets sur 40 reçoivent QGIS, Blender, GitLab, Grist et un `filesystem` qui couvre tout le volume.
+- Les trois chemins d'agents automatiques (déclaré, trigger, réparateur de gardien) n'ont **jamais servi en production** : leurs règles sont écrites et testées, pas éprouvées.
+
+## 8. L'état optimal, par type d'agent
+
+### Principes
+
+1. **Refus par défaut.** Un projet part avec `atelier`, wikichat (borné à lui) et le navigateur. Tout autre service entre par une **déclaration du projet** (comme `deploiement`), avec un niveau : *aucun, lecture, projet, tout*.
+2. **Une matrice, pas quatre modules.** Acteur × service × niveau, dans un fichier lu par `mcp_sync`, les mandataires, le vérificateur de cohérence et les gardiens. Un écart devient une alerte lisible.
+3. **Une vraie frontière.** Une **capacité courte par conversation** (jeton signé : session, projet, profil, durée) remplace la clé du propriétaire dans la configuration d'un agent. Sans capacité, pas d'accès : « sans conversation » cesse d'ouvrir tout.
+4. **Des rôles nommés pour les agents lancés** (lecteur, rédacteur, déployeur, automate, réparateur), qui fixent la **distribution** (ce que l'agent voit) et pas seulement les permissions (ce qu'il peut faire sans demander).
+5. **Toute ressource unique a un verrou et un propriétaire** (QGIS, Blender, GPU, éditeur n8n) : un agent à la fois, ou lecture seule.
+6. **Un budget partout** : tout automate déclare tours, lancements par jour et durée ; sans budget, il ne part pas.
+7. **Une identité et une provenance dans chaque couche** (`session_id`, origine, profondeur de lancement), journalisées.
+
+### Par type
+
+| Acteur | État actuel (mesuré ou lu) | État optimal | Écart principal |
+|---|---|---|---|
+| **Personne / App** | clé du propriétaire ou session ; seule à activer, couper, confirmer | idem, plus **invités avec rôles** ; la clé du propriétaire ne quitte jamais l'interface | invités absents ; clé présente dans l'environnement des agents |
+| **Assistant** | 52 outils (43 + 7), `filesystem` sur tout le volume, Onyxia complet | atelier complet + méta-outils + wikichat + Onyxia ; **pas de `filesystem`**, pas d'écriture dans les projets (il délègue) ; services directs seulement par mandataire | `filesystem` ; 41 conversations ouvertes (hygiène) |
+| **Agent de projet** | 11 outils `atelier_*` ; hérite de tout le pool dans 27 projets sur 40 | atelier (11) + wikichat de son projet + navigateur + **services déclarés à leur niveau** (Onyxia, n8n par étiquette, QGIS/Blender en lecture par défaut, GitHub limité à son dépôt) ; pas de `filesystem` | héritage ; grain du connecteur ; pas de mandataire hors Onyxia |
+| **Agent lancé, supervisé** | profil `code` du projet, branche `agent/…`, périmètre du lanceur ; 16 supervisés dont 9 sur branche, 0 liste d'outils | rôle *rédacteur* ou *déployeur* : **surface ⊆ celle du lanceur**, distribution réduite à ce que le rôle exige, branche obligatoire pour le code | `outils` n'a jamais servi ; surface non calculée |
+| **Agent déclaré / cron** | 0 agent déclaré ; 3 triggers sans budget ; `outils` = pré-autorisation | rôle *automate* : naît désactivé, **budget obligatoire (refus sinon)**, distribution réduite à ses connecteurs, activation par la personne, jamais `bypass` ; origine visible dans l'App | chemin jamais exercé ; triggers de wikichat hors règles J-b |
+| **Réparateur de gardien** | règles écrites (branche `gardien/…`, base vérifiée, « À valider ») ; **jamais lancé** | idem, **exercé** sur un cas réel avant d'être compté comme acquis | non éprouvé |
+| **Sous-agent natif** | hérite du parent ; MCP hérité ou non : à mesurer | outils fermés dans sa définition ; **surface ⊆ parent** ; pas de lancement d'agent | non mesuré |
+| **Gardien** | du code, liste fermée de gestes ; alerte Cohérence ouverte sur `wikichat` | idem, plus **contrôle de la matrice** (écart de distribution = alerte) | la matrice n'existe pas |
+| **Application** | même utilisateur Unix que les agents ; jeton de capacité non construit | **capacité déclarée puis accordée**, quotas, plus de clé de l'Atelier dans son environnement | J8 non construit |
+| **Client externe** (VS Code, terminal, claude.ai, passerelle) | `code` par défaut ; sans conversation, **tout** | **capacité courte émise par l'Atelier** par session ; profil `externe` minimal sans elle | clé du propriétaire = accès complet |
+
+### Ordre pour y arriver
+
+1. **Retirer `filesystem` de la distribution** (ou le limiter au dossier du projet) et sortir les services sans mandataire de l'héritage : sans effet de bord, grand gain. Mesure : le relevé du §7 doit tomber à 0 projet qui hérite de tout.
+2. **Matrice déclarative** + contrôle des gardiens, qui rend le §7 vérifiable chaque jour.
+3. **Moule de mandataire borné** (`n8n.md`, A1), puis QGIS et Blender en lecture par défaut.
+4. **Rôles nommés** pour les agents lancés ; budget obligatoire pour tout automate ; distribution réduite par rôle.
+5. **Capacités courtes par conversation**, puis clé du propriétaire retirée de l'environnement des agents.
+6. **Exercer** les trois chemins jamais servis (déclaré, trigger, réparateur) sur un cas réel, avant de les compter comme acquis.
