@@ -97,8 +97,34 @@ Il gère sans entrer dans un projet : « quelles automatisations tournent, lesqu
 - Le jeton quitte `args` : en-tête du pool ou secret du pod, sondé comme les autres connecteurs.
 - Les webhooks de n8n déclenchés de l'extérieur sont exposés par l'Ingress de n8n ; après `N8N_PATH` leur adresse change et le portail Grist doit suivre.
 
+## Ce que l'Atelier doit savoir faire avant (lu dans le code, 16/10)
+
+Ces manques ne sont pas propres à n8n : n8n les rend seulement visibles. Les combler d'abord évite d'écrire n8n « en copie » d'Onyxia.
+
+| # | Manque | Constat | À faire |
+|---|---|---|---|
+| A1 | **Un mandataire de connecteur borné, générique** | `onyxia_projet.py` (1050 lignes) porte à la fois le moule (outils visibles, arguments imposés, refus, session, mutisme) et le métier d'Onyxia. `mcp_sync.py` a des cas à part (`est_onyxia`, `_est_onyxia_direct`, `onyxia_pour_projet`) dans une dizaine d'endroits | extraire le moule (`Borne`, `Regle`, `filtrer_appel`, `outils_visibles`, rejeu) ; chaque connecteur borné fournit `pour_projet(settings, slug, profil)` ; `mcp_sync` n'appelle plus que ce registre |
+| A2 | **Une vue de service que l'agent peut montrer, à une page donnée** | `panneau.descripteur` ne connaît que le genre `creation` (projet + nom) ; `atelier_montrer` ne montre donc qu'une création. Les services (bureaux, éditeur) ne s'ouvrent que sur un geste, par le catalogue `/v1/bureaux` (J-f) | genre `service` (connecteur, vue, chemin validé) ; `atelier_montrer` l'accepte, y compris pour l'Assistant ; épinglage au projet. J-f vise les **flux** vivants : un éditeur n'en est pas un et peut s'ouvrir seul |
+| A3 | **Un bloc de projet générique** | `projet.json` porte `deploiement` (Onyxia) avec sa commande de déclaration. Un second bloc `automatisations` copierait structure, aperçu, annulation, contexte | une famille « services du projet » : même schéma de déclaration, même commande engageante, même ligne de contexte |
+| A4 | **Classer les outils d'un connecteur tiers** | la classe `lecture` / `engageante` n'existe que pour les commandes `atelier_*`. Un outil n8n qui active ou supprime n'est classé nulle part | classe dérivée des annotations MCP (`readOnlyHint`, `destructiveHint`) ou d'une table par connecteur ; le mandataire rend l'aperçu et le jeton de confirmation déjà en place |
+| A5 | **Une surface d'outils stable** | un agent ne reçoit ses outils d'un connecteur qu'à son lancement (constaté pour Onyxia). Des outils qui apparaissent quand un workflow est publié ne lui parviennent pas | commencer par deux outils fixes (`n8n_outils`, `n8n_appeler`) ; les outils nommés viendront avec `tools/list_changed`, si les clients le suivent (à mesurer) |
+| A6 | **Un chemin d'entrée pour les événements** | n8n doit pouvoir dire « ce workflow a échoué » ou « validez ceci ». Rien n'accepte aujourd'hui d'événement externe signé vers un fil ou « À valider » | endpoint entrant à jeton de service (un secret de l'hôte des applications), qui écrit dans `événements`, « À valider » ou `rappel` ; comptage par origine (`X-Atelier-Origine`, T18) |
+| A7 | **Des garde-fous contre les boucles** | n8n peut lancer un agent, qui peut créer un workflow, qui peut lancer un agent | profondeur de lancement portée par l'en-tête d'origine ; plafonds et budgets (J-b) comptés par origine ; refus au-delà d'une profondeur |
+| A8 | **Sondes et gardiens génériques** | la sonde `initialize` des ponts stdio a retiré n8n quand il répondait 401 ; aucune ne dit « jeton refusé » à la personne | sonde HTTP commune à tout connecteur ; alerte lisible dans l'Atelier ; jeton jamais en `args` (déjà couvert par `mcp_secrets`) |
+| A9 | **Édition concurrente** | une personne édite dans l'éditeur pendant que l'agent modifie par l'API : le dernier enregistrement gagne (à vérifier sur 2.38.6) | l'agent travaille sur un workflow `brouillon` qu'il ne touche plus quand la vue est ouverte dessus ; la vue se recharge après une écriture de l'agent, avec le liseré « l'agent agit » |
+| A10 | **Honnêteté de la documentation** | `site/vitrine.json` et `docs/fonctionnalites.md` annoncent que n8n s'ouvre dans le panneau : ce n'est pas vrai aujourd'hui | corriger les deux textes tant que la vue n'est pas posée |
+
+Autres points à garder en tête :
+
+- **Coût en jetons.** `n8n-mcp` expose des dizaines d'outils et la documentation de centaines de nœuds : l'agent d'un projet n'en reçoit que ce qui construit ses workflows (`outils_visibles` sait déjà filtrer).
+- **Vérifier avant d'annoncer.** Comme `atelier_artefact_verifier` pour une page, un `n8n_verifier` (exécution à blanc, nœuds sans identifiants, déclencheur joignable) avant que l'agent dise « c'est prêt ».
+- **Catalogue de la passerelle.** `gateway_find_tools` ne contient ni n8n ni gitlab (ponts stdio) ; un n8n en HTTP direct y entrera, ce qui change ce que voient les profils.
+- **Production.** Le correctif du sous-protocole du noyau Jupyter et l'alias court du pod GPU ne sont que dans l'image de développement : à reporter avant de compter sur le chemin « agent → Onyxia » en production.
+- **Tests.** Le service factice de `tests/test_bureaux.py` sert de modèle pour un faux n8n (API, étiquettes, webhook) : le prévoir dès A1.
+
 ## Étapes
 
+0. **Socle** : A1 (moule générique), A2 (vue de service montrable), A3 (bloc générique), A4 (classes), A10 (textes). Chacune est utile sans n8n : Blender et QGIS en profitent.
 1. **Réparer** : jeton lu dans le Deployment, entrée HTTP directe avec `headers` + secret, rotation. *(sans effet visible pour les utilisateurs)*
 2. **Voir** : `N8N_PATH`, vue `editeur`, connexion unique ; vérifier le WebSocket `push`. *(déplace l'adresse publique)*
 3. **Ranger et borner** : étiquettes, mandataire `n8n_projet.py`, bloc `automatisations`, contexte du projet, commandes de l'Assistant.
