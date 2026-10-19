@@ -788,6 +788,12 @@ produit.
   (`proj-classification-d-images-de-stationnement-jupyter-pytorch-g`, 63 octets, D-76) à retirer, et la déclaration de
   Classification à passer en « GPU seul » pour que la cible par défaut soit le GPU.
 
+- **D-80 (M) — Des vidages mémoire de 1,25 Go dans les dossiers de projet.** Le plantage de `claude` du 19/10 (D-78) a laissé
+  des `core.NNN` dans le dossier du projet (`classification-…` : deux fichiers de 1,25 Go, supprimés), de `pix2hdr`,
+  du cache d'extensions, de `~/` et de `/opt/atelier/src` : `ulimit -c` est illimité et `core_pattern` vaut `core`. Un
+  plantage répété remplit le volume en quelques minutes. **Fait** : `atelier-init.sh` pose `ulimit -c 0` (hérité par code-server, les agents, les
+  applications). **Reste** : retirer les vidages restants (accord de la personne).
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue
