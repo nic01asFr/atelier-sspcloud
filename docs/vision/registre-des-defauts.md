@@ -695,6 +695,16 @@ produit.
   **GPU, constaté le même jour** : le seul GPU est pris par `proj-presentation-images-gpu` (pod `Running` depuis le 19/10
   à 08 h 51), alors que le courtier du serveur de développement donne `classification-d-images-de-stationnement` comme
   détenteur (son StatefulSet GPU est à 1 réplique, 0 prête, donc en attente). Le quota réel est `requests.nvidia.com/gpu 1/1`.
+  **Précision sur la conception** (même jour). `mcp` est bien un déploiement pérenne : release Helm `mcp`, chart
+  `sspcloud-mcp-0.4.0`, un réplica, hors de tout pod Jupyter. Mais ses valeurs disent `rbac.create: false` et
+  `rbac.clusterRole: edit` : le chart ne crée ni compte de service ni liaison de rôle, et le manifeste de la révision 3
+  (01/10) écrit en dur `serviceAccountName: jupyter-python-806437`. Il n'a donc jamais eu d'identité à lui : il empruntait
+  le compte d'une release Jupyter, avec les droits que la plateforme donnait à celui-ci (niveau « édition », pas
+  administrateur : je ne peux pas créer de liaison de rôle). Le correctif posé le 19/10 est un `kubectl patch` : il n'est
+  **pas** dans la release Helm, et un `helm upgrade mcp` le remettrait sur le compte supprimé. Pour le rendre durable :
+  poser la valeur du compte de service dans la release (clé `serviceAccount`), sur un compte appartenant à une release
+  longue (`passerelle-mcp-dev`, 91 jours) ou, mieux, à un petit service Onyxia dédié. Le même relevé a affiché par
+  erreur le jeton d'application du chart (`appAuth.token`) dans la sortie de la session : à renouveler.
 
 ## 5. Déjà corrigés (pour mémoire)
 
