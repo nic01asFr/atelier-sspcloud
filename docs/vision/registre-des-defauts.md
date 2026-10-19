@@ -714,6 +714,18 @@ produit.
   supprimé. **Le projet `classification-d-images-de-stationnement` n'a pas son GPU** : ses deux StatefulSets sont à 0/1
   depuis environ trois heures et n'ont aucun pod, le seul pod demandant un GPU est `proj-presentation-images-gpu-…-0`
   (`Running` depuis 08 h 51), et le courtier note pourtant `classification-6fb3e27e` comme détenteur.
+  **GPU attribué le 19/10 (sur demande de la personne).** `presentation-images` libéré (`gpu_release`, pod à zéro, volume
+  gardé) puis `gpu_switch classification-6fb3e27e` : le pod GPU du projet tourne, `nvidia-smi` voit une NVIDIA A2 (15 356 Mio),
+  le courtier le donne détenteur, quota 1/1. Deux accrocs, à corriger dans le serveur : (1) `gpu_switch` avec le nom
+  **long** du projet échoue (`helm install … repo inseefrlab not found`, le pod neuf n'ayant pas le dépôt Helm, et l'alias
+  court de D-72 n'étant pas connu) ; il a fallu donner le nom court ; (2) un StatefulSet à qui un quota refuse son pod ne
+  réessaie pas de lui-même quand le quota se libère : il a fallu un `gpu_release` puis un `gpu_switch` pour le relancer.
+  **D-76 (même cause que D-72, côté CPU)** : le pod CPU de `classification-d-images-de-stationnement` ne peut pas exister :
+  `Pod … is invalid: metadata.labels: must be no more than 63 bytes` (nom de release + `-jupyter-python` + empreinte de
+  révision dépasse 63 octets dès que le projet a plus d'environ 32 caractères). Le nom court existe pour le GPU
+  (`nom_gpu_du_projet`), pas pour le CPU ; `project_start` doit l'appliquer aussi. Le StatefulSet CPU du projet est à 0/1
+  depuis son installation. Le connecteur Onyxia de l'Atelier (service `passerelle-mcp-dev`, disparu à la réinstallation)
+  reste à rebrancher pour que les agents du projet opèrent ce pod GPU.
 
 ## 5. Déjà corrigés (pour mémoire)
 
