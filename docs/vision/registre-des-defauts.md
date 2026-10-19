@@ -673,6 +673,29 @@ produit.
   d'exécution, `gpu_switch` qui attache la session GPU sans toucher à l'autre, `gpu_status` qui dit le slot, un pod
   muet compté par pod. Tests : `tests/test_onyxia_projet.py` (cibles), `tests/test_contexte_onyxia.py`.
 
+- **D-75 (G) — Le serveur Onyxia de production n'avait plus d'identité Kubernetes : tout `kubectl` / `helm` rendait « the
+  server has asked for the client to provide credentials ».** Signalé le 19/10 (`gpu_switch` du projet
+  `classification-d-images-de-stationnement` en `GPU_HELM_FAILED`, `list_pods` en erreur), reproduit le même jour par
+  `list_pods` de la session. **Cause** : le déploiement `mcp` (serveur de production, adresse `user-<idep>-mcp`)
+  tournait sous le compte de service `jupyter-python-806437`, emprunté à une release Onyxia aujourd'hui disparue : le
+  compte n'existe plus (`NotFound`), les événements du pod disent `failed to fetch token: serviceaccounts
+  "jupyter-python-806437" not found`, et aucune liaison de rôle ne le cite. Le StatefulSet `qgis-hub` porte le même
+  compte et le même événement. Le serveur de développement (`passerelle-mcp-http`, celui du pool de l'Atelier) a son
+  propre compte et **répond** (`list_pods`, `helm list`, `gpu_status` vérifiés le 19/10). **Deux défauts en un** :
+  (1) un service de production dépend du compte d'une release jetable ; (2) `gpu_status` de production répond
+  `slot_free: true, quota 0/0` quand il n'a pas pu lire le cluster, au lieu d'une erreur : l'agent a lu « le slot est libre ».
+  **Fait le 19/10** : `serviceAccountName` du déploiement `mcp` passé à `passerelle-mcp-dev-jupyter-python` (valeur
+  d'avant : `jupyter-python-806437` ; retour arrière : `kubectl -n <ns> patch deploy mcp --type=merge -p
+  '{"spec":{"template":{"spec":{"serviceAccountName":"jupyter-python-806437","serviceAccount":"jupyter-python-806437"}}}}'`) ;
+  nouveau pod `Running`. **Pas vérifié** : les appels Onyxia de la session ont été refusés par le contrôle de permission
+  juste après ce changement ; l'effet sur `list_pods` / `gpu_switch` de production reste à constater. **À faire** : un compte
+  de service dédié au serveur de production avec sa liaison de rôle (je n'ai pas le droit de créer de liaison : à poser
+  par la personne ou par l'image du chart) ; `qgis-hub` à rebrancher de même ; `gpu_status` doit répondre « illisible »,
+  jamais « libre », quand le cluster n'est pas lisible ; reporter D-72 et D-74 dans l'image de production.
+  **GPU, constaté le même jour** : le seul GPU est pris par `proj-presentation-images-gpu` (pod `Running` depuis le 19/10
+  à 08 h 51), alors que le courtier du serveur de développement donne `classification-d-images-de-stationnement` comme
+  détenteur (son StatefulSet GPU est à 1 réplique, 0 prête, donc en attente). Le quota réel est `requests.nvidia.com/gpu 1/1`.
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue
