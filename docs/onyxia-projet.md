@@ -117,7 +117,10 @@ Dans `.atelier/projet.json` (schéma strict de `commandes/structure.py`, classe 
 }
 ```
 
-- `pod` **ou** `service` (chemin d'un `<nom>.service.yml`), exactement l'un des deux ;
+- `pod` **ou** `service` (chemin d'un `<nom>.service.yml`), l'un des deux, pas les deux ; ou
+  `gpu: true` **seul** (ni pod ni service) : un projet qui n'a que son pod GPU `proj-<nom court>-gpu`.
+  C'est le cas d'un projet dont le slug dépasse environ 32 caractères : son pod CPU ne peut pas exister
+  (Kubernetes refuse un nom de révision de plus de 63 octets) ;
 - `namespace` facultatif (défaut : celui du serveur Onyxia) ; `gpu` vaut faux par défaut ;
   `commande` et `port` sont facultatifs et sont annoncés à l'agent dans les consignes du
   serveur ;

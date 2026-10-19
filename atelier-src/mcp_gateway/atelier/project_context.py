@@ -68,6 +68,28 @@ def _lignes_onyxia(chemin: Path, slug: str, pool_a_onyxia: bool = True) -> list[
     ]
 
 
+# Ce que l'Assistant doit savoir d'Onyxia pour l'opérer sans improviser. Le 19/10, faute de ces lignes, il a enchaîné six
+# `kubectl scale` par `exec` (tous morts en KERNEL_START_TIMEOUT), ouvert des sessions parasites et conclu « aucun
+# pod » sans relister, alors que `gpu_switch` et `atelier_projet_deployer_declarer` étaient les gestes prévus.
+LIGNES_ONYXIA_DE_L_ASSISTANT = [
+    "",
+    "### Onyxia : un geste par besoin",
+    "",
+    "- **Voir** : `list_pods` (pods et StatefulSets du namespace), `gpu_status` (qui tient le GPU unique ; une session"
+    " en argument : `nvidia-smi` de son pod). Relis `list_pods` avant de conclure qu'un pod n'existe pas : un pod GPU"
+    " met jusqu'à huit minutes à venir.",
+    "- **Donner le GPU à un projet** : `gpu_switch(project=<slug du projet>)`, sans `preempt`. Le GPU est unique : si"
+    " un autre projet le tient, dis-le à la personne, qui décide de le libérer (`gpu_release`). Tu ne préemptes pas.",
+    "- **Relier un projet à son pod, son service ou son GPU** : `atelier_projet_deployer_declarer` (aperçu, puis accord de"
+    " la personne ; `gpu=true` seul pour un projet qui n'a que son pod GPU). Sans cette déclaration, les agents du"
+    " projet n'ont aucun outil Onyxia.",
+    "- **Jamais** `kubectl`, `helm` ni `scale` qui modifient le cluster, lancés par `exec` : le filtre les refuse. Lire"
+    " (`kubectl get`, `describe`, `logs`) est libre.",
+    "- Un outil échoue de la même façon trois fois (`KERNEL_START_TIMEOUT`, `POD_UNREACHABLE`…) : arrête, dis à la"
+    " personne ce qui échoue et attends sa réponse. Ne cherche pas une autre voie à l'aveugle.",
+]
+
+
 def _bloc_assistant(chemin: Path) -> list[str]:
     return [
         DEBUT,
@@ -83,6 +105,7 @@ def _bloc_assistant(chemin: Path) -> list[str]:
         " message : ils ne sont pas répétés ici.",
         "- Pour agir dans un projet, confie le travail à ses agents plutôt que d'y écrire"
         " toi-même.",
+        *LIGNES_ONYXIA_DE_L_ASSISTANT,
         "",
         "_Section tenue par l'Atelier._",
         FIN,

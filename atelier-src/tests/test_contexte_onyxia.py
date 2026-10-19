@@ -87,3 +87,14 @@ def test_la_liste_des_services_dit_la_meme_chose(tmp_path: Path, reglages) -> No
 def test_situation_du_deploiement_rend_la_borne(tmp_path: Path) -> None:
     borne, raison = situation_du_deploiement(_projet(tmp_path, {"pod": POD, "gpu": True}), "carte")
     assert borne is not None and borne.pod == POD and borne.gpu and "borné" in raison
+
+
+def test_l_assistant_a_son_mode_d_emploi_onyxia() -> None:
+    """Il connaît le geste de chaque besoin, et ce qui est refusé (19/10 : il improvisait des `kubectl scale`)."""
+    from mcp_gateway.atelier.project_context import bloc_contexte
+
+    texte = bloc_contexte("assistant", Path("/x/assistant"), assistant=True)
+    for attendu in ("gpu_switch", "gpu_release", "atelier_projet_deployer_declarer", "list_pods", "gpu_status", "Jamais",
+                    "trois fois", "gpu=true"):
+        assert attendu in texte, attendu
+    assert "kubectl" in texte and "exec" in texte

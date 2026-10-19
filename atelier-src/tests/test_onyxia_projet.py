@@ -812,3 +812,157 @@ def test_les_instructions_parlent_des_deux_pods() -> None:
     assert "Deux pods" not in ox.MandataireOnyxia._instructions("code", _borne())
     seul = ox.borne_du_projet("carte", structure.Deploiement(service="carte.service.yml", gpu=True))
     assert GPU_POD in ox.MandataireOnyxia._instructions("code", seul)
+
+
+# ── Le GPU se nomme comme le courtier, et exec ne pilote pas le cluster (19/10, D-75) ──────────────────────
+# Le 19/10, `gpu_switch` avec le slug entier d'un projet long rendait `helm install … repo inseefrlab not found` : le
+# courtier nomme ce projet par son nom court. Et l'Assistant, qui ne connaissait pas `gpu_switch`, lançait
+# `kubectl scale` par `exec` — six fois, en vain.
+
+PROJET_LONG = "classification-d-images-de-stationnement"
+NOM_COURT = "classification-6fb3e27e"
+
+
+def _borne_longue() -> ox.Borne:
+    return ox.borne_du_projet(PROJET_LONG, structure.Deploiement(gpu=True))
+
+
+def test_le_nom_court_d_un_projet_de_classification_est_celui_du_cluster() -> None:
+    assert ox.nom_gpu_du_projet(PROJET_LONG) == NOM_COURT
+    assert ox.nom_gpu_du_projet("carte") == "carte"
+
+
+def test_les_outils_du_gpu_imposent_le_nom_court_aux_agents_du_projet() -> None:
+    borne = _borne_longue()
+    envoye = ox.filtrer_appel("code", borne, "gpu_switch", {})
+    assert envoye["project"] == NOM_COURT and envoye["session_id"] == f"proj-{PROJET_LONG}-gpu" and envoye["preempt"] is False
+    assert ox.filtrer_appel("code", borne, "gpu_release", {})["project"] == NOM_COURT
+    with pytest.raises(ox.RefusOnyxia, match="vise autre chose"):
+        ox.filtrer_appel("code", borne, "gpu_switch", {"project": PROJET_LONG})
+
+
+def test_la_session_gpu_est_liee_sous_le_nom_court() -> None:
+    assert ox.MandataireOnyxia._arguments_de_liaison(_borne_longue(), "gpu")["project"] == NOM_COURT
+
+
+def test_l_assistant_donne_le_slug_et_le_nom_court_part() -> None:
+    assert ox.filtrer_appel("assistant", None, "gpu_switch", {"project": PROJET_LONG})["project"] == NOM_COURT
+    assert ox.filtrer_appel("assistant", None, "gpu_release", {"project": PROJET_LONG})["project"] == NOM_COURT
+    assert ox.filtrer_appel("assistant", None, "gpu_switch", {"project": NOM_COURT})["project"] == NOM_COURT
+    assert ox.filtrer_appel("assistant", None, "gpu_status", {}) == {}
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "kubectl scale statefulset proj-x-gpu --replicas=1 -n ns",
+        "kubectl -n ns delete pod proj-x-0",
+        "helm uninstall proj-x-gpu",
+        "kubectl apply -f service.yml",
+        "import subprocess; subprocess.run(['sh', '-c', 'kubectl patch sts x -p {}'])",
+        "kubectl scale sts a --replicas=0 && echo SCALED",
+    ],
+)
+def test_exec_ne_pilote_pas_le_cluster(code: str) -> None:
+    for profil, borne in (("assistant", None), ("code", _borne())):
+        with pytest.raises(ox.RefusOnyxia, match="gpu_switch"):
+            ox.filtrer_appel(profil, borne, "exec", {"code": code})  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "kubectl get pods -n ns | grep proj",
+        "kubectl describe sts proj-x-gpu",
+        "kubectl logs proj-x-0 --tail=20",
+        "kubectl get events --sort-by=.metadata.creationTimestamp",
+        "kubectl get pods --show-labels",
+        "kubectl auth can-i create serviceaccount",
+        "echo 'on scale le modèle' && python train.py",
+        "helm list -n ns",
+    ],
+)
+def test_exec_laisse_lire_le_cluster_et_le_reste(code: str) -> None:
+    assert ox.filtrer_appel("assistant", None, "exec", {"code": code})["code"] == code
+
+
+def test_au_troisieme_echec_de_meme_nature_l_agent_est_invite_a_s_arreter() -> None:
+    class Noyau(FauxOnyxia):
+        echoue = True
+
+        async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            self.appels.append((outil, dict(arguments)))
+            if outil == "exec" and self.echoue:
+                return _texte({"error": {"code": "KERNEL_START_TIMEOUT", "message": "noyau non prêt"}}, erreur=True)
+            return _texte({"ok": outil})
+
+    faux = Noyau()
+    m = _mandataire(faux)
+    appel = lambda: _textes(_appel(m, "assistant", None, "exec", {"code": "echo", "session_id": "s"}))  # noqa: E731
+    textes = [appel(), appel()]
+    assert all("dites à la personne" not in t for t in textes)
+    assert "dites à la personne" in appel() and "3 fois de suite" in appel().replace("4 fois", "3 fois")
+    # Un succès du même outil remet le compte à zéro.
+    faux.echoue = False
+    assert not _appel(m, "assistant", None, "exec", {"code": "echo", "session_id": "s"})["isError"]
+    faux.echoue = True
+    assert "dites à la personne" not in appel()
+
+
+def test_les_echecs_d_un_autre_outil_ne_comptent_pas() -> None:
+    class Noyau(FauxOnyxia):
+        async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            self.appels.append((outil, dict(arguments)))
+            if outil == "exec":
+                return _texte({"error": {"code": "KERNEL_START_TIMEOUT", "message": "x"}}, erreur=True)
+            return _texte({"ok": outil})
+
+    m = _mandataire(Noyau())
+    for _ in range(2):
+        _appel(m, "assistant", None, "exec", {"code": "echo", "session_id": "s"})
+    _appel(m, "assistant", None, "list_pods", {})  # un succès d'un autre outil ne remet rien à zéro
+    assert "dites à la personne" in _textes(_appel(m, "assistant", None, "exec", {"code": "echo", "session_id": "s"}))
+
+
+def test_le_dossier_manquant_d_un_projet_au_nom_court_est_cree_aussi() -> None:
+    class SansDossierGpu(FauxOnyxia):
+        cree = False
+
+        async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            self.appels.append((outil, dict(arguments)))
+            if outil == "exec" and arguments.get("lang") == "python" and "makedirs" in arguments.get("code", ""):
+                self.cree = True
+                return _texte({"stdout": "ok"})
+            if outil == "exec" and not self.cree:
+                chemin = f"/home/onyxia/work/projects/{NOM_COURT}"
+                return _texte({"rc": 1, "stderr": f"[Errno 2] No such file or directory: '{chemin}'"}, erreur=True)
+            return await super().appeler(outil, arguments)
+
+    faux = SansDossierGpu({f"proj-{PROJET_LONG}-gpu": f"proj-{NOM_COURT}-gpu-jupyter-pytorch-gpu-0"})
+    resultat = _appel(_mandataire(faux), "code", _borne_longue(), "exec", {"code": "echo", "lang": "bash"})
+    assert not resultat["isError"], resultat
+    assert faux.cree
+
+
+def test_un_projet_peut_ne_declarer_que_son_gpu() -> None:
+    deploiement = structure.Deploiement(gpu=True)
+    assert deploiement.pod is None and deploiement.service is None
+    borne = ox.borne_du_projet(PROJET_LONG, deploiement)
+    assert borne.cibles == ("gpu",) and borne.cible_par_defaut == "gpu"
+    assert ox.filtrer_appel("code", borne, "exec", {"code": "nvidia-smi"})["session_id"] == f"proj-{PROJET_LONG}-gpu"
+    with pytest.raises(ox.RefusOnyxia, match="pas de pod CPU"):
+        ox.filtrer_appel("code", borne, "exec", {"code": "1", "cible": "cpu"})
+    assert "project_bind" not in ox.regles_code(borne), "pas de pod CPU à attacher"
+
+
+@pytest.mark.parametrize(
+    "champs, motif",
+    [
+        ({}, "pod, un service, ou le GPU"),
+        ({"gpu": False}, "pod, un service, ou le GPU"),
+        ({"pod": POD, "service": "a.service.yml"}, "pas les deux"),
+    ],
+)
+def test_un_deploiement_vide_ou_double_reste_refuse(champs: dict[str, Any], motif: str) -> None:
+    with pytest.raises(Exception, match=motif):
+        structure.Deploiement(**champs)

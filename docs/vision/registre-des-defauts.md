@@ -726,6 +726,18 @@ produit.
   (`nom_gpu_du_projet`), pas pour le CPU ; `project_start` doit l'appliquer aussi. Le StatefulSet CPU du projet est à 0/1
   depuis son installation. Le connecteur Onyxia de l'Atelier (service `passerelle-mcp-dev`, disparu à la réinstallation)
   reste à rebrancher pour que les agents du projet opèrent ce pod GPU.
+  **Corrigé côté Atelier (19/10, branche `claude/compassionate-hawking-ifylq2`).** (1) Le mandataire impose aux agents le
+  **nom court** du GPU à `gpu_switch`, `gpu_release` et à la liaison de la session GPU, et le traduit pour l'Assistant (qui
+  donne le slug du projet). (2) Un déploiement peut déclarer **`gpu: true` seul**, sans pod ni service : jusque-là
+  `Deploiement` exigeait « un pod ou un service, exactement », donc un projet sans pod CPU possible ne pouvait rien
+  déclarer. (3) `exec` refuse `kubectl` / `helm` qui modifient le cluster (scale, delete, apply, patch, install…), pour
+  tous les profils ; lire reste libre, `kubectl auth can-i` aussi. (4) Au troisième échec de même nature d'un même outil,
+  la réponse dit d'arrêter et d'en parler à la personne. (5) L'Assistant reçoit un mode d'emploi Onyxia (un geste par
+  besoin : `list_pods` et `gpu_status` pour voir, `gpu_switch` sans préemption pour donner le GPU,
+  `atelier_projet_deployer_declarer` pour relier, jamais de pilotage du cluster par `exec`, arrêt après trois échecs).
+  Tests : `tests/test_onyxia_projet.py`, `tests/test_contexte_onyxia.py`. **Reste côté serveur Onyxia** (dépôt
+  `sspcloud-mcp`) : noyaux sur pods récents, `session_start(projet, gpu)`, `gpu_status` honnête, `service_status`, nom court
+  du pod CPU, dépôt Helm et alias dans l'image, compte de service dédié.
 
 ## 5. Déjà corrigés (pour mémoire)
 

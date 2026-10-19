@@ -233,11 +233,18 @@ def regles_code(borne: Borne) -> dict[str, Regle]:
                 # Son GPU : basculer le slot vers le pod GPU du projet, sans préempter celui d'un autre projet, et
                 # le rendre. La session attachée est celle du GPU (`proj-<projet>-gpu`), jamais celle du pod CPU : les
                 # deux pods se travaillent dans le même tour, par `cible`.
+                # Le courtier nomme le projet par son nom GPU (court quand le slug est long) : le slug entier ferait
+                # chercher une release qui n'existe pas, et un `helm install` qui échoue (19/10, D-75).
                 "gpu_switch": Regle(
                     frozenset({"idle_minutes"}),
-                    {"project": borne.slug, "session_id": session_gpu_du_projet(borne.slug), "preempt": False, **ns},
+                    {
+                        "project": nom_gpu_du_projet(borne.slug),
+                        "session_id": session_gpu_du_projet(borne.slug),
+                        "preempt": False,
+                        **ns,
+                    },
                 ),
-                "gpu_release": Regle(frozenset(), {"project": borne.slug, **ns}),
+                "gpu_release": Regle(frozenset(), {"project": nom_gpu_du_projet(borne.slug), **ns}),
                 # Sans argument : l'état du slot (qui le tient, charge, VRAM). `nvidia-smi` du pod : un `exec`
                 # sur la cible `gpu`.
                 "gpu_status": Regle(frozenset(), {**ns}),
@@ -247,6 +254,31 @@ def regles_code(borne: Borne) -> dict[str, Regle]:
 
 
 # ── Le filtre ───────────────────────────────────────────────────────────
+
+# Échecs de même nature, d'un même outil, au bout desquels on dit à l'agent d'en parler à la personne.
+SEUIL_D_ECHECS = 3
+
+# `kubectl` ou `helm` qui modifient le cluster, lancés par `exec` : l'Assistant l'a fait le 19/10 pour donner le GPU à
+# un projet, alors que `gpu_switch` est le geste prévu. Lire (get, describe, logs, list) reste libre.
+_PILOTAGE_DU_CLUSTER = re.compile(
+    r"\b(?:kubectl|helm)\b[^\n;|&]*?\b(?:scale|delete|apply|patch|replace|edit|rollout|uninstall|install|upgrade"
+    r"|drain|cordon|taint|label|annotate|create)\b",
+    re.IGNORECASE,
+)
+
+
+def _refuser_le_pilotage_du_cluster(arguments: dict[str, Any]) -> None:
+    code = arguments.get("code")
+    if isinstance(code, str):
+        # `kubectl auth can-i create …` interroge les droits sans rien modifier.
+        code = re.sub(r"\bkubectl\b[^\n;|&]*\bcan-i\b[^\n;|&]*", "", code)
+    if isinstance(code, str) and _PILOTAGE_DU_CLUSTER.search(code):
+        raise RefusOnyxia(
+            "kubectl ou helm qui modifient le cluster ne se lancent pas par exec : chaque besoin a son geste. "
+            "Donner le GPU à un projet : gpu_switch (sans preempt) ; le libérer : gpu_release ; relier un projet à "
+            "son pod : atelier_projet_deployer_declarer. Lire reste libre (kubectl get, describe, logs). "
+            "Si l'outil prévu échoue, dites-le à la personne au lieu d'une autre voie."
+        )
 
 
 def filtrer_appel(
@@ -263,7 +295,12 @@ def filtrer_appel(
             f"{outil} est réservé : seule la personne le fait, dans l'Atelier. "
             "Proposez-le dans « À valider »."
         )
+    if outil == "exec":
+        _refuser_le_pilotage_du_cluster(arguments)
     if profil == "assistant":
+        if outil in ("gpu_switch", "gpu_release", "gpu_status") and isinstance(arguments.get("project"), str):
+            # Le slug du projet suffit : le nom court que le courtier emploie est calculé ici.
+            arguments["project"] = nom_gpu_du_projet(arguments["project"])
         if outil == "gpu_switch":
             # Un modèle demande le GPU ; en prendre un à un autre qui le tient est
             # un geste de la personne (docs/vision/gpu-arbitrage.md §2, principe 5).
@@ -386,7 +423,7 @@ def lire_le_deploiement(settings: Any, slug: str) -> structure.Deploiement | Non
 
 # Une seule phrase pour dire comment s'ouvre Onyxia à un projet : la liste des
 # services, le contexte de l'agent et l'Assistant la reprennent telle quelle.
-POUR_DECLARER = "demandez à l'Assistant de relier le projet à son pod ou à son service Onyxia"
+POUR_DECLARER = "demandez à l'Assistant de relier le projet à son pod, à son service ou à son GPU Onyxia"
 
 
 def situation_du_deploiement(
@@ -509,6 +546,7 @@ class MandataireOnyxia:
         self._sessions_verifiees: dict[tuple[str, str], float] = {}
         self._silences: dict[str, list[float]] = {}  # session -> instants des appels restés sans réponse
         self._noyaux: dict[str, Any] = {}  # session -> kernel_alive, tel que session_status l'a dit
+        self._echecs: dict[tuple[str, str, str, str], int] = {}  # (profil, projet, outil, code) -> échecs de suite
 
     # Le protocole ---------------------------------------------------------
 
@@ -573,6 +611,7 @@ class MandataireOnyxia:
         if suivi and nom == "exec" and (arguments.get("lang") or "python") == "bash":
             resultat = await self._rejouer_apres_dossier(profil, borne, arguments, resultat)  # type: ignore[arg-type]
         duree = time.monotonic() - debut
+        resultat = self._dire_les_echecs_repetes(profil, borne, nom, resultat)
         if suivi:
             resultat = self._noter_le_silence(borne, nom, duree, resultat, cible)  # type: ignore[arg-type]
         if nom == "exec" and not arguments.get("background"):
@@ -600,6 +639,40 @@ class MandataireOnyxia:
                 }
         return resultat
 
+    def _dire_les_echecs_repetes(
+        self, profil: Profil, borne: Borne | None, nom: str, resultat: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Au troisième échec de même nature d'un même outil, dit d'arrêter et d'en parler à la personne.
+
+        Le 19/10, l'Assistant a enchaîné six essais d'`exec` qui mouraient tous en `KERNEL_START_TIMEOUT`, chacun par
+        une autre voie (sessions neuves, autre pod), sans jamais le dire. Un succès du même outil remet le compte à zéro.
+        """
+        projet = borne.slug if borne is not None else ""
+        erreur = _erreur_de(resultat)
+        if erreur is None:
+            for cle in [c for c in self._echecs if c[:3] == (profil, projet, nom)]:
+                del self._echecs[cle]
+            return resultat
+        code = str(erreur.get("code") or "")
+        cle = (profil, projet, nom, code)
+        self._echecs[cle] = self._echecs.get(cle, 0) + 1
+        if self._echecs[cle] < SEUIL_D_ECHECS:
+            return resultat
+        return {
+            **resultat,
+            "content": [
+                *(resultat.get("content") or []),
+                {
+                    "type": "text",
+                    "text": (
+                        f"{nom} a échoué {self._echecs[cle]} fois de suite de la même façon ({code or 'même message'}). "
+                        "Ne cherchez pas une autre voie à l'aveugle : dites à la personne ce qui échoue, avec ce "
+                        "message, et attendez sa réponse."
+                    ),
+                },
+            ],
+        }
+
     @staticmethod
     def _cible_visee(borne: Borne | None, arguments: dict[str, Any]) -> str | None:
         """La cible (`cpu` ou `gpu`) d'un appel d'agent ; None sans borne, ou si l'argument n'est pas une cible du projet."""
@@ -626,7 +699,8 @@ class MandataireOnyxia:
             if isinstance(b, dict) and b.get("type") == "text"
         )
         m = re.search(r"No such file or directory: ['\\\"]+(/[^'\\\"]+)", texte)
-        if m is None or not m.group(1).rstrip("/").endswith(f"/projects/{borne.slug}"):
+        noms = (borne.slug, nom_gpu_du_projet(borne.slug))
+        if m is None or not any(m.group(1).rstrip("/").endswith(f"/projects/{n}") for n in noms):
             return resultat
         dossier = m.group(1).rstrip("/")
         creation = await self._appeler(
@@ -864,7 +938,11 @@ class MandataireOnyxia:
         """Les arguments de `project_bind` pour la session d'une cible. Le pod CPU passe par le filtre ; le GPU est calculé."""
         if cible == "cpu":
             return filtrer_appel("code", borne, "project_bind", {})
-        arguments = {"session_id": session_gpu_du_projet(borne.slug), "pod": borne.pod_de("gpu"), "project": borne.slug}
+        arguments = {
+            "session_id": session_gpu_du_projet(borne.slug),
+            "pod": borne.pod_de("gpu"),
+            "project": nom_gpu_du_projet(borne.slug),
+        }
         if borne.namespace:
             arguments["namespace"] = borne.namespace
         return arguments

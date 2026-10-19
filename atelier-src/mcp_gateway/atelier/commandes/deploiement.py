@@ -88,7 +88,12 @@ def inscrire_le_deploiement(app: Any, catalogue: Catalogue) -> None:
     def ce_que_recoivent_les_agents(deploiement: structure.Deploiement | None) -> str:
         if deploiement is None:
             return "les agents code du projet ne reçoivent plus Onyxia"
-        cible = f"le pod {deploiement.pod}" if deploiement.pod else f"le service {deploiement.service}"
+        if deploiement.pod:
+            cible = f"le pod {deploiement.pod}"
+        elif deploiement.service:
+            cible = f"le service {deploiement.service}"
+        else:
+            return "les agents code du projet reçoivent Onyxia borné au pod GPU du projet (sans pod CPU)"
         gpu = ", et le GPU du projet" if deploiement.gpu else ""
         return f"les agents code du projet reçoivent Onyxia borné à {cible}{gpu}"
 
@@ -190,7 +195,7 @@ def inscrire_le_deploiement(app: Any, catalogue: Catalogue) -> None:
             classe=ENGAGEANTE,
             inverse=NOM,
             regles=[
-                "un pod ou un service, exactement",
+                "un pod, un service, ou le seul GPU du projet (gpu=true sans pod ni service)",
                 "un pod est attaché par project_bind d'Onyxia (session proj-<slug>) ; refusé s'il est absent",
                 "ne touche que projet.json, commité seul",
                 "expose_public reste réservé à la personne",
