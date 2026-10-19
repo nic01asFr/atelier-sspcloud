@@ -759,6 +759,18 @@ produit.
   (1,5 Go rendus). **Les données d'un projet n'ont pas leur place dans l'Atelier** : `Images.zip` + `processing/` de
   Classification (0,9 Go, jeu d'images en double) sont à vivre sur le volume du pod GPU du projet (20 Go), pas sur celui de l'Atelier.
 
+- **D-78 (G) — Une extension mise à jour sur un volume plein casse tous les agents (`exit_-7`).** Constaté le 19/10 sur
+  l'agent de Classification : « ok ? » restait sans réponse, la conversation passait en `failed`, cause `exit_-7`. Le journal
+  du tour (`logs/harness/<id>.log`) dit `Bun has crashed … Bus error`, à 4 ms. Le binaire `claude` 2.1.303, installé par
+  code-server à 13h18 pendant que le volume était à 100 %, **faisait 230 Mo au lieu de 267** (droits `rwx------`, extraction
+  interrompue) ; sa version étant la plus récente, il était choisi par `binaire_claude_le_plus_recent` et par le lien
+  `~/work/bin/claude`. Tous les tours de tous les agents plantaient, sans autre message que ce code. **Fait** : lien remis sur
+  la 2.1.300 (saine) et 2.1.303 retirée ; le choix du binaire écarte désormais un binaire qui ne répond pas à `--version`
+  (`claude_home._binaire_sain`, mémorisé par taille et date) ; `atelier-init.sh` fait la même vérification, retire
+  l'extension tronquée, reprend la dernière du cache, et ne copie dans le cache que des versions vérifiées. Tests :
+  `tests/test_meme_cli_partout.py`, `tests/test_installation.py`. **Reste** : dire `exit_-7` en clair dans l'interface
+  (« le programme de l'agent s'est arrêté — espace disque ? ») au lieu du code brut.
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue

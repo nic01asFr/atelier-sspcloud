@@ -181,14 +181,31 @@ if ! "$CODE_SERVER" --extensions-dir "$EXTENSIONS" --list-extensions 2>/dev/null
     dire "extension Claude Code"
     "$CODE_SERVER" --extensions-dir "$EXTENSIONS" --install-extension anthropic.claude-code --force >/dev/null 2>&1 \
       || avertir "l'extension Claude Code ne s'est pas installée (open-vsx injoignable ?)"
-    cp -a "$EXTENSIONS"/anthropic.claude-code-* "$CACHE_EXTENSIONS"/ 2>/dev/null || true
   fi
 fi
-# Le cache est sur le volume (9,8 Go) : il ne garde que les deux dernières versions.
-# L'extension se met à jour seule, environ une fois par semaine, ~250 Mo chaque fois.
-ls -d "$CACHE_EXTENSIONS"/anthropic.claude-code-* 2>/dev/null | sort -V | head -n -2 | xargs -r rm -rf || true
-extension="$(ls -d "$EXTENSIONS"/anthropic.claude-code-* 2>/dev/null | sort -V | tail -1 || true)"
-if [ -n "$extension" ] && [ -x "$extension/resources/native-binary/claude" ]; then
+# Une extension écrite pendant que le volume était plein est tronquée : le 19 octobre,
+# la 2.1.303 faisait 230 Mo au lieu de 267 et chaque tour mourait en `exit_-7` (Bus error).
+# On la retire et on reprend la dernière du cache, qui ne reçoit que des copies vérifiées.
+extension=""
+for _ in 1 2; do
+  extension="$(ls -d "$EXTENSIONS"/anthropic.claude-code-* 2>/dev/null | sort -V | tail -1 || true)"
+  if [ -n "$extension" ] && "$extension/resources/native-binary/claude" --version >/dev/null 2>&1; then
+    break
+  fi
+  if [ -n "$extension" ]; then
+    avertir "extension $(basename "$extension") inutilisable (tronquée ? volume plein ?), retirée"
+    rm -rf "$extension"
+  fi
+  extension=""
+  repli="$(ls -d "$CACHE_EXTENSIONS"/anthropic.claude-code-* 2>/dev/null | sort -V | tail -1 || true)"
+  [ -n "$repli" ] || break
+  cp -a "$repli" "$EXTENSIONS"/ 2>/dev/null || true
+done
+if [ -n "$extension" ]; then
+  # Le cache est sur le volume (9,8 Go) : il ne garde que les deux dernières versions.
+  # L'extension se met à jour seule, environ une fois par semaine, ~250 Mo chaque fois.
+  cp -a "$extension" "$CACHE_EXTENSIONS"/ 2>/dev/null || true
+  ls -d "$CACHE_EXTENSIONS"/anthropic.claude-code-* 2>/dev/null | sort -V | head -n -2 | xargs -r rm -rf || true
   ln -sfn "$extension/resources/native-binary/claude" "$BIN/claude"
 else
   avertir "aucun binaire claude : l'Atelier démarrera mais aucun tour ne pourra tourner"

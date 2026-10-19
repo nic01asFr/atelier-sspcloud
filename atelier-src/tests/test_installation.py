@@ -89,6 +89,10 @@ def test_le_cache_d_extension_du_volume_ne_garde_que_les_dernieres_versions() ->
     init = (RACINE / "install" / "atelier-init.sh").read_text(encoding="utf-8")
     assert "head -n -2 | xargs -r rm -rf || true" in init, "le cache est purgé (set -e : `|| true`)"
     assert 'cp -a "$en_cache" "$EXTENSIONS"/' in init, "le pod ne reçoit que la version la plus récente"
+    assert '/resources/native-binary/claude" --version' in init, "une extension tronquée (volume plein) est écartée"
+    assert init.index('--version >/dev/null') < init.index('cp -a "$extension" "$CACHE_EXTENSIONS"'), (
+        "le cache ne reçoit que des copies vérifiées"
+    )
 
 
 def test_le_chart_est_eprouve_puis_publie_depuis_main_seulement() -> None:
