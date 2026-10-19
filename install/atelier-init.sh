@@ -194,7 +194,8 @@ for _ in 1 2; do
   fi
   if [ -n "$extension" ]; then
     avertir "extension $(basename "$extension") inutilisable (tronquée ? volume plein ?), retirée"
-    rm -rf "$extension"
+    # Aussi du cache : sinon la prochaine mise en route la recopierait (19/10, « claude : absent »).
+    rm -rf "$extension" "$CACHE_EXTENSIONS/$(basename "$extension")"
   fi
   extension=""
   repli="$(ls -d "$CACHE_EXTENSIONS"/anthropic.claude-code-* 2>/dev/null | sort -V | tail -1 || true)"

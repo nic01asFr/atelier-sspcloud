@@ -768,7 +768,9 @@ produit.
   la 2.1.300 (saine) et 2.1.303 retirée ; le choix du binaire écarte désormais un binaire qui ne répond pas à `--version`
   (`claude_home._binaire_sain`, mémorisé par taille et date) ; `atelier-init.sh` fait la même vérification, retire
   l'extension tronquée, reprend la dernière du cache, et ne copie dans le cache que des versions vérifiées. Tests :
-  `tests/test_meme_cli_partout.py`, `tests/test_installation.py`. **Reste** : dire `exit_-7` en clair dans l'interface
+  `tests/test_meme_cli_partout.py`, `tests/test_installation.py`. **Constaté au redémarrage suivant** : la version tronquée était aussi dans le cache du volume (copiée là
+  par l'ancien init), l'init la recopiait dans le pod puis la jugeait inutilisable : « claude : absent », aucun agent ne partait.
+  L'extension écartée est maintenant retirée du cache aussi. **Reste** : dire `exit_-7` en clair dans l'interface
   (« le programme de l'agent s'est arrêté — espace disque ? ») au lieu du code brut.
 
 - **D-79 (G) — Un agent dont le pod est éteint ne sait pas le récupérer.** Constaté le 19/10 sur Classification : le pod GPU,
