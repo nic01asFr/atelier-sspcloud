@@ -1063,3 +1063,43 @@ def test_un_pod_attache_par_la_personne_n_est_pas_relance_d_ici() -> None:
     resultat = _appel(m, "code", borne, "exec", {"code": "print(1)", "lang": "python"})
     assert resultat["isError"] and not faux.envoyes("project_start")
     assert "attaché au projet par la personne" in _textes(resultat)
+
+
+def test_un_travail_de_fond_non_releve_est_signale_quand_le_pod_etait_eteint() -> None:
+    class Travail(PodEteint):
+        async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            if outil == "exec" and arguments.get("background") and self.pods:
+                self.appels.append((outil, dict(arguments)))
+                return _texte({"job_id": "abc123", "pid": "1"})
+            return await super().appeler(outil, arguments)
+
+    faux = Travail("gpu_switch", pods=["proj-carte-gpu-jupyter-pytorch-gpu-0"])
+    m = _mandataire(faux)
+    borne = _borne_gpu_seul()
+    lance = _appel(m, "code", borne, "exec", {"code": "python train.py", "lang": "bash", "background": True})
+    assert not lance["isError"]
+    faux.pods.clear()  # le serveur coupe le pod pendant que l'agent n'a pas relevé son travail
+    resultat = _appel(m, "code", borne, "exec", {"code": "print(1)", "lang": "python"})
+    texte = _textes(resultat)
+    assert "était éteint" in texte and "abc123" in texte and "interrompus" in texte
+
+
+def test_un_travail_releve_n_est_pas_signale() -> None:
+    class Travail(PodEteint):
+        async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+            if outil == "exec" and arguments.get("background") and self.pods:
+                self.appels.append((outil, dict(arguments)))
+                return _texte({"job_id": "abc123", "pid": "1"})
+            if outil == "job_poll":
+                self.appels.append((outil, dict(arguments)))
+                return _texte({"job_id": "abc123", "running": False, "exit_code": 0})
+            return await super().appeler(outil, arguments)
+
+    faux = Travail("gpu_switch", pods=["proj-carte-gpu-jupyter-pytorch-gpu-0"])
+    m = _mandataire(faux)
+    borne = _borne_gpu_seul()
+    _appel(m, "code", borne, "exec", {"code": "python train.py", "lang": "bash", "background": True})
+    _appel(m, "code", borne, "job_poll", {"job_id": "abc123"})
+    faux.pods.clear()
+    texte = _textes(_appel(m, "code", borne, "exec", {"code": "print(1)", "lang": "python"}))
+    assert "était éteint" in texte and "abc123" not in texte

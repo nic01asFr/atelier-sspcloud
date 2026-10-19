@@ -556,6 +556,7 @@ class MandataireOnyxia:
         self._noyaux: dict[str, Any] = {}  # session -> kernel_alive, tel que session_status l'a dit
         self._echecs: dict[tuple[str, str, str, str], int] = {}  # (profil, projet, outil, code) -> échecs de suite
         self._relances: dict[tuple[str, str], tuple[float, str]] = {}  # (projet, cible) -> (instant, ce qui a été dit)
+        self._travaux: dict[tuple[str, str], dict[str, float]] = {}  # (projet, cible) -> travaux de fond non relevés
 
     # Le protocole ---------------------------------------------------------
 
@@ -617,6 +618,8 @@ class MandataireOnyxia:
                 return _refus_mcp(muet)
         debut = time.monotonic()
         resultat = await self._appeler_filtre(profil, borne, nom, arguments)
+        if suivi:
+            self._suivre_les_travaux(borne, cible, nom, arguments, resultat)  # type: ignore[arg-type]
         if suivi and _erreur_de(resultat) is not None:
             resultat = await self._relancer_si_eteint(profil, borne, cible, nom, arguments, resultat)  # type: ignore[arg-type]
         if suivi and nom == "exec" and (arguments.get("lang") or "python") == "bash":
@@ -777,6 +780,23 @@ class MandataireOnyxia:
     def _avec_note(resultat: dict[str, Any], note: str) -> dict[str, Any]:
         return {**resultat, "content": [*(resultat.get("content") or []), {"type": "text", "text": note}]}
 
+    def _suivre_les_travaux(
+        self, borne: Borne, cible: str, nom: str, arguments: dict[str, Any], resultat: dict[str, Any]
+    ) -> None:
+        """Retient les travaux de fond lancés sur un pod, jusqu'à ce que l'agent les relève.
+
+        Si le pod disparaît entre-temps (19/10 : coupé par le serveur Onyxia, qui jugeait inactif un entraînement
+        limité par le processeur), l'agent doit savoir que ces travaux ont pu être interrompus.
+        """
+        cle = (borne.slug, cible)
+        charge = _charge_de(resultat) if not resultat.get("isError") else None
+        if not isinstance(charge, dict):
+            return
+        if nom == "exec" and arguments.get("background") and isinstance(charge.get("job_id"), str):
+            self._travaux.setdefault(cle, {})[charge["job_id"]] = time.monotonic()
+        elif nom == "job_poll" and charge.get("running") is False:
+            self._travaux.get(cle, {}).pop(str(arguments.get("job_id") or charge.get("job_id") or ""), None)
+
     async def _pod_present(self, borne: Borne, cible: str) -> bool | None:
         """Le pod de cette cible existe-t-il, même en démarrage ? None quand on ne peut pas le savoir."""
         prefixe = prefixe_des_pods_gpu(borne.slug) if cible == "gpu" else (borne.pod or "")
@@ -853,6 +873,14 @@ class MandataireOnyxia:
             f"Le pod {pod} était éteint (inactivité ou suppression) : l'Atelier l'a relancé"
             + (", appel rejoué." if _erreur_de(rejeu) is None else ".")
         )
+        interrompus = sorted(self._travaux.pop(cle, {}))
+        if interrompus:
+            dit += (
+                f" ATTENTION : {len(interrompus)} travail(aux) de fond lancé(s) sur ce pod n'avaient pas été relevés "
+                f"({', '.join(interrompus)}) : s'ils tournaient encore, ils ont été interrompus par l'arrêt du pod "
+                "(un arrêt n'est pas votre fait). Avant de les relancer, regardez leurs journaux et leurs résultats sur "
+                "le volume : ils ont pu finir avant la coupure. Dites-le à la personne si du travail est perdu."
+            )
         if _erreur_de(rejeu) is not None:
             dit += (
                 " Son noyau démarre encore (une à deux minutes) : réessayez dans une minute, sans relancer le pod "
