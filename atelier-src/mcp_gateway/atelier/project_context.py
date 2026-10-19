@@ -65,6 +65,9 @@ def _lignes_onyxia(chemin: Path, slug: str, pool_a_onyxia: bool = True) -> list[
     return [
         "- Onyxia, borné au déploiement de ce projet : " + " ; ".join(ouverts) + ". Ni les autres"
         " pods, ni l'exposition publique.",
+        "- Un pod du projet éteint (inactivité, suppression) est relancé par l'Atelier quand un appel échoue, et l'appel"
+        " est rejoué : ne le relance pas à la main. Seuls `~/work` et ses sous-dossiers survivent à un arrêt : installe"
+        " les paquets et garde les données et les poids là.",
     ]
 
 
