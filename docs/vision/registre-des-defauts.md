@@ -739,6 +739,18 @@ produit.
   `sspcloud-mcp`) : noyaux sur pods récents, `session_start(projet, gpu)`, `gpu_status` honnête, `service_status`, nom court
   du pod CPU, dépôt Helm et alias dans l'image, compte de service dédié.
 
+- **D-77 (G) — Le volume de l'Atelier plein l'empêche de démarrer.** Constaté le 19/10 au redémarrage qui chargeait la
+  PR #43 : `atelier-init` échouait (`ln: failed to create symbolic link '…/bin/claude': No space left on device`) et le
+  pod entrait en `CrashLoopBackOff`. Le volume `~/work` (9,8 Go) était à 100 % ; la sonde de santé le disait déjà (85 %,
+  puis 89 % le 16/10), sans que rien ne la lise. Répartition relevée : `projects` 4,0 Go (`nouveau-projet-2` 1,7, 
+  `gaussian-splatting-capture-render` 1,2, `classification-…` 0,9), **`.code-server-extensions` 2,2 Go (au moins six versions de
+  l'extension Claude Code, ~250 Mo chacune, seule la dernière sert)**, `migration-backups` 1,8 Go (sauvegarde du store
+  wikichat du 27/09, gardée volontairement), `.claude` 0,7 Go, `transcripts` 0,24 Go, `.npm-cache` 0,12 Go.
+  **Fait** : `~/work/.npm-cache` vidé (117 Mo, cache régénérable) dans une fenêtre où le conteneur vivait ; l'Atelier est
+  reparti (1/1). **Reste** : 132 Mo libres, donc fragile ; les anciennes versions de l'extension (≈ 1,7 Go) à retirer, un
+  nettoyage automatique des versions d'extension et des transcripts à poser, et le gardien Santé à faire parler (alerte lisible
+  dans l'Atelier, pas seulement au journal) dès 80 %.
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue
