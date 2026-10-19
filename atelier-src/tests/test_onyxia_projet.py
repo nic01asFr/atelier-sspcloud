@@ -861,6 +861,9 @@ def test_l_assistant_donne_le_slug_et_le_nom_court_part() -> None:
         "kubectl apply -f service.yml",
         "import subprocess; subprocess.run(['sh', '-c', 'kubectl patch sts x -p {}'])",
         "kubectl scale sts a --replicas=0 && echo SCALED",
+        "kubectl \\\n  scale statefulset proj-x-gpu --replicas=1",
+        "helm \\\n  upgrade proj-x-gpu chart",
+        "kubectl -n ns \\  \n   delete pod proj-x-0",
     ],
 )
 def test_exec_ne_pilote_pas_le_cluster(code: str) -> None:

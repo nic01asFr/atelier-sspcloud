@@ -270,6 +270,8 @@ _PILOTAGE_DU_CLUSTER = re.compile(
 def _refuser_le_pilotage_du_cluster(arguments: dict[str, Any]) -> None:
     code = arguments.get("code")
     if isinstance(code, str):
+        # Une continuation de ligne (`kubectl \` puis `scale …` à la ligne suivante) est une seule commande.
+        code = re.sub(r"\\[ \t]*\r?\n", " ", code)
         # `kubectl auth can-i create …` interroge les droits sans rien modifier.
         code = re.sub(r"\bkubectl\b[^\n;|&]*\bcan-i\b[^\n;|&]*", "", code)
     if isinstance(code, str) and _PILOTAGE_DU_CLUSTER.search(code):
