@@ -90,6 +90,7 @@ def test_le_cache_d_extension_du_volume_ne_garde_que_les_dernieres_versions() ->
     assert "head -n -2 | xargs -r rm -rf || true" in init, "le cache est purgé (set -e : `|| true`)"
     assert 'cp -a "$en_cache" "$EXTENSIONS"/' in init, "le pod ne reçoit que la version la plus récente"
     assert '/resources/native-binary/claude" --version' in init, "une extension tronquée (volume plein) est écartée"
+    assert 'rm -rf "$extension" "$CACHE_EXTENSIONS/$(basename "$extension")"' in init, "écartée aussi du cache"
     assert init.index('--version >/dev/null') < init.index('cp -a "$extension" "$CACHE_EXTENSIONS"'), (
         "le cache ne reçoit que des copies vérifiées"
     )
