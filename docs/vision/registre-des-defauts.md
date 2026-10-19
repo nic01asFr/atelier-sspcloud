@@ -794,6 +794,18 @@ produit.
   plantage répété remplit le volume en quelques minutes. **Fait** : `atelier-init.sh` pose `ulimit -c 0` (hérité par code-server, les agents, les
   applications). **Reste** : retirer les vidages restants (accord de la personne).
 
+- **D-81 (G) — Le serveur Onyxia coupe un pod GPU qui travaille.** Constaté le 19/10 : le pod de Classification a été supprimé
+  (StatefulSet à 0) à 19h15, après deux relances automatiques de l'Atelier au même rythme (17h25, 18h05, 18h44 : une coupure
+  toutes les 30 à 40 minutes). Cause lue dans le code du serveur (`sspcloud_mcp/gpu_broker.py`, « watchdog idle util-aware ») : il met le
+  pod à 0 si l'utilisation **du GPU** reste ≤ 5 % pendant 30 minutes (seuil global `PASSERELLE_GPU_IDLE_MIN`). Il **ignore** l'argument
+  `idle_minutes` de `gpu_switch` (240 n'a rien changé) et ne regarde aucun processus : un entraînement limité par le processeur
+  (images de 64 pixels, petit modèle) affiche 0 % de GPU et passe pour inactif. Principe posé par la personne : *un pod en
+  action ne doit jamais être arrêté, sauf demande explicite.* **Fait côté Atelier** : les travaux de fond lancés sur un pod sont
+  suivis jusqu'à ce que l'agent les relève (`job_poll`) ; si le pod a disparu entre-temps, la relance automatique le dit et
+  liste les travaux possiblement interrompus (`MandataireOnyxia._travaux`). **Reste, côté serveur (`sspcloud-mcp`)** : que le watchdog
+  ne coupe jamais un pod qui exécute un travail ni ne contourne `idle_minutes` (décision de la personne : pas pour l'instant),
+  ou à défaut `PASSERELLE_GPU_IDLE_MIN` très haut.
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue
