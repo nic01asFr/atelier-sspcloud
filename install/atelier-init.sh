@@ -33,6 +33,8 @@
 #   ATELIER_NODE_DIR, ATELIER_CODE_SERVER_DIR, ATELIER_EXTENSIONS : outils déjà posés
 #   ATELIER_AVANT_PLAN       1 pour tenir l'Atelier au premier plan (conteneur)
 set -euo pipefail
+# Pas de vidage mémoire : un plantage de `claude` en laissait de 1,25 Go dans les dossiers de projet (D-80).
+ulimit -c 0 2>/dev/null || true
 
 WORK="${ATELIER_WORK:-$HOME/work}"
 DEPOT_ATELIER="${ATELIER_DEPOT-https://github.com/nic01asFr/atelier-sspcloud.git}"

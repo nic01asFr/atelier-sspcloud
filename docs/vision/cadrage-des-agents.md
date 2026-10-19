@@ -1,6 +1,6 @@
 # Cadrer les agents : espaces, intentions, communication, périmètre
 
-> État au 11/10/2026. **Proposition**, non implémentée. Elle rassemble l'étude du jour (docs de vision,
+> État au 11/10/2026, complété le 19/10 par le §6 (retour d'expérience du projet Classification). **Proposition**, non implémentée. Elle rassemble l'étude du jour (docs de vision,
 > code, pod, expériences, décisions de permission, journal, projets réels) et prolonge
 > [`harnais-et-serveur-mcp.md`](harnais-et-serveur-mcp.md). Les points **[à prouver]** sont lus mais
 > pas essayés sur le pod.
@@ -208,3 +208,67 @@ le retrait de `sudo`, les droits de `owner_key.txt`, la confirmation liée à un
 3. Retirer `sudo` de l'utilisateur des agents, ou le refuser par la politique.
 4. Choisir les cinq niveaux d'agent et leurs noms.
 5. Ne plus redémarrer le pod avant le point 1 : chaque redémarrage vide le store.
+
+## 6. Retour d'expérience du 19/10 : un projet de classification, de la consigne à l'entraînement
+
+Un projet réel (`classification-d-images-de-stationnement` : classer des images de stationnement avec YOLO) a servi
+de banc d'essai. Tout ce qui suit a été vu en une journée ; les numéros renvoient au
+[registre des défauts](registre-des-defauts.md).
+
+### 6.1 Ce qui s'est passé
+
+1. **Cadrage vide.** Le cahier des charges disait « à préciser » ; la consigne de la personne (douze lignes : structure des
+   dossiers, modèles à produire, commandes) n'existait que dans le fil de discussion, et `ETAT.md` était resté au gabarit.
+2. **Aucun déploiement déclaré, donc aucun outil Onyxia.** L'agent a dit « je n'ai pas Onyxia, demandez à l'Assistant » puis a
+   travaillé sur place : archive de 450 Mo, copie dépliée de 450 Mo, `pip install` dans l'Atelier (D-77).
+3. **Le volume de l'Atelier (9,8 Go) a atteint 100 %.** Le redémarrage suivant a installé une extension tronquée ; chaque
+   tour de chaque agent est mort en `exit_-7`, un code sans mot (D-78). Des vidages mémoire de 1,25 Go se sont ajoutés.
+4. **Le pod GPU, attribué, s'est éteint à l'inactivité.** L'agent avait l'outil pour le relancer mais n'a vu qu'un
+   `KERNEL_START_TIMEOUT` dont le conseil ne mène nulle part (D-79).
+5. **Le travail lui-même avait des défauts de sens** que seul un œil sur la donnée voit : un jeu « nombre » privé des
+   images qui ont aussi une forme (645 « 0 place » sur 739), un jeu de validation identique à celui d'entraînement, aucune
+   séparation par rue.
+6. **Quatre appels, quatre autorisations manuelles**, alors que le mandataire borne déjà ces appels au pod du projet.
+
+### 6.2 Ce que cela dit de chaque structure
+
+| Structure | Ce qui a manqué | Principe |
+|---|---|---|
+| **Espaces** | rien ne dit où vivent les données et les paquets ; l'Atelier a servi de poste de calcul | l'Atelier pilote, le pod calcule : données, paquets, poids et entraînement sur le pod ; l'Atelier garde le code, l'état, les décisions |
+| **Intentions** | aucun guide « projet d'apprentissage automatique » : étapes, vérifications du jeu, jobs de fond, ce qui survit à un arrêt | le guide est chargé quand le projet porte `gpu: true` ou un gabarit de données, jamais en consigne permanente |
+| **Placement** | la décision pod/local a été prise par défaut, par absence d'outil | un projet qui annonce un besoin GPU déclare son déploiement **à la création**, pas au premier blocage |
+| **Communication** | `exit_-7`, `KERNEL_START_TIMEOUT`, « pod muet » : des codes d'infrastructure remis tels quels à un modèle | une erreur d'infrastructure se dit en clair avec le geste qui la répare (ou « dites-le à la personne ») |
+| **Périmètre** | une autorisation par appel, y compris pour un `pip list` borné au pod du projet | ce que le mandataire borne n'est pas demandé deux fois : liste blanche des outils bornés, confirmation réservée aux actions engageantes |
+| **Mémoire / contrat** | la consigne est restée dans le fil | la consigne de la personne est capturée dans `cahier-des-charges.md` dès sa réception, par l'agent, avant toute action |
+| **Ressources** | aucune alerte avant 100 % ; pas de budget par projet ; vidages mémoire dans les dossiers de projet | le gardien Santé parle dès 80 % ; un budget de taille par projet ; pas de vidage mémoire |
+| **Pilotage** | un modèle moins capable a reçu un but, pas un plan | pour un modèle de moindre portée, l'Atelier fournit un **plan de lot** : étapes ordonnées, critère d'arrêt, point de contrôle avec la personne |
+
+### 6.3 Six principes
+
+1. **Le harnais prépare l'environnement avant que l'agent le demande** : déploiement, chemins, installation, relance.
+2. **Une panne d'infrastructure se dit en clair**, avec le geste qui la répare ; l'agent ne la découvre pas à la dixième erreur.
+3. **Ce qui est borné n'est pas demandé deux fois.** La barrière fait le contrôle, la demande d'accord est pour les gestes engageants.
+4. **L'Atelier ne calcule pas, il pilote.** Il n'héberge ni jeu de données lourd ni entraînement.
+5. **Un modèle de moindre portée reçoit un plan, pas un but** ; l'Assistant ou la personne valide aux jalons.
+6. **La consigne vit dans le projet**, pas dans le fil : un agent qui redémarre doit retrouver ce qui est voulu.
+
+### 6.4 Lots proposés
+
+- **Déjà fait** : D-75 à D-79 (nom court du GPU, déploiement « GPU seul », pilotage du cluster refusé, binaire tronqué écarté, cache d'extensions
+  borné, pod éteint relancé et appel rejoué).
+- **Lot D, le projet ML clé en main** : un gabarit `ml-gpu` (déclare le GPU à la création, pose le guide d'intention :
+  étapes, jobs de fond, `~/work` seul survivant, vérifications du jeu — classes, équilibre, séparation par groupe, validation
+  distincte de l'entraînement — et un script générique `verifier_jeu.py`) ; capture de la consigne dans le cahier.
+- **Lot E, les autorisations** : liste blanche des outils Onyxia bornés pour les agents de projet (le mandataire reste la barrière) ;
+  la confirmation ne sert plus qu'aux commandes engageantes.
+- **Lot F, la panne en clair** : table de traduction des erreurs d'infrastructure ; contrôle du binaire `claude` au démarrage ;
+  alerte de volume à 80 % visible dans l'interface ; plus de vidage mémoire (D-80).
+- **Lot G, le plan de lot** : étapes, critère d'arrêt et jalons portés par `lancer_agent` (agent supervisé) et lus dans
+  `ETAT.md` ; l'Assistant pilote aux jalons.
+
+### 6.5 À quoi on reconnaîtra que c'est réussi
+
+- Un projet qui annonce du GPU part **sans intervention** de la personne autre que les accords engageants.
+- Aucun appel Onyxia d'agent refusé pour un chemin ou un mode (nom court du pod, exec synchrone trop long).
+- Le volume de l'Atelier reste sous 80 %.
+- Le cahier des charges d'un projet n'est jamais « à préciser » après sa première consigne.

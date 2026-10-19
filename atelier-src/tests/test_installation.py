@@ -96,6 +96,12 @@ def test_le_cache_d_extension_du_volume_ne_garde_que_les_dernieres_versions() ->
     )
 
 
+def test_l_init_coupe_les_vidages_memoire() -> None:
+    """D-80 : un plantage de `claude` laissait des `core.NNN` de 1,25 Go dans les dossiers de projet."""
+    init = (RACINE / "install" / "atelier-init.sh").read_text(encoding="utf-8")
+    assert "ulimit -c 0" in init
+
+
 def test_le_chart_est_eprouve_puis_publie_depuis_main_seulement() -> None:
     """`release.yml` a remplacé `helm.yml` : il éprouve le chart, puis le publie.
 
