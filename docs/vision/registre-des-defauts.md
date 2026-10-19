@@ -673,6 +673,72 @@ produit.
   d'exécution, `gpu_switch` qui attache la session GPU sans toucher à l'autre, `gpu_status` qui dit le slot, un pod
   muet compté par pod. Tests : `tests/test_onyxia_projet.py` (cibles), `tests/test_contexte_onyxia.py`.
 
+- **D-75 (G) — Le serveur Onyxia de production n'avait plus d'identité Kubernetes : tout `kubectl` / `helm` rendait « the
+  server has asked for the client to provide credentials ».** Signalé le 19/10 (`gpu_switch` du projet
+  `classification-d-images-de-stationnement` en `GPU_HELM_FAILED`, `list_pods` en erreur), reproduit le même jour par
+  `list_pods` de la session. **Cause** : le déploiement `mcp` (serveur de production, adresse `user-<idep>-mcp`)
+  tournait sous le compte de service `jupyter-python-806437`, emprunté à une release Onyxia aujourd'hui disparue : le
+  compte n'existe plus (`NotFound`), les événements du pod disent `failed to fetch token: serviceaccounts
+  "jupyter-python-806437" not found`, et aucune liaison de rôle ne le cite. Le StatefulSet `qgis-hub` porte le même
+  compte et le même événement. Le serveur de développement (`passerelle-mcp-http`, celui du pool de l'Atelier) a son
+  propre compte et **répond** (`list_pods`, `helm list`, `gpu_status` vérifiés le 19/10). **Deux défauts en un** :
+  (1) un service de production dépend du compte d'une release jetable ; (2) `gpu_status` de production répond
+  `slot_free: true, quota 0/0` quand il n'a pas pu lire le cluster, au lieu d'une erreur : l'agent a lu « le slot est libre ».
+  **Fait le 19/10** : `serviceAccountName` du déploiement `mcp` passé à `passerelle-mcp-dev-jupyter-python` (valeur
+  d'avant : `jupyter-python-806437` ; retour arrière : `kubectl -n <ns> patch deploy mcp --type=merge -p
+  '{"spec":{"template":{"spec":{"serviceAccountName":"jupyter-python-806437","serviceAccount":"jupyter-python-806437"}}}}'`) ;
+  nouveau pod `Running`. **Pas vérifié** : les appels Onyxia de la session ont été refusés par le contrôle de permission
+  juste après ce changement ; l'effet sur `list_pods` / `gpu_switch` de production reste à constater. **À faire** : un compte
+  de service dédié au serveur de production avec sa liaison de rôle (je n'ai pas le droit de créer de liaison : à poser
+  par la personne ou par l'image du chart) ; `qgis-hub` à rebrancher de même ; `gpu_status` doit répondre « illisible »,
+  jamais « libre », quand le cluster n'est pas lisible ; reporter D-72 et D-74 dans l'image de production.
+  **GPU, constaté le même jour** : le seul GPU est pris par `proj-presentation-images-gpu` (pod `Running` depuis le 19/10
+  à 08 h 51), alors que le courtier du serveur de développement donne `classification-d-images-de-stationnement` comme
+  détenteur (son StatefulSet GPU est à 1 réplique, 0 prête, donc en attente). Le quota réel est `requests.nvidia.com/gpu 1/1`.
+  **Précision sur la conception** (même jour). `mcp` est bien un déploiement pérenne : release Helm `mcp`, chart
+  `sspcloud-mcp-0.4.0`, un réplica, hors de tout pod Jupyter. Mais ses valeurs disent `rbac.create: false` et
+  `rbac.clusterRole: edit` : le chart ne crée ni compte de service ni liaison de rôle, et le manifeste de la révision 3
+  (01/10) écrit en dur `serviceAccountName: jupyter-python-806437`. Il n'a donc jamais eu d'identité à lui : il empruntait
+  le compte d'une release Jupyter, avec les droits que la plateforme donnait à celui-ci (niveau « édition », pas
+  administrateur : je ne peux pas créer de liaison de rôle). Le correctif posé le 19/10 est un `kubectl patch` : il n'est
+  **pas** dans la release Helm, et un `helm upgrade mcp` le remettrait sur le compte supprimé. Pour le rendre durable :
+  poser la valeur du compte de service dans la release (clé `serviceAccount`), sur un compte appartenant à une release
+  longue (`passerelle-mcp-dev`, 91 jours) ou, mieux, à un petit service Onyxia dédié. Le même relevé a affiché par
+  erreur le jeton d'application du chart (`appAuth.token`) dans la sortie de la session : à renouveler.
+  **Réinstallation du 19/10 (vers 12 h, par la personne) et relevé qui suit.** Nouveau pod `mcp-67bbc7cbfc-rl8qz`, qui
+  tourne sous le compte `jupyter-python-960016`, celui d'une release Jupyter neuve créée six minutes plus tôt : même
+  schéma d'emprunt qu'avant (le compte vit tant que cette release vit). **Vérifié ensuite** : `list_pods`, `gpu_status`
+  (quota 1/1, slot non libre, sans mensonge) et `pod_info` (chemin Helm) répondent. **Encore en défaut** : `exec` ne démarre
+  pas de noyau sur les pods en `py3.13.15` (`admin-passerelle`, `gs-gpu` : `KERNEL_START_TIMEOUT`), la correction de D-74
+  n'étant pas dans l'image ; `service_status` plante (`KeyError: 'yaml_path'`) ; `qgis-hub-0` est toujours sur le compte
+  supprimé. **Le projet `classification-d-images-de-stationnement` n'a pas son GPU** : ses deux StatefulSets sont à 0/1
+  depuis environ trois heures et n'ont aucun pod, le seul pod demandant un GPU est `proj-presentation-images-gpu-…-0`
+  (`Running` depuis 08 h 51), et le courtier note pourtant `classification-6fb3e27e` comme détenteur.
+  **GPU attribué le 19/10 (sur demande de la personne).** `presentation-images` libéré (`gpu_release`, pod à zéro, volume
+  gardé) puis `gpu_switch classification-6fb3e27e` : le pod GPU du projet tourne, `nvidia-smi` voit une NVIDIA A2 (15 356 Mio),
+  le courtier le donne détenteur, quota 1/1. Deux accrocs, à corriger dans le serveur : (1) `gpu_switch` avec le nom
+  **long** du projet échoue (`helm install … repo inseefrlab not found`, le pod neuf n'ayant pas le dépôt Helm, et l'alias
+  court de D-72 n'étant pas connu) ; il a fallu donner le nom court ; (2) un StatefulSet à qui un quota refuse son pod ne
+  réessaie pas de lui-même quand le quota se libère : il a fallu un `gpu_release` puis un `gpu_switch` pour le relancer.
+  **D-76 (même cause que D-72, côté CPU)** : le pod CPU de `classification-d-images-de-stationnement` ne peut pas exister :
+  `Pod … is invalid: metadata.labels: must be no more than 63 bytes` (nom de release + `-jupyter-python` + empreinte de
+  révision dépasse 63 octets dès que le projet a plus d'environ 32 caractères). Le nom court existe pour le GPU
+  (`nom_gpu_du_projet`), pas pour le CPU ; `project_start` doit l'appliquer aussi. Le StatefulSet CPU du projet est à 0/1
+  depuis son installation. Le connecteur Onyxia de l'Atelier (service `passerelle-mcp-dev`, disparu à la réinstallation)
+  reste à rebrancher pour que les agents du projet opèrent ce pod GPU.
+  **Corrigé côté Atelier (19/10, branche `claude/compassionate-hawking-ifylq2`).** (1) Le mandataire impose aux agents le
+  **nom court** du GPU à `gpu_switch`, `gpu_release` et à la liaison de la session GPU, et le traduit pour l'Assistant (qui
+  donne le slug du projet). (2) Un déploiement peut déclarer **`gpu: true` seul**, sans pod ni service : jusque-là
+  `Deploiement` exigeait « un pod ou un service, exactement », donc un projet sans pod CPU possible ne pouvait rien
+  déclarer. (3) `exec` refuse `kubectl` / `helm` qui modifient le cluster (scale, delete, apply, patch, install…), pour
+  tous les profils ; lire reste libre, `kubectl auth can-i` aussi. (4) Au troisième échec de même nature d'un même outil,
+  la réponse dit d'arrêter et d'en parler à la personne. (5) L'Assistant reçoit un mode d'emploi Onyxia (un geste par
+  besoin : `list_pods` et `gpu_status` pour voir, `gpu_switch` sans préemption pour donner le GPU,
+  `atelier_projet_deployer_declarer` pour relier, jamais de pilotage du cluster par `exec`, arrêt après trois échecs).
+  Tests : `tests/test_onyxia_projet.py`, `tests/test_contexte_onyxia.py`. **Reste côté serveur Onyxia** (dépôt
+  `sspcloud-mcp`) : noyaux sur pods récents, `session_start(projet, gpu)`, `gpu_status` honnête, `service_status`, nom court
+  du pod CPU, dépôt Helm et alias dans l'image, compte de service dédié.
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue

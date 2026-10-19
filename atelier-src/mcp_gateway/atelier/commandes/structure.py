@@ -103,11 +103,14 @@ _NOM_K8S = re.compile(r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$")
 
 
 class Deploiement(_Strict):
-    """Où le projet se déploie (`docs/onyxia-projet.md`) : un pod ou un service, exactement.
+    """Où le projet se déploie (`docs/onyxia-projet.md`) : un pod, un service, ou son seul GPU.
 
     `pod` est un pod Onyxia existant, auquel les agents du projet sont bornés ;
     `service` est le chemin d'un `<nom>.service.yml` dans le dossier de travail
-    du pod Onyxia. Ce bloc borne ce qu'Onyxia donne aux agents code du projet.
+    du pod Onyxia ; `gpu` seul (ni pod ni service) est un projet qui n'a que son
+    pod GPU (`proj-<nom court>-gpu`), cas du projet de classification d'images où
+    le pod CPU ne peut pas exister (nom trop long, 63 octets) et où l'agent ne
+    pouvait donc rien déclarer. Ce bloc borne ce qu'Onyxia donne aux agents code du projet.
     """
 
     pod: str | None = Field(default=None, max_length=253)
@@ -132,9 +135,11 @@ class Deploiement(_Strict):
         return v
 
     @model_validator(mode="after")
-    def _pod_ou_service(self) -> "Deploiement":
-        if (self.pod is None) == (self.service is None):
-            raise ValueError("un déploiement vise un pod ou un service, exactement")
+    def _pod_service_ou_gpu(self) -> "Deploiement":
+        if self.pod is not None and self.service is not None:
+            raise ValueError("un déploiement vise un pod ou un service, pas les deux")
+        if self.pod is None and self.service is None and not self.gpu:
+            raise ValueError("un déploiement vise un pod, un service, ou le GPU du projet (gpu: true)")
         return self
 
 
