@@ -969,3 +969,97 @@ def test_un_projet_peut_ne_declarer_que_son_gpu() -> None:
 def test_un_deploiement_vide_ou_double_reste_refuse(champs: dict[str, Any], motif: str) -> None:
     with pytest.raises(Exception, match=motif):
         structure.Deploiement(**champs)
+
+
+# ── Un pod attribué au projet, éteint, est relancé par l'Atelier (19/10, Classification) ──
+
+
+class PodEteint(FauxOnyxia):
+    """Le pod n'existe pas tant qu'on ne l'a pas lancé ; l'`exec` échoue en KERNEL_START_TIMEOUT tant qu'il est absent."""
+
+    def __init__(self, lancement: str, refuse: str | None = None, pods: list[str] | None = None) -> None:
+        super().__init__()
+        self.lancement = lancement  # l'outil qui le relance : gpu_switch ou project_start
+        self.refuse = refuse
+        self.pods = list(pods or [])
+
+    async def appeler(self, outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        self.appels.append((outil, dict(arguments)))
+        if outil == "list_pods":
+            filtre = arguments.get("name_filter", "")
+            return _texte({"pods": [{"name": p, "status": "Running"} for p in self.pods if filtre in p]})
+        if outil == self.lancement:
+            if self.refuse:
+                return _texte({"error": {"code": "GPU_BUSY", "message": self.refuse}}, erreur=True)
+            self.pods.append("proj-carte-gpu-jupyter-pytorch-gpu-0" if outil == "gpu_switch" else POD)
+            return _texte({"pod": self.pods[-1]})
+        if outil == "project_bind":
+            self.sessions[arguments["session_id"]] = arguments["pod"]
+            return _texte({"session_id": arguments["session_id"], "pod": arguments["pod"]})
+        if outil == "session_status":
+            if arguments["session_id"] not in self.sessions:
+                return _texte({"error": {"code": "NO_SESSION", "message": arguments["session_id"]}}, erreur=True)
+            return _texte({"session_id": arguments["session_id"], "pod": self.sessions[arguments["session_id"]]})
+        if outil == "exec" and not self.pods:
+            return _texte({"error": {"code": "KERNEL_START_TIMEOUT", "message": "noyau non prêt"}}, erreur=True)
+        return _texte({"stdout": "ok"})
+
+
+def _borne_gpu_seul() -> ox.Borne:
+    return ox.borne_du_projet("carte", structure.Deploiement(gpu=True))
+
+
+def test_un_pod_gpu_eteint_est_relance_et_l_appel_rejoue() -> None:
+    faux = PodEteint("gpu_switch")
+    m = _mandataire(faux)
+    resultat = _appel(m, "code", _borne_gpu_seul(), "exec", {"code": "print(1)", "lang": "python"})
+    assert not resultat["isError"]
+    lancements = faux.envoyes("gpu_switch")
+    assert len(lancements) == 1
+    assert lancements[0]["project"] == "carte" and lancements[0]["preempt"] is False
+    assert lancements[0]["idle_minutes"] == ox.IDLE_GPU_MINUTES and lancements[0]["session_id"] == "proj-carte-gpu"
+    assert len(faux.envoyes("exec")) == 2  # l'essai, puis le rejeu
+    assert "était éteint" in _textes(resultat) and "rejoué" in _textes(resultat)
+
+
+def test_un_pod_present_n_est_pas_relance_a_la_moindre_erreur() -> None:
+    faux = PodEteint("gpu_switch", pods=["proj-carte-gpu-jupyter-pytorch-gpu-0"])
+
+    async def lent(outil: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        if outil == "exec":
+            return _texte({"error": {"code": "KERNEL_START_TIMEOUT", "message": "x"}}, erreur=True)
+        return await faux.appeler(outil, arguments)
+
+    m = ox.MandataireOnyxia(lent, faux.outils)
+    resultat = _appel(m, "code", _borne_gpu_seul(), "exec", {"code": "print(1)", "lang": "python"})
+    assert resultat["isError"] and not faux.envoyes("gpu_switch")
+
+
+def test_un_gpu_tenu_par_un_autre_est_dit_sans_etre_pris() -> None:
+    faux = PodEteint("gpu_switch", refuse="slot tenu par h3video")
+    m = _mandataire(faux)
+    borne = _borne_gpu_seul()
+    resultat = _appel(m, "code", borne, "exec", {"code": "print(1)", "lang": "python"})
+    texte = _textes(resultat)
+    assert resultat["isError"] and "relance n'a pas abouti" in texte and "slot tenu par h3video" in texte
+    assert all(a["preempt"] is False for a in faux.envoyes("gpu_switch"))
+    # Pas de seconde tentative avant la pause, mais l'explication reste donnée.
+    resultat = _appel(m, "code", borne, "exec", {"code": "print(2)", "lang": "python"})
+    assert len(faux.envoyes("gpu_switch")) == 1 and "relance n'a pas abouti" in _textes(resultat)
+
+
+def test_un_pod_cpu_du_projet_eteint_est_relance_par_project_start() -> None:
+    faux = PodEteint("project_start")
+    m = _mandataire(faux)
+    resultat = _appel(m, "code", _borne(), "exec", {"code": "print(1)", "lang": "python"})
+    assert not resultat["isError"]
+    assert faux.envoyes("project_start") == [{"project": "carte", "gpu": False}]
+
+
+def test_un_pod_attache_par_la_personne_n_est_pas_relance_d_ici() -> None:
+    faux = PodEteint("project_start")
+    m = _mandataire(faux)
+    borne = _borne(pod="bridge-jupyter-python-0")
+    resultat = _appel(m, "code", borne, "exec", {"code": "print(1)", "lang": "python"})
+    assert resultat["isError"] and not faux.envoyes("project_start")
+    assert "attaché au projet par la personne" in _textes(resultat)

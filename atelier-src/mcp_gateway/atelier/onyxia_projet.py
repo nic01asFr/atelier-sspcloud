@@ -82,6 +82,12 @@ SILENCES_MEMORISES_S = 300.0
 POD_MUET_APRES = 2  # silences d'affilée au bout desquels on cesse de faire attendre l'agent
 POD_MUET_PAUSE_S = 120.0  # puis un nouvel essai est permis
 
+# Un pod attribué au projet qui n'existe plus (éteint par inactivité, supprimé) est relancé par l'Atelier, une fois,
+# et l'appel qui a échoué est rejoué : l'agent n'a ni à le deviner ni à le demander (19/10 : le pod GPU de
+# Classification, arrêté au bout de 30 min d'inactivité, laissait l'agent devant un `KERNEL_START_TIMEOUT`).
+RELANCE_PAUSE_S = 300.0  # pas de seconde relance avant : un échec de relance ne se répète pas en boucle
+IDLE_GPU_MINUTES = 240  # un entraînement lancé en arrière-plan ne doit pas être coupé au bout de 30 minutes
+
 
 class RefusOnyxia(Exception):
     """L'appel ne part pas vers Onyxia ; le message dit pourquoi à l'agent."""
@@ -549,6 +555,7 @@ class MandataireOnyxia:
         self._silences: dict[str, list[float]] = {}  # session -> instants des appels restés sans réponse
         self._noyaux: dict[str, Any] = {}  # session -> kernel_alive, tel que session_status l'a dit
         self._echecs: dict[tuple[str, str, str, str], int] = {}  # (profil, projet, outil, code) -> échecs de suite
+        self._relances: dict[tuple[str, str], tuple[float, str]] = {}  # (projet, cible) -> (instant, ce qui a été dit)
 
     # Le protocole ---------------------------------------------------------
 
@@ -610,6 +617,8 @@ class MandataireOnyxia:
                 return _refus_mcp(muet)
         debut = time.monotonic()
         resultat = await self._appeler_filtre(profil, borne, nom, arguments)
+        if suivi and _erreur_de(resultat) is not None:
+            resultat = await self._relancer_si_eteint(profil, borne, cible, nom, arguments, resultat)  # type: ignore[arg-type]
         if suivi and nom == "exec" and (arguments.get("lang") or "python") == "bash":
             resultat = await self._rejouer_apres_dossier(profil, borne, arguments, resultat)  # type: ignore[arg-type]
         duree = time.monotonic() - debut
@@ -755,6 +764,103 @@ class MandataireOnyxia:
                 },
             ],
         }
+
+    @staticmethod
+    def _texte_de(resultat: dict[str, Any]) -> str:
+        return " ".join(
+            str(b.get("text") or "")
+            for b in (resultat.get("content") or [])
+            if isinstance(b, dict) and b.get("type") == "text"
+        )
+
+    @staticmethod
+    def _avec_note(resultat: dict[str, Any], note: str) -> dict[str, Any]:
+        return {**resultat, "content": [*(resultat.get("content") or []), {"type": "text", "text": note}]}
+
+    async def _pod_present(self, borne: Borne, cible: str) -> bool | None:
+        """Le pod de cette cible existe-t-il, même en démarrage ? None quand on ne peut pas le savoir."""
+        prefixe = prefixe_des_pods_gpu(borne.slug) if cible == "gpu" else (borne.pod or "")
+        arguments: dict[str, Any] = {"name_filter": prefixe}
+        if borne.namespace:
+            arguments["namespace"] = borne.namespace
+        try:
+            liste = await self._appeler("list_pods", arguments)
+        except Exception:  # noqa: BLE001 — sans réponse, on ne relance rien
+            return None
+        pods = _charge_de(liste).get("pods") if isinstance(_charge_de(liste), dict) else None
+        if _erreur_de(liste) is not None or not isinstance(pods, list):
+            return None
+        return any(isinstance(p, dict) and str(p.get("name") or "").startswith(prefixe) for p in pods)
+
+    async def _relancer_si_eteint(
+        self,
+        profil: Profil,
+        borne: Borne,
+        cible: str,
+        nom: str,
+        arguments: dict[str, Any],
+        resultat: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Un appel au pod du projet a échoué : si ce pod n'existe plus, on le relance et on rejoue l'appel, une fois.
+
+        Le pod GPU revient par `gpu_switch` (sans préemption : un GPU tenu par un autre projet est dit, pas pris), le
+        pod CPU du projet par `project_start`. Un pod que la personne a attaché au projet (il ne porte pas son nom) ne
+        se relance pas d'ici : on le dit. Sans cette main, l'agent devant un noyau muet conclut « pod cassé » alors que
+        le pod a simplement été éteint.
+        """
+        cle = (borne.slug, cible)
+        maintenant = time.monotonic()
+        dernier, dit = self._relances.get(cle, (-1e9, ""))
+        if maintenant - dernier < RELANCE_PAUSE_S:
+            return self._avec_note(resultat, dit) if dit else resultat
+        texte = self._texte_de(resultat)
+        if '"refus"' in texte and not ("gpu_switch" in texte or "non attachée" in texte):
+            return resultat  # un argument refusé par le filtre, pas un pod en panne
+        if await self._pod_present(borne, cible) is not False:
+            return resultat
+        pod = borne.pod_de(cible)
+        self._relances[cle] = (maintenant, "")
+        if cible == "gpu":
+            lancement = await self._appeler_filtre(profil, borne, "gpu_switch", {"idle_minutes": IDLE_GPU_MINUTES})
+            self._noter(profil, borne, "gpu_switch", {"auto": True, "idle_minutes": IDLE_GPU_MINUTES}, lancement)
+        elif borne.pod and borne.pod.startswith(f"proj-{borne.slug}-"):
+            demande: dict[str, Any] = {"project": borne.slug, "gpu": False}
+            if borne.namespace:
+                demande["namespace"] = borne.namespace
+            try:
+                lancement = await self._appeler("project_start", demande)
+            except Exception as exc:  # noqa: BLE001
+                lancement = _refus_mcp(f"Onyxia injoignable : {type(exc).__name__}: {exc}")
+        else:
+            dit = (
+                f"Le pod {pod} n'existe plus. Il a été attaché au projet par la personne : l'Atelier ne le relance pas. "
+                "Dites-lui que ce pod est éteint ; en attendant, avancez sur les fichiers du projet."
+            )
+            self._relances[cle] = (maintenant, dit)
+            return self._avec_note(resultat, dit)
+        if lancement.get("isError"):
+            raison = self._texte_de(lancement)[:300]
+            dit = (
+                f"Le pod {pod} n'existe plus et sa relance n'a pas abouti : {raison} Si le GPU est tenu par un autre "
+                "projet, c'est à la personne de le libérer (préempter est son geste). Dites-lui ce qui bloque."
+            )
+            self._relances[cle] = (maintenant, dit)
+            return self._avec_note(resultat, dit)
+        self._sessions_verifiees.pop((borne.slug, borne.session_de(cible)), None)
+        self._silences.pop(borne.session_de(cible), None)
+        rejeu = await self._appeler_filtre(profil, borne, nom, arguments)
+        dit = (
+            f"Le pod {pod} était éteint (inactivité ou suppression) : l'Atelier l'a relancé"
+            + (", appel rejoué." if _erreur_de(rejeu) is None else ".")
+        )
+        if _erreur_de(rejeu) is not None:
+            dit += (
+                " Son noyau démarre encore (une à deux minutes) : réessayez dans une minute, sans relancer le pod "
+                "vous-même. Les paquets installés hors de ~/work sont perdus à chaque arrêt : installez-les dans le "
+                "volume (~/work) ou relancez leur installation."
+            )
+        self._relances[cle] = (maintenant, dit)
+        return self._avec_note(rejeu, dit)
 
     @staticmethod
     def _est_un_delai(resultat: dict[str, Any]) -> bool:

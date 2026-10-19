@@ -98,3 +98,8 @@ def test_l_assistant_a_son_mode_d_emploi_onyxia() -> None:
                     "trois fois", "gpu=true"):
         assert attendu in texte, attendu
     assert "kubectl" in texte and "exec" in texte
+
+
+def test_l_agent_sait_que_son_pod_eteint_est_relance_pour_lui(tmp_path: Path) -> None:
+    bloc = bloc_contexte("carte", _projet(tmp_path, {"gpu": True}))
+    assert "relancé par l'Atelier" in bloc and "ne le relance pas à la main" in bloc and "~/work" in bloc

@@ -771,6 +771,21 @@ produit.
   `tests/test_meme_cli_partout.py`, `tests/test_installation.py`. **Reste** : dire `exit_-7` en clair dans l'interface
   (« le programme de l'agent s'est arrêté — espace disque ? ») au lieu du code brut.
 
+- **D-79 (G) — Un agent dont le pod est éteint ne sait pas le récupérer.** Constaté le 19/10 sur Classification : le pod GPU,
+  lancé à 13h45 avec `idle_minutes: 30`, s'est éteint faute d'appels (StatefulSet à 0 réplique, quota 0/1, volume intact) ; les
+  appels suivants mouraient en `KERNEL_START_TIMEOUT`, dont le conseil (« session_status puis session_start ») ne mène nulle
+  part. L'agent avait pourtant `gpu_switch` : rien ne lui disait que le pod était simplement éteint. Principe posé par la
+  personne : *un agent à qui un pod CPU ou GPU est attribué doit pouvoir le relancer et le récupérer.* **Fait** : quand un appel
+  d'exécution d'un agent échoue et que le pod de sa cible n'existe plus (`list_pods`), la barrière du mandataire le relance
+  (`gpu_switch` imposé, sans préemption, `idle_minutes` 240 ; `project_start` pour le pod CPU qui porte le nom du projet),
+  rejoue l'appel une fois et le dit (`MandataireOnyxia._relancer_si_eteint`). Un GPU tenu par un autre projet est dit, pas
+  pris ; un pod attaché par la personne n'est pas relancé d'ici ; une relance échouée ne se répète pas avant 5 minutes. Le
+  contexte de l'agent le dit, ainsi que : seul `~/work` survit à un arrêt (les `pip install` de l'image sont perdus : `ultralytics`
+  et `flask` avaient disparu au redémarrage). Tests : `tests/test_onyxia_projet.py`, `tests/test_contexte_onyxia.py`. **Reste** :
+  savoir si le courtier compte un job en arrière-plan comme de l'activité (`sspcloud-mcp`), un StatefulSet parasite
+  (`proj-classification-d-images-de-stationnement-jupyter-pytorch-g`, 63 octets, D-76) à retirer, et la déclaration de
+  Classification à passer en « GPU seul » pour que la cible par défaut soit le GPU.
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue
