@@ -705,6 +705,15 @@ produit.
   poser la valeur du compte de service dans la release (clé `serviceAccount`), sur un compte appartenant à une release
   longue (`passerelle-mcp-dev`, 91 jours) ou, mieux, à un petit service Onyxia dédié. Le même relevé a affiché par
   erreur le jeton d'application du chart (`appAuth.token`) dans la sortie de la session : à renouveler.
+  **Réinstallation du 19/10 (vers 12 h, par la personne) et relevé qui suit.** Nouveau pod `mcp-67bbc7cbfc-rl8qz`, qui
+  tourne sous le compte `jupyter-python-960016`, celui d'une release Jupyter neuve créée six minutes plus tôt : même
+  schéma d'emprunt qu'avant (le compte vit tant que cette release vit). **Vérifié ensuite** : `list_pods`, `gpu_status`
+  (quota 1/1, slot non libre, sans mensonge) et `pod_info` (chemin Helm) répondent. **Encore en défaut** : `exec` ne démarre
+  pas de noyau sur les pods en `py3.13.15` (`admin-passerelle`, `gs-gpu` : `KERNEL_START_TIMEOUT`), la correction de D-74
+  n'étant pas dans l'image ; `service_status` plante (`KeyError: 'yaml_path'`) ; `qgis-hub-0` est toujours sur le compte
+  supprimé. **Le projet `classification-d-images-de-stationnement` n'a pas son GPU** : ses deux StatefulSets sont à 0/1
+  depuis environ trois heures et n'ont aucun pod, le seul pod demandant un GPU est `proj-presentation-images-gpu-…-0`
+  (`Running` depuis 08 h 51), et le courtier note pourtant `classification-6fb3e27e` comme détenteur.
 
 ## 5. Déjà corrigés (pour mémoire)
 
