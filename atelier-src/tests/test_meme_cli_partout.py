@@ -46,6 +46,14 @@ def test_la_version_la_plus_recente_gagne_par_ses_numeros(extensions: Path) -> N
     assert binaire_claude_le_plus_recent() == attendu
 
 
+def test_un_binaire_tronque_n_est_pas_choisi_meme_le_plus_recent(extensions: Path) -> None:
+    """19/10 : la 2.1.303, écrite sur un volume plein, plantait en `exit_-7` (Bus error) à chaque tour."""
+    sain = _extension(extensions, "2.1.300")
+    casse = _extension(extensions, "2.1.303")
+    casse.write_text("#!/bin/sh\nexit 135\n", encoding="utf-8")
+    assert binaire_claude_le_plus_recent() == sain
+
+
 def test_sans_extension_rien(extensions: Path) -> None:
     assert binaire_claude_le_plus_recent() is None
 

@@ -739,6 +739,38 @@ produit.
   `sspcloud-mcp`) : noyaux sur pods récents, `session_start(projet, gpu)`, `gpu_status` honnête, `service_status`, nom court
   du pod CPU, dépôt Helm et alias dans l'image, compte de service dédié.
 
+- **D-77 (G) — Le volume de l'Atelier plein l'empêche de démarrer.** Constaté le 19/10 au redémarrage qui chargeait la
+  PR #43 : `atelier-init` échouait (`ln: failed to create symbolic link '…/bin/claude': No space left on device`) et le
+  pod entrait en `CrashLoopBackOff`. Le volume `~/work` (9,8 Go) était à 100 % ; la sonde de santé le disait déjà (85 %,
+  puis 89 % le 16/10), sans que rien ne la lise. Répartition relevée : `projects` 4,0 Go (`nouveau-projet-2` 1,7, 
+  `gaussian-splatting-capture-render` 1,2, `classification-…` 0,9), **`.code-server-extensions` 2,2 Go (au moins six versions de
+  l'extension Claude Code, ~250 Mo chacune, seule la dernière sert)**, `migration-backups` 1,8 Go (sauvegarde du store
+  wikichat du 27/09, gardée volontairement), `.claude` 0,7 Go, `transcripts` 0,24 Go, `.npm-cache` 0,12 Go.
+  **Fait** : `~/work/.npm-cache` vidé (117 Mo, cache régénérable) dans une fenêtre où le conteneur vivait ; l'Atelier est
+  reparti (1/1). **Reste** : 132 Mo libres, donc fragile ; les anciennes versions de l'extension (≈ 1,7 Go) à retirer, un
+  nettoyage automatique des versions d'extension et des transcripts à poser, et le gardien Santé à faire parler (alerte lisible
+  dans l'Atelier, pas seulement au journal) dès 80 %.
+
+  **Cause des versions d'extension (relevée le 19/10)** : l'extension se met à jour seule (open-vsx, environ une version par
+  semaine, ~250 Mo). `atelier-init.sh` en gardait une copie sur le volume (`~/work/.code-server-extensions`) pour ne pas la
+  retélécharger, mais **n'y ajoutait que** (`cp -a`) : neuf versions en trois semaines, dont une seule sert. Pire, au démarrage
+  il recopiait *tout* ce cache dans le disque local du pod. **Fait** : le cache ne garde plus que les deux dernières versions et
+  le pod ne reçoit que la plus récente (`tests/test_installation.py`) ; les six plus anciennes ont été retirées du volume
+  (1,5 Go rendus). **Les données d'un projet n'ont pas leur place dans l'Atelier** : `Images.zip` + `processing/` de
+  Classification (0,9 Go, jeu d'images en double) sont à vivre sur le volume du pod GPU du projet (20 Go), pas sur celui de l'Atelier.
+
+- **D-78 (G) — Une extension mise à jour sur un volume plein casse tous les agents (`exit_-7`).** Constaté le 19/10 sur
+  l'agent de Classification : « ok ? » restait sans réponse, la conversation passait en `failed`, cause `exit_-7`. Le journal
+  du tour (`logs/harness/<id>.log`) dit `Bun has crashed … Bus error`, à 4 ms. Le binaire `claude` 2.1.303, installé par
+  code-server à 13h18 pendant que le volume était à 100 %, **faisait 230 Mo au lieu de 267** (droits `rwx------`, extraction
+  interrompue) ; sa version étant la plus récente, il était choisi par `binaire_claude_le_plus_recent` et par le lien
+  `~/work/bin/claude`. Tous les tours de tous les agents plantaient, sans autre message que ce code. **Fait** : lien remis sur
+  la 2.1.300 (saine) et 2.1.303 retirée ; le choix du binaire écarte désormais un binaire qui ne répond pas à `--version`
+  (`claude_home._binaire_sain`, mémorisé par taille et date) ; `atelier-init.sh` fait la même vérification, retire
+  l'extension tronquée, reprend la dernière du cache, et ne copie dans le cache que des versions vérifiées. Tests :
+  `tests/test_meme_cli_partout.py`, `tests/test_installation.py`. **Reste** : dire `exit_-7` en clair dans l'interface
+  (« le programme de l'agent s'est arrêté — espace disque ? ») au lieu du code brut.
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue

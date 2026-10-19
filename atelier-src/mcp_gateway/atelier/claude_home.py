@@ -6,6 +6,8 @@ import json
 import logging
 import os
 import shutil
+import subprocess
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +49,31 @@ def _version(dossier: Path) -> tuple[int, ...]:
     return tuple(chiffres)
 
 
+@lru_cache(maxsize=32)
+def _repond(chemin: str, taille: int, modifie: int) -> bool:
+    """Le binaire se lance-t-il ? (la taille et la date ne servent qu'à la mémoire)
+
+    Le 19 octobre, l'extension s'est mise à jour pendant que le volume était
+    plein : le binaire 2.1.303 faisait 230 Mo au lieu de 267, et chaque tour
+    mourait en `exit_-7` (Bus error, à 4 ms). Sa version était pourtant la plus
+    récente, donc choisie. Un binaire qui ne répond pas n'est pas un candidat.
+    """
+    try:
+        sortie = subprocess.run(  # noqa: S603 - notre propre binaire
+            [chemin, "--version"], capture_output=True, text=True, timeout=20, check=False
+        )
+    except subprocess.TimeoutExpired:
+        return True  # lent n'est pas cassé
+    except OSError:
+        return False
+    return sortie.returncode == 0 and "has crashed" not in sortie.stdout + sortie.stderr
+
+
+def _binaire_sain(binaire: Path) -> bool:
+    etat = binaire.stat()
+    return _repond(str(binaire), etat.st_size, etat.st_mtime_ns)
+
+
 def binaire_claude_le_plus_recent() -> Path | None:
     """Le binaire `claude` de la version d'extension la plus récente installée.
 
@@ -62,9 +89,12 @@ def binaire_claude_le_plus_recent() -> Path | None:
         for d in dossier_des_extensions().glob("anthropic.claude-code-*")
     ]
     valides = [(v, b) for v, b in candidats if v and b.is_file() and os.access(b, os.X_OK)]
-    if not valides:
-        return None
-    return max(valides)[1]
+    # Du plus récent au plus ancien : seul le premier qui répond est lancé.
+    for _, binaire in sorted(valides, reverse=True):
+        if _binaire_sain(binaire):
+            return binaire
+        log.warning("binaire claude inutilisable (tronqué ?) : %s", binaire)
+    return None
 
 
 def aligner_le_lien_claude(settings: AtelierSettings) -> Path | None:
