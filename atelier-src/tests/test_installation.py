@@ -84,6 +84,13 @@ def test_l_image_ne_redistribue_ni_navigateur_ni_extension_claude() -> None:
     assert "CACHE_EXTENSIONS=\"$WORK/.code-server-extensions\"" in init
 
 
+def test_le_cache_d_extension_du_volume_ne_garde_que_les_dernieres_versions() -> None:
+    """D-77 : l'extension se met à jour seule (~250 Mo par version) ; le cache du volume ne doit pas tout garder."""
+    init = (RACINE / "install" / "atelier-init.sh").read_text(encoding="utf-8")
+    assert "head -n -2 | xargs -r rm -rf || true" in init, "le cache est purgé (set -e : `|| true`)"
+    assert 'cp -a "$en_cache" "$EXTENSIONS"/' in init, "le pod ne reçoit que la version la plus récente"
+
+
 def test_le_chart_est_eprouve_puis_publie_depuis_main_seulement() -> None:
     """`release.yml` a remplacé `helm.yml` : il éprouve le chart, puis le publie.
 

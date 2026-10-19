@@ -751,6 +751,14 @@ produit.
   nettoyage automatique des versions d'extension et des transcripts à poser, et le gardien Santé à faire parler (alerte lisible
   dans l'Atelier, pas seulement au journal) dès 80 %.
 
+  **Cause des versions d'extension (relevée le 19/10)** : l'extension se met à jour seule (open-vsx, environ une version par
+  semaine, ~250 Mo). `atelier-init.sh` en gardait une copie sur le volume (`~/work/.code-server-extensions`) pour ne pas la
+  retélécharger, mais **n'y ajoutait que** (`cp -a`) : neuf versions en trois semaines, dont une seule sert. Pire, au démarrage
+  il recopiait *tout* ce cache dans le disque local du pod. **Fait** : le cache ne garde plus que les deux dernières versions et
+  le pod ne reçoit que la plus récente (`tests/test_installation.py`) ; les six plus anciennes ont été retirées du volume
+  (1,5 Go rendus). **Les données d'un projet n'ont pas leur place dans l'Atelier** : `Images.zip` + `processing/` de
+  Classification (0,9 Go, jeu d'images en double) sont à vivre sur le volume du pod GPU du projet (20 Go), pas sur celui de l'Atelier.
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue

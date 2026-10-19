@@ -172,8 +172,10 @@ CODE_SERVER="$DOSSIER_CODE_SERVER/bin/code-server"
 [ -w "$EXTENSIONS" ] && echo "{}" > "$EXTENSIONS/.obsolete"
 if ! "$CODE_SERVER" --extensions-dir "$EXTENSIONS" --list-extensions 2>/dev/null | grep -qi '^anthropic\.claude-code$'; then
   # Le cache sur le volume évite de retélécharger l'extension à chaque pod.
-  if compgen -G "$CACHE_EXTENSIONS/anthropic.claude-code-*" > /dev/null; then
-    cp -a "$CACHE_EXTENSIONS"/anthropic.claude-code-* "$EXTENSIONS"/ 2>/dev/null || true
+  # Seule la plus récente : copier tout le cache remplirait aussi le disque du pod.
+  en_cache="$(ls -d "$CACHE_EXTENSIONS"/anthropic.claude-code-* 2>/dev/null | sort -V | tail -1 || true)"
+  if [ -n "$en_cache" ]; then
+    cp -a "$en_cache" "$EXTENSIONS"/ 2>/dev/null || true
   fi
   if ! "$CODE_SERVER" --extensions-dir "$EXTENSIONS" --list-extensions 2>/dev/null | grep -qi '^anthropic\.claude-code$'; then
     dire "extension Claude Code"
@@ -182,6 +184,9 @@ if ! "$CODE_SERVER" --extensions-dir "$EXTENSIONS" --list-extensions 2>/dev/null
     cp -a "$EXTENSIONS"/anthropic.claude-code-* "$CACHE_EXTENSIONS"/ 2>/dev/null || true
   fi
 fi
+# Le cache est sur le volume (9,8 Go) : il ne garde que les deux dernières versions.
+# L'extension se met à jour seule, environ une fois par semaine, ~250 Mo chaque fois.
+ls -d "$CACHE_EXTENSIONS"/anthropic.claude-code-* 2>/dev/null | sort -V | head -n -2 | xargs -r rm -rf || true
 extension="$(ls -d "$EXTENSIONS"/anthropic.claude-code-* 2>/dev/null | sort -V | tail -1 || true)"
 if [ -n "$extension" ] && [ -x "$extension/resources/native-binary/claude" ]; then
   ln -sfn "$extension/resources/native-binary/claude" "$BIN/claude"
