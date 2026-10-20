@@ -99,3 +99,41 @@ def test_un_texte_du_serveur_n_est_jamais_interprete_comme_du_html(serveur: str,
         assert "<img src=x" in page.inner_text("main")
         assert page.locator("main img").count() == 0
         navigateur.close()
+
+
+def test_creer_une_variante_depuis_la_page_puis_parcourir_ses_images(serveur: str, racine: Racine) -> None:
+    from PIL import Image
+
+    for g in range(12):
+        for n in (0, 1, 2):
+            for k in range(6):
+                f = racine.brut / f"V/g{g}/x/droite/{n}/i{k}.jpeg"
+                f.parent.mkdir(parents=True, exist_ok=True)
+                Image.new("RGB", (36, 24), (n * 80, 90, 90)).save(f)
+    erreurs: list[str] = []
+    with playwright.sync_playwright() as p:
+        navigateur = p.chromium.launch(executable_path=_chromium())
+        page = navigateur.new_page()
+        page.on("console", lambda m: erreurs.append(m.text) if m.type == "error" else None)
+        page.on("pageerror", lambda e: erreurs.append(str(e)))
+        page.goto(f"{serveur}/#/donnees")
+        page.wait_for_selector(".tuile:has-text('images brutes')")
+        assert "216" in page.inner_text(".tuiles")
+        page.click("text=Nouvelle variante >> nth=0")
+        page.wait_for_selector("text=Contrôles")
+        page.wait_for_selector("text=Identité")
+        bouton = page.locator("button:has-text('Construire la variante')")
+        page.wait_for_function("!document.querySelector('button.principal[type=button]').disabled")
+        assert "aucun problème" in page.inner_text("main") or "à savoir" in page.inner_text("main")
+        page.fill("#nom", "essai")
+        page.select_option("#preparation", "masque")
+        page.wait_for_function("document.body.innerText.includes('essai-')")
+        bouton.click()
+        page.wait_for_selector("h2:has-text('Images')", timeout=30000)
+        page.wait_for_selector(".galerie img")
+        page.wait_for_function("[...document.images].every(i => i.complete && i.naturalWidth > 0)")
+        assert page.locator(".galerie figure").count() > 0
+        page.select_option("#f-classe", "1")
+        page.wait_for_function("[...document.querySelectorAll('.galerie figcaption')].every(f => f.textContent.startsWith('classe 1'))")
+        navigateur.close()
+    assert erreurs == []

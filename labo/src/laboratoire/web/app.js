@@ -45,7 +45,7 @@ function avis(texte, erreur = false) {
 }
 
 async function api(chemin, options = {}) {
-  const r = await fetch(chemin, {
+  const r = await fetch(chemin.replace(/^\//, ""), {  // relatif : la page peut vivre derrière un préfixe (relais de l'Atelier)
     headers: options.corps ? { "Content-Type": "application/json" } : {},
     method: options.methode || (options.corps ? "POST" : "GET"),
     body: options.corps ? JSON.stringify(options.corps) : undefined,
@@ -295,16 +295,6 @@ async function pageLancer(zone, requete) {
   zone.replaceChildren(h("div", { class: "entete" }, h("div", {}, h("h1", {}, depuis ? `Rejouer ${depuis}` : "Lancer un essai"), h("p", { class: "doux" }, "L'essai entre dans la file ; un seul tourne à la fois. Sa configuration est gardée telle quelle : on peut toujours le rejouer."))), variantes.length ? formulaire : h("div", { class: "carte vide" }, "Aucun jeu de données. Il en faut un avant de lancer un essai."));
 }
 
-// ── page Données ──────────────────────────────────────────────────────────
-
-async function pageDonnees(zone) {
-  const variantes = await api("/api/variantes");
-  zone.replaceChildren(h("div", { class: "entete" }, h("div", {}, h("h1", {}, "Données"), h("p", { class: "doux" }, "Les variantes de jeu de données disponibles : effectifs par classe et par jeu, et nombre de collections par jeu. Une collection ne doit jamais se trouver dans deux jeux."))),
-    ...(variantes.length ? variantes.map((v) => v.invalide ? h("div", { class: "carte", style: "border-color:var(--mal)" }, h("h2", {}, v.id), h("p", {}, "Variante inutilisable : ", v.invalide)) :
-      h("div", { class: "carte defile" }, h("h2", {}, v.id), h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Jeu"), h("th", { class: "num" }, "Collections"), ...v.classes.map((c) => h("th", { class: "num" }, c)), h("th", { class: "num" }, "Total"))),
-        h("tbody", {}, ...["train", "val", "test"].map((j) => h("tr", {}, h("th", {}, j), h("td", { class: "num" }, v.groupes[j]), ...v.classes.map((c) => { const n = v.effectifs[j][c] || 0; return h("td", { class: "num", title: n < 20 ? "moins de 20 images : peu fiable" : "" }, n, n < 20 ? " ⚠" : ""); }), h("td", { class: "num" }, Object.values(v.effectifs[j]).reduce((a, b) => a + b, 0)))))))) : [h("div", { class: "carte vide" }, "Aucune variante pour l'instant.")]));
-}
-
 // ── routeur ───────────────────────────────────────────────────────────────
 
 let nettoyage = null, numero = 0;
@@ -323,7 +313,7 @@ async function render() {
     else if (section === "essais") n = await pageEssais(zone);
     else if (section === "comparer") n = await pageComparer(zone, requete);
     else if (section === "lancer") n = await pageLancer(zone, requete);
-    else if (section === "donnees") n = await pageDonnees(zone);
+    else if (section === "donnees") n = await pageDonnees(zone, morceaux[1]);
     else zone.replaceChildren(h("div", { class: "carte vide" }, "Page inconnue. ", h("a", { href: "#/essais" }, "Retour aux essais.")));
     if (mon === numero) nettoyage = typeof n === "number" ? () => clearInterval(n) : n;
     else if (typeof n === "number") clearInterval(n);

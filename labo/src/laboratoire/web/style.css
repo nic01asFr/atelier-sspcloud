@@ -98,3 +98,16 @@ svg .axe { stroke: var(--bord); } svg .serie { fill: none; stroke-width: 2; }
 .cle-valeur dt { color: var(--doux); } .cle-valeur dd { margin: 0; }
 .diff { background: var(--alerte-fond); }
 @media (max-width: 640px) { main { padding: .75rem; } .barre { gap: .75rem; } }
+
+/* données */
+.constat { padding: .4rem .7rem; border-radius: 6px; margin-bottom: .4rem; border: 1px solid var(--bord); }
+.constat.bloquant { background: var(--mal-fond); border-color: var(--mal); color: var(--mal); }
+.constat.avertissement { background: var(--alerte-fond); color: var(--alerte); }
+.badge.bloquant { background: var(--mal-fond); color: var(--mal); } .badge.avertissement { background: var(--alerte-fond); color: var(--alerte); } .badge.sain { background: var(--ok-fond); color: var(--ok); }
+.galerie { display: grid; gap: .5rem; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+.galerie figure { margin: 0; background: var(--fond); border: 1px solid var(--bord); border-radius: 6px; overflow: hidden; }
+.galerie img { display: block; width: 100%; height: 90px; object-fit: cover; background: #000; }
+.galerie figcaption { font-size: .72rem; padding: .2rem .4rem; color: var(--doux); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filtres { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: .75rem; align-items: end; }
+.filtres .champ { min-width: 9rem; }
+input[type="checkbox"] { width: auto; margin-right: .35rem; }

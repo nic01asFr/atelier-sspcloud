@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from laboratoire.adaptateurs import adaptateur as obtenir_adaptateur
+from laboratoire.api_donnees import monter_donnees
 from laboratoire.executeur import Executeur
 from laboratoire.modeles import ConfigEssai
 from laboratoire.projet import Racine, identifiant_sur
@@ -223,6 +224,8 @@ def creer_app(
         return sortie
 
     # -- jeux de données -------------------------------------------------
+
+    monter_donnees(app, racine, ident)
 
     @app.get("/api/variantes")
     def variantes() -> list[dict[str, Any]]:

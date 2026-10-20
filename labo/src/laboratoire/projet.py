@@ -2,6 +2,8 @@
 
     <racine>/
       labo.db                      le registre des essais (SQLite)
+      donnees/brut/                les images d'origine (jamais modifiées)
+      donnees/corrections.csv      les corrections d'étiquettes (chemin, decision, note)
       donnees/variantes/<id>/      une variante de jeu de données : manifeste.csv + train/ val/ test/
       essais/<id>/                 config.json, journal.log, metriques.csv, resultats.json, test_scelle.json, erreurs.json, poids/
 """
@@ -26,17 +28,27 @@ def identifiant_sur(valeur: str) -> str:
 @dataclass(frozen=True)
 class Racine:
     chemin: Path
+    dossier_brut: Path | None = None  # par défaut <racine>/donnees/brut (peut être un lien vers les données d'origine)
 
     @classmethod
     def depuis_environnement(cls) -> "Racine":
         brut = os.environ.get("LABO_RACINE")
         if not brut:
             raise RuntimeError("LABO_RACINE n'est pas défini : c'est le dossier du laboratoire du projet, sur le volume")
-        return cls(Path(brut))
+        externe = os.environ.get("LABO_BRUT")
+        return cls(Path(brut), Path(externe) if externe else None)
 
     @property
     def base(self) -> Path:
         return self.chemin / "labo.db"
+
+    @property
+    def brut(self) -> Path:
+        return self.dossier_brut or self.chemin / "donnees" / "brut"
+
+    @property
+    def corrections(self) -> Path:
+        return self.chemin / "donnees" / "corrections.csv"
 
     @property
     def essais(self) -> Path:
