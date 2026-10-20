@@ -72,7 +72,7 @@ def executer(dossier_essai: Path, dossier_variante: Path) -> None:
     ecrire_json(dossier_essai / "erreurs.json", erreurs)
     ecrire_json(dossier_essai / "resultats.json", {"empreinte": config.empreinte(), **val})
     r = val["rapport"]
-    print(f"[essai] validation : rappel moyen {r['rappel_moyen']} · exactitude {r['exactitude']} · non fiables {r['classes_non_fiables']}", flush=True)
+    print(f"[essai] validation : rappel moyen {r['rappel_moyen']:.3f} · exactitude {r['exactitude']:.3f} · non fiables {r['classes_non_fiables']}", flush=True)
     if ctx.variante.echantillons("test"):
         test, erreurs_test = mesurer(ctx, adapt, "test")
         ecrire_json(dossier_essai / "test_scelle.json", {"empreinte": config.empreinte(), **test, "erreurs": erreurs_test})

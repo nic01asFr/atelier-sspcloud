@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Laboratoire d'essais</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%278%27 height=%2716%27 fill=%27%232354d6%27/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="web/style.css">
+</head>
+<body>
+  <header class="barre">
+    <div class="marque"><span class="logo" aria-hidden="true">◧</span> Laboratoire d'essais</div>
+    <nav class="onglets" aria-label="Sections">
+      <a href="#/essais" data-nav="essais">Essais</a>
+      <a href="#/lancer" data-nav="lancer">Lancer</a>
+      <a href="#/donnees" data-nav="donnees">Données</a>
+    </nav>
+    <div id="pod" class="pod" aria-live="polite" title="État du pod"></div>
+  </header>
+  <main id="contenu" tabindex="-1"></main>
+  <div id="avis" class="avis" role="status" aria-live="polite"></div>
+  <script src="web/app.js" defer></script>
+</body>
+</html>
