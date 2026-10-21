@@ -3,7 +3,7 @@
 Faire varier la **structure** du jeu (autre regroupement des classes, autre côté, autre préparation de l'image, autre découpage) revient à changer
 la recette ; son empreinte identifie la variante. Chaque étape est une fonction pure : on en voit l'effet (l'aperçu) sans écrire une seule image.
 
-    brut → filtrer (côté, panoramiques) → étiqueter (tâche) → regrouper les classes → corrections → découper par groupe → rééquilibrer le train
+    brut → filtrer (côté, type d'image) → étiqueter (tâche) → regrouper les classes → corrections → découper par groupe → rééquilibrer le train
 """
 
 from __future__ import annotations
@@ -52,7 +52,8 @@ class Recette(BaseModel):
     # nombre : N places ou plus (jusqu'à ce plafond) forment une classe. 2 donne 0, 1, « 2 et plus ». None : une classe par N.
     plafond_nombre: int | None = Field(default=2, ge=1)
     preparation: Literal["aucune", "masque", "rognage"] = "rognage"
-    panoramiques: Literal["inclure", "exclure", "seulement"] = "inclure"
+    # recadrage : extrait d'une vue panoramique, déjà tourné vers son côté (la consigne dit « panoramique ») ; plate : photo vers l'avant, le côté en est une moitié (« non panoramique »).
+    type_image: Literal["tous", "recadrage", "plate"] = "tous"
     decoupage: Decoupage = Field(default_factory=Decoupage)
     reequilibrage: Reequilibrage = Field(default_factory=Reequilibrage)
     corrections: bool = True
@@ -84,11 +85,11 @@ def etiqueter(
     for i in images:
         if i.cote != recette.cote:
             continue  # l'autre côté n'est pas « écarté » : ce n'est pas le sujet de cette variante
-        if recette.panoramiques == "exclure" and i.panoramique:
-            ecartes["panoramique exclue"] += 1
+        if recette.type_image == "recadrage" and i.plate:
+            ecartes["photo plate écartée"] += 1
             continue
-        if recette.panoramiques == "seulement" and not i.panoramique:
-            ecartes["non panoramique exclue"] += 1
+        if recette.type_image == "plate" and not i.plate:
+            ecartes["recadrage écarté"] += 1
             continue
         v = validations.get(i.chemin) if validations is not None else None
         if v is not None and v.douteuse:

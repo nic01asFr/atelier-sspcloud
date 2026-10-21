@@ -25,7 +25,7 @@ async function pageDonnees(zone, sous) {
     h("div", { class: "entete" }, h("div", {}, h("h1", {}, "Données"), h("p", { class: "doux" }, "Le brut ne change jamais. Une variante est le brut passé par une recette : changer la recette, c'est changer la structure du jeu.")),
       h("div", { class: "actions" }, h("a", { class: "bouton principal", href: "#/donnees/nouvelle" }, "Nouvelle variante"))),
     h("div", { class: "tuiles" }, tuile(r.images, "images brutes", brut.dossier), tuile(r.collections, "collections"), tuile(Object.entries(r.par_cote).map(([k, v]) => `${k} ${v}`).join(" · "), "par côté"),
-      tuile(r.panoramiques, "panoramiques"), tuile(r.anomalies, "anomalies", r.anomalies ? "voir ci-dessous" : "")),
+      tuile(`${r.recadrages} / ${r.plates}`, "recadrages / photos plates"), tuile(r.anomalies, "anomalies", r.anomalies ? "voir ci-dessous" : "")),
     h("div", { class: "grille" },
       h("div", { class: "carte" }, h("h2", {}, "Nombre de places"), h("p", {}, Object.entries(r.par_nombre).map(([k, v]) => `${k} : ${v}`).join(" · "))),
       h("div", { class: "carte" }, h("h2", {}, "Formes"), h("p", {}, Object.entries(r.par_forme).map(([k, v]) => `${k} : ${v}`).join(" · ")))),
@@ -39,13 +39,13 @@ const OPTIONS = {
   cote: [["droite", "droite"], ["gauche", "gauche"]],
   tache: [["nombre", "nombre de places"], ["forme", "forme (bataille / longitudinal)"]],
   preparation: [["rognage", "rognage : moitié du côté étudié"], ["masque", "masque : l'autre moitié noircie"], ["aucune", "image entière"]],
-  panoramiques: [["inclure", "inclure"], ["exclure", "exclure"], ["seulement", "seulement"]],
+  type_image: [["tous", "tous"], ["recadrage", "recadrages (panoramique)"], ["plate", "photos plates (non panoramique)"]],
 };
 
 async function pageRecette(zone) {
   const sel = (id, opts, valeur) => h("select", { id }, ...opts.map(([v, t]) => h("option", { value: v, selected: v === valeur }, t)));
   const champs = {
-    cote: sel("cote", OPTIONS.cote, "droite"), tache: sel("tache", OPTIONS.tache, "nombre"), preparation: sel("preparation", OPTIONS.preparation, "rognage"), panoramiques: sel("panoramiques", OPTIONS.panoramiques, "inclure"),
+    cote: sel("cote", OPTIONS.cote, "droite"), tache: sel("tache", OPTIONS.tache, "nombre"), preparation: sel("preparation", OPTIONS.preparation, "rognage"), type_image: sel("type_image", OPTIONS.type_image, "tous"),
     plafond: h("input", { id: "plafond", type: "number", min: 1, value: 2 }), graine: h("input", { id: "graine", type: "number", value: 7 }),
     train: h("input", { id: "p-train", type: "number", step: "0.05", min: 0.05, max: 0.9, value: 0.7 }), val: h("input", { id: "p-val", type: "number", step: "0.05", min: 0.05, max: 0.9, value: 0.15 }),
     reeq: h("input", { id: "reeq", type: "checkbox", checked: true }), rapport: h("input", { id: "rapport", type: "number", step: "0.1", min: 0.1, max: 1, value: 0.5 }),
@@ -53,7 +53,7 @@ async function pageRecette(zone) {
   };
   const lire = () => {
     const train = +champs.train.value, val = +champs.val.value;
-    return { cote: champs.cote.value, tache: champs.tache.value, plafond_nombre: champs.plafond.value ? +champs.plafond.value : null, preparation: champs.preparation.value, panoramiques: champs.panoramiques.value,
+    return { cote: champs.cote.value, tache: champs.tache.value, plafond_nombre: champs.plafond.value ? +champs.plafond.value : null, preparation: champs.preparation.value, type_image: champs.type_image.value,
       decoupage: { proportions: [train, val, Math.round((1 - train - val) * 1e6) / 1e6], graine: +champs.graine.value }, reequilibrage: { actif: champs.reeq.checked, rapport: +champs.rapport.value }, corrections: champs.corr.checked, nom: champs.nom.value.trim() };
   };
   const resultat = h("div", { "aria-live": "polite" }, h("p", { class: "doux" }, "Calcul de l'aperçu…"));
@@ -99,7 +99,7 @@ async function pageRecette(zone) {
     h("div", { class: "grille" },
       h("div", { class: "carte formulaire" },
         champ2("cote", "Côté de la rue", champs.cote), champ2("tache", "Ce qu'on prédit", champs.tache), champ2("plafond", "Plafond du nombre de places", champs.plafond, "2 : classes 0, 1 et « 2 et plus ». Vide : une classe par nombre."),
-        champ2("preparation", "Préparation de l'image", champs.preparation), champ2("panoramiques", "Vues panoramiques", champs.panoramiques),
+        champ2("preparation", "Préparation de l'image", champs.preparation), champ2("type_image", "Type d'image", champs.type_image),
         champ2("p-train", "Part du train", champs.train), champ2("p-val", "Part de val (le reste va au test)", champs.val), champ2("graine", "Graine du découpage", champs.graine),
         h("div", { class: "champ" }, h("label", {}, champs.reeq, " Rééquilibrer le train par copies"), champs.rapport, h("small", {}, "Part de la plus grande classe visée. Jamais dans val ni test.")),
         h("div", { class: "champ" }, h("label", {}, champs.corr, " Appliquer les corrections d'étiquettes"), h("small", {}, "Écartées ou rectifiées dans corrections.csv ; le brut n'est jamais modifié.")),

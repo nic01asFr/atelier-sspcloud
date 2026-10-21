@@ -22,8 +22,6 @@ from PIL import Image
 COTES = ("droite", "gauche")
 FORMES = ("bataille", "longitudinal")
 EXTENSIONS = {".jpg", ".jpeg", ".png"}
-# Une vue panoramique est bien plus large que haute ; les images de la rue ordinaire font 3:2 (768×512).
-RATIO_PANORAMIQUE = 2.0
 # Deux sortes d'images dans le brut (constatées sur les fichiers d'origine, voir docs/vision/validation-humaine.md §11) :
 #  - la photo « plate » 2048×1536, prise vers l'avant (champ de 92°) : le même fichier est rangé sous droite/ et sous gauche/,
 #    et le côté est la **moitié** de la photo ;
@@ -47,10 +45,6 @@ class ImageBrute:
         """Une photo prise vers l'avant, pleine résolution : le côté en est une moitié. Sinon c'est un recadrage déjà tourné vers son côté."""
         return bool(self.largeur and self.largeur >= LARGEUR_PHOTO_PLATE)
 
-    @property
-    def panoramique(self) -> bool:
-        return bool(self.largeur and self.hauteur and self.largeur / self.hauteur >= RATIO_PANORAMIQUE)
-
 
 @dataclass
 class RapportBrut:
@@ -71,7 +65,8 @@ class RapportBrut:
             "par_cote": compte(lambda i: i.cote),
             "par_nombre": compte(lambda i: "—" if i.n is None else i.n),
             "par_forme": compte(lambda i: i.forme or "—"),
-            "panoramiques": sum(1 for i in self.images if i.panoramique),
+            "plates": sum(1 for i in self.images if i.plate),
+            "recadrages": sum(1 for i in self.images if not i.plate),
             "taille_inconnue": sum(1 for i in self.images if i.largeur is None),
             "anomalies": len(self.anomalies),
         }
