@@ -118,12 +118,13 @@ def test_avec_un_jeton_tout_est_ferme_sauf_la_sante(racine: Racine) -> None:
     faire_variante(racine)
     with TestClient(creer_app(racine, jeton="secret", demarrer_travailleur=False)) as c:
         assert c.get("/sante").status_code == 200
-        for chemin in ("/", "/api/essais", "/api/pod", "/web/index.html"):
+        for chemin in ("/api/essais", "/api/pod", "/web/index.html"):
             assert c.get(chemin).status_code == 401, chemin
+        assert 'name="jeton"' in c.get("/").text  # la page elle-même ne se sert pas : on demande le jeton
         assert c.get("/api/essais", headers={"Authorization": "Bearer faux"}).status_code == 401
         assert c.get("/api/essais", headers={"Authorization": "Bearer secret"}).status_code == 200
         c.cookies.set("labo_jeton", "secret")
-        assert c.get("/").status_code == 200
+        assert "web/app.js" in c.get("/").text
         assert c.get("/api/docs").status_code == 404  # pas de documentation interactive quand on est protégé
 
 
@@ -146,3 +147,31 @@ def test_le_service_lit_le_brut_indique_par_l_environnement(tmp_path, monkeypatc
     monkeypatch.delenv("LABO_BRUT")
     assert principal.main(["--racine", str(tmp_path / "labo")]) == 0
     assert pris["racine"].brut == tmp_path / "labo" / "donnees" / "brut"
+
+
+def test_un_navigateur_sans_cookie_voit_l_ecran_de_connexion_puis_entre_avec_le_jeton(racine: Racine, monkeypatch) -> None:
+    import laboratoire.api as api
+
+    monkeypatch.setattr(api, "PAUSE_APRES_ECHEC_S", 0)
+    with TestClient(creer_app(racine, jeton="secret-123", demarrer_travailleur=False), follow_redirects=False) as c:
+        accueil = c.get("/")
+        assert accueil.status_code == 200 and 'name="jeton"' in accueil.text and "Laboratoire d'essais" in accueil.text
+        assert "web/app.js" not in accueil.text  # la vraie page n'est pas servie
+        assert c.get("/api/essais").status_code == 401 and c.get("/web/app.js").status_code == 401
+        mauvais = c.post("/connexion", content="jeton=faux", headers={"content-type": "application/x-www-form-urlencoded"})
+        assert mauvais.status_code == 401 and "labo_jeton" not in mauvais.headers.get("set-cookie", "") and "refusé" in mauvais.text
+        derriere_https = c.post("/connexion", content="jeton=secret-123", headers={"content-type": "application/x-www-form-urlencoded", "x-forwarded-proto": "https"})
+        assert "secure" in derriere_https.headers["set-cookie"].lower()  # derrière https, le cookie ne voyage qu'en https
+        c.cookies.clear()
+        bon = c.post("/connexion", content="jeton=secret-123", headers={"content-type": "application/x-www-form-urlencoded"})
+        assert bon.status_code == 303 and bon.headers["location"] == "./"
+        cookie = bon.headers["set-cookie"].lower()
+        assert "labo_jeton=secret-123" in cookie and "httponly" in cookie and "samesite=strict" in cookie
+        assert "web/app.js" in c.get("/").text  # le cookie est gardé par le client : la vraie page
+        assert c.get("/api/essais").status_code == 200
+
+
+def test_la_connexion_sans_jeton_configure_ne_demande_rien(racine: Racine) -> None:
+    with TestClient(creer_app(racine, demarrer_travailleur=False), follow_redirects=False) as c:
+        assert c.post("/connexion", content="jeton=x").status_code == 303
+        assert "web/app.js" in c.get("/").text
