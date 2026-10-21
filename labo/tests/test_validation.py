@@ -217,3 +217,14 @@ def test_les_routes_de_validation_exigent_le_jeton(racine: Racine) -> None:
         assert c.get("/api/validation/files").status_code == 401
         assert c.get("/api/brut/image", params={"chemin": "x"}).status_code == 401
         assert c.get("/api/validation/files", headers={"Authorization": "Bearer s"}).status_code == 200
+
+
+def test_une_requete_de_validation_tient_le_pod_eveille_pas_une_simple_sante(racine: Racine) -> None:
+    with TestClient(creer_app(racine, demarrer_travailleur=False)) as c:
+        humain_present = c.app.state.activite_humaine
+        assert humain_present() is False
+        c.get("/sante")
+        c.get("/api/pod")  # le tableau de bord se rafraîchit seul toutes les 5 s : cela ne vaut pas présence
+        assert humain_present() is False
+        c.get("/api/validation/files")
+        assert humain_present() is True

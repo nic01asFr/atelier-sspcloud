@@ -1,4 +1,4 @@
-"""Le travailleur : prend la file, un essai à la fois, et tient le pod éveillé tant qu'un essai tourne.
+"""Le travailleur : prend la file, un essai à la fois, et tient le pod éveillé tant qu'un essai tourne **ou que des personnes valident**.
 
 `tick()` fait un pas et se teste sans fil d'exécution ; `demarrer()` le fait tourner en arrière-plan.
 """
@@ -25,9 +25,15 @@ class Travailleur:
         battement: Callable[[], None] | None = None,
         intervalle_battement: float = 120.0,
         horloge: Callable[[], float] = time.monotonic,
+        activite_humaine: Callable[[], bool] | None = None,
+        battement_humain: Callable[[], None] | None = None,
+        intervalle_humain: float = 30.0,
     ) -> None:
         self.registre, self.executeur, self.parallelisme = registre, executeur, max(1, parallelisme)
         self._battement, self._intervalle, self._horloge = battement, intervalle_battement, horloge
+        # Pendant qu'une personne valide, aucun essai ne tourne : le GPU est au repos et le serveur couperait le pod en pleine séance.
+        # Le battement est alors plus long et plus rapproché : la séance ne doit pas dépendre d'un échantillonnage heureux.
+        self._activite_humaine, self._battement_humain, self._intervalle_humain = activite_humaine, battement_humain or battement, intervalle_humain
         self._dernier_battement = float("-inf")
         self._arret = threading.Event()
         self._fil: threading.Thread | None = None
@@ -42,15 +48,19 @@ class Travailleur:
         self._battre()
 
     def _battre(self) -> None:
-        """Tant qu'un essai tourne, le GPU travaille un instant : le serveur ne coupe pas un pod qui travaille (D-81)."""
-        if self._battement is None or not self.registre.en_cours():
+        """Tant qu'un essai tourne ou qu'une personne valide, le GPU travaille un instant : le serveur ne coupe pas un pod qui travaille (D-81)."""
+        if self.registre.en_cours():
+            battement, intervalle = self._battement, self._intervalle
+        elif self._activite_humaine is not None and self._activite_humaine():
+            battement, intervalle = self._battement_humain, self._intervalle_humain
+        else:
             return
-        if self._horloge() - self._dernier_battement < self._intervalle:
+        if battement is None or self._horloge() - self._dernier_battement < intervalle:
             return
         self._dernier_battement = self._horloge()
         try:
-            self._battement()
-        except Exception:  # noqa: BLE001 - un battement raté ne doit jamais arrêter un essai
+            battement()
+        except Exception:  # noqa: BLE001 - un battement raté ne doit jamais arrêter un essai ni une séance
             log.warning("battement raté", exc_info=True)
 
     def demarrer(self, pause: float = 2.0) -> None:

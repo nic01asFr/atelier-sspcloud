@@ -15,10 +15,11 @@ import csv
 import hmac
 import shutil
 import subprocess
-from urllib.parse import parse_qs
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import parse_qs
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
@@ -42,6 +43,7 @@ MAX_JOURNAL = 200_000  # octets rendus d'un coup
 MAX_CORPS_CONNEXION = 4096
 PAUSE_APRES_ECHEC_S = 1.0  # ralentit l'essai de jetons à la chaîne
 DUREE_DU_COOKIE_S = 30 * 24 * 3600
+FENETRE_ACTIVITE_HUMAINE_S = 600  # une personne qui n'a rien fait depuis 10 minutes ne tient plus le pod éveillé
 
 PAGE_DE_CONNEXION = """<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -112,11 +114,17 @@ def creer_app(
     jeton: str | None = None,
     demarrer_travailleur: bool = True,
     battement: Callable[[], Any] | None = None,
+    battement_humain: Callable[[], Any] | None = None,
 ) -> FastAPI:
     registre = Registre(racine.base)
     decisions = Journal(racine.chemin / "donnees" / "validation.db")  # (pas « journal » : une route d'essai porte ce nom)
     executeur = Executeur(racine, registre)
-    travailleur = Travailleur(registre, executeur, battement=battement)
+    activite = {"derniere": float("-inf")}
+
+    def humain_present() -> bool:
+        return time.monotonic() - activite["derniere"] < FENETRE_ACTIVITE_HUMAINE_S
+
+    travailleur = Travailleur(registre, executeur, battement=battement, activite_humaine=humain_present, battement_humain=battement_humain)
 
     @asynccontextmanager
     async def cycle(_: FastAPI):
@@ -132,6 +140,7 @@ def creer_app(
 
     app = FastAPI(title="Laboratoire d'essais", lifespan=cycle, docs_url="/api/docs" if jeton is None else None, redoc_url=None, openapi_url=None if jeton else "/api/openapi.json")
     app.state.registre, app.state.executeur, app.state.travailleur, app.state.racine = registre, executeur, travailleur, racine
+    app.state.activite_humaine = humain_present
 
     def jeton_valide(fourni: str) -> bool:
         return bool(fourni) and hmac.compare_digest(fourni.encode(), (jeton or "").encode())
@@ -146,6 +155,8 @@ def creer_app(
                 if request.method == "GET" and chemin == "/":
                     return _page_de_connexion()  # un navigateur sans cookie : on lui demande le jeton
                 return JSONResponse({"erreur": "jeton absent ou faux"}, status_code=401)
+        if chemin.startswith("/api/validation/") or chemin == "/api/brut/image":
+            activite["derniere"] = time.monotonic()  # quelqu'un valide : le pod doit rester éveillé (voir Travailleur)
         return await suite(request)
 
     @app.post("/connexion")
