@@ -806,6 +806,20 @@ produit.
   ne coupe jamais un pod qui exécute un travail ni ne contourne `idle_minutes` (décision de la personne : pas pour l'instant),
   ou à défaut `PASSERELLE_GPU_IDLE_MIN` très haut.
 
+- **D-82 (M) — Une erreur d'argument sort en « INTERNAL — KeyError: 'code' », et une fausse alerte a fait le tour de deux agents.**
+  Le 20/10, j'ai appelé l'outil `exec` d'Onyxia avec un champ `command` au lieu de `code` (je n'avais pas chargé son schéma : l'outil
+  était différé). Le serveur a répondu `INTERNAL`, `KeyError: 'code'`, « Voir les logs serveur » : rien n'indiquait un argument manquant.
+  Conclusion fausse de ma part (« exec est en panne »), signalée à l'agent du service Onyxia, qui a perdu du temps à enquêter ; sa lecture
+  du code (un seul `args["code"]`, `tools.py`) était juste. **Leçons.** (1) Côté serveur : un argument manquant doit rendre une erreur
+  d'argument qui nomme les champs attendus (`MISSING_ARGUMENT`), pas `INTERNAL` (proposé par l'agent du service, en attente de la
+  personne). (2) Côté Atelier et pilotage : avant de conclure à une panne d'un outil, vérifier un appel minimal avec le schéma chargé ;
+  un tel diagnostic part ensuite chez un autre agent, il doit être vérifié d'abord. (3) Pour les agents : `exec` prend `code` et `lang`.
+
+- **D-83 (M) — Défauts relevés en construisant le laboratoire d'essais** (traités dans `labo/`, voir `docs/vision/banc-d-essai-ml.md`) :
+  `python -m laboratoire` ignorait `LABO_BRUT` (corrigé, PR 51) ; lancer un essai sur une variante encore en construction répond « pas de
+  manifeste.csv » au lieu de « en cours de construction » ; les copies de rééquilibrage sont de vraies copies de fichiers (hardlinks à
+  prévoir) ; les trois variantes de la première série pèsent 705 Mo (JPEG qualité 95, pleine taille) — le volume du pod est de 20 Go.
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue
