@@ -24,6 +24,11 @@ FORMES = ("bataille", "longitudinal")
 EXTENSIONS = {".jpg", ".jpeg", ".png"}
 # Une vue panoramique est bien plus large que haute ; les images de la rue ordinaire font 3:2 (768×512).
 RATIO_PANORAMIQUE = 2.0
+# Deux sortes d'images dans le brut (constatées sur les fichiers d'origine, voir docs/vision/validation-humaine.md §11) :
+#  - la photo « plate » 2048×1536, prise vers l'avant (champ de 92°) : le même fichier est rangé sous droite/ et sous gauche/,
+#    et le côté est la **moitié** de la photo ;
+#  - le « recadrage » 768×512, extrait d'une vue panoramique à 360° : un fichier **différent** par côté, déjà tourné vers ce côté.
+LARGEUR_PHOTO_PLATE = 1500
 
 
 @dataclass(frozen=True)
@@ -36,6 +41,11 @@ class ImageBrute:
     forme: str | None
     largeur: int | None
     hauteur: int | None
+
+    @property
+    def plate(self) -> bool:
+        """Une photo prise vers l'avant, pleine résolution : le côté en est une moitié. Sinon c'est un recadrage déjà tourné vers son côté."""
+        return bool(self.largeur and self.largeur >= LARGEUR_PHOTO_PLATE)
 
     @property
     def panoramique(self) -> bool:

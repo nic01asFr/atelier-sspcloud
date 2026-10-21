@@ -80,6 +80,7 @@ def monter_validation(app: FastAPI, racine: Racine, ident: Callable[[str], str],
             avant, apres = voisins(images(), chemin)
             items.append({
                 "image": chemin, "cote": i.cote, "groupe": i.groupe, "largeur": i.largeur, "hauteur": i.hauteur,
+                "type_image": "plate" if i.plate else "recadrage",
                 "ancien": {"nombre": i.n, "forme": i.forme or "aucune"}, "avant": avant, "apres": apres,
             })
         return {"file": type, "total": len(file), "faites": len(file) - len(restantes), "restantes": len(restantes), "items": items}
