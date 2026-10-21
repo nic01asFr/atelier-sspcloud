@@ -42,7 +42,8 @@ def main(argv: list[str] | None = None) -> int:
     if not est_boucle_locale(args.hote) and not jeton:
         print(f"refus : écouter sur {args.hote} sans jeton (LABO_JETON) ouvrirait le laboratoire à tout le namespace", file=sys.stderr)
         return 2
-    app = creer_app(Racine(Path(args.racine)), jeton=jeton, battement=None if args.sans_battement else battre)
+    brut = os.environ.get("LABO_BRUT")
+    app = creer_app(Racine(Path(args.racine), Path(brut) if brut else None), jeton=jeton, battement=None if args.sans_battement else battre)
     uvicorn.run(app, host=args.hote, port=args.port, log_level="info")
     return 0
 
