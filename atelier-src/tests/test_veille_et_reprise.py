@@ -57,6 +57,12 @@ def test_le_resume_de_l_action_dit_la_commande_pas_un_dictionnaire() -> None:
     assert resume_de_l_action(ecriture) == "Write — /tmp/x.txt"
 
 
+def test_le_resume_de_l_exec_d_onyxia_montre_la_commande() -> None:
+    """Régression (21/10) : `exec` d'Onyxia porte la commande dans `code` ; la demande d'accord s'affichait « Exec » sans rien."""
+    onyxia = _demande(outil="mcp__Onyxia__exec", affichage="Exec", arguments={"code": "labo/api.sh GET /api/essais", "lang": "bash"}, description="")
+    assert resume_de_l_action(onyxia) == "Exec — labo/api.sh GET /api/essais"
+
+
 def test_le_resume_est_borne_et_sur_une_ligne() -> None:
     long = _demande(arguments={"command": "echo " + "a\n" * 400})
     resume = resume_de_l_action(long)

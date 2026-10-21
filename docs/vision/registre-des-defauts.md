@@ -820,6 +820,16 @@ produit.
   manifeste.csv » au lieu de « en cours de construction » ; les copies de rééquilibrage sont de vraies copies de fichiers (hardlinks à
   prévoir) ; les trois variantes de la première série pèsent 705 Mo (JPEG qualité 95, pleine taille) — le volume du pod est de 20 Go.
 
+- **D-84 (M) — Piloter un agent par l'Atelier coûte une autorisation par lecture, et le suivi renvoie tout l'historique.** Constaté le 21/10
+  en pilotant l'agent de Classification sur le laboratoire d'essais. (1) Chaque `exec` d'Onyxia redemande l'accord (la seule règle proposée
+  par le CLI est « tout l'outil », jamais une commande) : 8 essais lus = une dizaine de demandes, chacune en deux appels (aperçu, puis
+  confirmation). (2) La demande s'affichait « Exec » sans la commande (le résumé ne lisait pas le champ `code`) — **corrigé**
+  (`decisions._CHAMPS_DE_L_ACTION`). (3) `atelier_suivre` : le curseur plafonne à 400 ; au-delà, chaque appel rend les 400 derniers
+  événements (≈ 7 000 jetons) sans ligne nouvelle — on ne peut pas suivre un tour long à moindre coût. (4) Un agent supervisé fait de lui-même
+  des attentes actives (`sleep 120`, boucle de fond sur un fichier inexistant) qui coûtent une autorisation chacune ; le plafond de 40 s d'`exec`
+  n'est dit qu'après coup. **À faire** : règles par commande pour l'`exec` d'Onyxia (préfixe `labo/api.sh GET`, `labo/resume.py`, lecture seule),
+  rendues au CLI dans sa syntaxe ; un curseur qui avance ; la consigne « n'attends pas toi-même » dans le contexte des agents lancés.
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue
