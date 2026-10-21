@@ -88,16 +88,19 @@ async function pageValider(zone) {
       corps.replaceChildren(h("div", { class: "carte vide large", style: "grid-column:1/-1" }, h("h2", {}, "File terminée"), h("p", {}, `Vous avez traité les ${total} images de cette file. Merci.`), h("p", { class: "doux" }, fichierInfos ? fichierInfos.description : "")));
       return;
     }
-    const grande = h("figure", {}, h("img", { id: "image-courante", alt: `Image à valider, côté ${courant.cote}`, src: urlImage(courant.image, { largeur: 1000 }) }),
-      h("figcaption", {}, `Côté ${courant.cote} · collection ${courant.groupe.split("/").slice(-1)[0].slice(0, 12)}…`));
+    // La zone à qualifier est la moitié du côté indiqué ; l'autre moitié est assombrie (une voiture de l'autre côté de la rue ne compte pas).
+    const hors = h("div", { class: `zone-hors ${courant.cote}`, "aria-hidden": "true" }, h("span", {}, "hors sujet"));
+    const concerne = h("div", { class: `zone-concernee ${courant.cote}`, "aria-hidden": "true" }, h("span", {}, `côté ${courant.cote} : à qualifier`));
+    const grande = h("figure", {}, h("div", { class: "cadre" }, h("img", { id: "image-courante", alt: `Image à valider, côté ${courant.cote}`, src: urlImage(courant.image, { largeur: 1000 }) }), hors, concerne),
+      h("figcaption", {}, h("strong", {}, `On qualifie uniquement le côté ${courant.cote.toUpperCase()} de la rue`), " (zone claire) — la zone assombrie est hors sujet. ", `Collection ${courant.groupe.split("/").slice(-1)[0].slice(0, 12)}…`));
     const vignette = (titre, chemin, options) => h("figure", {}, chemin ? h("img", { alt: titre, src: urlImage(chemin, { largeur: 320, ...options }) }) : h("div", { class: "doux", style: "aspect-ratio:3/2;display:grid;place-items:center;border:1px dashed var(--bord);border-radius:6px" }, "—"), h("figcaption", {}, titre));
-    const gauche = h("div", {}, grande, h("div", { class: "vignettes" }, vignette("Ce que voit le modèle (rognage)", courant.image, { rognage: "1" }), vignette("Image précédente de la séquence", courant.avant), vignette("Image suivante", courant.apres)));
+    const gauche = h("div", {}, grande, h("div", { class: "vignettes" }, vignette(`La zone claire, agrandie : ce que voit le modèle (côté ${courant.cote})`, courant.image, { rognage: "1" }), vignette("Image précédente de la séquence", courant.avant), vignette("Image suivante", courant.apres)));
     const ancien = aveugle ? null : h("div", { class: "ancien", id: "ancien" }, `Étiquette d'origine : ${courant.ancien.nombre ?? "?"} place(s), forme ${courant.ancien.forme}. `, h("kbd", {}, "Espace"), " la confirme.");
     const droite = h("div", { class: "carte" },
       h("div", {}, h("strong", {}, `${faites} / ${total}`), " images de cette file", h("div", { class: "progression", role: "progressbar", "aria-valuenow": part, "aria-valuemin": 0, "aria-valuemax": 100 }, h("b", { style: `width:${part}%` }))),
       annonce, ancien,
       stats && stats.part_confirmee !== null && stats.decisions >= 10 ? h("p", { class: "doux", id: "part-confirmee" }, `Étiquettes d'origine confirmées par les valideurs : ${Math.round(stats.part_confirmee * 100)} % (${stats.decisions} décisions, ${stats.douteuses} douteuses).`) : null,
-      h("h2", {}, "Nombre de places perçues"), h("div", { class: "touches", role: "group", "aria-label": "Nombre de places" }, ...Array.from({ length: 10 }, (_, n) => bouton(String(n), nombre === n, () => (n === 0 ? valider(0, "aucune") : (nombre = n, dessiner())), n === 0 ? "0 : validé tout de suite" : `${n} : puis une forme, ou Entrée`))),
+      h("h2", {}, `Nombre de places perçues — côté ${courant.cote}`), h("div", { class: "touches", role: "group", "aria-label": "Nombre de places" }, ...Array.from({ length: 10 }, (_, n) => bouton(String(n), nombre === n, () => (n === 0 ? valider(0, "aucune") : (nombre = n, dessiner())), n === 0 ? "0 : validé tout de suite" : `${n} : puis une forme, ou Entrée`))),
       h("h2", {}, "Forme du stationnement"), h("div", { class: "touches", role: "group", "aria-label": "Forme" }, ...FORMES_VALIDATION.map(([v, texte, cle]) => bouton(`${texte} (${cle})`, forme === v, () => (nombre !== null ? valider(nombre, v) : (forme = v, dessiner()))))),
       h("div", { class: "actions", style: "margin-bottom:.8rem" }, h("button", { type: "button", id: "douteuse", onclick: () => envoyer({ douteuse: true }) }, "Douteuse (D)"), h("button", { type: "button", id: "annuler", onclick: annuler }, "Annuler la dernière (Z)")),
       note,

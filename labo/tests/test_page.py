@@ -211,6 +211,12 @@ def test_valider_au_clavier_nombre_forme_annulation_et_aveugle(racine: Racine) -
             page.click("button[type=submit]")
             page.wait_for_selector("#image-courante")
             assert page.locator("#ancien").count() == 0  # à l'aveugle par défaut : l'étiquette d'origine est cachée
+            # La zone à qualifier est dite et montrée : l'autre moitié de la photo est assombrie (une voiture de l'autre côté ne compte pas).
+            assert "On qualifie uniquement le côté DROITE de la rue" in page.inner_text("figcaption")
+            assert page.locator(".zone-hors.droite").count() == 1 and page.locator(".zone-concernee.droite").count() == 1
+            boite = page.locator(".zone-concernee").bounding_box()
+            image = page.locator("#image-courante").bounding_box()
+            assert abs(boite["x"] - (image["x"] + image["width"] / 2)) < 2 and abs(boite["width"] - image["width"] / 2) < 2  # la moitié droite
             premiere = page.get_attribute("#image-courante", "src")
             page.keyboard.press("0")  # aucune place : validé tout de suite
             page.wait_for_function("(avant) => document.querySelector('#image-courante').getAttribute('src') !== avant", arg=premiere)
