@@ -23,10 +23,10 @@ def _brut(tmp_path: Path, collections: int = 12, par_classe: int = 6) -> tuple[P
             for k in range(par_classe):
                 rel = f"V/g{g}/x/droite/{n}/img{k}.jpeg"
                 (brut / rel).parent.mkdir(parents=True, exist_ok=True)
-                im = Image.new("RGB", (36, 24), (10, 10, 10))
-                im.paste((250, 250, 250), (18, 0, 36, 24))  # moitié droite claire
+                im = Image.new("RGB", (1600, 24), (10, 10, 10))
+                im.paste((250, 250, 250), (800, 0, 1600, 24))  # moitié droite claire
                 im.save(brut / rel)
-                images.append(ImageBrute(rel, "V", f"V/g{g}/x", "droite", n, None, 36, 24))
+                images.append(ImageBrute(rel, "V", f"V/g{g}/x", "droite", n, None, 1600, 24))  # photo plate
     return brut, images
 
 
@@ -54,10 +54,10 @@ def test_construction_ecrit_un_manifeste_que_les_essais_savent_lire(tmp_path: Pa
     assert avancement[-1] == (len(images), len(images))
     assert json.loads((tmp_path / "v" / "recette.json").read_text())["cote"] == "droite"
     assert (tmp_path / "v" / "controles.json").is_file() and resultat["effectifs"]["train"]
-    # La préparation a bien eu lieu : rognage → moitié droite, donc 18×24 et claire.
+    # La préparation a bien eu lieu : photo plate rognée → moitié droite, donc 800×24 et claire.
     une = v.echantillons("train")[0].fichier
     with Image.open(une) as im:
-        assert im.size == (18, 24) and im.getpixel((3, 3))[0] > 200
+        assert im.size == (800, 24) and im.getpixel((3, 3))[0] > 200
     # Aucune collection dans deux jeux.
     assert not (v.groupes("train") & v.groupes("val")) and not (v.groupes("train") & v.groupes("test"))
 
@@ -142,3 +142,17 @@ def test_les_copies_ne_sont_pas_des_doublons_mais_un_vrai_doublon_l_est() -> Non
 def test_desequilibre_ignore_les_copies() -> None:
     lignes = [_l("train", "0", "g1", f"a{i}") for i in range(50)] + [_l("train", "1", "g1", "b")] + [_l("train", "1", "g1", "b", copie=True)] * 40
     assert "desequilibre" in _codes(controler(lignes))
+
+
+def test_un_recadrage_n_est_jamais_rogne_ni_masque(tmp_path: Path) -> None:
+    """Un recadrage est déjà tourné vers son côté : la préparation de la recette ne s'applique qu'aux photos plates."""
+    brut, images = _brut(tmp_path)
+    petites = []
+    for i in images:
+        with Image.open(brut / i.chemin) as im:
+            im.resize((36, 24)).save(brut / i.chemin)
+        petites.append(ImageBrute(i.chemin, i.ville, i.groupe, i.cote, i.n, i.forme, 36, 24))
+    recette = Recette(cote="droite", tache="nombre", preparation="masque", type_image="recadrage", reequilibrage={"actif": False})
+    construire(brut, planifier(petites, recette), recette, tmp_path / "v")
+    with Image.open(Variante(tmp_path / "v").echantillons("train")[0].fichier) as im:
+        assert im.size == (36, 24) and im.getpixel((3, 3))[0] > 0  # ni coupée, ni noircie

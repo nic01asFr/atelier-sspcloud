@@ -47,13 +47,12 @@ def test_une_image_a_deux_etiquettes_compte_dans_nombre_et_dans_forme() -> None:
     assert {e.classe for e in forme} == {"bataille", "longitudinal"}
 
 
-def test_les_panoramiques_se_filtrent() -> None:
-    images = _images() + [_i("pano", "g0", "droite", n=0, taille=(120, 30))]
-    assert any(e.image.panoramique for e in etiqueter(images, Recette(cote="droite", tache="nombre"))[0])
-    garde, ecartes = etiqueter(images, Recette(cote="droite", tache="nombre", panoramiques="exclure"))
-    assert not any(e.image.panoramique for e in garde) and ecartes["panoramique exclue"] == 1
-    seules, ecartes = etiqueter(images, Recette(cote="droite", tache="nombre", panoramiques="seulement"))
-    assert [e.image.chemin for e in seules] == ["V/g0/droite/pano.jpeg"] and ecartes["non panoramique exclue"] > 0
+def test_les_types_d_image_se_filtrent() -> None:
+    images = _images() + [_i("plate", "g0", "droite", n=0, taille=(1600, 30))]
+    garde, ecartes = etiqueter(images, Recette(cote="droite", tache="nombre", type_image="recadrage"))
+    assert not any(e.image.plate for e in garde) and ecartes["photo plate écartée"] == 1
+    seules, ecartes = etiqueter(images, Recette(cote="droite", tache="nombre", type_image="plate"))
+    assert [e.image.chemin for e in seules] == ["V/g0/droite/plate.jpeg"] and ecartes["recadrage écarté"] > 0
 
 
 def test_les_corrections_changent_une_classe_ou_ecartent_une_image(tmp_path: Path) -> None:

@@ -47,16 +47,16 @@ def test_le_resume_compte(tmp_path: Path) -> None:
     assert resume["par_cote"] == {"droite": 3, "gauche": 2}
     assert resume["par_nombre"] == {"0": 1, "1": 2, "4": 1, "—": 1}
     assert resume["par_forme"] == {"bataille": 1, "longitudinal": 1, "—": 3}
-    assert resume["panoramiques"] == 0
+    assert resume["plates"] == 0 and resume["recadrages"] == 5
 
 
-def test_une_image_tres_large_est_panoramique(tmp_path: Path) -> None:
+def test_une_photo_pleine_resolution_est_plate_le_reste_est_un_recadrage(tmp_path: Path) -> None:
     b = tmp_path / "brut"
-    _img(b, "V/a/b/droite/0/large.jpeg", taille=(100, 30))
-    _img(b, "V/a/b/droite/0/normale.jpeg", taille=(36, 24))
+    _img(b, "V/a/b/droite/0/plate.jpeg", taille=(1600, 30))
+    _img(b, "V/a/b/droite/0/recadrage.jpeg", taille=(36, 24))
     r = scanner(b)
-    assert {i.chemin.rsplit("/", 1)[1]: i.panoramique for i in r.images} == {"large.jpeg": True, "normale.jpeg": False}
-    assert r.resume()["panoramiques"] == 1
+    assert {i.chemin.rsplit("/", 1)[1]: i.plate for i in r.images} == {"plate.jpeg": True, "recadrage.jpeg": False}
+    assert r.resume()["plates"] == 1 and r.resume()["recadrages"] == 1
 
 
 def test_ce_qui_ne_rentre_pas_est_signale_et_non_classe_au_hasard(tmp_path: Path) -> None:

@@ -90,7 +90,7 @@ def construire(
             cible = provisoire / relatif
             cible.parent.mkdir(parents=True, exist_ok=True)
             with Image.open(brut / i.chemin) as im:
-                preparer(im, i.cote, recette.preparation).save(cible, "JPEG", quality=QUALITE_JPEG)
+                (preparer(im, i.cote, recette.preparation) if i.plate else im.convert("RGB")).save(cible, "JPEG", quality=QUALITE_JPEG)
             lignes.append({"fichier": relatif, "jeu": l.jeu, "classe": l.etiquetee.classe, "groupe": i.groupe, "source": i.chemin})
             if progression and (n % 25 == 0 or n == total):
                 progression(n, total)

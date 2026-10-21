@@ -102,3 +102,5 @@ Les données d'origine (gpkg par ville + dossier « ANNOTE download and crop Pan
 - **Photos plates** (≈ 750 images, 2048×1536, `panoramique = 0`, fov 92) : prises vers l'avant. **Le même fichier** est rangé sous `droite/` et `gauche/`, avec des étiquettes distinctes : le côté n'en est qu'une moitié. On n'y qualifie que cette moitié (l'autre est assombrie à l'écran).
 
 La consigne d'origine demandait déjà un traitement séparé (modèles panoramique / non panoramique, masquage de l'autre côté pour les non panoramiques). Conséquence : le rognage/masquage des recettes ne vaut que pour les photos plates ; les conclusions « rognage contre masque » faites sur l'ensemble sont à refaire par type d'image.
+
+**Mise en œuvre (recettes).** Le filtre « vues panoramiques » (fondé sur le rapport largeur/hauteur, qui ne trouvait rien) est remplacé par `type_image` : `recadrage` (= « panoramique » de la consigne), `plate` (= « non panoramique ») ou `tous`. La préparation (rognage, masque) ne s'applique qu'aux photos plates ; un recadrage est pris en entier.
