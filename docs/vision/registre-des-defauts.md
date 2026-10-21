@@ -829,6 +829,13 @@ produit.
   n'est dit qu'après coup. **À faire** : règles par commande pour l'`exec` d'Onyxia (préfixe `labo/api.sh GET`, `labo/resume.py`, lecture seule),
   rendues au CLI dans sa syntaxe ; le refus des arguments inconnus par `atelier_suivre` et les outils de pilotage ; la consigne « n'attends pas toi-même » dans le contexte des agents lancés.
 
+- **D-85 (G) — Le watchdog d'Onyxia coupe aussi le pod pendant que des personnes valident.** Même cause que D-81 : en validation humaine,
+  aucun essai ne tourne, le GPU est au repos, et le serveur coupe le pod après 30 minutes — en pleine séance, avec la page qui meurt sous les
+  mains du valideur. **Fait côté laboratoire** : tant qu'une requête de validation (`/api/validation/…`, images du brut) date de moins de
+  10 minutes, le travailleur fait battre le GPU (10 s toutes les 30 s, plus fort que le battement d'essai, parce qu'on ignore si le serveur
+  échantillonne l'utilisation ou la moyenne) ; le simple rafraîchissement du tableau de bord (`/api/pod`) ne compte pas. Reste le même remède
+  côté serveur qu'en D-81 ; l'efficacité du battement sur 30 minutes n'est **pas encore vérifiée** (à constater : le pod survit-il à une séance ?).
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue

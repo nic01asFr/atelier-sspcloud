@@ -149,6 +149,32 @@ def test_le_battement_n_a_lieu_que_tant_qu_un_essai_tourne(racine: Racine, regis
     exe.arreter(ident)
 
 
+def test_pendant_une_seance_de_validation_le_pod_reste_eveille_sans_essai(racine: Racine, registre: Registre) -> None:
+    """Aucun essai ne tourne quand des personnes valident : sans battement, le serveur couperait le pod en pleine séance."""
+    exe = Executeur(racine, registre)
+    longs, courts = [], []
+    t, present = [0.0], [False]
+    travailleur = Travailleur(
+        registre, exe, battement=lambda: courts.append(1), intervalle_battement=100.0, horloge=lambda: t[0],
+        activite_humaine=lambda: present[0], battement_humain=lambda: longs.append(1), intervalle_humain=30.0,
+    )
+    travailleur.tick()
+    assert longs == [] and courts == []  # personne ici, aucun essai : le pod peut se reposer
+    present[0] = True
+    travailleur.tick()
+    assert longs == [1] and courts == []  # c'est le battement de séance, pas celui d'essai
+    t[0] = 10.0
+    travailleur.tick()
+    assert longs == [1]  # pas avant l'intervalle
+    t[0] = 40.0
+    travailleur.tick()
+    assert longs == [1, 1]
+    present[0] = False  # plus personne depuis un moment : on cesse
+    t[0] = 200.0
+    travailleur.tick()
+    assert longs == [1, 1]
+
+
 def test_un_battement_qui_echoue_ne_tue_pas_l_essai(racine: Racine, registre: Registre) -> None:
     faire_variante(racine)
     exe = Executeur(racine, registre)

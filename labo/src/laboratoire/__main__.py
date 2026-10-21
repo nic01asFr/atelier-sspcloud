@@ -7,6 +7,7 @@ de l'Atelier. Sans cela, n'importe quel pod du namespace pourrait lancer et arr�
 from __future__ import annotations
 
 import argparse
+import functools
 import ipaddress
 import os
 import sys
@@ -43,7 +44,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"refus : écouter sur {args.hote} sans jeton (LABO_JETON) ouvrirait le laboratoire à tout le namespace", file=sys.stderr)
         return 2
     brut = os.environ.get("LABO_BRUT")
-    app = creer_app(Racine(Path(args.racine), Path(brut) if brut else None), jeton=jeton, battement=None if args.sans_battement else battre)
+    app = creer_app(
+        Racine(Path(args.racine), Path(brut) if brut else None), jeton=jeton, battement=None if args.sans_battement else battre,
+        battement_humain=None if args.sans_battement else functools.partial(battre, 10.0),
+    )
     uvicorn.run(app, host=args.hote, port=args.port, log_level="info")
     return 0
 
