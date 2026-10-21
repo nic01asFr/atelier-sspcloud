@@ -27,11 +27,13 @@ from pydantic import BaseModel
 
 from laboratoire.adaptateurs import adaptateur as obtenir_adaptateur
 from laboratoire.api_donnees import monter_donnees
+from laboratoire.api_validation import monter_validation
 from laboratoire.executeur import Executeur
 from laboratoire.modeles import ConfigEssai
 from laboratoire.projet import Racine, identifiant_sur
 from laboratoire.registre import EssaiInconnu, Registre, TransitionRefusee
 from laboratoire.travailleur import Travailleur
+from laboratoire.validation.journal import Journal
 from laboratoire.variante import Variante, VarianteInvalide
 
 WEB = Path(__file__).parent / "web"
@@ -112,6 +114,7 @@ def creer_app(
     battement: Callable[[], Any] | None = None,
 ) -> FastAPI:
     registre = Registre(racine.base)
+    decisions = Journal(racine.chemin / "donnees" / "validation.db")  # (pas « journal » : une route d'essai porte ce nom)
     executeur = Executeur(racine, registre)
     travailleur = Travailleur(registre, executeur, battement=battement)
 
@@ -125,6 +128,7 @@ def creer_app(
             if demarrer_travailleur:
                 travailleur.arreter()
             registre.fermer()
+            decisions.fermer()
 
     app = FastAPI(title="Laboratoire d'essais", lifespan=cycle, docs_url="/api/docs" if jeton is None else None, redoc_url=None, openapi_url=None if jeton else "/api/openapi.json")
     app.state.registre, app.state.executeur, app.state.travailleur, app.state.racine = registre, executeur, travailleur, racine
@@ -276,7 +280,8 @@ def creer_app(
 
     # -- jeux de données -------------------------------------------------
 
-    monter_donnees(app, racine, ident)
+    brut = monter_donnees(app, racine, ident, decisions)
+    monter_validation(app, racine, ident, decisions, brut)
 
     @app.get("/api/variantes")
     def variantes() -> list[dict[str, Any]]:

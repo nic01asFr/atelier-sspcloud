@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from laboratoire.donnees.brut import ImageBrute
 from laboratoire.donnees.decoupage import JEUX, decouper_par_groupes
 from laboratoire.empreinte import empreinte
+from laboratoire.validation.journal import Decision
 
 
 class Decoupage(BaseModel):
@@ -69,8 +70,15 @@ class Etiquetee:
     classe: str
 
 
-def etiqueter(images: list[ImageBrute], recette: Recette, corrections: dict[str, str | None] | None = None) -> tuple[list[Etiquetee], dict[str, int]]:
-    """Filtre, étiquette, regroupe, corrige. Rend les images retenues et le décompte de ce qui a été écarté (et pourquoi)."""
+def etiqueter(
+    images: list[ImageBrute], recette: Recette, corrections: dict[str, str | None] | None = None,
+    validations: dict[str, Decision] | None = None,
+) -> tuple[list[Etiquetee], dict[str, int]]:
+    """Filtre, étiquette, regroupe, corrige. Rend les images retenues et le décompte de ce qui a été écarté (et pourquoi).
+
+    `corrections` : le fichier `corrections.csv` (une classe pour la tâche en cours, ou écartée). `validations` : les décisions humaines
+    du journal, qui portent le nombre **et** la forme ; elles passent en dernier et l'emportent.
+    """
     ecartes: dict[str, int] = defaultdict(int)
     sortie: list[Etiquetee] = []
     for i in images:
@@ -82,17 +90,23 @@ def etiqueter(images: list[ImageBrute], recette: Recette, corrections: dict[str,
         if recette.panoramiques == "seulement" and not i.panoramique:
             ecartes["non panoramique exclue"] += 1
             continue
+        v = validations.get(i.chemin) if validations is not None else None
+        if v is not None and v.douteuse:
+            ecartes["étiquette douteuse écartée"] += 1
+            continue
         if recette.tache == "nombre":
-            if i.n is None:
+            n = v.nombre if v is not None and v.nombre is not None else i.n  # la décision humaine l'emporte sur l'étiquette d'origine
+            if n is None:
                 ecartes["sans nombre de places"] += 1
                 continue
-            classe = str(min(i.n, recette.plafond_nombre) if recette.plafond_nombre else i.n)
+            classe = str(min(n, recette.plafond_nombre) if recette.plafond_nombre else n)
         else:
-            if i.forme is None:
+            forme = (v.forme if v.forme != "aucune" else None) if v is not None and v.forme is not None else i.forme
+            if forme is None:
                 ecartes["sans forme"] += 1
                 continue
-            classe = i.forme
-        if corrections is not None and i.chemin in corrections:
+            classe = forme
+        if v is None and corrections is not None and i.chemin in corrections:
             decision = corrections[i.chemin]
             if decision is None:
                 ecartes["étiquette douteuse écartée"] += 1
@@ -147,9 +161,12 @@ class Plan:
         return {j: len({g for g, jeu in self.affectation.items() if jeu == j}) for j in JEUX}
 
 
-def planifier(images: list[ImageBrute], recette: Recette, corrections: dict[str, str | None] | None = None) -> Plan:
+def planifier(
+    images: list[ImageBrute], recette: Recette, corrections: dict[str, str | None] | None = None,
+    validations: dict[str, Decision] | None = None,
+) -> Plan:
     """Tout ce que fera la recette, sans écrire une image : sert à l'aperçu immédiat et à la construction."""
-    etiquetees, ecartes = etiqueter(images, recette, corrections if recette.corrections else None)
+    etiquetees, ecartes = etiqueter(images, recette, corrections if recette.corrections else None, validations if recette.corrections else None)
     comptes: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for e in etiquetees:
         comptes[e.image.groupe][e.classe] += 1

@@ -1,6 +1,8 @@
 # La validation humaine : une boucle qui fait grandir le jeu de données
 
-*Conception — 21 octobre 2026. Prolonge [le laboratoire d'essais](banc-d-essai-ml.md). Rien de ce document n'est encore construit.*
+*Conception — 21 octobre 2026, mise à jour le même jour avec vos réponses. Prolonge [le laboratoire d'essais](banc-d-essai-ml.md). Le lot V1 est construit (voir §8).*
+
+**Décisions de la personne :** plusieurs valideurs ; ce qu'on valide est **le nombre de places de stationnement perçues** (de ce côté de la rue) et **la forme du stationnement** (aucune, bataille, longitudinal).
 
 ## 1. Le problème qu'on résout
 
@@ -84,6 +86,10 @@ Dans le **laboratoire** (même service, même jeton, même page), onglets **Vali
 
 ## 9. Ce qu'on ne sait pas encore
 
-- **Combien de validateurs**, et sous quels noms : un seul (vous) ou plusieurs ?
-- **La définition de « 1 place »** : une place seule, ou « moins de 2 » ? C'est la première chose à fixer avant d'étiqueter davantage.
+- **L'identité des valideurs** : le nom est déclaré (il n'est pas un mot de passe) et l'accès reste protégé par le jeton commun. Si les valideurs doivent être authentifiés un par un, c'est un chantier à part (les noms du journal ne prouvent rien).
+- **Les cas limites du « nombre perçu »** : une place partiellement masquée, un véhicule à cheval sur deux places. À écrire dans une consigne de validation, avec des exemples, avant que plusieurs personnes étiquettent ; sinon l'accord entre valideurs mesurera surtout nos consignes.
 - **Panoramax** : l'accès aux images par `url` depuis le pod GPU n'est pas vérifié.
+
+## 10. État du lot V1 (21 octobre)
+
+Construit et testé : le journal (déclencheurs SQL qui refusent toute modification ou suppression), les files `audit_classe_1` et `tirage_au_hasard`, la séquence voisine d'une image, les routes (`/api/validation/…`, `/api/brut/image` qui ne sort pas du brut), l'écran **Valider** au clavier avec étiquette d'origine cachée par défaut, l'annulation, et l'effet des décisions sur les variantes (une décision nouvelle donne une variante nouvelle). Les décisions humaines l'emportent sur l'étiquette d'origine dans les recettes ; un désaccord entre valideurs n'est pas retenu.

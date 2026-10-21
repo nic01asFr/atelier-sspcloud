@@ -174,3 +174,68 @@ def test_connexion_depuis_un_navigateur_avec_le_jeton(racine: Racine) -> None:
         srv.should_exit = True
         fil.join(timeout=10)
     assert erreurs == []
+
+
+def test_valider_au_clavier_nombre_forme_annulation_et_aveugle(racine: Racine) -> None:
+    """Le parcours complet d'un valideur : nom, une image, touches 0 / 2+B / D / Z, étiquette d'origine cachée par défaut."""
+    from PIL import Image
+
+    if _chromium() is None:
+        pytest.skip("pas de Chromium")
+    for g in range(2):
+        for n in (0, 1, 2):
+            for k in range(4):
+                f = racine.brut / f"V/g{g}/x/droite/{n}/{k + 1:03d}.jpeg"
+                f.parent.mkdir(parents=True, exist_ok=True)
+                Image.new("RGB", (60, 40), (n * 90, 60, 60)).save(f)
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    app = creer_app(racine, demarrer_travailleur=False)
+    srv = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error"))
+    fil = threading.Thread(target=srv.run, daemon=True)
+    fil.start()
+    fin = time.monotonic() + 10
+    while not srv.started and time.monotonic() < fin:
+        time.sleep(0.05)
+    base = f"http://127.0.0.1:{port}"
+    erreurs: list[str] = []
+
+    try:
+        with playwright.sync_playwright() as p:
+            navigateur = p.chromium.launch(executable_path=_chromium())
+            page = navigateur.new_page()
+            page.on("pageerror", lambda e: erreurs.append(str(e)))
+            page.goto(f"{base}/#/valider")
+            page.fill("#nom-valideur", "Alice")
+            page.click("button[type=submit]")
+            page.wait_for_selector("#image-courante")
+            assert page.locator("#ancien").count() == 0  # à l'aveugle par défaut : l'étiquette d'origine est cachée
+            premiere = page.get_attribute("#image-courante", "src")
+            page.keyboard.press("0")  # aucune place : validé tout de suite
+            page.wait_for_function("(avant) => document.querySelector('#image-courante').getAttribute('src') !== avant", arg=premiere)
+            deuxieme = page.get_attribute("#image-courante", "src")
+            page.keyboard.press("2")
+            page.keyboard.press("b")  # 2 places en bataille : validé
+            page.wait_for_function("(avant) => document.querySelector('#image-courante').getAttribute('src') !== avant", arg=deuxieme)
+            troisieme = page.get_attribute("#image-courante", "src")
+            page.keyboard.press("d")
+            page.wait_for_function("(avant) => document.querySelector('#image-courante').getAttribute('src') !== avant", arg=troisieme)
+            page.keyboard.press("z")  # annule la douteuse : on revoit la troisième
+            page.wait_for_function("(avant) => document.querySelector('#image-courante').getAttribute('src') === avant", arg=troisieme)
+            page.keyboard.press("v")  # montrer l'étiquette d'origine
+            page.wait_for_selector("#ancien")
+            page.click("#bascule-aveugle")
+            page.wait_for_selector("#ancien", state="detached")
+            navigateur.close()
+        import json
+        import urllib.request
+
+        stats = json.loads(urllib.request.urlopen(f"{base}/api/validation/stats").read())
+        assert stats["decisions"] == 2 and stats["par_valideur"] == {"Alice": 2} and stats["douteuses"] == 0  # 0 et 2+B ; la douteuse est annulée
+        export = urllib.request.urlopen(f"{base}/api/validation/export").read().decode().splitlines()
+        assert len(export) == 3 and any(l.endswith(",0,aucune,0") for l in export) and any(l.endswith(",2,bataille,0") for l in export)
+    finally:
+        srv.should_exit = True
+        fil.join(timeout=10)
+    assert erreurs == []
