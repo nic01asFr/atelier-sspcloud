@@ -177,7 +177,7 @@ def test_connexion_depuis_un_navigateur_avec_le_jeton(racine: Racine) -> None:
 
 
 def test_valider_au_clavier_nombre_forme_annulation_et_aveugle(racine: Racine) -> None:
-    """Le parcours complet d'un valideur : nom, une image, touches 0 / 2+B / D / Z, étiquette d'origine cachée par défaut."""
+    """(photos plates) Le parcours complet d'un valideur : nom, une image, touches 0 / 2+B / D / Z, étiquette d'origine cachée par défaut."""
     from PIL import Image
 
     if _chromium() is None:
@@ -187,7 +187,7 @@ def test_valider_au_clavier_nombre_forme_annulation_et_aveugle(racine: Racine) -
             for k in range(4):
                 f = racine.brut / f"V/g{g}/x/droite/{n}/{k + 1:03d}.jpeg"
                 f.parent.mkdir(parents=True, exist_ok=True)
-                Image.new("RGB", (60, 40), (n * 90, 60, 60)).save(f)
+                Image.new("RGB", (1600, 100), (n * 90, 60, 60)).save(f)
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         port = s.getsockname()[1]

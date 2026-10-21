@@ -228,3 +228,9 @@ def test_une_requete_de_validation_tient_le_pod_eveille_pas_une_simple_sante(rac
         assert humain_present() is False
         c.get("/api/validation/files")
         assert humain_present() is True
+
+
+def test_l_ecran_sait_si_l_image_est_un_recadrage_ou_une_photo_plate(client: TestClient) -> None:
+    """Les images de 60×40 du jeu d'essai sont des recadrages (déjà tournés vers leur côté) : on les qualifie en entier."""
+    items = client.get("/api/validation/file", params={"validateur": "Alice"}).json()["items"]
+    assert items and {i["type_image"] for i in items} == {"recadrage"}

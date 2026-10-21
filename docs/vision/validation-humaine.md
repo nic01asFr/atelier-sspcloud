@@ -93,3 +93,12 @@ Dans le **laboratoire** (même service, même jeton, même page), onglets **Vali
 ## 10. État du lot V1 (21 octobre)
 
 Construit et testé : le journal (déclencheurs SQL qui refusent toute modification ou suppression), les files `audit_classe_1` et `tirage_au_hasard`, la séquence voisine d'une image, les routes (`/api/validation/…`, `/api/brut/image` qui ne sort pas du brut), l'écran **Valider** au clavier avec étiquette d'origine cachée par défaut, l'annulation, et l'effet des décisions sur les variantes (une décision nouvelle donne une variante nouvelle). Les décisions humaines l'emportent sur l'étiquette d'origine dans les recettes ; un désaccord entre valideurs n'est pas retenu.
+
+## 11. Deux sortes d'images dans le brut (constaté le 21 octobre)
+
+Les données d'origine (gpkg par ville + dossier « ANNOTE download and crop Panoramiques ») mélangent deux choses, qu'on lit à la taille du fichier (`ImageBrute.plate`, seuil 1500 px) et dans le gpkg (`panoramique`, `fov_panoramax`) :
+
+- **Recadrages** (≈ 1021 images, 768×512, `panoramique = 1`, fov 360) : extraits d'une vue panoramique, **déjà tournés vers un côté**. Un fichier différent par côté. On qualifie **toute l'image**.
+- **Photos plates** (≈ 750 images, 2048×1536, `panoramique = 0`, fov 92) : prises vers l'avant. **Le même fichier** est rangé sous `droite/` et `gauche/`, avec des étiquettes distinctes : le côté n'en est qu'une moitié. On n'y qualifie que cette moitié (l'autre est assombrie à l'écran).
+
+La consigne d'origine demandait déjà un traitement séparé (modèles panoramique / non panoramique, masquage de l'autre côté pour les non panoramiques). Conséquence : le rognage/masquage des recettes ne vaut que pour les photos plates ; les conclusions « rognage contre masque » faites sur l'ensemble sont à refaire par type d'image.

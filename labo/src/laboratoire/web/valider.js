@@ -88,13 +88,16 @@ async function pageValider(zone) {
       corps.replaceChildren(h("div", { class: "carte vide large", style: "grid-column:1/-1" }, h("h2", {}, "File terminée"), h("p", {}, `Vous avez traité les ${total} images de cette file. Merci.`), h("p", { class: "doux" }, fichierInfos ? fichierInfos.description : "")));
       return;
     }
-    // La zone à qualifier est la moitié du côté indiqué ; l'autre moitié est assombrie (une voiture de l'autre côté de la rue ne compte pas).
-    const hors = h("div", { class: `zone-hors ${courant.cote}`, "aria-hidden": "true" }, h("span", {}, "hors sujet"));
-    const concerne = h("div", { class: `zone-concernee ${courant.cote}`, "aria-hidden": "true" }, h("span", {}, `côté ${courant.cote} : à qualifier`));
-    const grande = h("figure", {}, h("div", { class: "cadre" }, h("img", { id: "image-courante", alt: `Image à valider, côté ${courant.cote}`, src: urlImage(courant.image, { largeur: 1000 }) }), hors, concerne),
-      h("figcaption", {}, h("strong", {}, `On qualifie uniquement le côté ${courant.cote.toUpperCase()} de la rue`), " (zone claire) — la zone assombrie est hors sujet. ", `Collection ${courant.groupe.split("/").slice(-1)[0].slice(0, 12)}…`));
+    // Photo plate (vers l'avant) : le côté est la MOITIÉ de la photo, l'autre moitié est assombrie (une voiture de l'autre côté ne compte pas).
+    // Recadrage (extrait d'une vue panoramique, déjà tourné vers son côté) : toute l'image est le côté, rien à assombrir.
+    const plate = courant.type_image === "plate";
+    const calques = plate ? [h("div", { class: `zone-hors ${courant.cote}`, "aria-hidden": "true" }, h("span", {}, "hors sujet")), h("div", { class: `zone-concernee ${courant.cote}`, "aria-hidden": "true" }, h("span", {}, `côté ${courant.cote} : à qualifier`))] : [];
+    const grande = h("figure", {}, h("div", { class: "cadre" }, h("img", { id: "image-courante", "data-type": courant.type_image, alt: `Image à valider, côté ${courant.cote}`, src: urlImage(courant.image, { largeur: 1000 }) }), ...calques),
+      h("figcaption", {}, plate
+        ? [h("strong", {}, `On qualifie uniquement le côté ${courant.cote.toUpperCase()} de la rue`), " (zone claire) — la zone assombrie est hors sujet. "]
+        : [h("strong", {}, `Recadrage déjà tourné vers le côté ${courant.cote.toUpperCase()}`), " (extrait d'une vue panoramique) : on qualifie toute l'image. "], `Collection ${courant.groupe.split("/").slice(-1)[0].slice(0, 12)}…`));
     const vignette = (titre, chemin, options) => h("figure", {}, chemin ? h("img", { alt: titre, src: urlImage(chemin, { largeur: 320, ...options }) }) : h("div", { class: "doux", style: "aspect-ratio:3/2;display:grid;place-items:center;border:1px dashed var(--bord);border-radius:6px" }, "—"), h("figcaption", {}, titre));
-    const gauche = h("div", {}, grande, h("div", { class: "vignettes" }, vignette(`La zone claire, agrandie : ce que voit le modèle (côté ${courant.cote})`, courant.image, { rognage: "1" }), vignette("Image précédente de la séquence", courant.avant), vignette("Image suivante", courant.apres)));
+    const gauche = h("div", {}, grande, h("div", { class: "vignettes" }, (plate ? vignette(`La zone claire, agrandie : ce que voit le modèle (côté ${courant.cote})`, courant.image, { rognage: "1" }) : null), vignette("Image précédente de la séquence", courant.avant), vignette("Image suivante", courant.apres)));
     const ancien = aveugle ? null : h("div", { class: "ancien", id: "ancien" }, `Étiquette d'origine : ${courant.ancien.nombre ?? "?"} place(s), forme ${courant.ancien.forme}. `, h("kbd", {}, "Espace"), " la confirme.");
     const droite = h("div", { class: "carte" },
       h("div", {}, h("strong", {}, `${faites} / ${total}`), " images de cette file", h("div", { class: "progression", role: "progressbar", "aria-valuenow": part, "aria-valuemin": 0, "aria-valuemax": 100 }, h("b", { style: `width:${part}%` }))),
