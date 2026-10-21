@@ -111,3 +111,22 @@ svg .axe { stroke: var(--bord); } svg .serie { fill: none; stroke-width: 2; }
 .filtres { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: .75rem; align-items: end; }
 .filtres .champ { min-width: 9rem; }
 input[type="checkbox"] { width: auto; margin-right: .35rem; }
+
+/* valider */
+.valider { display: grid; gap: 1rem; grid-template-columns: minmax(0, 2fr) minmax(16rem, 1fr); align-items: start; }
+@media (max-width: 900px) { .valider { grid-template-columns: 1fr; } }
+.valider figure { margin: 0; }
+.valider figure img { display: block; width: 100%; height: auto; border-radius: 6px; background: #000; }
+.valider figcaption { font-size: .8rem; color: var(--doux); margin-top: .25rem; }
+.vignettes { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); margin-top: .75rem; }
+.vignettes img { aspect-ratio: 3 / 2; object-fit: cover; }
+.touches { display: flex; flex-wrap: wrap; gap: .4rem; margin: .4rem 0 .9rem; }
+.touches button { min-width: 2.6rem; padding: .55rem .7rem; font-weight: 650; font-size: 1.05rem; }
+.touches button[aria-pressed="true"] { background: var(--accent-fond); border-color: var(--accent); color: var(--accent); }
+.ancien { padding: .5rem .7rem; border-radius: 6px; background: var(--alerte-fond); color: var(--alerte); margin-bottom: .8rem; }
+.progression { height: .5rem; border-radius: 999px; background: var(--fond); border: 1px solid var(--bord); overflow: hidden; margin: .4rem 0 .2rem; }
+.progression b { display: block; height: 100%; background: var(--accent); }
+kbd { font: .8rem var(--mono); padding: .05rem .35rem; border: 1px solid var(--bord); border-bottom-width: 2px; border-radius: 4px; background: var(--carte); }
+.aide-touches { display: grid; grid-template-columns: max-content 1fr; gap: .2rem .7rem; font-size: .88rem; margin: 0; }
+.aide-touches dd { margin: 0; color: var(--doux); }
+.valider #image-courante { max-height: 56vh; width: auto; max-width: 100%; margin: 0 auto; }

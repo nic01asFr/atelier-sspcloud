@@ -18,7 +18,9 @@ from laboratoire.donnees.brut import RapportBrut, scanner
 from laboratoire.donnees.construction import ConstructionRefusee, construire, lignes_de_controle, nom_sur
 from laboratoire.donnees.controles import bloquants, controler
 from laboratoire.donnees.recette import Recette, lire_corrections, planifier
+from laboratoire.empreinte import empreinte
 from laboratoire.projet import Racine
+from laboratoire.validation.journal import Journal
 from laboratoire.variante import JEUX, Variante, VarianteInvalide
 
 MAX_IMAGES = 200
@@ -31,7 +33,7 @@ class Correction(BaseModel):
     note: str = ""
 
 
-def monter_donnees(app: FastAPI, racine: Racine, ident: Callable[[str], str]) -> None:
+def monter_donnees(app: FastAPI, racine: Racine, ident: Callable[[str], str], journal: Journal) -> Callable[[], RapportBrut]:
     verrou = threading.Lock()
     cache: dict[str, Any] = {}
     constructions: dict[str, dict[str, Any]] = {}  # id → {fait, total, erreur}
@@ -51,11 +53,20 @@ def monter_donnees(app: FastAPI, racine: Racine, ident: Callable[[str], str]) ->
         return {"resume": r.resume(), "anomalies": r.anomalies[:200], "dossier": str(racine.brut)}
 
     def plan_de(recette: Recette):
-        corrections = lire_corrections(racine.corrections)
-        return planifier(brut().images, recette, corrections)
+        return planifier(brut().images, recette, lire_corrections(racine.corrections), journal.retenues())
 
     def id_de(recette: Recette) -> str:
-        return f"{nom_sur(recette.nom)[:30] + '-' if recette.nom else 'v-'}{recette.empreinte()[:8]}"
+        """Même recette, mêmes corrections et mêmes décisions → même variante. Une décision nouvelle donne une variante nouvelle (suffixe)."""
+        base = f"{nom_sur(recette.nom)[:30] + '-' if recette.nom else 'v-'}{recette.empreinte()[:8]}"
+        if not recette.corrections:
+            return base
+        etat = {
+            "corrections": sorted((k, v) for k, v in lire_corrections(racine.corrections).items()),
+            "validations": sorted((k, d.nombre, d.forme, d.douteuse) for k, d in journal.retenues().items()),
+        }
+        if not etat["corrections"] and not etat["validations"]:
+            return base
+        return f"{base}-c{empreinte(etat)[:6]}"
 
     @app.post("/api/variantes/apercu")
     def apercu(recette: Recette) -> dict[str, Any]:
@@ -207,3 +218,5 @@ def monter_donnees(app: FastAPI, racine: Racine, ident: Callable[[str], str]) ->
                     w.writeheader()
                 w.writerow({"chemin": c.chemin, "decision": c.decision.strip(), "note": c.note})
         return {"enregistre": True, "effet": "pris en compte par les prochaines variantes dont la recette garde « corrections »"}
+
+    return brut
