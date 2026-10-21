@@ -806,6 +806,29 @@ produit.
   ne coupe jamais un pod qui exécute un travail ni ne contourne `idle_minutes` (décision de la personne : pas pour l'instant),
   ou à défaut `PASSERELLE_GPU_IDLE_MIN` très haut.
 
+- **D-82 (M) — Une erreur d'argument sort en « INTERNAL — KeyError: 'code' », et une fausse alerte a fait le tour de deux agents.**
+  Le 20/10, j'ai appelé l'outil `exec` d'Onyxia avec un champ `command` au lieu de `code` (je n'avais pas chargé son schéma : l'outil
+  était différé). Le serveur a répondu `INTERNAL`, `KeyError: 'code'`, « Voir les logs serveur » : rien n'indiquait un argument manquant.
+  Conclusion fausse de ma part (« exec est en panne »), signalée à l'agent du service Onyxia, qui a perdu du temps à enquêter ; sa lecture
+  du code (un seul `args["code"]`, `tools.py`) était juste. **Leçons.** (1) Côté serveur : un argument manquant doit rendre une erreur
+  d'argument qui nomme les champs attendus (`MISSING_ARGUMENT`), pas `INTERNAL` (proposé par l'agent du service, en attente de la
+  personne). (2) Côté Atelier et pilotage : avant de conclure à une panne d'un outil, vérifier un appel minimal avec le schéma chargé ;
+  un tel diagnostic part ensuite chez un autre agent, il doit être vérifié d'abord. (3) Pour les agents : `exec` prend `code` et `lang`.
+
+- **D-83 (M) — Défauts relevés en construisant le laboratoire d'essais** (traités dans `labo/`, voir `docs/vision/banc-d-essai-ml.md`) :
+  `python -m laboratoire` ignorait `LABO_BRUT` (corrigé, PR 51) ; lancer un essai sur une variante encore en construction répond « pas de
+  manifeste.csv » au lieu de « en cours de construction » ; les copies de rééquilibrage sont de vraies copies de fichiers (hardlinks à
+  prévoir) ; les trois variantes de la première série pèsent 705 Mo (JPEG qualité 95, pleine taille) — le volume du pod est de 20 Go.
+
+- **D-84 (M) — Piloter un agent par l'Atelier coûte une autorisation par lecture, et le suivi renvoie tout l'historique.** Constaté le 21/10
+  en pilotant l'agent de Classification sur le laboratoire d'essais. (1) Chaque `exec` d'Onyxia redemande l'accord (la seule règle proposée
+  par le CLI est « tout l'outil », jamais une commande) : 8 essais lus = une dizaine de demandes, chacune en deux appels (aperçu, puis
+  confirmation). (2) La demande s'affichait « Exec » sans la commande (le résumé ne lisait pas le champ `code`) — **corrigé**
+  (`decisions._CHAMPS_DE_L_ACTION`). (3) *Fausse piste, retirée* : je croyais que `atelier_suivre` ne savait pas avancer (le curseur « plafonnait à 400 ») ; en fait son paramètre s'appelle `curseur`, et j'avais passé `depuis`, qu'il ignore en silence — d'où l'historique entier à chaque appel (≈ 7 000 jetons). Reste : un argument inconnu devrait être refusé, comme l'`exec` d'Onyxia aurait dû refuser le sien (D-82) — même famille de défaut : **un outil qui ignore ou digère mal un argument mal nommé, sans le dire**. (4) Un agent supervisé fait de lui-même
+  des attentes actives (`sleep 120`, boucle de fond sur un fichier inexistant) qui coûtent une autorisation chacune ; le plafond de 40 s d'`exec`
+  n'est dit qu'après coup. **À faire** : règles par commande pour l'`exec` d'Onyxia (préfixe `labo/api.sh GET`, `labo/resume.py`, lecture seule),
+  rendues au CLI dans sa syntaxe ; le refus des arguments inconnus par `atelier_suivre` et les outils de pilotage ; la consigne « n'attends pas toi-même » dans le contexte des agents lancés.
+
 ## 5. Déjà corrigés (pour mémoire)
 
 Livrés et fusionnés avant ce relevé : les trois failles de sécurité de la revue

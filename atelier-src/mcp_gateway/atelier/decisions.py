@@ -396,7 +396,8 @@ def reponse_refusee(motif: str = "") -> dict[str, Any]:
 
 # Ce qu'on met sous les yeux de la personne, et de l'agent à la reprise : la
 # commande ou le fichier, pas un dictionnaire.
-_CHAMPS_DE_L_ACTION = ("command", "file_path", "path", "url", "notebook_path", "pattern", "query")
+# `code` : l'`exec` d'Onyxia (sans lui, la demande s'affichait « Exec » tout court, sans la commande à autoriser).
+_CHAMPS_DE_L_ACTION = ("command", "code", "file_path", "path", "url", "notebook_path", "pattern", "query")
 LONGUEUR_DE_L_ACTION = 220
 MARQUE_DE_L_ATELIER = "[Atelier]"
 
