@@ -824,11 +824,10 @@ produit.
   en pilotant l'agent de Classification sur le laboratoire d'essais. (1) Chaque `exec` d'Onyxia redemande l'accord (la seule règle proposée
   par le CLI est « tout l'outil », jamais une commande) : 8 essais lus = une dizaine de demandes, chacune en deux appels (aperçu, puis
   confirmation). (2) La demande s'affichait « Exec » sans la commande (le résumé ne lisait pas le champ `code`) — **corrigé**
-  (`decisions._CHAMPS_DE_L_ACTION`). (3) `atelier_suivre` : le curseur plafonne à 400 ; au-delà, chaque appel rend les 400 derniers
-  événements (≈ 7 000 jetons) sans ligne nouvelle — on ne peut pas suivre un tour long à moindre coût. (4) Un agent supervisé fait de lui-même
+  (`decisions._CHAMPS_DE_L_ACTION`). (3) *Fausse piste, retirée* : je croyais que `atelier_suivre` ne savait pas avancer (le curseur « plafonnait à 400 ») ; en fait son paramètre s'appelle `curseur`, et j'avais passé `depuis`, qu'il ignore en silence — d'où l'historique entier à chaque appel (≈ 7 000 jetons). Reste : un argument inconnu devrait être refusé, comme l'`exec` d'Onyxia aurait dû refuser le sien (D-82) — même famille de défaut : **un outil qui ignore ou digère mal un argument mal nommé, sans le dire**. (4) Un agent supervisé fait de lui-même
   des attentes actives (`sleep 120`, boucle de fond sur un fichier inexistant) qui coûtent une autorisation chacune ; le plafond de 40 s d'`exec`
   n'est dit qu'après coup. **À faire** : règles par commande pour l'`exec` d'Onyxia (préfixe `labo/api.sh GET`, `labo/resume.py`, lecture seule),
-  rendues au CLI dans sa syntaxe ; un curseur qui avance ; la consigne « n'attends pas toi-même » dans le contexte des agents lancés.
+  rendues au CLI dans sa syntaxe ; le refus des arguments inconnus par `atelier_suivre` et les outils de pilotage ; la consigne « n'attends pas toi-même » dans le contexte des agents lancés.
 
 ## 5. Déjà corrigés (pour mémoire)
 
