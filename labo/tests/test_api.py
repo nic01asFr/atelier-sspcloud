@@ -132,3 +132,17 @@ def test_le_service_refuse_de_demarrer_ouvert_sans_jeton(monkeypatch: pytest.Mon
     assert main(["--racine", str(tmp_path), "--hote", "0.0.0.0"]) == 2
     assert est_boucle_locale("127.0.0.1") and est_boucle_locale("localhost") and not est_boucle_locale("0.0.0.0")
     assert not est_boucle_locale("10.233.1.2")
+
+
+def test_le_service_lit_le_brut_indique_par_l_environnement(tmp_path, monkeypatch) -> None:
+    """Régression : `python -m laboratoire` ignorait LABO_BRUT et cherchait le brut dans <racine>/donnees/brut."""
+    import laboratoire.__main__ as principal
+
+    pris = {}
+    monkeypatch.setattr(principal.uvicorn, "run", lambda app, **kw: pris.update(racine=app.state.racine))
+    monkeypatch.setenv("LABO_BRUT", str(tmp_path / "ailleurs"))
+    assert principal.main(["--racine", str(tmp_path / "labo")]) == 0
+    assert pris["racine"].brut == tmp_path / "ailleurs"
+    monkeypatch.delenv("LABO_BRUT")
+    assert principal.main(["--racine", str(tmp_path / "labo")]) == 0
+    assert pris["racine"].brut == tmp_path / "labo" / "donnees" / "brut"
