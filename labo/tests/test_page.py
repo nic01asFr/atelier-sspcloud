@@ -137,3 +137,40 @@ def test_creer_une_variante_depuis_la_page_puis_parcourir_ses_images(serveur: st
         page.wait_for_function("[...document.querySelectorAll('.galerie figcaption')].every(f => f.textContent.startsWith('classe 1'))")
         navigateur.close()
     assert erreurs == []
+
+
+def test_connexion_depuis_un_navigateur_avec_le_jeton(racine: Racine) -> None:
+    """Accès depuis internet : sans cookie, l'écran de connexion ; avec le bon jeton, la page ; avec un faux, un refus."""
+    if _chromium() is None:
+        pytest.skip("pas de Chromium")
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    import laboratoire.api as api
+
+    api.PAUSE_APRES_ECHEC_S = 0
+    srv = uvicorn.Server(uvicorn.Config(creer_app(racine, jeton="le-bon-jeton", demarrer_travailleur=False), host="127.0.0.1", port=port, log_level="error"))
+    fil = threading.Thread(target=srv.run, daemon=True)
+    fil.start()
+    fin = time.monotonic() + 10
+    while not srv.started and time.monotonic() < fin:
+        time.sleep(0.05)
+    erreurs: list[str] = []
+    try:
+        with playwright.sync_playwright() as p:
+            navigateur = p.chromium.launch(executable_path=_chromium())
+            page = navigateur.new_page()
+            page.on("pageerror", lambda e: erreurs.append(str(e)))
+            page.goto(f"http://127.0.0.1:{port}/")
+            page.fill("#jeton", "faux")
+            page.click("button[type=submit]")
+            page.wait_for_selector("text=Jeton refusé")
+            page.fill("#jeton", "le-bon-jeton")
+            page.click("button[type=submit]")
+            page.wait_for_selector("nav.onglets")
+            page.wait_for_selector("#pod .pastille")  # les appels de l'API passent avec le cookie
+            navigateur.close()
+    finally:
+        srv.should_exit = True
+        fil.join(timeout=10)
+    assert erreurs == []

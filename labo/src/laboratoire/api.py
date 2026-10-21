@@ -10,16 +10,18 @@ Sécurité :
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import hmac
 import shutil
 import subprocess
+from urllib.parse import parse_qs
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import Body, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -35,6 +37,34 @@ from laboratoire.variante import Variante, VarianteInvalide
 WEB = Path(__file__).parent / "web"
 MAX_ERREURS = 500
 MAX_JOURNAL = 200_000  # octets rendus d'un coup
+MAX_CORPS_CONNEXION = 4096
+PAUSE_APRES_ECHEC_S = 1.0  # ralentit l'essai de jetons à la chaîne
+DUREE_DU_COOKIE_S = 30 * 24 * 3600
+
+PAGE_DE_CONNEXION = """<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laboratoire d'essais — connexion</title>
+<style>
+:root{color-scheme:light dark;--fond:#f6f7f9;--carte:#fff;--bord:#d9dde3;--texte:#1c2330;--accent:#2354d6;--mal:#b3261e}
+@media(prefers-color-scheme:dark){:root{--fond:#11151c;--carte:#1a202a;--bord:#2f3846;--texte:#e6eaf0;--accent:#7ba2ff;--mal:#ff8a80}}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--fond);color:var(--texte);font:15px/1.5 system-ui,sans-serif}
+form{background:var(--carte);border:1px solid var(--bord);border-radius:8px;padding:1.5rem;width:min(22rem,90vw)}
+h1{font-size:1.2rem;margin:0 0 .75rem}label{font-weight:600}
+input{width:100%;box-sizing:border-box;margin:.35rem 0 1rem;padding:.5rem;border:1px solid var(--bord);border-radius:6px;background:var(--fond);color:var(--texte);font:inherit}
+button{font:inherit;padding:.5rem 1rem;border-radius:6px;border:0;background:var(--accent);color:#fff;cursor:pointer}
+.erreur{color:var(--mal);margin:0 0 .75rem}
+</style></head><body>
+<form method="post" action="connexion">
+<h1>Laboratoire d'essais</h1>
+{erreur}<label for="jeton">Jeton d'accès</label>
+<input id="jeton" name="jeton" type="password" autocomplete="current-password" required autofocus>
+<button type="submit">Entrer</button>
+</form></body></html>"""
+
+
+def _page_de_connexion(erreur: bool = False) -> HTMLResponse:
+    message = '<p class="erreur" role="alert">Jeton refusé.</p>' if erreur else ""
+    return HTMLResponse(PAGE_DE_CONNEXION.replace("{erreur}", message), status_code=401 if erreur else 200)
 
 
 class Confirmation(BaseModel):
@@ -99,14 +129,35 @@ def creer_app(
     app = FastAPI(title="Laboratoire d'essais", lifespan=cycle, docs_url="/api/docs" if jeton is None else None, redoc_url=None, openapi_url=None if jeton else "/api/openapi.json")
     app.state.registre, app.state.executeur, app.state.travailleur, app.state.racine = registre, executeur, travailleur, racine
 
+    def jeton_valide(fourni: str) -> bool:
+        return bool(fourni) and hmac.compare_digest(fourni.encode(), (jeton or "").encode())
+
     @app.middleware("http")
     async def verifier_le_jeton(request: Request, suite):
-        if jeton and request.url.path != "/sante":
+        chemin = request.url.path
+        if jeton and chemin not in ("/sante", "/connexion"):
             presente = request.headers.get("authorization", "")
             fourni = presente[7:] if presente.lower().startswith("bearer ") else request.cookies.get("labo_jeton", "")
-            if not fourni or not hmac.compare_digest(fourni.encode(), jeton.encode()):
+            if not jeton_valide(fourni):
+                if request.method == "GET" and chemin == "/":
+                    return _page_de_connexion()  # un navigateur sans cookie : on lui demande le jeton
                 return JSONResponse({"erreur": "jeton absent ou faux"}, status_code=401)
         return await suite(request)
+
+    @app.post("/connexion")
+    async def connexion(request: Request):
+        """Le jeton saisi devient un cookie (HttpOnly, SameSite strict, Secure derrière https) : la page s'ouvre ensuite sans en-tête."""
+        if not jeton:
+            return RedirectResponse("./", status_code=303)
+        corps = (await request.body())[:MAX_CORPS_CONNEXION].decode("utf-8", errors="replace")
+        fourni = (parse_qs(corps).get("jeton") or [""])[0]
+        if not jeton_valide(fourni):
+            await asyncio.sleep(PAUSE_APRES_ECHEC_S)
+            return _page_de_connexion(erreur=True)
+        https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").lower() == "https"
+        reponse = RedirectResponse("./", status_code=303)
+        reponse.set_cookie("labo_jeton", fourni, max_age=DUREE_DU_COOKIE_S, httponly=True, samesite="strict", secure=https, path="/")
+        return reponse
 
     @app.exception_handler(EssaiInconnu)
     async def _inconnu(_: Request, exc: EssaiInconnu):
