@@ -64,6 +64,10 @@ def executer(dossier_essai: Path, dossier_variante: Path) -> None:
     adapt = obtenir_adaptateur(config.methode.famille)
     adapt.valider(config.methode)
     ctx = ContexteEssai(config=config, variante=Variante(dossier_variante), dossier=dossier_essai)
+    if getattr(adapt, "tache", "classification") != "classification":  # une autre tâche (profondeur…) a son propre déroulé et ses propres mesures
+        print(f"[essai] {config.methode.famille}/{config.methode.modele} jeu={config.jeu}", flush=True)
+        adapt.executer(ctx)
+        return
     print(f"[essai] {config.methode.famille}/{config.methode.modele} imgsz={config.methode.imgsz} jeu={config.jeu} graine={config.graine}", flush=True)
     print(f"[essai] effectifs : {json.dumps(ctx.variante.effectifs(), ensure_ascii=False)}", flush=True)
     adapt.entrainer(ctx)

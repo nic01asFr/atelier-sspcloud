@@ -35,6 +35,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--hote", default="127.0.0.1")
     p.add_argument("--port", type=int, default=7860)
     p.add_argument("--maitre", action="store_true", help="pod CPU : ne lance aucun essai, un travailleur GPU (laboratoire.travailleur_gpu) prend la file")
+    p.add_argument("--tache", default=os.environ.get("LABO_TACHE", "classification"), choices=["classification", "profondeur"], help="ce que ce laboratoire étudie (choisit la page d'accueil)")
     p.add_argument("--sans-battement", action="store_true", help="ne pas faire travailler le GPU pendant un essai")
     args = p.parse_args(argv)
     if not args.racine:
@@ -46,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     brut = os.environ.get("LABO_BRUT")
     app = creer_app(
-        Racine(Path(args.racine), Path(brut) if brut else None), jeton=jeton, maitre=args.maitre,
+        Racine(Path(args.racine), Path(brut) if brut else None), jeton=jeton, maitre=args.maitre, tache=args.tache,
         battement=None if (args.sans_battement or args.maitre) else battre,
         battement_humain=None if (args.sans_battement or args.maitre) else functools.partial(battre, 10.0),
     )

@@ -19,7 +19,13 @@ def _yolo_cls() -> Adaptateur:
     return YoloClassify()
 
 
-FAMILLES: dict[str, Callable[[], Adaptateur]] = {"jouet": _jouet, "yolo_cls": _yolo_cls}
+def _profondeur() -> Adaptateur:
+    from laboratoire.adaptateurs.profondeur import Profondeur
+
+    return Profondeur()
+
+
+FAMILLES: dict[str, Callable[[], Adaptateur]] = {"jouet": _jouet, "yolo_cls": _yolo_cls, "profondeur": _profondeur}
 
 
 def adaptateur(famille: str) -> Adaptateur:
