@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import hmac
+import json
 import shutil
 import subprocess
 import time
@@ -43,6 +44,8 @@ MAX_JOURNAL = 200_000  # octets rendus d'un coup
 MAX_CORPS_CONNEXION = 4096
 PAUSE_APRES_ECHEC_S = 1.0  # ralentit l'essai de jetons à la chaîne
 DUREE_DU_COOKIE_S = 30 * 24 * 3600
+# Un valideur (jeton de `valideurs.json`) ne voit que l'écran de validation : pas les essais, ni les données, ni le lancement d'un entraînement.
+ROUTES_VALIDEUR = ("/web/", "/api/validation/", "/api/brut/image")
 FENETRE_ACTIVITE_HUMAINE_S = 600  # une personne qui n'a rien fait depuis 10 minutes ne tient plus le pod éveillé
 
 PAGE_DE_CONNEXION = """<!doctype html>
@@ -142,8 +145,22 @@ def creer_app(
     app.state.registre, app.state.executeur, app.state.travailleur, app.state.racine = registre, executeur, travailleur, racine
     app.state.activite_humaine = humain_present
 
+    def jetons_valideurs() -> list[str]:
+        """Relus à chaque requête : ajouter ou retirer un valideur (fichier `valideurs.json`, {nom: jeton}) ne demande pas de redémarrer."""
+        try:
+            return [str(v) for v in json.loads((racine.chemin / "valideurs.json").read_text(encoding="utf-8")).values() if v]
+        except (OSError, ValueError, AttributeError):
+            return []
+
+    def role(fourni: str) -> str | None:
+        if not fourni:
+            return None
+        if hmac.compare_digest(fourni.encode(), (jeton or "").encode()):
+            return "admin"
+        return "valideur" if any([hmac.compare_digest(fourni.encode(), v.encode()) for v in jetons_valideurs()]) else None
+
     def jeton_valide(fourni: str) -> bool:
-        return bool(fourni) and hmac.compare_digest(fourni.encode(), (jeton or "").encode())
+        return role(fourni) is not None
 
     @app.middleware("http")
     async def verifier_le_jeton(request: Request, suite):
@@ -151,10 +168,14 @@ def creer_app(
         if jeton and chemin not in ("/sante", "/connexion"):
             presente = request.headers.get("authorization", "")
             fourni = presente[7:] if presente.lower().startswith("bearer ") else request.cookies.get("labo_jeton", "")
-            if not jeton_valide(fourni):
+            qui = role(fourni)
+            if qui is None:
                 if request.method == "GET" and chemin == "/":
                     return _page_de_connexion()  # un navigateur sans cookie : on lui demande le jeton
                 return JSONResponse({"erreur": "jeton absent ou faux"}, status_code=401)
+            lecture = request.method == "GET" and chemin in ("/", "/api/pod")
+            if qui == "valideur" and not lecture and not chemin.startswith(ROUTES_VALIDEUR):
+                return JSONResponse({"erreur": "ce jeton ne donne accès qu'à la validation"}, status_code=403)
         if chemin.startswith("/api/validation/") or chemin == "/api/brut/image":
             activite["derniere"] = time.monotonic()  # quelqu'un valide : le pod doit rester éveillé (voir Travailleur)
         return await suite(request)
@@ -170,7 +191,7 @@ def creer_app(
             await asyncio.sleep(PAUSE_APRES_ECHEC_S)
             return _page_de_connexion(erreur=True)
         https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").lower() == "https"
-        reponse = RedirectResponse("./", status_code=303)
+        reponse = RedirectResponse("./#/valider" if role(fourni) == "valideur" else "./", status_code=303)  # un valideur n'a que cet écran
         reponse.set_cookie("labo_jeton", fourni, max_age=DUREE_DU_COOKIE_S, httponly=True, samesite="strict", secure=https, path="/")
         return reponse
 
