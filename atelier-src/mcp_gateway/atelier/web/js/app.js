@@ -128,6 +128,7 @@ function createApp() {
   });
   Object.assign(connectorActionsHolder, connectorActions);
   connectorActionsHolder.accorderSecret = (entry) => accords.accorderSecret(entry);
+  connectorActionsHolder.renouvelerSecret = (entry) => accords.renouvelerSecret(entry);
 
   const agentActionsHolder = {};
   const automatesHolder = {};

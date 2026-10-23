@@ -354,6 +354,48 @@ def test_un_refus_de_github_se_lit_et_est_au_journal_sans_le_jeton(client: TestC
     assert lignes[0]["resultat"] == "refus" and JETON not in json.dumps(lignes)
 
 
+def test_renouveler_le_jeton_dans_les_reglages_met_a_jour_les_connecteurs_qui_l_utilisent(
+    client: TestClient, reglages: AtelierSettings, github: _Github
+) -> None:
+    """Un secret accordé est une copie : sans cela, le connecteur « github » garderait le jeton expiré."""
+    import asyncio
+
+    from mcp_gateway.atelier.commandes.catalogue import FAIT, contexte_interface
+    from mcp_gateway.atelier.gateway_mcp import IntegratedMcpStore
+    from mcp_gateway.db import connect
+
+    h = _personne(client)
+    github.reponses["/user"] = {"login": "octo"}
+    assert client.put("/v1/github", json={"jeton": JETON}, headers=h).status_code == 200
+    conn = connect(reglages.gateway_db_path)
+    try:
+        IntegratedMcpStore(conn).upsert("github", {"type": "http", "url": "http://github.invalid/mcp"})
+    finally:
+        conn.close()
+    accorder = {"nom": "github", "champ": "headers.Authorization", "secret": "github_token", "schema": "Bearer"}
+    reponse = asyncio.run(client.app.state.commandes.executer("atelier_connecteur_accorder", accorder, contexte_interface()))
+    assert reponse.statut == FAIT, reponse.charge
+
+    def entete() -> str:
+        c = connect(reglages.gateway_db_path)
+        try:
+            return IntegratedMcpStore(c).list_servers(mask=False)["github"]["headers"]["Authorization"]
+        finally:
+            c.close()
+
+    assert entete() == f"Bearer {JETON}"
+    nouveau = "github_pat_" + "Z9y8X7w6V5u4T3s2" * 3  # fictif
+    r = client.put("/v1/github", json={"jeton": nouveau}, headers=h)
+    assert r.status_code == 200 and r.json()["renouveles"] == ["github"] and nouveau not in r.text and JETON not in r.text
+    assert entete() == f"Bearer {nouveau}"  # une seule action dans Réglages
+    journal = json.dumps(client.app.state.journal_unique.lire())
+    assert nouveau not in journal and JETON not in journal
+    # Un jeton refusé par GitHub ne touche à rien : ni le fichier, ni le connecteur.
+    github.reponses["/user"] = ErreurGithub("GitHub refuse ce jeton : il est invalide, expiré ou révoqué.")
+    assert client.put("/v1/github", json={"jeton": JETON}, headers=h).status_code == 400
+    assert entete() == f"Bearer {nouveau}" and reglages.github_token_path.read_text(encoding="utf-8") == nouveau
+
+
 # ── Les commandes de l'Assistant ────────────────────────────────────────
 
 

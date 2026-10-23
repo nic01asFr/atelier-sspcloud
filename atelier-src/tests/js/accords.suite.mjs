@@ -42,7 +42,7 @@ function fausseRoute() {
     appels,
     executerCommande: async (nom, args) => {
       appels.push([nom, args]);
-      if (!["atelier_agent_activer", "atelier_agent_desactiver", "atelier_connecteur_accorder"].includes(nom)) {
+      if (!["atelier_agent_activer", "atelier_agent_desactiver", "atelier_connecteur_accorder", "atelier_connecteur_renouveler"].includes(nom)) {
         const e = new Error(`Cette action n’est pas encore disponible ici (${nom}).`);
         e.status = 404;
         throw e;
@@ -51,6 +51,14 @@ function fausseRoute() {
         const e = new Error("sans-budget n'a pas de budget lisible : fixez-le avant de l'activer");
         e.status = 403;
         throw e;
+      }
+      if (nom === "atelier_connecteur_renouveler") {
+        if (args.nom === "sans-secret") {
+          const e = new Error("sans-secret n'a reçu aucun secret : rien à renouveler.");
+          e.status = 403;
+          throw e;
+        }
+        return { statut: "fait", resultat: args.nom === "inchange" ? { renouveles: [], details: [{ connecteur: "inchange", etat: "inchange" }] } : { renouveles: [args.nom], details: [{ connecteur: args.nom, secret: "github_token", etat: "renouvele" }] } };
       }
       return { statut: "fait", resultat: {} };
     },
@@ -180,6 +188,28 @@ function fausseRoute() {
   await ouverte.onSubmit({ secret: "grist_api_key", cle: "Authorization", schema: "Bearer" });
   egal(route.appels.at(-1), ["atelier_connecteur_accorder", { nom: "grist", champ: "headers.Authorization", secret: "grist_api_key", schema: "Bearer" }], "Accorder appelle la commande réservée");
   egal(relu, 1, "les connecteurs se relisent");
+}
+
+// ── Renouveler un secret accordé : un clic, des noms, jamais une valeur ─
+{
+  const state = S.createState();
+  state.token = "session";
+  const route = fausseRoute();
+  let ouverte = null;
+  let relu = 0;
+  const accords = createAccordsActions({ state, api: route, render: () => {}, openModal: (_s, opts) => (ouverte = opts), apresConnecteur: async () => { relu += 1; } });
+  await accords.renouvelerSecret({ id: "github", name: "github", config: { url: "https://github.example/mcp" } });
+  egal(route.appels.at(-1), ["atelier_connecteur_renouveler", { nom: "github" }], "Renouveler appelle la commande réservée, avec le seul nom du connecteur");
+  porte(ouverte.lead, "Renouvelé : github", "la fenêtre dit quel connecteur a reçu la nouvelle valeur");
+  egal(ouverte.fields, [], "aucun champ : rien à saisir, rien à coller");
+  egal(relu, 1, "les connecteurs se relisent");
+  ouverte = null;
+  await accords.renouvelerSecret({ id: "inchange", config: { url: "https://x.example/mcp" } });
+  porte(ouverte.lead, "n’a pas changé", "un fichier inchangé le dit");
+  ouverte = null;
+  await accords.renouvelerSecret({ id: "sans-secret", config: { url: "https://x.example/mcp" } });
+  egal(ouverte, null, "un refus n'ouvre pas de fenêtre");
+  porte(state.error, "rien à renouveler", "le refus se lit");
 }
 
 // ── « À valider » et le journal parlent de ces commandes ───────────────
