@@ -59,6 +59,12 @@ def test_un_jeu_ne_garde_que_des_panoramas_ouverts_et_une_prise_par_sequence(rac
         construire_jeu(racine, "jeu-test", cands, n=1, ouvrir=ouvrir)
 
 
+def test_la_selection_prend_plusieurs_prises_par_sequence_seulement_apres_en_avoir_pris_une_par_sequence() -> None:
+    cands = [Candidat(f"a{i}", "A", "u", "etalab-2.0", "p", "d", 0, 0, 360.0) for i in range(30)] + [Candidat("b0", "B", "u", "etalab-2.0", "p", "d", 0, 0, 360.0)]
+    choix = [c.item for c in une_par_sequence(cands, par_sequence=3, ecart=8)]
+    assert choix == ["a0", "b0", "a8", "a16"]  # B n'a qu'une prise ; A en donne trois, espacées
+
+
 def _attendre(client: TestClient, ident: str, delai: float = 120.0) -> dict:
     fin = time.monotonic() + delai
     while time.monotonic() < fin:

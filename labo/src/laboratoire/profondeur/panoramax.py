@@ -83,13 +83,20 @@ def rechercher(api: str, bbox: str, limite: int = 500, ouvrir: Ouvrir = ouvrir_h
     return sortie
 
 
-def une_par_sequence(candidats: list[Candidat]) -> list[Candidat]:
-    """Un candidat par séquence, dans l'ordre de la réponse : la diversité avant la quantité. Les panoramas déclarés 360° passent d'abord."""
-    vus, sortie = set(), []
-    for c in sorted(candidats, key=lambda c: 0 if c.champ_deg and c.champ_deg >= 359 else 1):
-        if c.collection not in vus:
-            vus.add(c.collection)
-            sortie.append(c)
+def une_par_sequence(candidats: list[Candidat], par_sequence: int = 1, ecart: int = 8) -> list[Candidat]:
+    """Choix par tours : d'abord une prise par séquence, puis une deuxième (au moins `ecart` prises plus loin dans la réponse), etc.
+
+    La diversité d'abord, la quantité ensuite. Les panoramas déclarés 360° passent avant les autres.
+    """
+    ordonnes = sorted(candidats, key=lambda c: 0 if c.champ_deg and c.champ_deg >= 359 else 1)
+    par_collection: dict[str, list[Candidat]] = {}
+    for c in ordonnes:
+        par_collection.setdefault(c.collection, []).append(c)
+    sortie: list[Candidat] = []
+    for tour in range(max(1, par_sequence)):
+        for collection, liste in par_collection.items():
+            if tour * ecart < len(liste):
+                sortie.append(liste[tour * ecart])
     return sortie
 
 
@@ -99,6 +106,7 @@ def _est_equirectangulaire(im: Image.Image) -> bool:
 
 def construire_jeu(
     racine: Racine, ident: str, candidats: list[Candidat], n: int, ouvrir: Ouvrir = ouvrir_http, journal: Callable[[str], None] = print,
+    par_sequence: int = 1,
 ) -> dict[str, Any]:
     """Télécharge jusqu'à `n` panoramas 360° de licence ouverte, écrit le jeu. Rend un résumé (gardés, écartés et pourquoi)."""
     dossier = racine.dossier_variante(identifiant_sur(ident))
@@ -107,7 +115,7 @@ def construire_jeu(
     (dossier / "val" / "panorama").mkdir(parents=True, exist_ok=True)
     gardes, ecartes = [], {"licence": 0, "pas_360": 0, "illisible": 0}
     lignes = []
-    for c in une_par_sequence(candidats):
+    for c in une_par_sequence(candidats, par_sequence):
         if len(gardes) >= n:
             break
         if not LICENCES_OUVERTES.match(c.licence or ""):
@@ -149,13 +157,15 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="laboratoire.profondeur.panoramax", description=__doc__)
     p.add_argument("--racine", required=True)
     p.add_argument("--jeu", required=True, help="identifiant du jeu (ex. grenoble-24)")
-    p.add_argument("--bbox", required=True, help="ouest,sud,est,nord")
+    p.add_argument("--bbox", required=True, action="append", help="ouest,sud,est,nord ; répétable pour plusieurs zones")
+    p.add_argument("--par-sequence", type=int, default=3, help="au plus ce nombre de panoramas par séquence de prise de vue")
     p.add_argument("--n", type=int, default=24)
     p.add_argument("--api", default=API_PAR_DEFAUT)
     args = p.parse_args(argv)
     racine = Racine(Path(args.racine))
     racine.preparer()
-    resume = construire_jeu(racine, args.jeu, rechercher(args.api, args.bbox), args.n)
+    candidats = [c for zone in args.bbox for c in rechercher(args.api, zone)]
+    resume = construire_jeu(racine, args.jeu, candidats, args.n, par_sequence=args.par_sequence)
     print(json.dumps(resume, ensure_ascii=False))
     return 0 if resume["gardes"] else 1
 
