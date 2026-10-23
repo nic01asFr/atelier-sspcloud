@@ -21,6 +21,28 @@ class UpstreamError(Exception):
     pass
 
 
+def decrire(exc: Exception) -> str:
+    """L'erreur, avec ce que le serveur a répondu : un « 401 » seul ne dit pas si le jeton est faux, expiré ou d'un type refusé.
+
+    On garde l'en-tête `WWW-Authenticate` et le début du corps (court) ; jamais l'en-tête `Authorization` envoyé.
+    """
+    reponse = getattr(exc, "response", None)
+    texte = str(exc)
+    if not isinstance(exc, httpx.HTTPStatusError) or reponse is None:
+        return texte
+    details = []
+    auth = reponse.headers.get("www-authenticate")
+    if auth:
+        details.append(f"WWW-Authenticate : {auth[:200]}")
+    try:
+        corps = reponse.text.strip().replace("\n", " ")
+    except Exception:  # noqa: BLE001 - un corps illisible ne doit pas masquer l'erreur
+        corps = ""
+    if corps:
+        details.append(f"réponse : {corps[:200]}")
+    return texte.split("For more information")[0].strip() + (" — " + " ; ".join(details) if details else "")
+
+
 class UpstreamClient:
     """Client MCP upstream — Streamable HTTP + fallback HTTP+SSE."""
 
@@ -94,11 +116,18 @@ class UpstreamClient:
         if self.transport == "sse":
             return await self._connect_sse()
 
+        erreur_streamable = None
         for version in _VERSIONS:
             if await self._try_streamable_initialize(version):
                 return True
+            erreur_streamable = self.error or erreur_streamable
 
-        return await self._try_sse_fallback()
+        if await self._try_sse_fallback():
+            return True
+        # Le repli SSE échoue presque toujours sur un serveur qui n'a que le HTTP streamable : sa réponse (404, 401…) cacherait la vraie cause.
+        if erreur_streamable and erreur_streamable != self.error:
+            self.error = f"{erreur_streamable} (repli SSE : {self.error})"
+        return False
 
     async def _reset_sse(self) -> None:
         if self._sse:
@@ -150,7 +179,7 @@ class UpstreamClient:
             )
             return True
         except Exception as exc:
-            self.error = str(exc)
+            self.error = decrire(exc)
             logger.warning(
                 "Upstream %s streamable init failed (%s): %s",
                 self.server_id,
@@ -170,7 +199,7 @@ class UpstreamClient:
                 )
             return ok
         except Exception as exc:
-            self.error = str(exc)
+            self.error = decrire(exc)
             logger.warning("Upstream %s sse fallback failed: %s", self.server_id, exc)
             return False
 
@@ -180,7 +209,7 @@ class UpstreamClient:
         try:
             await self._sse.open()
         except Exception as exc:
-            self.error = str(exc)
+            self.error = decrire(exc)
             await self._reset_sse()
             return False
         self._mode = "sse"
@@ -215,7 +244,7 @@ class UpstreamClient:
                 self.error = None
                 return True
             except Exception as exc:
-                self.error = str(exc)
+                self.error = decrire(exc)
                 logger.warning("Upstream %s sse init failed (%s): %s", self.server_id, version, exc)
         await self._reset_sse()
         return False
