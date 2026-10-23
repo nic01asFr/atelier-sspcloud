@@ -39,7 +39,8 @@ def fausse_api(items: list[dict]):
 def item(i: int, collection: str, licence: str = "etalab-2.0", type_image: str = "pano") -> dict:
     return {
         "id": f"it{i}", "collection": collection, "geometry": {"coordinates": [5.7 + i / 100, 45.1]},
-        "properties": {"license": licence, "geovisio:producer": "asso", "datetime": "2025-05-01T10:00:00+00:00"},
+        "properties": {"license": licence, "geovisio:producer": "asso", "datetime": "2025-05-01T10:00:00+00:00",
+                       "pers:interior_orientation": {"field_of_view": 360 if type_image == "pano" else 90, "camera_model": "MAX2"}, "pers:pitch": 1.5},
         "assets": {"hd": {"href": f"https://x.test/{type_image}-{i}"}},
     }
 
@@ -48,7 +49,7 @@ def test_un_jeu_ne_garde_que_des_panoramas_ouverts_et_une_prise_par_sequence(rac
     items = [item(1, "s1"), item(2, "s1"), item(3, "s2", licence="all-rights-reserved"), item(4, "s3", type_image="carre"), item(5, "s4"), item(6, "s5", licence="CC-BY-SA-4.0")]
     ouvrir = fausse_api(items)
     cands = rechercher("https://api.test", "5,45,6,46", ouvrir=ouvrir)
-    assert [c.item for c in une_par_sequence(cands)] == ["it1", "it3", "it4", "it5", "it6"]
+    assert [c.item for c in une_par_sequence(cands)] == ["it1", "it3", "it5", "it6", "it4"]  # les 360° d'abord, le champ de 90° en dernier
     resume = construire_jeu(racine, "jeu-test", cands, n=10, ouvrir=ouvrir, journal=lambda s: None)
     assert resume == {"jeu": "jeu-test", "gardes": 3, "ecartes": {"licence": 1, "pas_360": 1, "illisible": 0}}
     v = Variante(racine.dossier_variante("jeu-test"))

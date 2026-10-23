@@ -29,7 +29,7 @@ from laboratoire.projet import Racine, identifiant_sur
 API_PAR_DEFAUT = "https://panoramax.ign.fr/api"
 LARGEUR_MAX = 4096
 RATIO_ERP = (1.9, 2.1)  # un panorama 360° équirectangulaire est deux fois plus large que haut
-COLONNES = ["fichier", "jeu", "classe", "groupe", "source", "licence", "producteur", "date", "lon", "lat", "item"]
+COLONNES = ["fichier", "jeu", "classe", "groupe", "source", "licence", "producteur", "date", "lon", "lat", "item", "camera", "tangage", "roulis"]
 LICENCES_OUVERTES = re.compile(r"^(etalab|cc|odbl|lov)", re.IGNORECASE)
 
 
@@ -43,6 +43,10 @@ class Candidat:
     date: str
     lon: float
     lat: float
+    champ_deg: float | None = None  # champ de vue déclaré (360 : panorama) ; None : non déclaré
+    camera: str = ""
+    tangage: float | None = None
+    roulis: float | None = None
 
 
 Ouvrir = Callable[[str], bytes]
@@ -54,7 +58,7 @@ def ouvrir_http(url: str) -> bytes:
         return r.read()
 
 
-def rechercher(api: str, bbox: str, limite: int = 200, ouvrir: Ouvrir = ouvrir_http) -> list[Candidat]:
+def rechercher(api: str, bbox: str, limite: int = 500, ouvrir: Ouvrir = ouvrir_http) -> list[Candidat]:
     """Prises de vue d'une zone (STAC `search`), sans les filtrer sur la forme de l'image : on ne la connaît qu'une fois téléchargée."""
     q = urllib.parse.urlencode({"bbox": bbox, "limit": limite})
     reponse = json.loads(ouvrir(f"{api.rstrip('/')}/search?{q}"))
@@ -64,20 +68,25 @@ def rechercher(api: str, bbox: str, limite: int = 200, ouvrir: Ouvrir = ouvrir_h
         href = (actifs.get("hd") or actifs.get("sd") or {}).get("href")
         coords = (f.get("geometry") or {}).get("coordinates") or [0.0, 0.0]
         licence = p.get("license") or f.get("license") or ""
+        orientation = p.get("pers:interior_orientation") or {}
+        champ = orientation.get("field_of_view")
         if not href or not f.get("id"):
             continue
         sortie.append(Candidat(
             item=str(f["id"]), collection=str(f.get("collection", "")), url_image=href, licence=str(licence),
             producteur=str(p.get("geovisio:producer") or ((p.get("providers") or [{}])[0].get("name") if p.get("providers") else "") or ""),
             date=str(p.get("datetime", "")), lon=float(coords[0]), lat=float(coords[1]),
+            champ_deg=float(champ) if champ is not None else None,
+            camera=" ".join(str(x) for x in (orientation.get("camera_manufacturer"), orientation.get("camera_model")) if x),
+            tangage=p.get("pers:pitch"), roulis=p.get("pers:roll"),
         ))
     return sortie
 
 
 def une_par_sequence(candidats: list[Candidat]) -> list[Candidat]:
-    """Un candidat par séquence, dans l'ordre de la réponse : la diversité avant la quantité."""
+    """Un candidat par séquence, dans l'ordre de la réponse : la diversité avant la quantité. Les panoramas déclarés 360° passent d'abord."""
     vus, sortie = set(), []
-    for c in candidats:
+    for c in sorted(candidats, key=lambda c: 0 if c.champ_deg and c.champ_deg >= 359 else 1):
         if c.collection not in vus:
             vus.add(c.collection)
             sortie.append(c)
@@ -104,6 +113,9 @@ def construire_jeu(
         if not LICENCES_OUVERTES.match(c.licence or ""):
             ecartes["licence"] += 1
             continue
+        if c.champ_deg is not None and c.champ_deg < 359:  # déclaré : pas un panorama, inutile de le télécharger
+            ecartes["pas_360"] += 1
+            continue
         try:
             im = Image.open(io.BytesIO(ouvrir(c.url_image)))
             im.load()
@@ -122,6 +134,7 @@ def construire_jeu(
         lignes.append({
             "fichier": nom, "jeu": "val", "classe": "panorama", "groupe": identifiant_sur(c.collection or c.item), "source": c.url_image,
             "licence": c.licence, "producteur": c.producteur, "date": c.date, "lon": c.lon, "lat": c.lat, "item": c.item,
+            "camera": c.camera, "tangage": c.tangage if c.tangage is not None else "", "roulis": c.roulis if c.roulis is not None else "",
         })
         gardes.append(c.item)
         journal(f"gardé {len(gardes)}/{n} : {c.item} ({c.licence}, {c.producteur})")
