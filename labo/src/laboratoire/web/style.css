@@ -140,3 +140,18 @@ kbd { font: .8rem var(--mono); padding: .05rem .35rem; border: 1px solid var(--b
 .zone-hors span { color: #e6eaf0; font-size: .85rem; letter-spacing: .04em; text-transform: uppercase; opacity: .85; }
 .zone-concernee { box-shadow: inset 0 0 0 3px var(--accent); border-radius: 4px; }
 .zone-concernee span { margin-top: .5rem; background: var(--accent); color: #fff; font-size: .8rem; font-weight: 650; padding: .15rem .6rem; border-radius: 999px; }
+
+/* profondeur */
+.trio { display: grid; gap: .75rem; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: .6rem 0; }
+@media (max-width: 800px) { .trio { grid-template-columns: 1fr; } }
+.trio figure, .grille-profondeur figure { margin: 0; }
+.trio img, .grille-profondeur img { display: block; width: 100%; height: auto; border-radius: 6px; background: #000; }
+.trio figcaption, .grille-profondeur figcaption { font-size: .8rem; color: var(--doux); margin-top: .25rem; }
+.grille-profondeur { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); margin-top: .75rem; }
+.galerie { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fill, minmax(10rem, 1fr)); margin-bottom: 1rem; }
+.vignette { padding: .3rem; text-align: left; line-height: 1.3; }
+.vignette img { display: block; width: 100%; aspect-ratio: 2 / 1; object-fit: cover; border-radius: 4px; }
+.vignette span { font: .75rem var(--mono); color: var(--doux); }
+.erp { display: block; width: 100%; height: auto; border-radius: 6px; margin: .5rem 0; }
+.cases { display: grid; gap: .25rem; }
+.case { display: flex; align-items: center; font-weight: 400; }

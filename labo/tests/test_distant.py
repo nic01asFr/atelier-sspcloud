@@ -97,7 +97,9 @@ def test_la_personne_arrete_un_essai_distant(maitre, tmp_path: Path) -> None:
         essai = app.state.registre.prendre_pour("gpu-test")  # confié, mais le travailleur est silencieux depuis peu : l'arrêt est demandé
         assert essai["id"] == ident
         assert admin.post(f"/api/essais/{ident}/arreter").json()["arret_demande"] == 1
-        assert Maitre(url, GPU, "gpu-test").signe(ident, None) == {"arreter": True}
+        assert Maitre(url, GPU, "gpu-test").signe(ident, None, {"nom": "A2", "utilisation_pct": 40}) == {"arreter": True}
+        pod = admin.get("/api/pod").json()  # un travailleur qui donne signe en plein essai est « connecté », avec son GPU
+        assert pod["travailleur"]["connecte"] is True and pod["gpu"] == {"nom": "A2", "utilisation_pct": 40}
 
 
 def test_un_travailleur_silencieux_est_tenu_pour_perdu(maitre) -> None:

@@ -30,11 +30,13 @@ from pydantic import BaseModel
 from laboratoire.adaptateurs import adaptateur as obtenir_adaptateur
 from laboratoire.api_commentaires import monter_commentaires
 from laboratoire.api_donnees import monter_donnees
+from laboratoire.api_profondeur import monter_profondeur
 from laboratoire.api_validation import monter_validation
 from laboratoire.commentaires.journal import Commentaires
 from laboratoire.distant import monter_travail
 from laboratoire.executeur import Executeur
 from laboratoire.modeles import ConfigEssai
+from laboratoire.profondeur.votes import Votes
 from laboratoire.projet import Racine, identifiant_sur
 from laboratoire.registre import EssaiInconnu, Registre, TransitionRefusee
 from laboratoire.travailleur import Travailleur
@@ -50,8 +52,8 @@ DUREE_DU_COOKIE_S = 30 * 24 * 3600
 # Deux rôles, en plus de l'administrateur (jeton du laboratoire), dans `valideurs.json` — {nom: jeton} ou {nom: {"jeton": …, "role": …}} :
 #  - « valideur » (défaut) ne voit que l'écran de validation : pas les essais, ni les données, ni le lancement d'un entraînement ;
 #  - « relecteur » lit tout (lecture seule), valide et commente ; il ne lance rien, ne change aucun statut, n'exporte rien.
-ROUTES_VALIDEUR = ("/web/", "/api/validation/", "/api/brut/image")
-ROUTES_RELECTEUR_EN_ECRITURE = ("/api/validation/", "/api/commentaires")
+ROUTES_VALIDEUR = ("/web/", "/api/validation/", "/api/brut/image", "/api/profondeur/paire", "/api/profondeur/votes/", "/api/tache")
+ROUTES_RELECTEUR_EN_ECRITURE = ("/api/validation/", "/api/commentaires", "/api/profondeur/paire", "/api/profondeur/votes/")
 ROUTES_TRAVAILLEUR = "/api/travail/"  # un travailleur (pod GPU) n'a que celles-ci, et elles ne sont qu'à lui
 FENETRE_ACTIVITE_HUMAINE_S = 600  # une personne qui n'a rien fait depuis 10 minutes ne tient plus le pod éveillé
 
@@ -126,10 +128,12 @@ def creer_app(
     battement: Callable[[], Any] | None = None,
     battement_humain: Callable[[], Any] | None = None,
     maitre: bool = False,
+    tache: str = "classification",
 ) -> FastAPI:
     """`maitre` : ce laboratoire (pod CPU) ne lance aucun essai, un travailleur distant (pod GPU) prend la file — voir `distant`."""
     registre = Registre(racine.base)
     commentaires = Commentaires(racine.chemin / "donnees" / "commentaires.db")
+    votes = Votes(racine.chemin / "donnees" / "votes.db")
     decisions = Journal(racine.chemin / "donnees" / "validation.db")  # (pas « journal » : une route d'essai porte ce nom)
     executeur = Executeur(racine, registre)
     activite = {"derniere": float("-inf")}
@@ -150,11 +154,14 @@ def creer_app(
                 travailleur.arreter()
             registre.fermer()
             decisions.fermer()
+            votes.fermer()
             commentaires.fermer()
 
     app = FastAPI(title="Laboratoire d'essais", lifespan=cycle, docs_url="/api/docs" if jeton is None else None, redoc_url=None, openapi_url=None if jeton else "/api/openapi.json")
     app.state.registre, app.state.executeur, app.state.travailleur, app.state.racine = registre, executeur, travailleur, racine
     app.state.activite_humaine = humain_present
+    app.state.tache = tache
+    app.state.votes = votes
 
     def porteurs() -> list[tuple[str, str, str]]:
         """(nom, jeton, rôle) de `valideurs.json`, relu à chaque requête : ajouter ou retirer un porteur ne demande pas de redémarrer."""
@@ -197,14 +204,14 @@ def creer_app(
                 return JSONResponse({"erreur": "ce jeton ne sert qu'à un travailleur"}, status_code=403)
             if qui[1] in ("valideur", "relecteur") and chemin.startswith(ROUTES_TRAVAILLEUR):
                 return JSONResponse({"erreur": "route réservée à un travailleur"}, status_code=403)
-            lecture = request.method == "GET" and chemin in ("/", "/api/pod")
+            lecture = request.method == "GET" and chemin in ("/", "/api/pod", "/api/commentaires/moi")
             if qui[1] == "valideur" and not lecture and not chemin.startswith(ROUTES_VALIDEUR):
                 return JSONResponse({"erreur": "ce jeton ne donne accès qu'à la validation"}, status_code=403)
             if qui[1] == "relecteur" and request.method not in ("GET", "HEAD") and not chemin.startswith(ROUTES_RELECTEUR_EN_ECRITURE):
                 return JSONResponse({"erreur": "ce jeton est en lecture seule : il peut commenter et valider, rien d'autre"}, status_code=403)
         else:
             request.state.auteur, request.state.role = "admin", "admin"
-        if chemin.startswith(("/api/validation/", "/api/commentaires")) or chemin == "/api/brut/image":
+        if chemin.startswith(("/api/validation/", "/api/commentaires", "/api/profondeur/paire", "/api/profondeur/votes/")) or chemin == "/api/brut/image":
             activite["derniere"] = time.monotonic()  # quelqu'un valide : le pod doit rester éveillé (voir Travailleur)
         return await suite(request)
 
@@ -345,6 +352,7 @@ def creer_app(
 
     presence = monter_travail(app, racine, registre, executeur, ident)
     monter_commentaires(app, commentaires)
+    monter_profondeur(app, racine, registre, votes, ident)
     brut = monter_donnees(app, racine, ident, decisions)
     monter_validation(app, racine, ident, decisions, brut)
 

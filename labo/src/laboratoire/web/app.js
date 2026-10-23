@@ -310,7 +310,7 @@ async function render() {
   nettoyage = null;
   const [chemin, requete = ""] = location.hash.replace(/^#/, "").split("?");
   const morceaux = chemin.split("/").filter(Boolean);
-  const section = morceaux[0] || "essais";
+  const section = morceaux[0] || (TACHE.tache === "profondeur" ? "juger" : "essais");
   document.querySelectorAll("[data-nav]").forEach((a) => (a.dataset.nav === section || (section === "comparer" && a.dataset.nav === "essais") ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
   const zone = document.getElementById("contenu");
   try {
@@ -320,6 +320,10 @@ async function render() {
     else if (section === "comparer") n = await pageComparer(zone, requete);
     else if (section === "lancer") n = await pageLancer(zone, requete);
     else if (section === "valider") n = await pageValider(zone);
+    else if (section === "juger") n = await pageJuger(zone);
+    else if (section === "classement") n = await pageClassement(zone);
+    else if (section === "panoramas") n = await pagePanoramas(zone, morceaux[1]);
+    else if (section === "traitements") n = await pageTraitements(zone);
     else if (section === "donnees") n = await pageDonnees(zone, morceaux[1]);
     else zone.replaceChildren(h("div", { class: "carte vide" }, "Page inconnue. ", h("a", { href: "#/essais" }, "Retour aux essais.")));
     if (mon === numero) nettoyage = typeof n === "number" ? () => clearInterval(n) : n;
@@ -330,4 +334,4 @@ async function render() {
 }
 window.addEventListener("hashchange", render);
 majPod(); setInterval(() => { if (!document.hidden) majPod(); }, 5000);
-render();
+chargerTache().finally(render);
