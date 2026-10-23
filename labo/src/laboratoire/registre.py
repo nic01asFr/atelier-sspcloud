@@ -58,10 +58,16 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX evenements_essai ON evenements(essai, n);
     """,
+    # Exécution à distance : le laboratoire (CPU) tient la file, un travailleur (GPU) prend l'essai et donne signe tant qu'il l'entraîne.
+    """
+    ALTER TABLE essais ADD COLUMN travailleur TEXT;
+    ALTER TABLE essais ADD COLUMN dernier_signe REAL;
+    ALTER TABLE essais ADD COLUMN arret_demande INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 COLONNES_MODIFIABLES = frozenset(
-    {"debut", "fin", "pid", "code_sortie", "erreur", "note"}
+    {"debut", "fin", "pid", "code_sortie", "erreur", "note", "travailleur", "dernier_signe", "arret_demande"}
 )
 
 
@@ -229,6 +235,47 @@ class Registre:
     def en_cours(self) -> list[dict[str, Any]]:
         return self.lister(etat="en_cours")
 
+    # -- exécution à distance --------------------------------------------
+
+    def prendre_pour(self, travailleur: str) -> dict[str, Any] | None:
+        """Donne à `travailleur` le plus ancien essai en file (en_file → en_cours), d'un seul geste : deux travailleurs ne prennent jamais le même."""
+        with self._transaction() as c:
+            ligne = c.execute("SELECT id FROM essais WHERE etat = 'en_file' ORDER BY id LIMIT 1").fetchone()
+            if ligne is None:
+                return None
+            ident, maintenant = ligne["id"], self._horloge()
+            c.execute(
+                "UPDATE essais SET etat = 'en_cours', debut = ?, travailleur = ?, dernier_signe = ?, pid = NULL, arret_demande = 0 WHERE id = ?",
+                (maintenant, travailleur, maintenant, ident),
+            )
+            c.execute("INSERT INTO evenements (essai, ts, genre, texte) VALUES (?, ?, 'en_cours', ?)", (ident, maintenant, f"pris par {travailleur}"))
+        return self.essai(ident)
+
+    def signe(self, ident: str, travailleur: str) -> dict[str, Any]:
+        """Le travailleur dit qu'il est là. Refusé si l'essai n'est plus à lui (arrêté, interrompu, repris par un autre)."""
+        with self._transaction() as c:
+            ligne = c.execute("SELECT etat, travailleur, arret_demande FROM essais WHERE id = ?", (ident,)).fetchone()
+            if ligne is None:
+                raise EssaiInconnu(ident)
+            if ligne["etat"] != "en_cours" or ligne["travailleur"] != travailleur:
+                raise TransitionRefusee(f"{ident} n'est plus confié à {travailleur} (état « {ligne['etat']} »)")
+            c.execute("UPDATE essais SET dernier_signe = ? WHERE id = ?", (self._horloge(), ident))
+            return {"arreter": bool(ligne["arret_demande"])}
+
+    def demander_arret(self, ident: str) -> None:
+        with self._transaction() as c:
+            c.execute("UPDATE essais SET arret_demande = 1 WHERE id = ? AND etat = 'en_cours'", (ident,))
+            c.execute("INSERT INTO evenements (essai, ts, genre, texte) VALUES (?, ?, 'arret_demande', '')", (ident, self._horloge()))
+
+    def perdus(self, delai_s: float) -> list[dict[str, Any]]:
+        """Les essais confiés à un travailleur qui n'a plus donné signe depuis `delai_s` secondes."""
+        limite = self._horloge() - delai_s
+        with self._verrou:
+            lignes = self._conn.execute(
+                "SELECT * FROM essais WHERE etat = 'en_cours' AND travailleur IS NOT NULL AND COALESCE(dernier_signe, 0) < ?", (limite,)
+            ).fetchall()
+        return [self._vers_dict(r) for r in lignes]
+
     def reprendre_apres_arret(self, processus_vivant: Callable[[int], bool]) -> list[str]:
         """Au démarrage : les essais « en cours » dont le processus n'existe plus passent à « interrompu ».
 
@@ -236,6 +283,8 @@ class Registre:
         """
         interrompus = []
         for e in self.en_cours():
+            if e.get("travailleur"):
+                continue  # confié à un travailleur distant : c'est son silence qui le dira (`perdus`), pas l'absence d'un processus ici
             pid = e.get("pid")
             if pid is None or not processus_vivant(int(pid)):
                 self.changer_etat(

@@ -99,6 +99,12 @@ async function majPod() {
     if (p.gpu) {
       const util = p.gpu.utilisation_pct;
       items.push(h("span", { class: `pastille ${util > 5 ? "vert" : "orange"}`, title: p.gpu.nom }, h("i"), `GPU ${util} % · ${Math.round(p.gpu.memoire_utilisee_mo / 100) / 10}/${Math.round(p.gpu.memoire_totale_mo / 100) / 10} Go`));
+    } else if (p.maitre) {
+      // Laboratoire sur le pod CPU : l'entraînement se fait sur un pod GPU qui s'éteint quand il n'a rien à faire.
+      const attente = p.essais_en_file > 0 && !p.travailleur.connecte;
+      items.push(h("span", { class: `pastille ${p.travailleur.connecte ? "vert" : attente ? "orange" : ""}`,
+        title: "Le GPU n'est allumé que pour entraîner : il s'éteint seul quand il n'y a plus d'essai. La validation et les commentaires n'en ont pas besoin." },
+        h("i"), p.travailleur.connecte ? "GPU connecté" : attente ? `GPU éteint · ${p.essais_en_file} essai(s) attendent` : "GPU éteint (au repos)"));
     } else items.push(h("span", { class: "pastille" }, h("i"), "pas de GPU visible"));
     items.push(h("span", { class: `pastille ${p.essais_en_cours ? "vert" : ""}` }, h("i"), `${p.essais_en_cours} en cours · ${p.essais_en_file} en file`));
     items.push(h("span", { class: `pastille ${p.disque.libre_go < 2 ? "rouge" : ""}` }, h("i"), `disque libre ${nb(p.disque.libre_go, 1)} Go`));

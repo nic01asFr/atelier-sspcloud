@@ -9,7 +9,7 @@ import pytest
 
 from laboratoire.empreinte import canonique, empreinte
 from laboratoire.modeles import ConfigEssai, Methode
-from laboratoire.registre import EssaiInconnu, Registre, TransitionRefusee
+from laboratoire.registre import MIGRATIONS, EssaiInconnu, Registre, TransitionRefusee
 
 
 def _config(**kw) -> ConfigEssai:
@@ -155,7 +155,7 @@ def test_la_base_survit_a_une_reouverture_et_migre_une_seule_fois(tmp_path: Path
     assert r2.essai(ident)["etat"] == "en_file"
     assert r2.creer_essai(_config()) == "E0002"
     r2.fermer()
-    assert sqlite3.connect(chemin).execute("PRAGMA user_version").fetchone()[0] == 1
+    assert sqlite3.connect(chemin).execute("PRAGMA user_version").fetchone()[0] == len(MIGRATIONS)
 
 
 def test_une_base_plus_recente_que_le_laboratoire_est_refusee(tmp_path: Path) -> None:

@@ -20,6 +20,8 @@ from laboratoire.registre import Registre
 from laboratoire.variante import VarianteInvalide, Variante
 
 LIGNES_D_ERREUR = 12
+SILENCE_MAX_S = 600.0  # un travailleur distant sans signe depuis 10 minutes est tenu pour perdu (pod coupé, réseau rompu)
+SIGNE_RECENT_S = 120.0  # en deçà, on le dit présent : une demande d'arrêt lui sera transmise
 
 
 def processus_vivant(pid: int) -> bool:
@@ -84,6 +86,14 @@ class Executeur:
         conclus = []
         for essai in self.registre.en_cours():
             ident = essai["id"]
+            if essai.get("travailleur"):
+                if self._horloge() - (essai.get("dernier_signe") or 0) > SILENCE_MAX_S:
+                    self.registre.changer_etat(
+                        ident, "interrompu", fin=self._horloge(),
+                        erreur=f"{essai['travailleur']} n'a plus donné signe (pod GPU coupé ou réseau rompu) ; l'essai peut être relancé",
+                    )
+                    conclus.append(ident)
+                continue
             p = self._processus.get(ident)
             if p is not None:
                 code = p.poll()
@@ -118,12 +128,25 @@ class Executeur:
             queue = "\n".join(lignes[-LIGNES_D_ERREUR:])
         return f"code de sortie {code}\n{queue}".strip()
 
+    def conclure_distant(self, ident: str, code: int | None, arrete: bool) -> dict[str, Any]:
+        """Le travailleur a rendu les fichiers de l'essai : on conclut comme pour un essai local (sur les fichiers)."""
+        essai = self.registre.essai(ident)
+        if arrete:
+            return self.registre.changer_etat(ident, "arrete", fin=self._horloge(), erreur="arrêté par la personne")
+        self._conclure(essai, code)
+        return self.registre.essai(ident)
+
     # -- arrêter ---------------------------------------------------------
 
     def arreter(self, ident: str, delai: float = 5.0) -> dict[str, Any]:
         essai = self.registre.essai(ident)
         if essai["etat"] == "en_file":
             return self.registre.changer_etat(ident, "arrete", fin=self._horloge(), erreur="arrêté avant le départ")
+        if essai.get("travailleur") and essai["etat"] == "en_cours":
+            if self._horloge() - (essai.get("dernier_signe") or 0) < SIGNE_RECENT_S:
+                self.registre.demander_arret(ident)  # le travailleur l'apprend à son prochain signe et rend ce qu'il a
+                return self.registre.essai(ident)
+            return self.registre.changer_etat(ident, "arrete", fin=self._horloge(), erreur="arrêté par la personne (travailleur absent)")
         pid = essai.get("pid")
         p = self._processus.pop(ident, None)
         if pid and processus_vivant(int(pid)):

@@ -28,7 +28,9 @@ class Travailleur:
         activite_humaine: Callable[[], bool] | None = None,
         battement_humain: Callable[[], None] | None = None,
         intervalle_humain: float = 30.0,
+        lancer: bool = True,
     ) -> None:
+        self._lancer = lancer  # False : ce laboratoire ne lance rien lui-même, un travailleur distant prend la file (voir `distant`)
         self.registre, self.executeur, self.parallelisme = registre, executeur, max(1, parallelisme)
         self._battement, self._intervalle, self._horloge = battement, intervalle_battement, horloge
         # Pendant qu'une personne valide, aucun essai ne tourne : le GPU est au repos et le serveur couperait le pod en pleine séance.
@@ -40,7 +42,7 @@ class Travailleur:
 
     def tick(self) -> None:
         self.executeur.verifier()
-        while len(self.registre.en_cours()) < self.parallelisme:
+        while self._lancer and len(self.registre.en_cours()) < self.parallelisme:
             suivant = self.registre.prochain_en_file()
             if suivant is None:
                 break
