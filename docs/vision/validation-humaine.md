@@ -105,6 +105,14 @@ La consigne d'origine demandait déjà un traitement séparé (modèles panorami
 
 **Mise en œuvre (recettes).** Le filtre « vues panoramiques » (fondé sur le rapport largeur/hauteur, qui ne trouvait rien) est remplacé par `type_image` : `recadrage` (= « panoramique » de la consigne), `plate` (= « non panoramique ») ou `tous`. La préparation (rognage, masque) ne s'applique qu'aux photos plates ; un recadrage est pris en entier.
 
-## 12. Accès d'un valideur
+## 12. Accès : administrateur, relecteur, valideur
 
-Le jeton d'administration (`labo/.jeton`) ouvre tout. Un valideur reçoit son **propre jeton**, qui n'ouvre que l'écran de validation (`/api/validation/*`, les images du brut, la page) : ni les essais, ni les données, ni le lancement d'un entraînement. Les jetons sont dans `labo/valideurs.json` (`{"nom": "jeton"}`), relus à chaque requête : en ajouter ou en retirer un ne demande pas de redémarrer le service. Après connexion, un valideur arrive directement sur « Valider ».
+Le jeton d'administration (`labo/.jeton`) ouvre tout. Les autres jetons sont dans `labo/valideurs.json`, `{"nom": jeton}` ou `{"nom": {"jeton": "…", "role": "…"}}`, relu à chaque requête : en ajouter ou en retirer un ne demande pas de redémarrer le service. Le nom du fichier est celui du jeton : l'auteur d'une décision ou d'un commentaire vient du jeton, jamais d'un champ saisi.
+
+| Rôle | Peut | Ne peut pas |
+|---|---|---|
+| **administrateur** | tout, dont changer le statut d'un commentaire et exporter les commentaires | — |
+| **relecteur** | tout **lire** (essais, données, résultats), valider, commenter, répondre | lancer un entraînement, construire une variante, ouvrir un test scellé, changer un statut, exporter |
+| **valideur** (par défaut) | l'écran de validation seulement | tout le reste, commenter compris |
+
+Après connexion, un valideur arrive directement sur « Valider ». Les commentaires sont décrits dans [`commentaires-sur-tout.md`](commentaires-sur-tout.md).

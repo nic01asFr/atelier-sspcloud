@@ -28,8 +28,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from laboratoire.adaptateurs import adaptateur as obtenir_adaptateur
+from laboratoire.api_commentaires import monter_commentaires
 from laboratoire.api_donnees import monter_donnees
 from laboratoire.api_validation import monter_validation
+from laboratoire.commentaires.journal import Commentaires
 from laboratoire.executeur import Executeur
 from laboratoire.modeles import ConfigEssai
 from laboratoire.projet import Racine, identifiant_sur
@@ -44,8 +46,11 @@ MAX_JOURNAL = 200_000  # octets rendus d'un coup
 MAX_CORPS_CONNEXION = 4096
 PAUSE_APRES_ECHEC_S = 1.0  # ralentit l'essai de jetons à la chaîne
 DUREE_DU_COOKIE_S = 30 * 24 * 3600
-# Un valideur (jeton de `valideurs.json`) ne voit que l'écran de validation : pas les essais, ni les données, ni le lancement d'un entraînement.
+# Deux rôles, en plus de l'administrateur (jeton du laboratoire), dans `valideurs.json` — {nom: jeton} ou {nom: {"jeton": …, "role": …}} :
+#  - « valideur » (défaut) ne voit que l'écran de validation : pas les essais, ni les données, ni le lancement d'un entraînement ;
+#  - « relecteur » lit tout (lecture seule), valide et commente ; il ne lance rien, ne change aucun statut, n'exporte rien.
 ROUTES_VALIDEUR = ("/web/", "/api/validation/", "/api/brut/image")
+ROUTES_RELECTEUR_EN_ECRITURE = ("/api/validation/", "/api/commentaires")
 FENETRE_ACTIVITE_HUMAINE_S = 600  # une personne qui n'a rien fait depuis 10 minutes ne tient plus le pod éveillé
 
 PAGE_DE_CONNEXION = """<!doctype html>
@@ -120,6 +125,7 @@ def creer_app(
     battement_humain: Callable[[], Any] | None = None,
 ) -> FastAPI:
     registre = Registre(racine.base)
+    commentaires = Commentaires(racine.chemin / "donnees" / "commentaires.db")
     decisions = Journal(racine.chemin / "donnees" / "validation.db")  # (pas « journal » : une route d'essai porte ce nom)
     executeur = Executeur(racine, registre)
     activite = {"derniere": float("-inf")}
@@ -140,27 +146,36 @@ def creer_app(
                 travailleur.arreter()
             registre.fermer()
             decisions.fermer()
+            commentaires.fermer()
 
     app = FastAPI(title="Laboratoire d'essais", lifespan=cycle, docs_url="/api/docs" if jeton is None else None, redoc_url=None, openapi_url=None if jeton else "/api/openapi.json")
     app.state.registre, app.state.executeur, app.state.travailleur, app.state.racine = registre, executeur, travailleur, racine
     app.state.activite_humaine = humain_present
 
-    def jetons_valideurs() -> list[str]:
-        """Relus à chaque requête : ajouter ou retirer un valideur (fichier `valideurs.json`, {nom: jeton}) ne demande pas de redémarrer."""
+    def porteurs() -> list[tuple[str, str, str]]:
+        """(nom, jeton, rôle) de `valideurs.json`, relu à chaque requête : ajouter ou retirer un porteur ne demande pas de redémarrer."""
         try:
-            return [str(v) for v in json.loads((racine.chemin / "valideurs.json").read_text(encoding="utf-8")).values() if v]
+            brut = json.loads((racine.chemin / "valideurs.json").read_text(encoding="utf-8"))
+            sortie = []
+            for nom, v in brut.items():
+                jeton_porteur, role_porteur = (v.get("jeton"), v.get("role", "valideur")) if isinstance(v, dict) else (v, "valideur")
+                if jeton_porteur and role_porteur in ("valideur", "relecteur"):
+                    sortie.append((str(nom), str(jeton_porteur), role_porteur))
+            return sortie
         except (OSError, ValueError, AttributeError):
             return []
 
-    def role(fourni: str) -> str | None:
+    def identifier(fourni: str) -> tuple[str, str] | None:
+        """(auteur, rôle) du jeton présenté, ou None."""
         if not fourni:
             return None
         if hmac.compare_digest(fourni.encode(), (jeton or "").encode()):
-            return "admin"
-        return "valideur" if any([hmac.compare_digest(fourni.encode(), v.encode()) for v in jetons_valideurs()]) else None
+            return "admin", "admin"
+        trouve = [(nom, role_porteur) for nom, j, role_porteur in porteurs() if hmac.compare_digest(fourni.encode(), j.encode())]
+        return trouve[0] if trouve else None
 
     def jeton_valide(fourni: str) -> bool:
-        return role(fourni) is not None
+        return identifier(fourni) is not None
 
     @app.middleware("http")
     async def verifier_le_jeton(request: Request, suite):
@@ -168,15 +183,20 @@ def creer_app(
         if jeton and chemin not in ("/sante", "/connexion"):
             presente = request.headers.get("authorization", "")
             fourni = presente[7:] if presente.lower().startswith("bearer ") else request.cookies.get("labo_jeton", "")
-            qui = role(fourni)
+            qui = identifier(fourni)
             if qui is None:
                 if request.method == "GET" and chemin == "/":
                     return _page_de_connexion()  # un navigateur sans cookie : on lui demande le jeton
                 return JSONResponse({"erreur": "jeton absent ou faux"}, status_code=401)
+            request.state.auteur, request.state.role = qui
             lecture = request.method == "GET" and chemin in ("/", "/api/pod")
-            if qui == "valideur" and not lecture and not chemin.startswith(ROUTES_VALIDEUR):
+            if qui[1] == "valideur" and not lecture and not chemin.startswith(ROUTES_VALIDEUR):
                 return JSONResponse({"erreur": "ce jeton ne donne accès qu'à la validation"}, status_code=403)
-        if chemin.startswith("/api/validation/") or chemin == "/api/brut/image":
+            if qui[1] == "relecteur" and request.method not in ("GET", "HEAD") and not chemin.startswith(ROUTES_RELECTEUR_EN_ECRITURE):
+                return JSONResponse({"erreur": "ce jeton est en lecture seule : il peut commenter et valider, rien d'autre"}, status_code=403)
+        else:
+            request.state.auteur, request.state.role = "admin", "admin"
+        if chemin.startswith(("/api/validation/", "/api/commentaires")) or chemin == "/api/brut/image":
             activite["derniere"] = time.monotonic()  # quelqu'un valide : le pod doit rester éveillé (voir Travailleur)
         return await suite(request)
 
@@ -191,7 +211,7 @@ def creer_app(
             await asyncio.sleep(PAUSE_APRES_ECHEC_S)
             return _page_de_connexion(erreur=True)
         https = request.url.scheme == "https" or request.headers.get("x-forwarded-proto", "").lower() == "https"
-        reponse = RedirectResponse("./#/valider" if role(fourni) == "valideur" else "./", status_code=303)  # un valideur n'a que cet écran
+        reponse = RedirectResponse("./#/valider" if (identifier(fourni) or ("", ""))[1] == "valideur" else "./", status_code=303)  # un valideur n'a que cet écran
         reponse.set_cookie("labo_jeton", fourni, max_age=DUREE_DU_COOKIE_S, httponly=True, samesite="strict", secure=https, path="/")
         return reponse
 
@@ -312,6 +332,7 @@ def creer_app(
 
     # -- jeux de données -------------------------------------------------
 
+    monter_commentaires(app, commentaires)
     brut = monter_donnees(app, racine, ident, decisions)
     monter_validation(app, racine, ident, decisions, brut)
 

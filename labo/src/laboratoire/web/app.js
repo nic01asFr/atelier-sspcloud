@@ -128,7 +128,7 @@ async function pageEssais(zone) {
     const essais = await api(`/api/essais${filtre ? `?etat=${filtre}` : ""}`);
     boutonComparer.disabled = selection.size < 2 || selection.size > 6;
     if (!essais.length) { corps.replaceChildren(h("tr", {}, h("td", { colspan: 12, class: "vide" }, "Aucun essai pour l'instant. ", h("a", { href: "#/lancer" }, "Lancer le premier.")))); return; }
-    corps.replaceChildren(...essais.map((e) => h("tr", {},
+    corps.replaceChildren(...essais.map((e) => h("tr", { "data-cible": `essai:${e.id}` },
       h("td", {}, h("input", { type: "checkbox", "aria-label": `Sélectionner ${e.id}`, checked: selection.has(e.id), onchange: (ev) => { ev.target.checked ? selection.add(e.id) : selection.delete(e.id); boutonComparer.disabled = selection.size < 2 || selection.size > 6; } })),
       h("td", {}, h("a", { href: `#/essais/${e.id}`, class: "mono" }, e.id)), h("td", {}, badge(e.etat)), h("td", { class: "mono" }, e.jeu), h("td", {}, `${e.famille} · ${e.modele}`),
       h("td", { class: "num" }, e.imgsz), h("td", { class: "num" }, e.graine),
@@ -167,19 +167,19 @@ async function pageEssai(zone, id) {
   const boutons = [h("a", { class: "bouton", href: "#/essais" }, "← Essais"), h("a", { class: "bouton", href: `#/lancer?depuis=${id}` }, "Rejouer avec…")];
   if (actif) boutons.push(h("button", { class: "danger", onclick: async () => { if (!confirm(`Arrêter ${id} ?`)) return; try { await api(`/api/essais/${id}/arreter`, { methode: "POST" }); avis(`${id} arrêté.`); render(); } catch (x) { avis(x.message, true); } } }, "Arrêter"));
   const zoneTest = h("div", {});
-  const entete = h("div", { class: "entete" }, h("div", {}, h("h1", {}, `Essai ${id} `, badge(e.etat)), h("p", { class: "doux" }, `${e.famille} · ${e.modele} · résolution ${e.imgsz} · jeu `, h("span", { class: "mono" }, e.jeu), ` · graine ${e.graine} · ${duree(e.debut, e.fin)}`)), h("div", { class: "actions" }, boutons));
+  const entete = h("div", { class: "entete", "data-cible": `essai:${id}` }, h("div", {}, h("h1", {}, `Essai ${id} `, badge(e.etat)), h("p", { class: "doux" }, `${e.famille} · ${e.modele} · résolution ${e.imgsz} · jeu `, h("span", { class: "mono" }, e.jeu), ` · graine ${e.graine} · ${duree(e.debut, e.fin)}`)), h("div", { class: "actions" }, boutons));
   const contenu = [entete];
   if (e.erreur && (e.etat === "echoue" || e.etat === "interrompu" || e.etat === "arrete")) contenu.push(h("div", { class: "carte", style: "border-color:var(--mal)" }, h("h2", {}, "Pourquoi"), h("pre", { class: "journal", style: "max-height:10rem" }, e.erreur)));
   if (r) {
     const rap = r.rapport, ic = r.intervalle_rappel_moyen, gain = r.gain_sur_trivial.majoritaire;
-    contenu.push(h("div", { class: "tuiles" },
+    contenu.push(h("div", { class: "tuiles", "data-cible": `essai:${id}/indicateurs` },
       tuile("Rappel moyen (validation)", nb(rap.rappel_moyen, 3), ic && ic.bas !== null ? `intervalle à 95 % : ${nb(ic.bas, 2)} – ${nb(ic.haut, 2)} (${ic.groupes} collections)` : "intervalle impossible : moins de deux collections"),
       tuile("Gain sur la réponse triviale", gain === null ? "—" : `${gain >= 0 ? "+" : ""}${nb(gain, 3)}`, `toujours « ${r.triviales.majoritaire.classe} » : ${nb(r.triviales.majoritaire.rappel_moyen, 3)} de rappel moyen`),
       tuile("Exactitude", nb(rap.exactitude, 3), `réponse triviale : ${nb(r.triviales.majoritaire.exactitude, 3)} — flatteuse si une classe domine`),
       tuile("Classes non fiables", rap.classes_non_fiables.length ? rap.classes_non_fiables.join(", ") : "aucune", "moins de 20 images en validation")));
     contenu.push(h("div", { class: "grille" },
-      h("div", { class: "carte" }, h("h2", {}, "Par classe (validation)"), tableauParClasse(rap, r.triviales)),
-      h("div", { class: "carte" }, h("h2", {}, "Matrice de confusion (validation)"), matriceConfusion(rap))));
+      h("div", { class: "carte", "data-cible": `essai:${id}/par-classe` }, h("h2", {}, "Par classe (validation)"), tableauParClasse(rap, r.triviales)),
+      h("div", { class: "carte", "data-cible": `essai:${id}/confusion` }, h("h2", {}, "Matrice de confusion (validation)"), matriceConfusion(rap))));
   } else if (e.etat === "termine") contenu.push(h("p", { class: "doux" }, "Pas de résultats lisibles."));
   // test scellé
   if (e.etat === "termine" && d.test.scelle) {
@@ -213,7 +213,7 @@ async function pageEssai(zone, id) {
       h("select", { "aria-label": "Filtrer par classe vraie", onchange: (ev) => { f = ev.target.value; tracer(); } }, h("option", { value: "" }, "Toutes les classes"), ...classes.map((c) => h("option", { value: c }, `vraie : ${c}`)))),
       h("div", { class: "defile" }, h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Fichier"), h("th", {}, "Vraie"), h("th", {}, "Prédite"), h("th", {}, "Collection"))), corps))));
   }
-  contenu.push(h("div", { class: "carte" }, h("h2", {}, "Configuration"), h("dl", { class: "cle-valeur" }, ...Object.entries(aplatir(e.config)).flatMap(([k, v]) => [h("dt", {}, k), h("dd", { class: "mono" }, String(v))]))));
+  contenu.push(h("div", { class: "carte", "data-cible": `essai:${id}/configuration` }, h("h2", {}, "Configuration"), h("dl", { class: "cle-valeur" }, ...Object.entries(aplatir(e.config)).flatMap(([k, v]) => [h("dt", {}, k), h("dd", { class: "mono" }, String(v))]))));
   const pre = h("pre", { class: "journal", "aria-label": "Journal de l'essai" });
   contenu.push(h("div", { class: "carte" }, h("h2", {}, "Journal"), pre));
   zone.replaceChildren(...contenu);

@@ -32,7 +32,7 @@ async function pageDonnees(zone, sous) {
     brut.anomalies.length ? h("div", { class: "carte" }, h("h2", {}, "Anomalies du brut (non classées, jamais ignorées en silence)"), h("ul", {}, ...brut.anomalies.slice(0, 30).map((a) => h("li", { class: "mono" }, a)))) : null,
     h("h2", {}, "Variantes"),
     ...(variantes.length ? variantes.map((v) => v.invalide ? h("div", { class: "carte", style: "border-color:var(--mal)" }, h("h2", {}, v.id), h("p", {}, "Inutilisable : ", v.invalide)) :
-      h("div", { class: "carte" }, h("h2", {}, h("a", { href: `#/donnees/${v.id}` }, v.id)), tableauEffectifs(v.classes, v.effectifs, v.groupes))) : [h("div", { class: "carte vide" }, "Aucune variante pour l'instant. ", h("a", { href: "#/donnees/nouvelle" }, "Créer la première."))]));
+      h("div", { class: "carte", "data-cible": `variante:${v.id}` }, h("h2", {}, h("a", { href: `#/donnees/${v.id}` }, v.id)), tableauEffectifs(v.classes, v.effectifs, v.groupes))) : [h("div", { class: "carte vide" }, "Aucune variante pour l'instant. ", h("a", { href: "#/donnees/nouvelle" }, "Créer la première."))]));
 }
 
 const OPTIONS = {
