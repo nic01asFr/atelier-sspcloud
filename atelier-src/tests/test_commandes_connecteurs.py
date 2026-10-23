@@ -29,6 +29,7 @@ NOUVELLES = {
     "atelier_connecteur_choisir": ("reversible", "atelier_connecteur_choisir", True),
     "atelier_connecteur_accorder": ("reservee", None, False),
     "atelier_connecteur_renouveler": ("reservee", None, False),
+    "atelier_connecteur_modifier": ("reservee", None, False),
 }
 JETON_QGIS = "jeton-qgis-0123456789abcdef"
 
@@ -387,6 +388,65 @@ def test_renouveler_sans_nom_relit_tous_les_secrets_accordes(atelier: Any) -> No
     fait = _executer(atelier, "atelier_connecteur_renouveler", {}, contexte_interface())
     assert fait.statut == FAIT and fait.charge["renouveles"] == ["qgis"]
     assert _pool(atelier)["qgis"]["headers"]["Authorization"] == "Bearer autre-jeton-0123456789"
+
+
+# ── Modifier un connecteur distant ──────────────────────────────────────
+
+
+def test_modifier_change_l_adresse_sans_retirer_et_garde_le_secret_accorde(atelier: Any) -> None:
+    fichier = _accorder_qgis(atelier, JETON_QGIS)
+    assert fichier.is_file()
+    arguments = {"nom": "qgis", "url": "http://nouveau-qgis.invalid/mcp/"}
+
+    refus = _executer(atelier, "atelier_connecteur_modifier", arguments)
+    assert refus.statut == REFUSE and "réservée" in refus.charge["erreur"]  # jamais par un modèle : le secret partirait ailleurs
+    assert _pool(atelier)["qgis"]["url"] == "http://qgis.invalid/mcp"
+
+    fait = _executer(atelier, "atelier_connecteur_modifier", arguments, contexte_interface())
+    assert fait.statut == FAIT, fait.charge
+    pool = _pool(atelier)["qgis"]
+    assert pool["url"] == "http://nouveau-qgis.invalid/mcp/" and pool["headers"]["Authorization"] == f"Bearer {JETON_QGIS}"  # le secret accordé reste
+    assert fait.charge["avant"]["url"] == "http://qgis.invalid/mcp" and fait.charge["apres"]["url"] == "http://nouveau-qgis.invalid/mcp/"
+    assert "nouveau-qgis.invalid" in fait.charge["avertissement"] and "headers.Authorization" in fait.charge["avertissement"]  # l'hôte change, un secret y part
+    assert JETON_QGIS not in json.dumps(fait.charge)
+    journal = json.dumps(atelier.app.state.commandes.journal.lire(commande="atelier_connecteur_modifier", limite=5))
+    assert JETON_QGIS not in journal and "http://qgis.invalid/mcp" in journal and "nouveau-qgis.invalid" in journal  # l'ancienne et la nouvelle adresse sont au journal
+    # Le renouvellement continue de marcher après la modification (les accords sont restés).
+    fichier.write_text("jeton-apres-modification-0123\n", encoding="utf-8")
+    assert _executer(atelier, "atelier_connecteur_renouveler", {"nom": "qgis"}, contexte_interface()).statut == FAIT
+    assert _pool(atelier)["qgis"]["headers"]["Authorization"] == "Bearer jeton-apres-modification-0123"
+
+
+def test_modifier_sans_changement_de_machine_ne_signale_pas_d_hote_et_change_le_transport(atelier: Any) -> None:
+    _accorder_qgis(atelier, JETON_QGIS)
+    fait = _executer(atelier, "atelier_connecteur_modifier", {"nom": "qgis", "url": "http://qgis.invalid/mcp/"}, contexte_interface())
+    assert fait.statut == FAIT and "avertissement" not in fait.charge  # même hôte : la barre finale seulement
+    sse = _executer(atelier, "atelier_connecteur_modifier", {"nom": "qgis", "transport": "sse"}, contexte_interface())
+    assert sse.statut == FAIT and _pool(atelier)["qgis"]["type"] == "sse"
+
+
+@pytest.mark.parametrize(
+    "arguments, motif",
+    [
+        ({"nom": "qgis"}, "donnez l'adresse"),
+        ({"nom": "qgis", "url": "ftp://x.invalid/mcp"}, "http:// ou https://"),
+        ({"nom": "qgis", "url": "http://qgis.invalid/mcp"}, "rien à modifier"),
+        ({"nom": "qgis", "url": "http://x.invalid/mcp?token=abcdef0123456789abcdef"}, "secret"),
+        ({"nom": "qgis", "headers": {"X": "y"}}, "seulement l'adresse"),
+        ({"nom": "fantome", "url": "http://x.invalid/mcp"}, "inconnu"),
+    ],
+)
+def test_modifier_refuse(atelier: Any, arguments: dict[str, Any], motif: str) -> None:
+    _mettre_au_pool(atelier, qgis={"type": "http", "url": "http://qgis.invalid/mcp"})
+    reponse = _executer(atelier, "atelier_connecteur_modifier", arguments, contexte_interface())
+    assert reponse.statut == REFUSE and motif in reponse.charge["erreur"]
+    assert _pool(atelier)["qgis"]["url"] == "http://qgis.invalid/mcp"
+
+
+def test_modifier_refuse_un_serveur_local(atelier: Any) -> None:
+    _mettre_au_pool(atelier, outil={"command": "node", "args": ["serveur.js"]})
+    reponse = _executer(atelier, "atelier_connecteur_modifier", {"nom": "outil", "url": "http://x.invalid/mcp"}, contexte_interface())
+    assert reponse.statut == REFUSE and "serveur local" in reponse.charge["erreur"]
 
 
 # ── La clé `atelier` d'une entrée du pool (vues relayées, équipe B) ─────

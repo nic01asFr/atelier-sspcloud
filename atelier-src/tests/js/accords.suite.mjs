@@ -23,7 +23,7 @@ globalThis.localStorage = stockage();
 globalThis.sessionStorage = stockage();
 
 const S = await import("../../mcp_gateway/atelier/web/js/state.js");
-const { createAccordsActions, champsPourAccorder, argumentsDAccord, blocDuConnecteur } = await import(
+const { createAccordsActions, champsPourAccorder, argumentsDAccord, blocDuConnecteur, champsPourModifier, argumentsDeModification } = await import(
   "../../mcp_gateway/atelier/web/js/controllers/accords.js"
 );
 const { createAutomatesActions } = await import("../../mcp_gateway/atelier/web/js/controllers/automates.js");
@@ -42,7 +42,7 @@ function fausseRoute() {
     appels,
     executerCommande: async (nom, args) => {
       appels.push([nom, args]);
-      if (!["atelier_agent_activer", "atelier_agent_desactiver", "atelier_connecteur_accorder", "atelier_connecteur_renouveler"].includes(nom)) {
+      if (!["atelier_agent_activer", "atelier_agent_desactiver", "atelier_connecteur_accorder", "atelier_connecteur_renouveler", "atelier_connecteur_modifier"].includes(nom)) {
         const e = new Error(`Cette action n’est pas encore disponible ici (${nom}).`);
         e.status = 404;
         throw e;
@@ -210,6 +210,35 @@ function fausseRoute() {
   await accords.renouvelerSecret({ id: "sans-secret", config: { url: "https://x.example/mcp" } });
   egal(ouverte, null, "un refus n'ouvre pas de fenêtre");
   porte(state.error, "rien à renouveler", "le refus se lit");
+}
+
+// ── Modifier un connecteur : adresse et transport, sans le supprimer ───
+{
+  const distant = { id: "github", name: "github", config: { type: "http", url: "https://api.githubcopilot.com/mcp" } };
+  const champs = champsPourModifier(distant);
+  egal(champs.find((c) => c.name === "url").value, "https://api.githubcopilot.com/mcp", "l'adresse actuelle est proposée");
+  egal(champs.find((c) => c.name === "transport").value, "http", "le transport actuel est proposé");
+  egal(argumentsDeModification(distant, { url: "https://api.githubcopilot.com/mcp/", transport: "http" }), { nom: "github", url: "https://api.githubcopilot.com/mcp/" }, "seul ce qui change part");
+  egal(argumentsDeModification(distant, { url: "https://api.githubcopilot.com/mcp", transport: "sse" }), { nom: "github", transport: "sse" }, "le transport seul");
+  for (const [saisie, motif] of [[{ url: "ftp://x" }, "http://"], [{ url: "https://api.githubcopilot.com/mcp", transport: "http" }, "Rien à modifier"]]) {
+    let refus = "";
+    try { argumentsDeModification(distant, saisie); } catch (e) { refus = e.message; }
+    porte(refus, motif, "une saisie sans effet ou fausse ne part pas");
+  }
+
+  const state = S.createState();
+  state.token = "session";
+  const route = fausseRoute();
+  let ouverte = null;
+  let relu = 0;
+  const accords = createAccordsActions({ state, api: route, render: () => {}, openModal: (_s, opts) => (ouverte = opts), apresConnecteur: async () => { relu += 1; } });
+  accords.modifierConnecteur(distant);
+  porte(ouverte.title, "Modifier « github »", "la fenêtre nomme le connecteur");
+  porte(ouverte.lead, "secret accordé est envoyé à la nouvelle adresse", "elle prévient qu'un secret accordé suit l'adresse");
+  verifier(!ouverte.fields.some((c) => c.type === "password" || c.type === "textarea"), "aucun champ où coller un secret");
+  await ouverte.onSubmit({ url: "https://api.githubcopilot.com/mcp/", transport: "http" });
+  egal(route.appels.at(-1), ["atelier_connecteur_modifier", { nom: "github", url: "https://api.githubcopilot.com/mcp/" }], "Modifier appelle la commande réservée, avec ce qui change");
+  egal(relu, 1, "les connecteurs se relisent");
 }
 
 // ── « À valider » et le journal parlent de ces commandes ───────────────

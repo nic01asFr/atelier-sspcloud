@@ -13,6 +13,7 @@ export const ACTIVER_AGENT = "atelier_agent_activer";
 export const DESACTIVER_AGENT = "atelier_agent_desactiver";
 export const ACCORDER_SECRET = "atelier_connecteur_accorder";
 export const RENOUVELER_SECRET = "atelier_connecteur_renouveler";
+export const MODIFIER_CONNECTEUR = "atelier_connecteur_modifier";
 
 /** Un connecteur local reçoit une variable, un service distant un en-tête. */
 export function blocDuConnecteur(entry) {
@@ -61,6 +62,34 @@ export function champsPourAccorder(entry, noms) {
       hint: "Ce qui précède la valeur, si le service l’attend.",
     },
   ];
+}
+
+/** Les champs de la fenêtre « Modifier » : l'adresse et le transport actuels. */
+export function champsPourModifier(entry) {
+  const type = entry?.config?.type;
+  return [
+    {
+      name: "url", label: "Adresse", type: "text", value: entry?.config?.url || entry?.url || "", required: true, full: true,
+      placeholder: "https://…", hint: "http:// ou https://. La barre finale compte pour certains services.",
+    },
+    {
+      name: "transport", label: "Transport", type: "select", value: type === "sse" ? "sse" : "http",
+      options: [{ value: "http", label: "http (streamable)" }, { value: "sse", label: "sse" }],
+      hint: "Presque toujours http ; sse pour un ancien service à flux d’événements.",
+    },
+  ];
+}
+
+/** Les arguments de la commande de modification ; seuls les champs qui changent partent. */
+export function argumentsDeModification(entry, data) {
+  const url = String(data?.url || "").trim();
+  if (!/^https?:\/\//.test(url)) throw new Error("L’adresse commence par http:// ou https://.");
+  const args = { nom: entry.id || entry.name };
+  if (url !== (entry?.config?.url || entry?.url || "")) args.url = url;
+  const transport = String(data?.transport || "").trim();
+  if (transport && transport !== (entry?.config?.type === "sse" ? "sse" : "http")) args.transport = transport;
+  if (!args.url && !args.transport) throw new Error("Rien à modifier : l’adresse et le transport sont déjà ceux-là.");
+  return args;
 }
 
 /** Les arguments de la commande, depuis la saisie ; lève si elle est incomplète. */
@@ -161,5 +190,29 @@ export function createAccordsActions(ctx) {
     render();
   }
 
-  return { activerAgent, desactiverAgent, accorderSecret, renouvelerSecret };
+  /**
+   * Changer l'adresse ou le transport d'un service distant sans le supprimer : ses secrets accordés et son état restent.
+   * La fenêtre prévient qu'un secret accordé part vers la nouvelle adresse.
+   */
+  function modifierConnecteur(entry) {
+    const nom = entry.id || entry.name;
+    ctx.openModal(state, {
+      title: `Modifier « ${entry.name || entry.id} »`,
+      lead:
+        "Change l’adresse ou le transport sans supprimer le connecteur : les secrets déjà accordés et l’état restent. " +
+        "Un secret accordé est envoyé à la nouvelle adresse : ne la changez que pour un hôte de confiance.",
+      submitLabel: "Modifier",
+      fields: champsPourModifier(entry),
+      onSubmit: async (data) => {
+        const args = argumentsDeModification(entry, data);
+        const rendu = await api.executerCommande(MODIFIER_CONNECTEUR, args);
+        await ctx.apresConnecteur?.();
+        render();
+        const sonde = rendu?.resultat?.sonde || rendu?.charge?.sonde;
+        if (sonde && sonde.online === false && sonde.error) S.setError(state, `Modifié, mais le connecteur ne répond pas encore : ${sonde.error}`);
+      },
+    });
+  }
+
+  return { activerAgent, desactiverAgent, accorderSecret, renouvelerSecret, modifierConnecteur };
 }

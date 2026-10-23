@@ -52,6 +52,7 @@ RETIRER = "atelier_connecteur_retirer"
 CHOISIR = "atelier_connecteur_choisir"
 ACCORDER = "atelier_connecteur_accorder"
 RENOUVELER = "atelier_connecteur_renouveler"
+MODIFIER = "atelier_connecteur_modifier"
 
 # Des noms que l'Atelier tient lui-même : ils ne s'ajoutent ni ne se retirent par commande.
 NOMS_TENUS = frozenset({"atelier", "wikichat", "Onyxia"})
@@ -559,6 +560,60 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
         )
     )
 
+    # ── Modifier un connecteur distant (la personne seule) ──────────────
+
+    async def modifier(ctx: Contexte, args: dict[str, Any]) -> Effet:
+        """Change l'adresse et le transport d'un service distant, sans le retirer : ses secrets accordés, ses en-têtes et son état restent.
+
+        Réservée à la personne : changer l'adresse d'un connecteur qui porte un secret l'enverrait à un autre hôte.
+        """
+        from mcp_gateway.registry import update_registry_server_config
+
+        nom = nom_valide(args)
+        autres = set(args) - {"nom", "url", "transport"}
+        if autres:
+            raise Refus(f"modifier : seulement l'adresse (url) et le transport ; pas {sorted(autres)}")
+        if not texte(args, "url", maximum=500) and not texte(args, "transport", maximum=10):
+            raise Refus("modifier : donnez l'adresse (url) ou le transport à changer")
+        conn = ouvrir()
+        try:
+            e = entree(conn, nom)
+            if e is None:
+                raise Refus(f"connecteur inconnu : {nom}")
+            cfg = dict(e.config)
+            if "url" not in cfg:
+                raise Refus(f"{nom} est un serveur local : on ne modifie ici que l'adresse et le transport d'un service distant")
+            actuel = cfg.get("type") if cfg.get("type") in ("http", "sse") else None
+            valide = declaration(
+                ctx, {"url": texte(args, "url", maximum=500) or cfg["url"], "transport": texte(args, "transport", maximum=10) or actuel}
+            )
+            avant = {"url": cfg["url"], "transport": cfg.get("type")}
+            apres = {"url": valide["url"], "transport": valide["type"]}
+            if avant == apres:
+                raise Refus(f"{nom} a déjà cette adresse et ce transport : rien à modifier")
+            update_registry_server_config(conn, nom, {**cfg, "type": valide["type"], "url": valide["url"]})
+            accords = ((cfg.get("_metadata") or {}).get(_MARQUE) or {}).get("accords") or {}
+        finally:
+            conn.close()
+        hote_change = urlsplit(avant["url"]).netloc != urlsplit(apres["url"]).netloc
+        avertissement = (
+            f"L'hôte change : les secrets accordés à {nom} ({', '.join(sorted(accords))}) seront envoyés à {urlsplit(apres['url']).netloc}."
+            if accords and hote_change
+            else ""
+        )
+        synchro = synchroniser()
+        sonde = await sonder(nom)
+        return Effet(
+            charge={"connecteur": nom, "avant": avant, "apres": apres, "sonde": sonde, **({"avertissement": avertissement} if avertissement else {})},
+            objet_id=nom,
+            titre="Connecteur modifié",
+            resume=f"{nom} : {avant['url']} → {apres['url']}" + (f" ({avertissement})" if avertissement else ""),
+            voir="/?vue=connecteurs",
+            preuve={"sonde": sonde, "synchro": synchro, "hote_change": hote_change},
+            avant=avant,
+            apres=apres,
+        )
+
     # ── Renouveler les secrets accordés (la personne seule) ─────────────
 
     def _schema_de(valeur: Any) -> str:
@@ -760,5 +815,33 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
         )
     )
 
+    catalogue.ajouter(
+        Commande(
+            nom=MODIFIER,
+            description=(
+                "Change l'adresse et le transport d'un connecteur distant sans le retirer : ses secrets accordés et son état restent. "
+                "Réservée à la personne ; aucun secret en argument."
+            ),
+            objet="connecteur",
+            classe=RESERVEE,
+            regles=[
+                "jamais par un modèle : changer l'adresse d'un connecteur qui porte un secret l'enverrait à un autre hôte",
+                "seulement l'adresse et le transport d'un service distant ; les secrets restent à « Accorder un secret »",
+                "l'ancienne et la nouvelle adresse sont au journal ; un changement d'hôte avec secret accordé est signalé",
+            ],
+            executer=modifier,
+            schema={
+                "type": "object",
+                "properties": {
+                    "nom": {"type": "string"},
+                    "url": {"type": "string", "description": "La nouvelle adresse (http ou https)."},
+                    "transport": {"type": "string", "enum": ["http", "sse"]},
+                },
+                "required": ["nom"],
+            },
+            exposee_mcp=False,
+        )
+    )
 
-__all__ = ["ACCORDER", "RENOUVELER", "AJOUTER", "CHOISIR", "CLE_ATELIER", "RETIRER", "inscrire_les_connecteurs", "sans_cle_atelier"]
+
+__all__ = ["ACCORDER", "MODIFIER", "RENOUVELER", "AJOUTER", "CHOISIR", "CLE_ATELIER", "RETIRER", "inscrire_les_connecteurs", "sans_cle_atelier"]
