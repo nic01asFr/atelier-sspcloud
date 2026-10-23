@@ -849,7 +849,15 @@ function renderDetail(entry, kind, state, actions) {
     renouveler.textContent = "Renouveler le secret";
     renouveler.title = "Relit le fichier du secret déjà accordé et met la nouvelle valeur dans le connecteur.";
     renouveler.addEventListener("click", () => actions.renouvelerSecret?.(entry));
+    // Changer l'adresse d'un service distant sans le supprimer (ses secrets accordés restent).
+    const modifier = document.createElement("button");
+    modifier.type = "button";
+    modifier.className = "ghost btn-sm";
+    modifier.textContent = "Modifier";
+    modifier.title = "Change l’adresse ou le transport sans supprimer le connecteur.";
+    modifier.addEventListener("click", () => actions.modifierConnecteur?.(entry));
     toolbar.appendChild(toggle);
+    if (entry.config?.url || entry.url) toolbar.appendChild(modifier);
     toolbar.appendChild(accorder);
     toolbar.appendChild(renouveler);
     toolbar.appendChild(del);
