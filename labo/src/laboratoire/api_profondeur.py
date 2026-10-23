@@ -55,7 +55,7 @@ def _vue_depuis_nom(nom: str, fov: float) -> g.Vue:
 
 def monter_profondeur(app: FastAPI, racine: Racine, registre: Registre, votes: Votes, ident: Callable[[str], str]) -> None:
     paires: OrderedDict[str, dict[str, Any]] = OrderedDict()
-    accords: dict[tuple[str, str], float] = {}
+    accords: dict[tuple[str, str], dict[str, float]] = {}
 
     def qui(request: Request) -> tuple[str, str]:
         return getattr(request.state, "auteur", "admin"), getattr(request.state, "role", "admin")
@@ -263,11 +263,11 @@ def monter_profondeur(app: FastAPI, racine: Racine, registre: Registre, votes: V
 
     # -- la synthèse -------------------------------------------------------
 
-    def accord_entre(a: dict[str, Any], b: dict[str, Any]) -> float:
+    def accord_entre(a: dict[str, Any], b: dict[str, Any]) -> dict[str, float]:
         cle = (a["id"], b["id"])
         if cle in accords:
             return accords[cle]
-        valeurs = []
+        valeurs: dict[str, list[float]] = {"detail": [], "global": []}
         da, db = racine.dossier_essai(a["id"]) / "profondeur", racine.dossier_essai(b["id"]) / "profondeur"
         for fichier in sorted(da.glob("*.npz")):
             if not (db / fichier.name).is_file():
@@ -275,10 +275,11 @@ def monter_profondeur(app: FastAPI, racine: Racine, registre: Registre, votes: V
             with np.load(fichier) as x, np.load(db / fichier.name) as y:
                 if list(x["vues"]) != list(y["vues"]):
                     continue
-                r = mesures.accord(x["q"].astype(np.float32), x["masque"], y["q"].astype(np.float32), y["masque"])
-            if math.isfinite(r):
-                valeurs.append(r)
-        accords[cle] = float(np.median(valeurs)) if valeurs else math.nan
+                for nom, detail in (("detail", True), ("global", False)):
+                    r = mesures.accord(x["q"].astype(np.float32), x["masque"], y["q"].astype(np.float32), y["masque"], detail=detail)
+                    if math.isfinite(r):
+                        valeurs[nom].append(r)
+        accords[cle] = {nom: (float(np.median(v)) if v else math.nan) for nom, v in valeurs.items()}
         return accords[cle]
 
     @app.get("/api/profondeur/synthese")
@@ -290,8 +291,12 @@ def monter_profondeur(app: FastAPI, racine: Racine, registre: Registre, votes: V
             res = (racine.dossier_essai(e["id"]) / "resultats.json")
             r = json.loads(res.read_text(encoding="utf-8")) if res.is_file() else {}
             modeles.append({"modele": nom, "essai": e["id"], "licence": r.get("licence_modele"), "appareil": r.get("appareil"), **r.get("rapport", {})})
-        accord = {f"{a}|{b}": (None if not math.isfinite(v) else round(v, 4))
-                  for (a, b) in combinations(sorted(essais), 2) for v in [accord_entre(essais[a], essais[b])]}
+        paires_accord = {(a, b): accord_entre(essais[a], essais[b]) for (a, b) in combinations(sorted(essais), 2)}
+        def _arrondi(v: float) -> float | None:
+            return None if not math.isfinite(v) else round(v, 4)
+
+        accord = {f"{a}|{b}": _arrondi(v["detail"]) for (a, b), v in paires_accord.items()}
+        accord_global = {f"{a}|{b}": _arrondi(v["global"]) for (a, b), v in paires_accord.items()}
         vv = votes.valides(jeu)
         juges = []
         for v in vv:
@@ -306,7 +311,7 @@ def monter_profondeur(app: FastAPI, racine: Racine, registre: Registre, votes: V
         for v in vv:
             par_votant[v["votant"]] += 1
         return {
-            "jeu": jeu, "modeles": modeles, "accord": accord, "classement": mesures.classement(sorted(essais), juges) if len(essais) >= 2 else None,
+            "jeu": jeu, "modeles": modeles, "accord": accord, "accord_global": accord_global, "classement": mesures.classement(sorted(essais), juges) if len(essais) >= 2 else None,
             "votes": {"total": len(vv), "indecidables": sum(1 for v in vv if v["choix"] == "indecidable"), "par_votant": dict(par_votant)},
         }
 
