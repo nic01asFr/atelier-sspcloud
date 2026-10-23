@@ -69,12 +69,29 @@ def coherence_recouvrement(q: np.ndarray, masque: np.ndarray, vues: list[Vue], m
     return {"incoherence": _mediane(incoh), "paires": paires, "derive_echelle": _mediane(derives) if metrique else None}
 
 
-def accord(q_a: np.ndarray, m_a: np.ndarray, q_b: np.ndarray, m_b: np.ndarray) -> float:
-    """Deux modèles, un panorama : corrélation médiane, vue par vue, de leurs `q` sur les pixels que les deux jugent valides (1 : même relief)."""
+def flou(q: np.ndarray, sigma: float = 6.0) -> np.ndarray:
+    """Flou gaussien séparable (les cartes gardées sont petites : la convolution directe suffit)."""
+    r = max(1, int(3 * sigma))
+    k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
+    k /= k.sum()
+    horizontal = (np.lib.stride_tricks.sliding_window_view(np.pad(q, ((0, 0), (r, r)), mode="reflect"), 2 * r + 1, axis=1) * k).sum(axis=-1)
+    return (np.lib.stride_tricks.sliding_window_view(np.pad(horizontal, ((r, r), (0, 0)), mode="reflect"), 2 * r + 1, axis=0) * k).sum(axis=-1)
+
+
+def accord(q_a: np.ndarray, m_a: np.ndarray, q_b: np.ndarray, m_b: np.ndarray, detail: bool = True, sigma: float = 6.0) -> float:
+    """Deux modèles, un panorama : corrélation médiane, vue par vue, de leurs `q` sur les pixels que les deux jugent valides (1 : même relief).
+
+    Une corrélation « globale » est presque toujours proche de 1 : toute scène a un sol proche en bas et un fond loin en haut, et tout modèle le sait.
+    Avec `detail` (par défaut) on retire d'abord le flou de chaque carte : il reste les marches, les bords, les objets — ce sur quoi les modèles
+    peuvent vraiment différer.
+    """
     rs = []
     for i in range(q_a.shape[0]):
-        ok = m_a[i] & m_b[i] & np.isfinite(q_a[i]) & np.isfinite(q_b[i])
-        r, _, _ = ajustement_affine(q_a[i][ok].astype(np.float64), q_b[i][ok].astype(np.float64))
+        a, b = q_a[i].astype(np.float64), q_b[i].astype(np.float64)
+        if detail:
+            a, b = a - flou(a, sigma), b - flou(b, sigma)
+        ok = m_a[i] & m_b[i] & np.isfinite(a) & np.isfinite(b)
+        r, _, _ = ajustement_affine(a[ok], b[ok])
         rs.append(r)
     return _mediane(rs)
 

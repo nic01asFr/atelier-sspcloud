@@ -129,8 +129,10 @@ async function pageClassement(zone) {
     });
     const noms = s.modeles.map((m) => m.modele);
     const mixte = new Set(s.modeles.map((m) => m.mode)).size > 1;
-    const matrice = noms.length > 1 ? h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, ""), ...noms.map((n) => h("th", {}, n)))),
-      h("tbody", {}, ...noms.map((a) => h("tr", {}, h("th", {}, a), ...noms.map((b) => { const v = a === b ? null : (s.accord[`${a}|${b}`] ?? s.accord[`${b}|${a}`]); return h("td", { class: "num" }, a === b ? "·" : nb(v, 2)); }))))) : null;
+    const tableau = (donnees) => h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, ""), ...noms.map((n) => h("th", {}, n)))),
+      h("tbody", {}, ...noms.map((a) => h("tr", {}, h("th", {}, a), ...noms.map((b) => { const v = a === b ? null : (donnees[`${a}|${b}`] ?? donnees[`${b}|${a}`]); return h("td", { class: "num" }, a === b ? "·" : nb(v, 2)); })))));
+    const matrice = noms.length > 1 ? tableau(s.accord) : null;
+    const matriceGlobale = noms.length > 1 && s.accord_global ? tableau(s.accord_global) : null;
     corps.replaceChildren(
       !c || !c.fiable ? h("div", { class: "ancien" }, `Classement encore fragile : ${s.votes.total} jugement${s.votes.total > 1 ? "s" : ""} sur ${c ? c.panoramas : 0} panorama${c && c.panoramas > 1 ? "s" : ""}. Il en faut au moins 30, sur au moins 10 panoramas différents, pour s'y fier.`) : null,
       h("div", { class: "carte defile" }, h("h2", {}, "Ce que les personnes ont jugé"),
@@ -139,7 +141,8 @@ async function pageClassement(zone) {
           ...Object.values(LIB_MESURES).map(([t, aide]) => h("th", { class: "num", title: aide }, t)), h("th", {}, "Licence"), h("th", {}, "Essai"))), h("tbody", {}, ...lignes))),
       h("div", { class: "carte" }, h("h2", {}, "Ce que le laboratoire mesure seul"), h("p", { class: "doux" }, "Il n'y a pas de profondeur de référence : ces mesures disent la cohérence d'un modèle avec lui-même, pas son exactitude. Un modèle peut être cohérent et se tromper ; il ne peut pas être incohérent et avoir raison partout."),
         mixte ? h("p", { class: "ancien" }, "Attention : l'incohérence n'est pas comparable entre un modèle « panorama » et un modèle « vues ». Le premier voit tout le panorama d'un coup : ses vues se recoupent par construction, il est donc presque toujours « plus cohérent » sans être pour autant plus juste. Comparez l'incohérence au sein d'un même mode, et départagez les modes par le vote.") : null),
-      matrice ? h("div", { class: "carte defile" }, h("h2", {}, "Accord entre modèles"), h("p", { class: "doux" }, "Corrélation du relief, vue par vue (médiane). 1 : même relief ; 0 : aucun rapport. Deux modèles en désaccord ne peuvent pas avoir tous les deux raison : les paires les plus en désaccord sont celles à regarder en priorité."), matrice) : null,
+      matrice ? h("div", { class: "carte defile" }, h("h2", {}, "Accord entre modèles (sur les détails)"), h("p", { class: "doux" }, "Corrélation des marches, des bords et des objets, vue par vue (médiane), une fois retiré le relief d'ensemble. 1 : mêmes détails ; 0 : aucun rapport. Deux modèles en désaccord ne peuvent pas avoir tous les deux raison : les paires les plus en désaccord sont celles à regarder en priorité."), matrice,
+        matriceGlobale ? h("details", {}, h("summary", {}, "Accord global (relief d'ensemble compris)"), h("p", { class: "doux" }, "Presque toujours proche de 1 : toute scène a un sol proche en bas et un fond loin en haut, et tout modèle le sait. Utile seulement pour repérer un modèle franchement faux."), matriceGlobale) : null) : null,
       h("div", { class: "carte" }, h("h2", {}, "Qui a voté"), h("p", {}, Object.entries(s.votes.par_votant).map(([n, k]) => `${n} : ${k}`).join(" · ") || "Personne pour l'instant."), h("p", { class: "doux" }, `${s.votes.indecidables} paire(s) jugée(s) impossible(s) à départager.`),
         TACHE.role === "admin" ? h("a", { class: "bouton", href: `api/profondeur/votes/export?jeu=${encodeURIComponent(jeu)}`, download: "votes.csv" }, "Exporter les votes (CSV)") : null));
   };

@@ -107,3 +107,17 @@ def test_les_egalites_rapprochent_les_modeles() -> None:
     juges = [m.Jugement(None, None, "a", "b", groupe=f"p{k}") for k in range(30)]
     f = m.bradley_terry(["a", "b"], juges)
     assert abs(f["a"] - f["b"]) < 1e-6
+
+
+def test_l_accord_sur_les_details_depart_ce_que_l_accord_global_confond() -> None:
+    """Deux modèles qui connaissent la même mise en page (sol proche, fond loin) mais voient des objets différents : le global les confond, le détail non."""
+    vues = g.grille_de_vues(90, 45, 15)
+    base = vues_q(vues)
+    rng = np.random.default_rng(7)
+    objets_a = np.stack([m.flou(rng.standard_normal(b.shape), 2.0) for b in base]) * 0.05
+    objets_b = np.stack([m.flou(rng.standard_normal(b.shape), 2.0) for b in base]) * 0.05
+    a, b = base + objets_a, base + objets_b
+    ones = np.ones(a.shape, bool)
+    assert m.accord(a, ones, b, ones, detail=False) > 0.9  # globalement : « même relief »
+    assert m.accord(a, ones, b, ones, detail=True) < 0.4  # sur les détails : presque rien en commun
+    assert m.accord(a, ones, a * 2 + 1, ones, detail=True) > 0.99  # et deux cartes de même détail s'accordent, à l'échelle près
