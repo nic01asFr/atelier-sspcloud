@@ -390,6 +390,11 @@
   // ── démarrage ────────────────────────────────────────────────────────────
 
   function demarrer() {
+    // Une personne qui ne fait que valider ou voter ne commente pas : on ne monte rien (et on n'appelle pas le service, qui la refuserait).
+    appel("/moi").then((m) => { if (m.role !== "valideur") monter(m); }).catch(() => monter(null));
+  }
+  function monter(identite) {
+    if (identite) moi = identite;
     const style = marque(el("style", {}, FEUILLE));
     document.head.append(style);
     document.body.append(racine, bouton);
@@ -404,7 +409,7 @@
     window.addEventListener("load", replacer, true);  // une image qui finit de charger déplace ce qui la suit
     new MutationObserver((m) => { if (m.some((x) => !dansNotreInterface(x.target))) replacer(); }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "data-cible"] });
     window.addEventListener("hashchange", () => { ouvertId = null; if (tiroir && onglet === "fil") { onglet = "page"; dessinerTiroir(); } activer(false); fermerFormulaire(); placer(); majBouton(); apresNavigation(); });
-    appel("/moi").then((m) => { moi = m; majBouton(); }).catch(() => {});
+    majBouton();
     actualiser().then(apresNavigation);
     setInterval(() => { if (!document.hidden) actualiser(); }, 20000);
   }

@@ -117,8 +117,9 @@ def monter_profondeur(app: FastAPI, racine: Racine, registre: Registre, votes: V
     # -- consultation (relecteur et administrateur) ------------------------
 
     @app.get("/api/tache")
-    def tache() -> dict[str, str]:
-        return {"tache": app.state.tache}
+    def tache(request: Request) -> dict[str, str]:
+        auteur, role = qui(request)
+        return {"tache": app.state.tache, "auteur": auteur, "role": role}
 
     @app.get("/api/profondeur/jeux")
     def jeux(request: Request) -> list[dict[str, Any]]:
@@ -176,9 +177,17 @@ def monter_profondeur(app: FastAPI, racine: Racine, registre: Registre, votes: V
         return total, set()
 
     @app.get("/api/profondeur/paire")
-    def paire(request: Request, jeu: str = Query(...)) -> dict[str, Any]:
-        """La paire suivante à juger : la moins jugée, jamais deux fois la même pour la même personne, côtés tirés au hasard."""
+    def paire(request: Request, jeu: str | None = Query(None)) -> dict[str, Any]:
+        """La paire suivante à juger : la moins jugée, jamais deux fois la même pour la même personne, côtés tirés au hasard.
+
+        Sans `jeu`, on prend le premier jeu où deux modèles au moins sont terminés (une personne qui vote n'a pas la liste des jeux).
+        """
         votant, _ = qui(request)
+        if jeu is None:
+            comparables = [d.name for d in sorted(racine.variantes.iterdir()) if d.is_dir() and len(essais_profondeur(d.name)) >= 2] if racine.variantes.is_dir() else []
+            if not comparables:
+                raise HTTPException(409, "aucun jeu n'a encore deux modèles terminés à comparer")
+            jeu = comparables[0]
         ident(jeu)
         essais = essais_profondeur(jeu)
         if len(essais) < 2:
@@ -204,7 +213,7 @@ def monter_profondeur(app: FastAPI, racine: Racine, registre: Registre, votes: V
         while len(paires) > PAIRES_EN_MEMOIRE:
             paires.popitem(last=False)
         restantes = len(candidats) - 1
-        return {"jeton": jeton, "panorama": pano, "vue": vue_nom, "restantes": restantes, "deja_juge": len(deja),
+        return {"jeton": jeton, "jeu": jeu, "panorama": pano, "vue": vue_nom, "restantes": restantes, "deja_juge": len(deja),
                 "choix": list(CHOIX), "cible": {"jeu": jeu, "panorama": pano, "vue": vue_nom}}
 
     def _paire(jeton: str, request: Request) -> dict[str, Any]:

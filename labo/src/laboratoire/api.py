@@ -204,7 +204,7 @@ def creer_app(
                 return JSONResponse({"erreur": "ce jeton ne sert qu'à un travailleur"}, status_code=403)
             if qui[1] in ("valideur", "relecteur") and chemin.startswith(ROUTES_TRAVAILLEUR):
                 return JSONResponse({"erreur": "route réservée à un travailleur"}, status_code=403)
-            lecture = request.method == "GET" and chemin in ("/", "/api/pod")
+            lecture = request.method == "GET" and chemin in ("/", "/api/pod", "/api/commentaires/moi")
             if qui[1] == "valideur" and not lecture and not chemin.startswith(ROUTES_VALIDEUR):
                 return JSONResponse({"erreur": "ce jeton ne donne accès qu'à la validation"}, status_code=403)
             if qui[1] == "relecteur" and request.method not in ("GET", "HEAD") and not chemin.startswith(ROUTES_RELECTEUR_EN_ECRITURE):
