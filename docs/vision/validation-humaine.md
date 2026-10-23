@@ -104,3 +104,7 @@ Les données d'origine (gpkg par ville + dossier « ANNOTE download and crop Pan
 La consigne d'origine demandait déjà un traitement séparé (modèles panoramique / non panoramique, masquage de l'autre côté pour les non panoramiques). Conséquence : le rognage/masquage des recettes ne vaut que pour les photos plates ; les conclusions « rognage contre masque » faites sur l'ensemble sont à refaire par type d'image.
 
 **Mise en œuvre (recettes).** Le filtre « vues panoramiques » (fondé sur le rapport largeur/hauteur, qui ne trouvait rien) est remplacé par `type_image` : `recadrage` (= « panoramique » de la consigne), `plate` (= « non panoramique ») ou `tous`. La préparation (rognage, masque) ne s'applique qu'aux photos plates ; un recadrage est pris en entier.
+
+## 12. Accès d'un valideur
+
+Le jeton d'administration (`labo/.jeton`) ouvre tout. Un valideur reçoit son **propre jeton**, qui n'ouvre que l'écran de validation (`/api/validation/*`, les images du brut, la page) : ni les essais, ni les données, ni le lancement d'un entraînement. Les jetons sont dans `labo/valideurs.json` (`{"nom": "jeton"}`), relus à chaque requête : en ajouter ou en retirer un ne demande pas de redémarrer le service. Après connexion, un valideur arrive directement sur « Valider ».

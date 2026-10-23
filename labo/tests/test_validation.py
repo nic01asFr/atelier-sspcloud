@@ -219,6 +219,24 @@ def test_les_routes_de_validation_exigent_le_jeton(racine: Racine) -> None:
         assert c.get("/api/validation/files", headers={"Authorization": "Bearer s"}).status_code == 200
 
 
+def test_un_jeton_de_valideur_n_ouvre_que_la_validation(racine: Racine) -> None:
+    (racine.chemin / "valideurs.json").write_text('{"Camille": "jeton-de-camille"}', encoding="utf-8")
+    camille = {"Authorization": "Bearer jeton-de-camille"}
+    with TestClient(creer_app(racine, jeton="admin", demarrer_travailleur=False)) as c:
+        assert c.get("/api/validation/files", headers=camille).status_code == 200
+        assert c.get("/", headers=camille).status_code == 200 and c.get("/api/pod", headers=camille).status_code == 200
+        for chemin in ("/api/essais", "/api/variantes", "/api/brut", "/api/comparer"):
+            assert c.get(chemin, headers=camille).status_code == 403, chemin
+        assert c.post("/api/essais", json={}, headers=camille).status_code == 403
+        assert c.get("/api/essais", headers={"Authorization": "Bearer admin"}).status_code == 200
+        assert c.get("/api/validation/files", headers={"Authorization": "Bearer autre"}).status_code == 401
+        assert c.post("/connexion", content="jeton=jeton-de-camille", follow_redirects=False).headers["location"].endswith("#/valider")
+        assert c.post("/connexion", content="jeton=admin", follow_redirects=False).headers["location"] == "./"
+    (racine.chemin / "valideurs.json").write_text("{}", encoding="utf-8")  # retiré : le jeton ne vaut plus rien, sans redémarrage
+    with TestClient(creer_app(racine, jeton="admin", demarrer_travailleur=False)) as c:
+        assert c.get("/api/validation/files", headers=camille).status_code == 401
+
+
 def test_une_requete_de_validation_tient_le_pod_eveille_pas_une_simple_sante(racine: Racine) -> None:
     with TestClient(creer_app(racine, demarrer_travailleur=False)) as c:
         humain_present = c.app.state.activite_humaine
