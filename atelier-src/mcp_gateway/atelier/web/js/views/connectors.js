@@ -842,8 +842,16 @@ function renderDetail(entry, kind, state, actions) {
     accorder.className = "ghost btn-sm";
     accorder.textContent = "Accorder un secret";
     accorder.addEventListener("click", () => actions.accorderSecret?.(entry));
+    // Un secret accordé est une copie : si le fichier a changé (un jeton renouvelé), on la remet à jour d'un clic.
+    const renouveler = document.createElement("button");
+    renouveler.type = "button";
+    renouveler.className = "ghost btn-sm";
+    renouveler.textContent = "Renouveler le secret";
+    renouveler.title = "Relit le fichier du secret déjà accordé et met la nouvelle valeur dans le connecteur.";
+    renouveler.addEventListener("click", () => actions.renouvelerSecret?.(entry));
     toolbar.appendChild(toggle);
     toolbar.appendChild(accorder);
+    toolbar.appendChild(renouveler);
     toolbar.appendChild(del);
     head.appendChild(toolbar);
   }

@@ -281,6 +281,9 @@ export function createGithubActions({ state, api, render, aller = (adresse) => w
         x.etat = rendu;
         x.avertissement = rendu?.avertissement || "";
         x.message = rendu?.login ? `Compte @${rendu.login} connecté.` : "Compte connecté.";
+        if (Array.isArray(rendu?.renouveles) && rendu.renouveles.length) {
+          x.message += ` Connecteur${rendu.renouveles.length > 1 ? "s" : ""} mis à jour avec le nouveau jeton : ${rendu.renouveles.join(", ")}.`;
+        }
         await lireLesDepots(true);
       } catch (err) {
         x.erreur = err?.message || String(err);

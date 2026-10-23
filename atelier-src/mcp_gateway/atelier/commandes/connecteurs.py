@@ -51,6 +51,7 @@ AJOUTER = "atelier_connecteur_ajouter"
 RETIRER = "atelier_connecteur_retirer"
 CHOISIR = "atelier_connecteur_choisir"
 ACCORDER = "atelier_connecteur_accorder"
+RENOUVELER = "atelier_connecteur_renouveler"
 
 # Des noms que l'Atelier tient lui-même : ils ne s'ajoutent ni ne se retirent par commande.
 NOMS_TENUS = frozenset({"atelier", "wikichat", "Onyxia"})
@@ -558,6 +559,101 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
         )
     )
 
+    # ── Renouveler les secrets accordés (la personne seule) ─────────────
+
+    def _schema_de(valeur: Any) -> str:
+        """Le préfixe (« Bearer »…) que portait la valeur accordée : on le garde au renouvellement."""
+        texte = str(valeur or "")
+        premier = texte.split(" ", 1)[0]
+        return premier if " " in texte and premier in _SCHEMAS else ""
+
+    def renouveler(*, nom: str | None = None, secret: str | None = None) -> list[dict[str, Any]]:
+        """Relit les fichiers des secrets déjà accordés et remet leur valeur dans les connecteurs.
+
+        Un accord copie la valeur du fichier au moment où on l'accorde : changer le fichier (un jeton qui expire, une clé qu'on
+        change) ne change pas le connecteur. Ici on relit — pour un connecteur (`nom`), pour un secret (`secret`) ou pour tout.
+        Le compte rendu ne porte jamais une valeur : des noms et un état (`renouvele`, `inchange`, `illisible`).
+        """
+        from mcp_gateway.atelier.apps.secrets import SecretIllisible, lire_secret
+        from mcp_gateway.registry import list_registry_servers, update_registry_server_config
+
+        rendu: list[dict[str, Any]] = []
+        conn = ouvrir()
+        try:
+            for e in list_registry_servers(conn):
+                if nom and e.server_id != nom:
+                    continue
+                cfg = dict(e.config)
+                meta = dict(cfg.get("_metadata") or {})
+                atelier = dict(meta.get(_MARQUE) or {})
+                accords = dict(atelier.get("accords") or {})
+                modifie = False
+                for champ, accord in list(accords.items()):
+                    reference = (accord or {}).get("secret")
+                    m = _CHAMP_SECRET.match(champ)
+                    if not reference or not m or (secret and reference != secret):
+                        continue
+                    ligne = {"connecteur": e.server_id, "champ": champ, "secret": reference}
+                    bloc, cle = m.group(1), m.group(2)
+                    contenu = dict(cfg.get(bloc) or {})
+                    try:
+                        valeur = lire_secret(settings.secrets_dir, reference)
+                    except SecretIllisible as exc:
+                        rendu.append({**ligne, "etat": "illisible", "motif": str(exc)})
+                        continue
+                    schema = _schema_de(contenu.get(cle))
+                    nouveau = f"{schema} {valeur}" if schema else valeur
+                    if contenu.get(cle) == nouveau:
+                        rendu.append({**ligne, "etat": "inchange"})
+                        continue
+                    contenu[cle] = nouveau
+                    cfg[bloc] = contenu
+                    accords[champ] = {**accord, "renouvele_le": maintenant()}
+                    rendu.append({**ligne, "etat": "renouvele"})
+                    modifie = True
+                if modifie:
+                    atelier["accords"] = accords
+                    meta[_MARQUE] = atelier
+                    cfg["_metadata"] = meta
+                    update_registry_server_config(conn, e.server_id, cfg)
+        finally:
+            conn.close()
+        if any(r["etat"] == "renouvele" for r in rendu):
+            synchroniser()
+        return rendu
+
+    app.state.renouveler_les_secrets = renouveler  # appelé aussi quand la personne renouvelle son jeton GitHub (Réglages)
+
+    def renouveler_commande(ctx: Contexte, args: dict[str, Any]) -> Effet:
+        nom = texte(args, "nom", maximum=64) or None
+        if nom:
+            conn = ouvrir()
+            try:
+                if entree(conn, nom) is None:
+                    raise Refus(f"connecteur inconnu : {nom}")
+            finally:
+                conn.close()
+        rendu = renouveler(nom=nom)
+        if not rendu:
+            raise Refus(f"{nom} n'a reçu aucun secret : rien à renouveler." if nom else "Aucun connecteur n'a reçu de secret : rien à renouveler.")
+        faits = sorted({r["connecteur"] for r in rendu if r["etat"] == "renouvele"})
+        illisibles = [r for r in rendu if r["etat"] == "illisible"]
+        resume = (
+            f"{len(faits)} connecteur(s) renouvelé(s) : {', '.join(faits)}" if faits else "Les secrets accordés n'ont pas changé : rien à renouveler"
+        )
+        if illisibles:
+            resume += f" ; {len(illisibles)} secret(s) illisible(s) (voir le détail)"
+        return Effet(
+            charge={"renouveles": faits, "details": rendu},
+            objet_id=nom or "tous",
+            titre="Secrets renouvelés",
+            resume=resume,
+            voir="/?vue=connecteurs",
+            preuve={"details": rendu},
+            avant=None,
+            apres={"renouveles": faits},
+        )
+
     # ── Accorder un secret (la personne seule) ──────────────────────────
 
     def accorder(ctx: Contexte, args: dict[str, Any]) -> Effet:
@@ -644,5 +740,25 @@ def inscrire_les_connecteurs(app: Any, catalogue: Catalogue) -> None:
         )
     )
 
+    catalogue.ajouter(
+        Commande(
+            nom=RENOUVELER,
+            description=(
+                "Relit les fichiers des secrets déjà accordés à un connecteur (ou à tous) et remet leur valeur à jour. "
+                "Réservée à la personne ; aucune valeur en argument ni dans le résultat."
+            ),
+            objet="connecteur",
+            classe=RESERVEE,
+            regles=[
+                "jamais par un modèle",
+                "ne relit que des secrets déjà accordés par la personne",
+                "la valeur n'apparaît ni dans le journal, ni dans la carte, ni dans un .mcp.json",
+            ],
+            executer=renouveler_commande,
+            schema={"type": "object", "properties": {"nom": {"type": "string", "description": "Le connecteur ; sans lui, tous."}}},
+            exposee_mcp=False,
+        )
+    )
 
-__all__ = ["ACCORDER", "AJOUTER", "CHOISIR", "CLE_ATELIER", "RETIRER", "inscrire_les_connecteurs", "sans_cle_atelier"]
+
+__all__ = ["ACCORDER", "RENOUVELER", "AJOUTER", "CHOISIR", "CLE_ATELIER", "RETIRER", "inscrire_les_connecteurs", "sans_cle_atelier"]

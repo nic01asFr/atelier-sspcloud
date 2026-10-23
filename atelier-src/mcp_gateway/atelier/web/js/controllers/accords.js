@@ -12,6 +12,7 @@ import * as S from "../state.js";
 export const ACTIVER_AGENT = "atelier_agent_activer";
 export const DESACTIVER_AGENT = "atelier_agent_desactiver";
 export const ACCORDER_SECRET = "atelier_connecteur_accorder";
+export const RENOUVELER_SECRET = "atelier_connecteur_renouveler";
 
 /** Un connecteur local reçoit une variable, un service distant un en-tête. */
 export function blocDuConnecteur(entry) {
@@ -127,5 +128,38 @@ export function createAccordsActions(ctx) {
     });
   }
 
-  return { activerAgent, desactiverAgent, accorderSecret };
+  /**
+   * Un accord copie la valeur du fichier au moment où on l'accorde : après un jeton renouvelé, on relit les fichiers.
+   * Le résultat ne porte que des noms : la fenêtre dit quels connecteurs ont reçu la nouvelle valeur.
+   */
+  async function renouvelerSecret(entry) {
+    const nom = entry.id || entry.name;
+    let rendu;
+    try {
+      rendu = await api.executerCommande(RENOUVELER_SECRET, { nom });
+    } catch (err) {
+      if (err?.status === 401) return ctx.logout?.("Clé invalide");
+      S.setError(state, err?.message || String(err));
+      render();
+      return;
+    }
+    S.setError(state, "");
+    const charge = rendu?.resultat || rendu?.charge || {};
+    const faits = Array.isArray(charge.renouveles) ? charge.renouveles : [];
+    const illisibles = (Array.isArray(charge.details) ? charge.details : []).filter((d) => d.etat === "illisible");
+    const lignes = [];
+    lignes.push(faits.length ? `Renouvelé : ${faits.join(", ")}.` : "Le fichier du secret n’a pas changé : le connecteur a déjà la bonne valeur.");
+    for (const d of illisibles) lignes.push(`${d.secret} : ${d.motif}`);
+    ctx.openModal(state, {
+      title: `Secrets de « ${entry.name || entry.id} »`,
+      lead: lignes.join(" "),
+      submitLabel: "Fermer",
+      fields: [],
+      onSubmit: async () => {},
+    });
+    await ctx.apresConnecteur?.();
+    render();
+  }
+
+  return { activerAgent, desactiverAgent, accorderSecret, renouvelerSecret };
 }

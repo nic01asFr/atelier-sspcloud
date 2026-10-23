@@ -931,7 +931,16 @@ def build_app(
         except g.ErreurGithub as exc:
             _noter_personne("github", "github_connecter", "compte", "refus", motif=str(exc)[:200])
             raise HTTPException(400, str(exc)) from None
-        _noter_personne("github", "github_connecter", "compte", "fait", login=rendu.get("login", ""), type=rendu.get("type", ""))
+        # Un connecteur à qui on a accordé ce jeton en gardait une copie : on la remet à jour, sinon il garderait l'ancien jusqu'à un nouvel « Accorder ».
+        renouveles: list[str] = []
+        renouveler = getattr(app.state, "renouveler_les_secrets", None)
+        if renouveler is not None:
+            try:
+                renouveles = sorted({r["connecteur"] for r in renouveler(secret=settings.github_token_path.name) if r["etat"] == "renouvele"})
+            except Exception as exc:  # noqa: BLE001 — le compte est connecté ; le connecteur se renouvellera à la main
+                log.warning("renouvellement des connecteurs après GitHub : %s", exc)
+        rendu["renouveles"] = renouveles
+        _noter_personne("github", "github_connecter", "compte", "fait", login=rendu.get("login", ""), type=rendu.get("type", ""), renouveles=len(renouveles))
         return rendu
 
     @router.delete("/github")

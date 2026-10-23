@@ -28,6 +28,7 @@ NOUVELLES = {
     "atelier_connecteur_retirer": ("reversible", "atelier_connecteur_ajouter", True),
     "atelier_connecteur_choisir": ("reversible", "atelier_connecteur_choisir", True),
     "atelier_connecteur_accorder": ("reservee", None, False),
+    "atelier_connecteur_renouveler": ("reservee", None, False),
 }
 JETON_QGIS = "jeton-qgis-0123456789abcdef"
 
@@ -328,6 +329,64 @@ def test_accorder_refuse_une_valeur_ou_un_chemin(atelier: Any) -> None:
             contexte_interface(),
         )
         assert reponse.statut == REFUSE
+
+
+# ── Renouveler un secret accordé ────────────────────────────────────────
+
+
+def _accorder_qgis(atelier: Any, valeur: str) -> Path:
+    settings = atelier.app.state.settings
+    _mettre_au_pool(atelier, qgis={"type": "http", "url": "http://qgis.invalid/mcp"})
+    settings.secrets_dir.mkdir(parents=True, exist_ok=True)
+    fichier = settings.secrets_dir / "qgis_jeton"
+    fichier.write_text(valeur + "\n", encoding="utf-8")
+    fichier.chmod(0o600)
+    arguments = {"nom": "qgis", "champ": "headers.Authorization", "secret": "qgis_jeton", "schema": "Bearer"}
+    assert _executer(atelier, "atelier_connecteur_accorder", arguments, contexte_interface()).statut == FAIT
+    return fichier
+
+
+def test_renouveler_relit_le_fichier_garde_le_prefixe_et_ne_montre_jamais_la_valeur(atelier: Any) -> None:
+    fichier = _accorder_qgis(atelier, JETON_QGIS)
+    nouveau = "nouveau-jeton-qgis-fedcba9876543210"
+    fichier.write_text(nouveau + "\n", encoding="utf-8")  # le jeton a été renouvelé : le connecteur garde l'ancien tant qu'on ne relit pas
+    assert _pool(atelier)["qgis"]["headers"]["Authorization"] == f"Bearer {JETON_QGIS}"
+
+    refus = _executer(atelier, "atelier_connecteur_renouveler", {"nom": "qgis"})
+    assert refus.statut == REFUSE and "réservée" in refus.charge["erreur"]  # jamais par un modèle
+    assert _pool(atelier)["qgis"]["headers"]["Authorization"] == f"Bearer {JETON_QGIS}"
+
+    fait = _executer(atelier, "atelier_connecteur_renouveler", {"nom": "qgis"}, contexte_interface())
+    assert fait.statut == FAIT, fait.charge
+    assert _pool(atelier)["qgis"]["headers"]["Authorization"] == f"Bearer {nouveau}"  # le préfixe « Bearer » est gardé
+    assert fait.charge["renouveles"] == ["qgis"] and fait.charge["details"][0]["etat"] == "renouvele"
+    journal = json.dumps(atelier.app.state.commandes.journal.lire(commande="atelier_connecteur_renouveler", limite=5))
+    for valeur in (JETON_QGIS, nouveau):
+        assert valeur not in json.dumps(fait.charge) and valeur not in journal
+    # Relire un fichier qui n'a pas changé ne change rien, et le dit.
+    encore = _executer(atelier, "atelier_connecteur_renouveler", {"nom": "qgis"}, contexte_interface())
+    assert encore.statut == FAIT and encore.charge["renouveles"] == [] and encore.charge["details"][0]["etat"] == "inchange"
+
+
+def test_renouveler_dit_ce_qui_ne_va_pas_sans_rien_defaire(atelier: Any) -> None:
+    fichier = _accorder_qgis(atelier, JETON_QGIS)
+    _mettre_au_pool(atelier, grist={"type": "http", "url": "http://grist.invalid/mcp"})
+    sans = _executer(atelier, "atelier_connecteur_renouveler", {"nom": "grist"}, contexte_interface())
+    assert sans.statut == REFUSE and "aucun secret" in sans.charge["erreur"]
+    inconnu = _executer(atelier, "atelier_connecteur_renouveler", {"nom": "fantome"}, contexte_interface())
+    assert inconnu.statut == REFUSE and "inconnu" in inconnu.charge["erreur"]
+    fichier.unlink()  # le fichier du secret a disparu : on le dit, et le connecteur garde sa valeur
+    perdu = _executer(atelier, "atelier_connecteur_renouveler", {"nom": "qgis"}, contexte_interface())
+    assert perdu.statut == FAIT and perdu.charge["details"][0]["etat"] == "illisible" and perdu.charge["renouveles"] == []
+    assert _pool(atelier)["qgis"]["headers"]["Authorization"] == f"Bearer {JETON_QGIS}"
+
+
+def test_renouveler_sans_nom_relit_tous_les_secrets_accordes(atelier: Any) -> None:
+    fichier = _accorder_qgis(atelier, JETON_QGIS)
+    fichier.write_text("autre-jeton-0123456789\n", encoding="utf-8")
+    fait = _executer(atelier, "atelier_connecteur_renouveler", {}, contexte_interface())
+    assert fait.statut == FAIT and fait.charge["renouveles"] == ["qgis"]
+    assert _pool(atelier)["qgis"]["headers"]["Authorization"] == "Bearer autre-jeton-0123456789"
 
 
 # ── La clé `atelier` d'une entrée du pool (vues relayées, équipe B) ─────
