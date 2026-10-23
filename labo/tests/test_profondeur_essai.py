@@ -137,7 +137,7 @@ def h(jeton: str) -> dict:
 
 def test_la_paire_est_anonyme_et_le_vote_se_range_au_nom_du_votant(labo) -> None:
     c, _ = labo
-    assert c.get("/api/tache", headers=h("tj")).json() == {"tache": "profondeur"}
+    assert c.get("/api/tache", headers=h("tj")).json() == {"tache": "profondeur", "auteur": "Julie", "role": "valideur"}
     p = c.get("/api/profondeur/paire?jeu=jeu-test", headers=h("tj")).json()
     assert set(p) >= {"jeton", "panorama", "vue", "restantes"} and "modele" not in json.dumps(p) and "plan" not in json.dumps(p)
     for cote in ("source", "gauche", "droite"):
