@@ -25,7 +25,7 @@ Elles contiennent **1 771 images**, de deux sortes (voir [`validation-humaine.md
 - **les images « panoramiques »** (1 021 images, 768 × 512 pixels) : ce sont des morceaux d'une vue à 360°, **déjà tournés vers le côté** concerné. Il y a un fichier différent pour chaque côté ;
 - **les images « non panoramiques »** (750 images, 2 048 × 1 536 pixels) : ce sont des photos prises vers l'avant. **Le même fichier** est rangé sous `gauche` et sous `droite`, avec une étiquette pour chaque côté : le côté n'est qu'une moitié de la photo.
 
-La grande majorité des images n'a **aucune place** (1 323 sur 1 771). Les images à une place sont rares : 105. Les images à deux places ou plus : 140 pour deux places, puis quelques-unes pour 3 à 9 places, regroupées dans « 2 et plus ». Pour la forme, 174 images sont en bataille et 104 en longitudinal.
+La grande majorité des images n'a **aucune place** (1 323 sur 1 771). Les images à une place sont rares : 105. Les images à deux places ou plus sont 343 (dont 140 à deux places et 166 à trois), regroupées dans « 2 et plus ». Pour la forme, 174 images sont en bataille et 104 en longitudinal.
 
 | Groupe | Sans place | 1 place | 2 places et plus | Bataille | Longitudinal |
 |---|---|---|---|---|---|
