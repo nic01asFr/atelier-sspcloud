@@ -32,6 +32,7 @@ from laboratoire.api_commentaires import monter_commentaires
 from laboratoire.api_donnees import monter_donnees
 from laboratoire.api_validation import monter_validation
 from laboratoire.commentaires.journal import Commentaires
+from laboratoire.distant import monter_travail
 from laboratoire.executeur import Executeur
 from laboratoire.modeles import ConfigEssai
 from laboratoire.projet import Racine, identifiant_sur
@@ -51,6 +52,7 @@ DUREE_DU_COOKIE_S = 30 * 24 * 3600
 #  - « relecteur » lit tout (lecture seule), valide et commente ; il ne lance rien, ne change aucun statut, n'exporte rien.
 ROUTES_VALIDEUR = ("/web/", "/api/validation/", "/api/brut/image")
 ROUTES_RELECTEUR_EN_ECRITURE = ("/api/validation/", "/api/commentaires")
+ROUTES_TRAVAILLEUR = "/api/travail/"  # un travailleur (pod GPU) n'a que celles-ci, et elles ne sont qu'à lui
 FENETRE_ACTIVITE_HUMAINE_S = 600  # une personne qui n'a rien fait depuis 10 minutes ne tient plus le pod éveillé
 
 PAGE_DE_CONNEXION = """<!doctype html>
@@ -123,7 +125,9 @@ def creer_app(
     demarrer_travailleur: bool = True,
     battement: Callable[[], Any] | None = None,
     battement_humain: Callable[[], Any] | None = None,
+    maitre: bool = False,
 ) -> FastAPI:
+    """`maitre` : ce laboratoire (pod CPU) ne lance aucun essai, un travailleur distant (pod GPU) prend la file — voir `distant`."""
     registre = Registre(racine.base)
     commentaires = Commentaires(racine.chemin / "donnees" / "commentaires.db")
     decisions = Journal(racine.chemin / "donnees" / "validation.db")  # (pas « journal » : une route d'essai porte ce nom)
@@ -133,7 +137,7 @@ def creer_app(
     def humain_present() -> bool:
         return time.monotonic() - activite["derniere"] < FENETRE_ACTIVITE_HUMAINE_S
 
-    travailleur = Travailleur(registre, executeur, battement=battement, activite_humaine=humain_present, battement_humain=battement_humain)
+    travailleur = Travailleur(registre, executeur, battement=battement, activite_humaine=humain_present, battement_humain=battement_humain, lancer=not maitre)
 
     @asynccontextmanager
     async def cycle(_: FastAPI):
@@ -159,7 +163,7 @@ def creer_app(
             sortie = []
             for nom, v in brut.items():
                 jeton_porteur, role_porteur = (v.get("jeton"), v.get("role", "valideur")) if isinstance(v, dict) else (v, "valideur")
-                if jeton_porteur and role_porteur in ("valideur", "relecteur"):
+                if jeton_porteur and role_porteur in ("valideur", "relecteur", "travailleur"):
                     sortie.append((str(nom), str(jeton_porteur), role_porteur))
             return sortie
         except (OSError, ValueError, AttributeError):
@@ -189,6 +193,10 @@ def creer_app(
                     return _page_de_connexion()  # un navigateur sans cookie : on lui demande le jeton
                 return JSONResponse({"erreur": "jeton absent ou faux"}, status_code=401)
             request.state.auteur, request.state.role = qui
+            if qui[1] == "travailleur" and not chemin.startswith(ROUTES_TRAVAILLEUR):
+                return JSONResponse({"erreur": "ce jeton ne sert qu'à un travailleur"}, status_code=403)
+            if qui[1] in ("valideur", "relecteur") and chemin.startswith(ROUTES_TRAVAILLEUR):
+                return JSONResponse({"erreur": "route réservée à un travailleur"}, status_code=403)
             lecture = request.method == "GET" and chemin in ("/", "/api/pod")
             if qui[1] == "valideur" and not lecture and not chemin.startswith(ROUTES_VALIDEUR):
                 return JSONResponse({"erreur": "ce jeton ne donne accès qu'à la validation"}, status_code=403)
@@ -242,8 +250,11 @@ def creer_app(
     @app.get("/api/pod")
     def pod() -> dict[str, Any]:
         usage = shutil.disk_usage(racine.chemin if racine.chemin.exists() else racine.chemin.parent)
+        distant = presence["connecte"]()
         return {
-            "gpu": _etat_gpu(),
+            "gpu": presence["gpu"] if (maitre and distant) else (None if maitre else _etat_gpu()),
+            "maitre": maitre,
+            "travailleur": {"connecte": distant, "nom": presence["nom"], "vu_il_y_a_s": None if presence["vu"] == float("-inf") else round(time.monotonic() - presence["vu"])} if maitre else None,
             "disque": {"libre_go": round(usage.free / 1e9, 1), "total_go": round(usage.total / 1e9, 1)},
             "essais_en_cours": len(registre.en_cours()),
             "essais_en_file": len(registre.lister(etat="en_file")),
@@ -332,6 +343,7 @@ def creer_app(
 
     # -- jeux de données -------------------------------------------------
 
+    presence = monter_travail(app, racine, registre, executeur, ident)
     monter_commentaires(app, commentaires)
     brut = monter_donnees(app, racine, ident, decisions)
     monter_validation(app, racine, ident, decisions, brut)
