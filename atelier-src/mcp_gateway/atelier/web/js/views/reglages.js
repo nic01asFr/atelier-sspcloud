@@ -15,6 +15,7 @@
  */
 
 import { createGithubActions, rendreGithub } from "./github.js";
+import { createSecretsActions, rendreSecrets } from "./secrets.js";
 
 const ETATS = {
   ok: ["mcp-badge mcp-badge-ok", "connecté"],
@@ -322,6 +323,7 @@ export function rendreReglages(corps, state, actions) {
     if (!r.erreur) section.appendChild(el("p", "empty-hint", "Lecture des fournisseurs…"));
     corps.appendChild(section);
     if (actions.github) rendreGithub(corps, state, actions.github);
+    if (actions.secrets) rendreSecrets(corps, state, actions.secrets);
     return corps;
   }
 
@@ -331,6 +333,7 @@ export function rendreReglages(corps, state, actions) {
   section.appendChild(liste);
   corps.appendChild(section);
   if (actions.github) rendreGithub(corps, state, actions.github);
+  if (actions.secrets) rendreSecrets(corps, state, actions.secrets);
   return corps;
 }
 
@@ -387,11 +390,14 @@ export function createReglagesActions({ state, api, render }) {
   }
 
   const github = createGithubActions({ state, api, render });
+  const secrets = createSecretsActions({ state, api, render });
 
   return {
     github,
+    secrets,
     charger: () => {
       github.charger();
+      secrets.charger();
       return lire(false);
     },
     actualiser: () => lire(true),
