@@ -1596,6 +1596,26 @@ export async function lireGithub() {
   return res.json();
 }
 
+/** Les secrets : noms, date, connecteurs qui s'en servent. Jamais une valeur. */
+export async function listerSecrets() {
+  const res = await fetch("/v1/secrets", { headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+/** Crée ou change un secret : la valeur part une fois et ne revient jamais. */
+export async function ecrireSecret(nom, valeur) {
+  const res = await fetch(`/v1/secrets/${encodeURIComponent(nom)}`, { method: "PUT", headers: jsonHeaders(), body: JSON.stringify({ valeur }) });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
+export async function retirerSecret(nom) {
+  const res = await fetch(`/v1/secrets/${encodeURIComponent(nom)}`, { method: "DELETE", headers: jsonHeaders() });
+  if (!res.ok) await parseError(res);
+  return res.json();
+}
+
 /** Connecte le compte : le jeton part une fois, l'Atelier le vérifie auprès de GitHub puis le garde. */
 export async function connecterGithub(corps) {
   const res = await fetch("/v1/github", { method: "PUT", headers: jsonHeaders(), body: JSON.stringify(corps) });
