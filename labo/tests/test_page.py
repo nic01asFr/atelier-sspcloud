@@ -245,3 +245,110 @@ def test_valider_au_clavier_nombre_forme_annulation_et_aveugle(racine: Racine) -
         srv.should_exit = True
         fil.join(timeout=10)
     assert erreurs == []
+
+
+def test_commenter_une_zone_sur_une_image_repondre_et_changer_le_statut(racine: Racine) -> None:
+    """Mathieu (relecteur) dessine un rectangle sur l'image à valider, écrit, répond ; la personne qui administre change le statut. Rien ne se valide en tapant."""
+    import json
+    import urllib.request
+
+    from PIL import Image
+
+    if _chromium() is None:
+        pytest.skip("pas de Chromium")
+    for g in range(2):
+        for n in (0, 1, 2):
+            for k in range(4):
+                f = racine.brut / f"V/g{g}/x/droite/{n}/{k + 1:03d}.jpeg"
+                f.parent.mkdir(parents=True, exist_ok=True)
+                Image.new("RGB", (60, 40), (n * 90, 60, 60)).save(f)
+    (racine.chemin / "valideurs.json").write_text('{"Mathieu": {"jeton": "jeton-mathieu", "role": "relecteur"}}', encoding="utf-8")
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    app = creer_app(racine, jeton="admin", demarrer_travailleur=False)
+    srv = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error"))
+    fil = threading.Thread(target=srv.run, daemon=True)
+    fil.start()
+    fin = time.monotonic() + 10
+    while not srv.started and time.monotonic() < fin:
+        time.sleep(0.05)
+    base = f"http://127.0.0.1:{port}"
+    erreurs: list[str] = []
+
+    def api(chemin: str, jeton: str = "admin"):
+        requete = urllib.request.Request(f"{base}{chemin}", headers={"Authorization": f"Bearer {jeton}"})
+        return json.loads(urllib.request.urlopen(requete).read())
+
+    try:
+        with playwright.sync_playwright() as p:
+            navigateur = p.chromium.launch(executable_path=_chromium())
+            contexte = navigateur.new_context(viewport={"width": 1280, "height": 900})
+            contexte.add_cookies([{"name": "labo_jeton", "value": "jeton-mathieu", "url": base}])
+            page = contexte.new_page()
+            page.on("pageerror", lambda e: erreurs.append(str(e)))
+            page.goto(f"{base}/#/valider")
+            page.fill("#nom-valideur", "Mathieu")
+            page.click("button[type=submit]")
+            page.wait_for_selector("#image-courante")
+            page.wait_for_function("() => document.querySelector('#image-courante').complete && document.querySelector('#image-courante').naturalWidth > 0")
+            # 1. Le mode « commenter » : on dessine un rectangle sur l'image.
+            page.click(".cm-bouton")
+            page.click("text=Nouveau commentaire")
+            image = page.locator("#image-courante").bounding_box()
+            x0, y0 = image["x"] + image["width"] * 0.25, image["y"] + image["height"] * 0.25
+            x1, y1 = image["x"] + image["width"] * 0.75, image["y"] + image["height"] * 0.75
+            page.mouse.move(x0, y0)
+            page.mouse.down()
+            page.mouse.move(x1, y1, steps=6)
+            page.mouse.up()
+            page.wait_for_selector(".cm-formulaire")
+            page.locator(".cm-formulaire select").select_option("anomalie")
+            page.fill(".cm-formulaire textarea", "2 voitures, b : ce n'est pas une place, c'est un camion.")  # des touches de raccourci de la page
+            page.click(".cm-formulaire button[type=submit]")
+            page.wait_for_selector(".cm-pin")
+            page.wait_for_selector(".cm-tiroir .cm-fil")
+            liste = api("/api/commentaires")
+            assert len(liste) == 1 and liste[0]["auteur"] == "Mathieu" and liste[0]["role"] == "relecteur" and liste[0]["nature"] == "anomalie"
+            cible = liste[0]["cible"]
+            assert cible["zone"]["repere"] == "image" and abs(cible["zone"]["x"] - 0.25) < 0.03 and abs(cible["zone"]["l"] - 0.5) < 0.03 and abs(cible["zone"]["h"] - 0.5) < 0.03
+            assert cible["donnee"]["type"] == "image" and cible["donnee"]["id"].endswith(".jpeg") and cible["page"] == "/valider"
+            assert any(e["type"] == "cible" and e["valeur"].startswith("image:") for e in cible["elements"])
+            assert api("/api/validation/stats")["decisions"] == 0  # taper « 2 », « b » dans le champ n'a rien validé
+            # 2. Le repère est posé sur l'image, au coin de la zone.
+            zone = page.locator(".cm-zone").bounding_box()
+            assert abs(zone["x"] - x0) < 3 and abs(zone["width"] - (x1 - x0)) < 3 and abs(zone["height"] - (y1 - y0)) < 3
+            assert page.locator(".cm-tiroir select[aria-label='Nouveau statut']").count() == 0  # le statut n'est pas à un relecteur
+            # 3. Une réponse.
+            page.fill(".cm-fil textarea", "Je précise : le camion est arrêté.")
+            page.click("text=Répondre")
+            page.wait_for_selector(".cm-tiroir .cm-evt")
+            assert api("/api/commentaires")[0]["reponses"] == 1
+            # 4. Rechargé, le repère est toujours là ; Échap annule le mode.
+            page.reload()
+            page.wait_for_selector(".cm-pin", timeout=15000)
+            page.click(".cm-bouton")
+            page.click("text=Nouveau commentaire")
+            page.keyboard.press("Escape")
+            assert page.locator(".cm-bouton[aria-pressed='true']").count() == 0
+            # 5. La personne qui administre voit le même commentaire et en change le statut.
+            admin = navigateur.new_context(viewport={"width": 1280, "height": 900})
+            admin.add_cookies([{"name": "labo_jeton", "value": "admin", "url": base}])
+            pa = admin.new_page()
+            pa.on("pageerror", lambda e: erreurs.append(str(e)))
+            pa.goto(f"{base}/#/essais")
+            pa.wait_for_selector(".cm-bouton")
+            pa.click(".cm-bouton")
+            pa.click("button:has-text('Tous (1)')")
+            pa.click(".cm-item")
+            pa.wait_for_selector(".cm-tiroir select[aria-label='Nouveau statut']")
+            pa.locator(".cm-tiroir select[aria-label='Nouveau statut']").select_option("traite")
+            pa.fill(".cm-tiroir input[aria-label='Lien de la correction']", "PR 62")
+            pa.click("button:has-text('Changer')")
+            pa.wait_for_selector(".cm-tiroir .cm-evt:has-text('PR 62')")
+            navigateur.close()
+        assert api("/api/commentaires")[0]["statut"] == "traite" and api("/api/commentaires")[0]["lien"] == "PR 62"
+    finally:
+        srv.should_exit = True
+        fil.join(timeout=10)
+    assert erreurs == []

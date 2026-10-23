@@ -92,7 +92,7 @@ async function pageValider(zone) {
     // Recadrage (extrait d'une vue panoramique, déjà tourné vers son côté) : toute l'image est le côté, rien à assombrir.
     const plate = courant.type_image === "plate";
     const calques = plate ? [h("div", { class: `zone-hors ${courant.cote}`, "aria-hidden": "true" }, h("span", {}, "hors sujet")), h("div", { class: `zone-concernee ${courant.cote}`, "aria-hidden": "true" }, h("span", {}, `côté ${courant.cote} : à qualifier`))] : [];
-    const grande = h("figure", {}, h("div", { class: "cadre" }, h("img", { id: "image-courante", "data-type": courant.type_image, alt: `Image à valider, côté ${courant.cote}`, src: urlImage(courant.image, { largeur: 1000 }) }), ...calques),
+    const grande = h("figure", {}, h("div", { class: "cadre" }, h("img", { id: "image-courante", "data-cible": `image:${courant.image}`, "data-type": courant.type_image, alt: `Image à valider, côté ${courant.cote}`, src: urlImage(courant.image, { largeur: 1000 }) }), ...calques),
       h("figcaption", {}, plate
         ? [h("strong", {}, `On qualifie uniquement le côté ${courant.cote.toUpperCase()} de la rue`), " (zone claire) — la zone assombrie est hors sujet. "]
         : [h("strong", {}, `Recadrage déjà tourné vers le côté ${courant.cote.toUpperCase()}`), " (extrait d'une vue panoramique) : on qualifie toute l'image. "], `Collection ${courant.groupe.split("/").slice(-1)[0].slice(0, 12)}…`));
