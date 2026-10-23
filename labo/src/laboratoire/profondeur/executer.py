@@ -107,11 +107,22 @@ def executer(ctx: ContexteEssai) -> None:
         ms = np.zeros((len(vues), hq, LARGEUR_STOCKEE), bool)
         (dossier / "apercus" / pano).mkdir(parents=True, exist_ok=True)
         t_pano = time.time()
-        for i, vue in enumerate(vues):
-            rgb = np.clip(g.extraire_vue(erp, vue, largeur, hauteur), 0, 255).astype(np.uint8)
+        q_erp = masque_erp = None
+        if getattr(mod, "panorama", False):  # un modèle de panorama : une passe pour tout le panorama, les vues en sont tirées
             t1 = time.time()
-            q, masque = mod.predire(rgb, vue.fov)
-            temps_vues.append(time.time() - t1)
+            q_erp, masque_erp = mod.predire_panorama(erp)
+            temps_pano = time.time() - t1
+        for i, vue in enumerate(vues):
+            if q_erp is not None:
+                rayons = g.rayons_monde(vue, largeur, hauteur)
+                q = g.echantillonner_erp(q_erp, rayons).astype(np.float32)
+                masque = g.echantillonner_erp(masque_erp.astype(np.float32), rayons) > 0.5
+                temps_vues.append(temps_pano / len(vues))  # le coût d'une passe se partage entre les vues qu'elle sert
+            else:
+                rgb = np.clip(g.extraire_vue(erp, vue, largeur, hauteur), 0, 255).astype(np.uint8)
+                t1 = time.time()
+                q, masque = mod.predire(rgb, vue.fov)
+                temps_vues.append(time.time() - t1)
             qs[i] = _reduire(np.where(masque, q, 0.0), LARGEUR_STOCKEE)
             ms[i] = _reduire_masque(masque, LARGEUR_STOCKEE)
             (dossier / "apercus" / pano / f"{vue.nom}.jpg").write_bytes(vers_jpeg(colorier(q, masque), LARGEUR_APERCU))

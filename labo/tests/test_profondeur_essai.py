@@ -112,6 +112,15 @@ def test_un_modele_de_test_sans_relief_est_moins_coherent_que_le_sol_plat(client
     assert ra < rb
 
 
+def test_un_modele_de_panorama_est_ramene_aux_memes_vues_et_aussi_coherent_que_le_modele_par_vue(client: TestClient) -> None:
+    a = client.post("/api/essais", json=config("plan")).json()["id"]
+    b = client.post("/api/essais", json=config("plan-panorama")).json()["id"]
+    assert _attendre(client, a)["etat"] == "termine" and _attendre(client, b)["etat"] == "termine"
+    ra = client.get(f"/api/essais/{a}").json()["resultats"]["rapport"]
+    rb = client.get(f"/api/essais/{b}").json()["resultats"]["rapport"]
+    assert rb["vues_par_panorama"] == ra["vues_par_panorama"] and rb["incoherence_mediane"] < 0.3  # la même géométrie, vue de deux façons
+
+
 def test_un_reglage_inconnu_ou_un_modele_inconnu_est_refuse(client: TestClient) -> None:
     assert client.post("/api/essais", json=config("plan", fov_typo=1)).status_code == 422
     assert client.post("/api/essais", json=config("inconnu")).status_code == 422

@@ -54,6 +54,23 @@ class Contraste:
         return lum / 255.0, np.ones(lum.shape, bool)
 
 
+class PlanPanorama:
+    """Test du chemin « panorama entier » : le sol plat, calculé directement en projection équirectangulaire."""
+
+    nom, metrique, licence, panorama = "plan-panorama", True, "test", True
+
+    def charger(self, appareil: str) -> None:
+        pass
+
+    def predire_panorama(self, erp: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        he, we = erp.shape[:2]
+        lat = (0.5 - (np.arange(he) + 0.5) / he) * math.pi
+        sous = lat < -0.02
+        r = np.where(sous, H_CAMERA_PLAN / np.maximum(-np.sin(lat), 1e-6), 1.0)
+        q = np.where(sous, 1.0 / np.maximum(r, 1e-6), 0.0)
+        return np.repeat(q[:, None], we, axis=1).astype(np.float32), np.repeat(sous[:, None], we, axis=1)
+
+
 class Moge2:
     nom, metrique, licence = "moge2", True, "MIT"
 
@@ -112,6 +129,8 @@ def modele(nom: str, reglages: dict[str, Any] | None = None) -> ModeleProfondeur
         return Plan()
     if nom == "contraste":
         return Contraste()
+    if nom == "plan-panorama":
+        return PlanPanorama()
     if nom == "moge2":
         return Moge2(str(reglages.get("moge_id", "Ruicheng/moge-2-vitl-normal")))
     if nom in DepthAnythingV2.TAILLES:
@@ -123,4 +142,4 @@ def modele(nom: str, reglages: dict[str, Any] | None = None) -> ModeleProfondeur
     raise ValueError(f"modèle de profondeur inconnu : {nom!r} (connus : {sorted(MODELES)})")
 
 
-MODELES = ("plan", "contraste", "moge2", "da2-small", "da2-base", "da2-large", "dap")
+MODELES = ("plan", "plan-panorama", "contraste", "moge2", "da2-small", "da2-base", "da2-large", "dap")
