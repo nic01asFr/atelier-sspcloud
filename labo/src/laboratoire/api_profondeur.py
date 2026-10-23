@@ -263,7 +263,27 @@ def monter_profondeur(app: FastAPI, racine: Racine, registre: Registre, votes: V
 
     # -- la synthèse -------------------------------------------------------
 
+    fichier_accords = racine.chemin / "cache" / "accords.json"
+
+    def lire_cache() -> None:
+        try:
+            for k, v in json.loads(fichier_accords.read_text(encoding="utf-8")).items():
+                x, y = k.split("|")
+                accords.setdefault((x, y), {n: (math.nan if c is None else c) for n, c in v.items()})
+        except (OSError, ValueError):
+            pass
+
+    def ecrire_cache() -> None:
+        try:
+            fichier_accords.parent.mkdir(parents=True, exist_ok=True)
+            fichier_accords.write_text(json.dumps({f"{x}|{y}": {n: (None if not math.isfinite(c) else c) for n, c in v.items()} for (x, y), v in accords.items()}), encoding="utf-8")
+        except OSError:
+            pass  # le cache n'est qu'une commodité : sans lui, on recalcule
+
+    lire_cache()
+
     def accord_entre(a: dict[str, Any], b: dict[str, Any]) -> dict[str, float]:
+        """Accord de deux essais terminés (un essai terminé ne change plus : le résultat se garde, en mémoire et sur le volume)."""
         cle = (a["id"], b["id"])
         if cle in accords:
             return accords[cle]
@@ -280,6 +300,7 @@ def monter_profondeur(app: FastAPI, racine: Racine, registre: Registre, votes: V
                     if math.isfinite(r):
                         valeurs[nom].append(r)
         accords[cle] = {nom: (float(np.median(v)) if v else math.nan) for nom, v in valeurs.items()}
+        ecrire_cache()
         return accords[cle]
 
     @app.get("/api/profondeur/synthese")
