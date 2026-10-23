@@ -142,6 +142,7 @@ def executer(ctx: ContexteEssai) -> None:
         "panoramas": len(panos),
         "vues_par_panorama": len(vues),
         "metrique": mod.metrique,
+        "mode": "panorama" if getattr(mod, "panorama", False) else "vues",  # un modèle de panorama est cohérent d'une vue à l'autre par construction
     }
     resultats = {
         "empreinte": cfg.empreinte(), "tache": "profondeur", "modele": cfg.methode.modele, "licence_modele": getattr(mod, "licence", ""),

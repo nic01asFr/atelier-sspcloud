@@ -103,6 +103,7 @@ async function pageJuger(zone) {
 // ── Classement ────────────────────────────────────────────────────────────
 
 const LIB_MESURES = {
+  mode: ["Mode", "« vues » : le modèle traite chaque vue en perspective séparément. « panorama » : il traite le panorama entier d'un coup."],
   incoherence_mediane: ["Incohérence", "Quand deux vues se recouvrent, voient-elles la même scène ? 0 : parfaitement cohérent, 1 : sans rapport. Plus c'est bas, mieux c'est."],
   derive_echelle_mediane: ["Dérive d'échelle", "Pour les modèles qui donnent des mètres : l'échelle change-t-elle d'une vue à l'autre ? 0 : stable."],
   temps_par_vue_s: ["Temps par vue (s)", "Durée médiane d'une vue sur le GPU."],
@@ -122,11 +123,12 @@ async function pageClassement(zone) {
       return h("tr", {}, h("td", {}, k ? `${k.rang}` : "—"), h("td", {}, h("strong", {}, m.modele)),
         h("td", {}, k ? `${nb(k.force, 2)}${k.intervalle ? ` [${nb(k.intervalle[0], 2)} ; ${nb(k.intervalle[1], 2)}]` : ""}` : "—"),
         h("td", { class: "num" }, k ? `${k.victoires} / ${k.egalites} / ${k.defaites}` : "—"),
-        h("td", { class: "num" }, nb(m.incoherence_mediane, 3)), h("td", { class: "num" }, m.metrique ? nb(m.derive_echelle_mediane, 3) : "—"),
+        h("td", {}, m.mode === "panorama" ? "panorama" : "vues"), h("td", { class: "num" }, nb(m.incoherence_mediane, 3)), h("td", { class: "num" }, m.metrique ? nb(m.derive_echelle_mediane, 3) : "—"),
         h("td", { class: "num" }, nb(m.temps_par_vue_s, 2)), h("td", { class: "num" }, m.vram_crete_mo ?? "—"), h("td", {}, m.licence || "—"),
         h("td", {}, h("a", { href: `#/essais/${m.essai}` }, m.essai)));
     });
     const noms = s.modeles.map((m) => m.modele);
+    const mixte = new Set(s.modeles.map((m) => m.mode)).size > 1;
     const matrice = noms.length > 1 ? h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, ""), ...noms.map((n) => h("th", {}, n)))),
       h("tbody", {}, ...noms.map((a) => h("tr", {}, h("th", {}, a), ...noms.map((b) => { const v = a === b ? null : (s.accord[`${a}|${b}`] ?? s.accord[`${b}|${a}`]); return h("td", { class: "num" }, a === b ? "·" : nb(v, 2)); }))))) : null;
     corps.replaceChildren(
@@ -135,7 +137,8 @@ async function pageClassement(zone) {
         h("p", { class: "doux" }, "Force : une force de plus de 1 point de différence ≈ « presque toujours préféré ». L'intervalle (90 %) vient d'un rééchantillonnage des panoramas : si deux intervalles se recouvrent, on ne peut pas départager les modèles. Colonne « V / É / D » : victoires, égalités, défaites."),
         h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Rang"), h("th", {}, "Modèle"), h("th", {}, "Force [intervalle]"), h("th", { class: "num" }, "V / É / D"),
           ...Object.values(LIB_MESURES).map(([t, aide]) => h("th", { class: "num", title: aide }, t)), h("th", {}, "Licence"), h("th", {}, "Essai"))), h("tbody", {}, ...lignes))),
-      h("div", { class: "carte" }, h("h2", {}, "Ce que le laboratoire mesure seul"), h("p", { class: "doux" }, "Il n'y a pas de profondeur de référence : ces mesures disent la cohérence d'un modèle avec lui-même, pas son exactitude. Un modèle peut être cohérent et se tromper ; il ne peut pas être incohérent et avoir raison partout.")),
+      h("div", { class: "carte" }, h("h2", {}, "Ce que le laboratoire mesure seul"), h("p", { class: "doux" }, "Il n'y a pas de profondeur de référence : ces mesures disent la cohérence d'un modèle avec lui-même, pas son exactitude. Un modèle peut être cohérent et se tromper ; il ne peut pas être incohérent et avoir raison partout."),
+        mixte ? h("p", { class: "ancien" }, "Attention : l'incohérence n'est pas comparable entre un modèle « panorama » et un modèle « vues ». Le premier voit tout le panorama d'un coup : ses vues se recoupent par construction, il est donc presque toujours « plus cohérent » sans être pour autant plus juste. Comparez l'incohérence au sein d'un même mode, et départagez les modes par le vote.") : null),
       matrice ? h("div", { class: "carte defile" }, h("h2", {}, "Accord entre modèles"), h("p", { class: "doux" }, "Corrélation du relief, vue par vue (médiane). 1 : même relief ; 0 : aucun rapport. Deux modèles en désaccord ne peuvent pas avoir tous les deux raison : les paires les plus en désaccord sont celles à regarder en priorité."), matrice) : null,
       h("div", { class: "carte" }, h("h2", {}, "Qui a voté"), h("p", {}, Object.entries(s.votes.par_votant).map(([n, k]) => `${n} : ${k}`).join(" · ") || "Personne pour l'instant."), h("p", { class: "doux" }, `${s.votes.indecidables} paire(s) jugée(s) impossible(s) à départager.`),
         TACHE.role === "admin" ? h("a", { class: "bouton", href: `api/profondeur/votes/export?jeu=${encodeURIComponent(jeu)}`, download: "votes.csv" }, "Exporter les votes (CSV)") : null));
