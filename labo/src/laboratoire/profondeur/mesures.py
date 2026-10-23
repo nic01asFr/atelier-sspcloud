@@ -69,13 +69,24 @@ def coherence_recouvrement(q: np.ndarray, masque: np.ndarray, vues: list[Vue], m
     return {"incoherence": _mediane(incoh), "paires": paires, "derive_echelle": _mediane(derives) if metrique else None}
 
 
+def _boite(q: np.ndarray, rayon: int, axe: int) -> np.ndarray:
+    """Moyenne glissante de demi-largeur `rayon` le long de `axe`, bords réfléchis (somme cumulée : coût indépendant de la largeur)."""
+    pad = [(0, 0), (0, 0)]
+    pad[axe] = (rayon, rayon)
+    cumul = np.cumsum(np.pad(q, pad, mode="reflect"), axis=axe, dtype=np.float64)
+    cumul = np.concatenate([np.zeros_like(np.take(cumul, [0], axis=axe)), cumul], axis=axe)
+    n = 2 * rayon + 1
+    return (np.take(cumul, range(n, cumul.shape[axe]), axis=axe) - np.take(cumul, range(0, cumul.shape[axe] - n), axis=axe)) / n
+
+
 def flou(q: np.ndarray, sigma: float = 6.0) -> np.ndarray:
-    """Flou gaussien séparable (les cartes gardées sont petites : la convolution directe suffit)."""
-    r = max(1, int(3 * sigma))
-    k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
-    k /= k.sum()
-    horizontal = (np.lib.stride_tricks.sliding_window_view(np.pad(q, ((0, 0), (r, r)), mode="reflect"), 2 * r + 1, axis=1) * k).sum(axis=-1)
-    return (np.lib.stride_tricks.sliding_window_view(np.pad(horizontal, ((r, r), (0, 0)), mode="reflect"), 2 * r + 1, axis=0) * k).sum(axis=-1)
+    """Flou proche d'un gaussien (trois moyennes glissantes successives par axe) : rapide, ce qui compte ici est de retirer l'ensemble, pas la forme exacte."""
+    rayon = max(1, int(round(sigma * 0.9)))
+    sortie = q.astype(np.float64)
+    for axe in (0, 1):
+        for _ in range(3):
+            sortie = _boite(sortie, rayon, axe)
+    return sortie
 
 
 def accord(q_a: np.ndarray, m_a: np.ndarray, q_b: np.ndarray, m_b: np.ndarray, detail: bool = True, sigma: float = 6.0) -> float:
