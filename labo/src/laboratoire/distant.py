@@ -50,6 +50,7 @@ class Appel(BaseModel):
 class Signe(BaseModel):
     travailleur: str
     metriques: str | None = None
+    gpu: dict[str, Any] | None = None
 
 
 def empreinte_variante(dossier: Path) -> str:
@@ -153,6 +154,7 @@ def monter_travail(
     def signe(essai_id: str, corps: Signe) -> dict[str, Any]:
         i = ident(essai_id)
         confie_a(i, corps.travailleur)
+        retenir(Appel(travailleur=corps.travailleur, gpu=corps.gpu))  # un travailleur en plein essai est présent, même s'il ne demande plus rien
         reponse = registre.signe(i, corps.travailleur)
         if corps.metriques is not None and len(corps.metriques) <= MAX_METRIQUES:
             (racine.dossier_essai(i) / "metriques.csv").write_text(corps.metriques, encoding="utf-8")
@@ -162,6 +164,7 @@ def monter_travail(
     async def journal(essai_id: str, request: Request, travailleur: str = Query(...), debut: int = Query(0, ge=0)) -> dict[str, int]:
         i = ident(essai_id)
         confie_a(i, travailleur)
+        presence.update(nom=travailleur, vu=time.monotonic())
         chemin = racine.dossier_essai(i) / "journal.log"
         taille = chemin.stat().st_size if chemin.is_file() else 0
         if debut != taille:

@@ -69,8 +69,8 @@ class Maitre:
     def prendre(self, gpu: dict[str, Any] | None) -> dict[str, Any] | None:
         return self.json("POST", "/api/travail/prendre", json_corps={"travailleur": self.nom, "gpu": gpu})["essai"]
 
-    def signe(self, essai: str, metriques: str | None) -> dict[str, Any]:
-        return self.json("POST", f"/api/travail/{essai}/signe", json_corps={"travailleur": self.nom, "metriques": metriques})
+    def signe(self, essai: str, metriques: str | None, gpu: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self.json("POST", f"/api/travail/{essai}/signe", json_corps={"travailleur": self.nom, "metriques": metriques, "gpu": gpu})
 
     def journal(self, essai: str, debut: int, morceau: bytes) -> int:
         q = urllib.parse.urlencode({"travailleur": self.nom, "debut": debut})
@@ -174,7 +174,7 @@ class Travailleur:
                 dernier_signe = maintenant
                 try:
                     metriques = dossier / "metriques.csv"
-                    reponse = self.maitre.signe(ident, metriques.read_text(encoding="utf-8") if metriques.is_file() else None)
+                    reponse = self.maitre.signe(ident, metriques.read_text(encoding="utf-8") if metriques.is_file() else None, self.etat_gpu() if self.etat_gpu else None)
                     if reponse.get("arreter") and not arret:
                         arret = True
                         self._tuer(p)
