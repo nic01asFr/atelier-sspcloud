@@ -31,9 +31,21 @@ Chaque panorama est découpé en vues en perspective (un tour d'horizon tous les
 - **Accord entre modèles** : corrélation du relief vue par vue. Les paires en désaccord sont celles à regarder.
 - **Vote par paires** : une personne voit deux cartes de la même scène, sans savoir de quels modèles ni de quel côté ; elle dit laquelle rend le mieux le relief, ou « égales », ou « impossible à juger ». Les jugements alimentent un classement de Bradley–Terry avec un intervalle à 90 % obtenu en rééchantillonnant des **panoramas** (les votes d'un même panorama ne sont pas indépendants). Classement jugé fiable à partir de 30 jugements sur 10 panoramas.
 
+## Avec référence : les rendus de la maquette
+
+Un jeu dont les panoramas sont des **rendus de la maquette 3D** (fabrique world2pix, maquette v9.3 : LiDAR HD, BD TOPO, arbres) a une profondeur exacte pour chaque pixel : le lancer de rayons de la maquette donne la distance, pas besoin de photo ni de recalage de pose. Le jeu porte `val/verite/<panorama>.npz` (profondeur en mètres le long du rayon, ciel, `hors_emprise`, couche) ; le laboratoire le détecte et ajoute au rapport de l'essai :
+
+- **erreur relative** (`absrel`) : après ajustement d'une droite sur `q` par vue (les modèles relatifs n'ont pas d'échelle), écart moyen entre distance prédite et vraie, en part de la vraie ;
+- **pixels à 25 %** (`delta1`) et **corrélation** avec le relief réel (`r_q`) ;
+- pour les modèles métriques : **erreur brute** sans ajustement et **écart d'échelle** (|ln| du rapport médian prédit / vrai).
+
+Sont exclus : le ciel, les pixels `hors_emprise` (la maquette couvre le carré de la dalle et s'arrête au bord : ce n'est pas du ciel), ce qui est au-delà de 100 m, et deux pixels au bord de chaque carte. Ces erreurs disent l'exactitude **sur une image de maquette** (rendu analytique, cinq fois moins de texture qu'une photo) ; elles ne remplacent pas le vote sur de vraies photos et ne se fondent pas avec lui.
+
+Le jeu se produit sur le pod de la fabrique avec `labo/outils/maquette_profondeur.py` (positions tirées dans la voirie, œil à 1,6 m, panoramas 2048 × 1024, soleil fixe noté dans `meta.jsonl`). La maquette garde le nom « v9.3 » quand son contenu change : le jeu est épinglé sur l'empreinte de ses OBJ (`obj_sha1`) et sur le commit du dépôt, et l'équipe de la fabrique a promis de prévenir avant tout rejeu.
+
 ## Ce que ça ne dit pas
 
-- Aucune de ces mesures n'est une erreur de profondeur. Si une mesure de terrain existe (lidar, mesure au sol), elle se branche comme une mesure de plus : c'est la seule façon de parler d'exactitude.
+- Sans jeu de référence, aucune de ces mesures n'est une erreur de profondeur ; avec lui, l'erreur est celle d'une image de maquette, pas d'une photo.
 - Les panoramas de Panoramax ne sont pas tous parfaitement horizontaux (tangage et roulis de la prise sont gardés dans le manifeste, non corrigés).
 - Un jeu de 36 panoramas de 4 zones n'est pas la France : le classement vaut pour ce jeu.
 

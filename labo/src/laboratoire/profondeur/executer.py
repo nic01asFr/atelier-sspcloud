@@ -20,7 +20,7 @@ from PIL import Image
 
 from laboratoire.adaptateurs.base import ContexteEssai
 from laboratoire.profondeur import geometrie as g
-from laboratoire.profondeur import mesures
+from laboratoire.profondeur import mesures, verite
 from laboratoire.profondeur.carte import colorier, vers_jpeg
 from laboratoire.profondeur.modeles_profondeur import modele as obtenir_modele
 
@@ -128,7 +128,7 @@ def executer(ctx: ContexteEssai) -> None:
             (dossier / "apercus" / pano / f"{vue.nom}.jpg").write_bytes(vers_jpeg(colorier(q, masque), LARGEUR_APERCU))
         np.savez_compressed(dossier / "profondeur" / f"{pano}.npz", q=qs, masque=ms, vues=np.array([v.nom for v in vues]))
         c = mesures.coherence_recouvrement(qs.astype(np.float32), ms, vues, metrique=mod.metrique)
-        par_pano.append({"panorama": pano, "groupe": echantillon.groupe, **c})
+        par_pano.append({"panorama": pano, "groupe": echantillon.groupe, **c, **_erreurs_panorama(echantillon.fichier, vues, qs, ms, mod.metrique)})
         ctx.metrique(panorama=k, nom=pano, vues=len(vues), incoherence=_arrondi(c["incoherence"]), secondes=round(time.time() - t_pano, 1))
         print(f"[essai] {k}/{len(panos)} {pano} : incohérence {_arrondi(c['incoherence'])} ({c['paires']} paires de vues)", flush=True)
     inc = [p["incoherence"] for p in par_pano if math.isfinite(p["incoherence"])]
@@ -143,6 +143,7 @@ def executer(ctx: ContexteEssai) -> None:
         "vues_par_panorama": len(vues),
         "metrique": mod.metrique,
         "mode": "panorama" if getattr(mod, "panorama", False) else "vues",  # un modèle de panorama est cohérent d'une vue à l'autre par construction
+        **verite.resume_jeu(par_pano),
     }
     resultats = {
         "empreinte": cfg.empreinte(), "tache": "profondeur", "modele": cfg.methode.modele, "licence_modele": getattr(mod, "licence", ""),
@@ -153,6 +154,21 @@ def executer(ctx: ContexteEssai) -> None:
     chemin.with_name("resultats.json.tmp").replace(chemin)
     print(f"[essai] incohérence médiane {rapport['incoherence_mediane']} · {rapport['temps_par_vue_s']} s par vue · {rapport['vram_crete_mo']} Mo de mémoire GPU", flush=True)
     print("[essai] terminé", flush=True)
+
+
+def _erreurs_panorama(fichier: Path, vues: list[g.Vue], qs: np.ndarray, ms: np.ndarray, metrique: bool) -> dict[str, Any]:
+    """Les erreurs contre la profondeur de référence du panorama, si le jeu en porte une (jeu synthétique) ; sinon rien."""
+    chemin = verite.chemin_verite(fichier)
+    if not chemin.is_file():
+        return {}
+    q_erp, valide_erp = verite.charger(chemin)
+    hq, lq = qs.shape[1:]
+    par_vue = []
+    for i, vue in enumerate(vues):
+        rayons = g.rayons_monde(vue, lq, hq)
+        par_vue.append(verite.erreurs_vue(qs[i].astype(np.float32), verite.eroder(ms[i]), verite.echantillonner_plus_proche(q_erp, rayons),
+                                          verite.eroder(verite.echantillonner_plus_proche(valide_erp, rayons)), metrique))
+    return verite.resume_panorama(par_vue)
 
 
 def _arrondi(x: float | None) -> float | None:
