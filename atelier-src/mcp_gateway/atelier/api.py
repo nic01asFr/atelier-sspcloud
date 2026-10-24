@@ -634,14 +634,6 @@ def build_app(
             except OSError:
                 pass
             _reglages_code_server_au_demarrage(settings)
-            # git pour github.com lit le fichier du jeton (voir `git_repos.poser_credential_helper`) : un terminal ou un agent
-            # qui pousse n'a rien à lui passer, même avant le premier tour d'un agent.
-            from mcp_gateway.atelier import git_repos as _git_repos
-
-            try:
-                await asyncio.to_thread(_git_repos.poser_credential_helper, settings)
-            except OSError as exc:
-                log.warning("git non configuré pour github.com : %s", exc)
             # Le fichier d'environnement unique, pour le shell et wikichat
             # qui le sourcent sans passer par nous.
             from mcp_gateway.atelier.env_secrets import ecrire_le_fichier
@@ -678,6 +670,14 @@ def build_app(
                     alignement()
                 except OSError:
                     pass
+            # git pour github.com lit le fichier du jeton (voir `git_repos.poser_credential_helper`) : un terminal ou un agent
+            # qui pousse n'a rien à lui passer, même avant le premier tour d'un agent.
+            from mcp_gateway.atelier import git_repos as _git_repos
+
+            try:
+                await asyncio.to_thread(_git_repos.poser_credential_helper, settings)
+            except OSError as exc:
+                log.warning("git non configuré pour github.com : %s", exc)
             # Le socle des agents (`projects/CLAUDE.md`), depuis le code
             # déployé : une relance après un déploiement le met à jour.
             from mcp_gateway.atelier.socle import poser_le_socle
