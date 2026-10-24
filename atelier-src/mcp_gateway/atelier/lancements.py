@@ -530,7 +530,11 @@ class Lanceur:
                 relatif = Path(dossier_demande).resolve().relative_to(racine)
                 slug = relatif.parts[0] if relatif.parts else ""
             except (ValueError, OSError):
-                slug = ""
+                raise Refus(
+                    f"le dossier {dossier_demande} est hors des projets ({racine}) : "
+                    "l'agent ne peut travailler que dans un projet. Donnez `projet`, ou un dossier sous "
+                    "le dossier des projets (jamais le dossier de l'Assistant)."
+                ) from None
             if not slug:
                 slug = self.settings.default_slug
         if not slug:
