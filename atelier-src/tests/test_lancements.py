@@ -295,9 +295,11 @@ def test_un_dossier_hors_des_projets_lance_l_agent_sans_projet_dans_un_sous_doss
         assert r.status_code == 202, r.text
         lancement = r.json()["lancement"]
         assert lancement["projet"] == reglages.assistant_slug != reglages.default_slug
-        # Une branche suppose un projet git.
-        refus = _lance(client, dossier=str(ailleurs), branche="agent/x")
-        assert refus.status_code == 403
+        # Une branche suppose un projet git : sans projet elle est ignorée, avec un avertissement.
+        avec_branche = _lance(client, dossier=str(ailleurs), branche="agent/x")
+        assert avec_branche.status_code == 202, avec_branche.text
+        l2 = avec_branche.json()["lancement"]
+        assert not l2.get("branche") and any("branche" in a for a in l2["avertissements"])
 
 
 # ── La supervision : le lanceur répond, dans le périmètre du projet ─────────

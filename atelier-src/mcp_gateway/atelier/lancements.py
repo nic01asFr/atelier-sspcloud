@@ -568,9 +568,14 @@ class Lanceur:
         dossier = racine / slug
         return slug, dossier
 
-    def _sans_branche_sans_projet(self, slug: str, branche: str) -> None:
-        if branche and slug == self.settings.assistant_slug:
-            raise Refus("une branche suppose un projet git : sans projet, l'agent n'a pas de copie à proposer")
+    def _sans_branche_sans_projet(self, slug: str, demande: dict[str, Any]) -> list[str]:
+        """Sans projet il n'y a pas de dépôt à copier : une branche demandée est ignorée, et on le dit.
+
+        Refuser ferait échouer chaque tir d'un déclencheur planifié, que wikichat lance sur branche par défaut."""
+        if slug != self.settings.assistant_slug or not str(demande.get("branche") or "").strip():
+            return []
+        demande["branche"] = ""
+        return ["sans projet : la branche demandée est ignorée, l'agent travaille directement dans son dossier"]
 
     def _mode(
         self, dossier: Path, demande: dict[str, Any], origine: str
@@ -719,8 +724,8 @@ class Lanceur:
         slug, dossier = self._projet(demande)
         mode, avertissements = self._mode(dossier, demande, origine)
         duree = self._duree(demande, False, avertissements)
+        avertissements.extend(self._sans_branche_sans_projet(slug, demande))
         branche = str(demande.get("branche") or "")
-        self._sans_branche_sans_projet(slug, branche)
         if not branche and mode != "plan":
             avertissements.append(
                 "sans branche : l'agent modifie directement le projet. Passez `branche` "
@@ -752,8 +757,8 @@ class Lanceur:
         nom = str(demande.get("nom") or "").strip()
         if nom and (not _NOM.match(nom) or nom.lower() in _NOMS_GENERIQUES or nom.startswith("session-")):
             raise Refus(f"nom d'agent invalide ou générique : {nom!r}")
-        self._sans_branche_sans_projet(slug, str(demande.get("branche") or ""))
         mode, avertissements = self._mode(dossier, demande, origine)
+        avertissements.extend(self._sans_branche_sans_projet(slug, demande))
         duree = self._duree(demande, exiger_duree, avertissements)
         avertissements.extend(
             self._chemins_hors_copie(message, slug, str(demande.get("branche") or ""))
