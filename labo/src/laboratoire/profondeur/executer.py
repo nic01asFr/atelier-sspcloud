@@ -20,7 +20,7 @@ from PIL import Image
 
 from laboratoire.adaptateurs.base import ContexteEssai
 from laboratoire.profondeur import geometrie as g
-from laboratoire.profondeur import mesures, verite
+from laboratoire.profondeur import mesures, redresser, verite
 from laboratoire.profondeur.carte import colorier, vers_jpeg
 from laboratoire.profondeur.modeles_profondeur import modele as obtenir_modele
 
@@ -31,7 +31,7 @@ REGLAGES = {"fov": 90.0, "pas_cap": 45.0, "tangage_haut": 15.0, "largeur": 1024,
 
 
 def reglages_complets(reglages: dict[str, Any]) -> dict[str, Any]:
-    inconnus = set(reglages) - set(REGLAGES) - {"moge_id", "fov_connu"}
+    inconnus = set(reglages) - set(REGLAGES) - {"moge_id", "fov_connu", "redresser"}
     if inconnus:
         raise ValueError(f"réglages inconnus pour la profondeur : {sorted(inconnus)} (connus : {sorted(REGLAGES)})")
     r = {**REGLAGES, **reglages}
@@ -100,9 +100,13 @@ def executer(ctx: ContexteEssai) -> None:
     (dossier / "profondeur").mkdir(exist_ok=True)
     par_pano, temps_vues = [], []
     hq = round(LARGEUR_STOCKEE * 3 / 4)
+    inclinaison = redresser.inclinaisons(ctx.variante.dossier) if r.get("redresser") else {}
     for k, echantillon in enumerate(panos, start=1):
         pano = echantillon.fichier.stem
         erp = _charger_erp(echantillon.fichier)
+        tilt = inclinaison.get(pano, (0.0, 0.0))
+        if tilt != (0.0, 0.0):  # la caméra était inclinée : on remet le panorama (et, plus bas, sa référence) d'aplomb
+            erp = redresser.redresser(erp, *tilt)
         qs = np.zeros((len(vues), hq, LARGEUR_STOCKEE), np.float16)
         ms = np.zeros((len(vues), hq, LARGEUR_STOCKEE), bool)
         (dossier / "apercus" / pano).mkdir(parents=True, exist_ok=True)
@@ -128,7 +132,7 @@ def executer(ctx: ContexteEssai) -> None:
             (dossier / "apercus" / pano / f"{vue.nom}.jpg").write_bytes(vers_jpeg(colorier(q, masque), LARGEUR_APERCU))
         np.savez_compressed(dossier / "profondeur" / f"{pano}.npz", q=qs, masque=ms, vues=np.array([v.nom for v in vues]))
         c = mesures.coherence_recouvrement(qs.astype(np.float32), ms, vues, metrique=mod.metrique)
-        par_pano.append({"panorama": pano, "groupe": echantillon.groupe, **c, **_erreurs_panorama(echantillon.fichier, vues, qs, ms, mod.metrique)})
+        par_pano.append({"panorama": pano, "groupe": echantillon.groupe, **c, **_erreurs_panorama(echantillon.fichier, vues, qs, ms, mod.metrique, tilt)})
         ctx.metrique(panorama=k, nom=pano, vues=len(vues), incoherence=_arrondi(c["incoherence"]), secondes=round(time.time() - t_pano, 1))
         print(f"[essai] {k}/{len(panos)} {pano} : incohérence {_arrondi(c['incoherence'])} ({c['paires']} paires de vues)", flush=True)
     inc = [p["incoherence"] for p in par_pano if math.isfinite(p["incoherence"])]
@@ -156,12 +160,16 @@ def executer(ctx: ContexteEssai) -> None:
     print("[essai] terminé", flush=True)
 
 
-def _erreurs_panorama(fichier: Path, vues: list[g.Vue], qs: np.ndarray, ms: np.ndarray, metrique: bool) -> dict[str, Any]:
-    """Les erreurs contre la profondeur de référence du panorama, si le jeu en porte une (jeu synthétique) ; sinon rien."""
+def _erreurs_panorama(fichier: Path, vues: list[g.Vue], qs: np.ndarray, ms: np.ndarray, metrique: bool, redresse: tuple[float, float] = (0.0, 0.0)) -> dict[str, Any]:
+    """Les erreurs contre la profondeur de référence du panorama, si le jeu en porte une (jeu synthétique) ; sinon rien.
+
+    La référence est dans le repère du panorama tel qu'il est stocké : si le panorama a été redressé, elle l'est de la même façon."""
     chemin = verite.chemin_verite(fichier)
     if not chemin.is_file():
         return {}
     q_erp, valide_erp = verite.charger(chemin)
+    if redresse != (0.0, 0.0):
+        q_erp, valide_erp = redresser.redresser(q_erp, *redresse, plus_proche=True), redresser.redresser(valide_erp, *redresse, plus_proche=True)
     hq, lq = qs.shape[1:]
     par_vue = []
     for i, vue in enumerate(vues):
