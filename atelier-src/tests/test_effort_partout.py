@@ -114,7 +114,7 @@ def test_une_conversation_en_high_part_en_xhigh(reglages, monkeypatch: pytest.Mo
         transcript_path=base / "t.jsonl", log_path=base / "l.log", timeout_s=30,
         permission_mode="acceptEdits", effort="high",
     )
-    cmd = vues[0]
+    cmd = next(c for c in vues if "--effort" in c)  # la commande du CLI : d'autres processus (git) peuvent précéder
     assert cmd[cmd.index("--effort") + 1] == "xhigh"
 
 

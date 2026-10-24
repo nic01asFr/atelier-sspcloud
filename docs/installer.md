@@ -89,7 +89,7 @@ applications, et « Ouvrir » reste grisé pour les créations et les bureaux.
 |---|---|---|
 | `ATELIER_LLM_API_KEY` | clé de la passerelle, écrite une fois dans `~/work/.secrets/llm_api_key` | — |
 | `ATELIER_OWNER_KEY` | clé owner ; tirée au sort sinon | — |
-| `ATELIER_GITHUB_TOKEN` | jeton pour publier un projet sur GitHub | — |
+| `ATELIER_GITHUB_TOKEN` | jeton pour publier un projet sur GitHub ; **sert seulement à poser le fichier `github_token` au premier démarrage** (ensuite, c'est le fichier, changé dans Réglages, qui fait foi ; la variable n'est plus transmise aux agents) | — |
 | `ATELIER_GITHUB_OWNER` | compte ou organisation GitHub où publier un projet | — |
 | `ATELIER_GARDIENS`, `ATELIER_GARDIENS_PORT` | `0` pour ne pas lancer les gardiens ; port de leur API locale | `1`, `8791` |
 | `GIT_USER_NAME`, `GIT_USER_EMAIL` | identité git de la machine, si elle n'en a pas | — |

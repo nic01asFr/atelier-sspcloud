@@ -650,6 +650,15 @@ class ClaudeHarness(Harness):
         model: str | None = None,
     ) -> dict[str, str]:
         env = os.environ.copy()
+        # Le jeton GitHub vit dans un fichier que git lit à chaque usage (voir `git_repos.poser_credential_helper`). La variable du chart n'a servi qu'à le poser
+        # au premier démarrage : elle vieillit sans qu'on la renouvelle, et un agent qui la lit pousse avec un jeton périmé.
+        env.pop("ATELIER_GITHUB_TOKEN", None)
+        try:
+            from mcp_gateway.atelier import git_repos
+
+            git_repos.poser_credential_helper(self.settings)
+        except (OSError, ValueError):
+            pass  # sans cela l'agent n'a pas git authentifié, mais le tour peut avoir lieu
         # Les réglages d'avant le relais, hérités d'un shell ou d'un pod
         # ancien : une fenêtre de compaction à 30 000 ferait compacter à tort,
         # et la levée du contrôle de fenêtre n'a plus d'objet.
