@@ -570,6 +570,39 @@ def _askpass(settings: AtelierSettings) -> Path:
     return chemin
 
 
+# Pour les `git push` et `git clone` que lance un agent (ou la personne, dans un terminal), git n'a pas de `GIT_ASKPASS` : le script ci-dessous est son
+# « credential helper » pour github.com. Il relit le fichier du jeton **à chaque usage** : reconnecter GitHub dans Réglages suffit, sans redémarrer ni
+# repasser un jeton à la main. Il ne répond qu'à github.com en https, jamais à un autre hôte, et ne répond rien quand git veut seulement oublier ou
+# mémoriser.
+CREDENTIAL_HELPER = """#!/bin/sh
+# Ecrit par l'Atelier. Ne porte aucun secret : seulement ou le lire.
+[ "$1" = "get" ] || exit 0
+protocole=""; hote=""
+while IFS='=' read -r cle valeur; do
+  case "$cle" in protocol) protocole="$valeur" ;; host) hote="$valeur" ;; esac
+done
+[ "$protocole" = "https" ] && [ "$hote" = "github.com" ] || exit 0
+[ -s "__JETON__" ] || exit 0
+printf 'username=x-access-token\n'
+printf 'password=%s\n' "$(cat "__JETON__")"
+"""
+
+
+def poser_credential_helper(settings: AtelierSettings) -> Path:
+    """Pose le script, dit à git global de s'en servir pour github.com, et rend son chemin. Idempotent ; ne touche à rien d'autre dans la config de git."""
+    chemin = settings.secrets_dir / "atelier-git-credential.sh"
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    contenu = CREDENTIAL_HELPER.replace("__JETON__", str(settings.github_token_path))
+    if not chemin.is_file() or chemin.read_text(encoding="utf-8") != contenu:
+        chemin.write_text(contenu, encoding="utf-8")
+    chemin.chmod(0o700)
+    cle = "credential.https://github.com.helper"
+    actuel = subprocess.run(["git", "config", "--global", "--get", cle], capture_output=True, text=True, check=False).stdout.strip()  # noqa: S603,S607
+    if actuel != str(chemin):
+        subprocess.run(["git", "config", "--global", cle, str(chemin)], capture_output=True, check=False)  # noqa: S603,S607
+    return chemin
+
+
 def _pousser(settings: AtelierSettings, chemin: Path) -> None:
     """Pousse la branche courante, sans laisser le jeton derrière soi."""
     if not _jeton(settings):

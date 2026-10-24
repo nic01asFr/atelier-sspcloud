@@ -157,6 +157,10 @@ def connecter(settings: AtelierSettings, jeton: str) -> dict[str, Any]:
         raise ErreurGithub("GitHub n'a pas dit à qui est ce jeton : il n'a pas accès à votre profil.")
     classique = not jeton.startswith("github_pat_")
     _ecrire(settings.github_token_path, jeton)
+    try:
+        git_repos.poser_credential_helper(settings)  # git lira ce jeton tout seul : plus rien à passer à la main
+    except OSError:
+        pass
     _ecrire(
         _fichier_compte(settings),
         json.dumps(

@@ -482,7 +482,10 @@ l'événement et agit, l'agent n'a rien de plus à retenir. Chaque entrée dit o
   `harness._env` part de `os.environ.copy()` : un agent qui a Bash lit `ATELIER_OWNER_KEY`,
   `ATELIER_GITHUB_TOKEN`, `ATELIER_LLM_API_KEY`. `~/work/gateway/owner_key.txt` est lisible par
   le groupe (660). Les bornages par commande et par projet sont donc des consignes pour tout
-  agent qui a un shell. **Statut : vérifié.** Prérequis : jeton par conversation (D1), puis
+  agent qui a un shell. **Statut : vérifié ; partiellement corrigé le 24/10** : `ATELIER_GITHUB_TOKEN`
+  n'est plus transmise aux agents (elle ne sert qu'à poser le fichier au premier démarrage et vieillit : un agent qui la
+  lisait poussait avec un jeton périmé), et git lit le fichier du jeton par un *credential helper* à chaque usage. Restent
+  `ATELIER_OWNER_KEY` et `ATELIER_LLM_API_KEY`. Prérequis : jeton par conversation (D1), puis
   environnement en liste blanche.
 - **D-55 (G) — `sudo` sans mot de passe pour l'utilisateur des agents**, `kubectl` installé
   dans le pod. Un agent peut réécrire le code et les réglages de l'Atelier, ou une politique

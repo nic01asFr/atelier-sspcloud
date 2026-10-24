@@ -145,7 +145,8 @@ LLM local (port 8790), qui porte la compaction et corrige les réponses de la pa
 **GitHub** (onglet Réglages). La personne colle une fois un jeton « fine-grained » (le plus étroit : dépôts
 choisis, contenu seulement) : l'Atelier le vérifie auprès de GitHub puis le garde en 0600 dans
 `~/work/.secrets/github_token`, ne le rend jamais (ni à l'écran, ni dans une erreur, ni au journal), et git le lit par
-`GIT_ASKPASS`, jamais par l'adresse ni par une commande. L'écran liste les dépôts publics et privés du compte (recherche,
+`GIT_ASKPASS` pour les gestes de l'Atelier, et par un *credential helper* de github.com pour les `git push` et `git clone` d'un agent ou d'un terminal
+(`atelier-git-credential.sh`, qui relit le fichier à chaque usage : reconnecter GitHub suffit, sans redémarrer), jamais par l'adresse ni par une commande. L'écran liste les dépôts publics et privés du compte (recherche,
 « Ouvrir comme projet »). `atelier_github_depots` (lecture) et `atelier_projet_depuis_github` (réversible : Annuler range
 le projet) font la même chose pour l'Assistant, et seulement pour lui. Le dépôt est cloné dans `~/work/projects/<slug>`
 (nom validé `proprietaire/depot`, taille plafonnée à 500 Mo, origine sans secret) ; les fichiers de l'Atelier
