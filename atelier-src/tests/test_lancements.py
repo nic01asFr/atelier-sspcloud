@@ -283,16 +283,21 @@ def test_le_dossier_de_travail_d_un_agent_est_une_cible_valable(reglages: Atelie
         assert refus.status_code == 403
 
 
-def test_un_dossier_hors_des_projets_est_refuse_au_lieu_de_partir_dans_default(reglages: AtelierSettings, tmp_path) -> None:
+def test_un_dossier_hors_des_projets_lance_l_agent_sans_projet_dans_un_sous_dossier(reglages: AtelierSettings, tmp_path) -> None:
     # Constaté le 24/10 : un déclencheur donnait le dossier de l'Assistant ; l'agent
-    # atterrissait en silence dans le projet « default » (sans nom).
+    # atterrissait en silence dans le projet « default » (sans nom). Sans projet, il
+    # travaille comme l'Assistant : dans un sous-dossier à lui.
     _projet(reglages, "alpha")
     ailleurs = tmp_path / "hors-projets"
     ailleurs.mkdir()
     with _client(reglages) as client:
         r = _lance(client, dossier=str(ailleurs))
-        assert r.status_code == 403, r.text
-        assert "hors des projets" in r.text
+        assert r.status_code == 202, r.text
+        lancement = r.json()["lancement"]
+        assert lancement["projet"] == reglages.assistant_slug != reglages.default_slug
+        # Une branche suppose un projet git.
+        refus = _lance(client, dossier=str(ailleurs), branche="agent/x")
+        assert refus.status_code == 403
 
 
 # ── La supervision : le lanceur répond, dans le périmètre du projet ─────────

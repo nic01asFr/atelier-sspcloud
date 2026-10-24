@@ -491,7 +491,11 @@ class Lanceur:
         """Ce que l'agent supervisé attend : de quoi décider, et si le lanceur le peut."""
         from mcp_gateway.atelier.perimetre_du_lanceur import hors_perimetre, resume_de_la_demande
 
-        racine = Path(self.settings.projects_dir) / lancement.projet
+        racine = (
+            Path(self.settings.assistant_root)
+            if lancement.projet == self.settings.assistant_slug
+            else Path(self.settings.projects_dir) / lancement.projet
+        )
         sortie = []
         for demande in self.store.harness.decisions.en_attente(lancement.conversation):
             raison = hors_perimetre(demande, racine)
@@ -525,22 +529,24 @@ class Lanceur:
         slug = str(demande.get("projet") or "").strip()
         dossier_demande = str(demande.get("dossier") or "").strip()
         racine = Path(self.settings.projects_dir).resolve()
+        sans_projet = False
         if not slug and dossier_demande:
             try:
                 relatif = Path(dossier_demande).resolve().relative_to(racine)
                 slug = relatif.parts[0] if relatif.parts else ""
             except (ValueError, OSError):
-                raise Refus(
-                    f"le dossier {dossier_demande} est hors des projets ({racine}) : "
-                    "l'agent ne peut travailler que dans un projet. Donnez `projet`, ou un dossier sous "
-                    "le dossier des projets (jamais le dossier de l'Assistant)."
-                ) from None
+                slug = ""
             if not slug:
-                slug = self.settings.default_slug
+                # Hors des projets : l'agent travaille « sans projet », comme
+                # l'Assistant, dans un sous-dossier à lui — pas dans un projet
+                # sans nom (« default ») où il se mêlerait aux autres.
+                slug, sans_projet = self.settings.assistant_slug, True
         if not slug:
             raise Refus("projet requis")
-        if slug == getattr(self.settings, "assistant_slug", None):
+        if slug == getattr(self.settings, "assistant_slug", None) and not sans_projet:
             raise Refus("un agent lancé travaille dans un projet (profil code), pas dans le dossier de l'Assistant")
+        if sans_projet:
+            return slug, Path(self.settings.assistant_root)
         if "/" in slug or "\\" in slug or slug in (".", ".."):
             raise Refus(f"projet invalide : {slug}")
         if self.projects is not None:
@@ -561,6 +567,10 @@ class Lanceur:
                 raise Refus(f"projet rangé : {slug} ; un agent lancé là ne se verrait pas")
         dossier = racine / slug
         return slug, dossier
+
+    def _sans_branche_sans_projet(self, slug: str, branche: str) -> None:
+        if branche and slug == self.settings.assistant_slug:
+            raise Refus("une branche suppose un projet git : sans projet, l'agent n'a pas de copie à proposer")
 
     def _mode(
         self, dossier: Path, demande: dict[str, Any], origine: str
@@ -710,6 +720,7 @@ class Lanceur:
         mode, avertissements = self._mode(dossier, demande, origine)
         duree = self._duree(demande, False, avertissements)
         branche = str(demande.get("branche") or "")
+        self._sans_branche_sans_projet(slug, branche)
         if not branche and mode != "plan":
             avertissements.append(
                 "sans branche : l'agent modifie directement le projet. Passez `branche` "
@@ -741,6 +752,7 @@ class Lanceur:
         nom = str(demande.get("nom") or "").strip()
         if nom and (not _NOM.match(nom) or nom.lower() in _NOMS_GENERIQUES or nom.startswith("session-")):
             raise Refus(f"nom d'agent invalide ou générique : {nom!r}")
+        self._sans_branche_sans_projet(slug, str(demande.get("branche") or ""))
         mode, avertissements = self._mode(dossier, demande, origine)
         duree = self._duree(demande, exiger_duree, avertissements)
         avertissements.extend(
@@ -797,7 +809,12 @@ class Lanceur:
                 copie = self._ouvrir_la_copie(lancement, dossier)
             if rec is None:
                 titre = str(demande.get("titre") or "").strip() or nom or f"Agent lancé ({origine})"
-                rec = self.store.create(slug=slug, model=(str(demande.get("modele") or "").strip() or None), title=titre[:120])
+                rec = self.store.create(
+                    slug=slug,
+                    model=(str(demande.get("modele") or "").strip() or None),
+                    title=titre[:120],
+                    kind="assistant" if slug == self.settings.assistant_slug else None,
+                )
             rec.lance_par = origine
             rec.supervise = lancement.supervise
             if nom:
