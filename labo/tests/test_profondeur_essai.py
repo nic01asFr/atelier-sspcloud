@@ -160,6 +160,17 @@ def test_sans_verite_terrain_le_rapport_ne_dit_rien_de_l_erreur(client: TestClie
     assert r["panoramas_avec_verite"] == 0 and r["absrel_mediane"] is None
 
 
+def test_le_champ_de_vision_connu_est_une_option_de_moge2_et_reste_a_faux_par_defaut() -> None:
+    from laboratoire.profondeur.executer import reglages_complets
+    from laboratoire.profondeur.modeles_profondeur import modele
+
+    assert modele("moge2").fov_connu is False  # le protocole des essais déjà faits ne change pas
+    assert modele("moge2", {"fov_connu": True}).fov_connu is True
+    assert reglages_complets({"fov_connu": True})["fov"] == 90.0  # réglage accepté, le champ de la vue reste celui de la grille
+    with pytest.raises(ValueError):
+        reglages_complets({"fov_connue": True})
+
+
 def test_un_reglage_inconnu_ou_un_modele_inconnu_est_refuse(client: TestClient) -> None:
     assert client.post("/api/essais", json=config("plan", fov_typo=1)).status_code == 422
     assert client.post("/api/essais", json=config("inconnu")).status_code == 422

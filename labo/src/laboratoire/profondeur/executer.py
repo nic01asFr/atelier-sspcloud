@@ -31,7 +31,7 @@ REGLAGES = {"fov": 90.0, "pas_cap": 45.0, "tangage_haut": 15.0, "largeur": 1024,
 
 
 def reglages_complets(reglages: dict[str, Any]) -> dict[str, Any]:
-    inconnus = set(reglages) - set(REGLAGES) - {"moge_id"}
+    inconnus = set(reglages) - set(REGLAGES) - {"moge_id", "fov_connu"}
     if inconnus:
         raise ValueError(f"réglages inconnus pour la profondeur : {sorted(inconnus)} (connus : {sorted(REGLAGES)})")
     r = {**REGLAGES, **reglages}

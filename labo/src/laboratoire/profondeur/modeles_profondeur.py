@@ -74,8 +74,10 @@ class PlanPanorama:
 class Moge2:
     nom, metrique, licence = "moge2", True, "MIT"
 
-    def __init__(self, identifiant: str = "Ruicheng/moge-2-vitl-normal") -> None:
-        self.identifiant, self._modele, self._appareil = identifiant, None, "cpu"
+    def __init__(self, identifiant: str = "Ruicheng/moge-2-vitl-normal", fov_connu: bool = False) -> None:
+        """`fov_connu` : donner à MoGe-2 le champ de vision réel de la vue (ici : celui qu'on a choisi pour la découper du panorama) au lieu de le lui
+        faire deviner. L'échelle métrique, elle, reste celle que le modèle prédit : aucun paramètre ne la fixe."""
+        self.identifiant, self.fov_connu, self._modele, self._appareil = identifiant, fov_connu, None, "cpu"
 
     def charger(self, appareil: str) -> None:
         from moge.model.v2 import MoGeModel  # importe torch et moge : seulement quand on l'utilise
@@ -88,7 +90,7 @@ class Moge2:
 
         x = torch.tensor(rgb / 255.0, dtype=torch.float32, device=self._appareil).permute(2, 0, 1)
         with torch.no_grad():
-            sortie = self._modele.infer(x)
+            sortie = self._modele.infer(x, fov_x=fov) if self.fov_connu else self._modele.infer(x)
         z = sortie["depth"].float().cpu().numpy()
         masque = sortie["mask"].cpu().numpy().astype(bool) & np.isfinite(z) & (z > 0)
         return g.vers_q_depuis_z(np.where(masque, z, 1.0).astype(np.float32), fov), masque
@@ -132,7 +134,7 @@ def modele(nom: str, reglages: dict[str, Any] | None = None) -> ModeleProfondeur
     if nom == "plan-panorama":
         return PlanPanorama()
     if nom == "moge2":
-        return Moge2(str(reglages.get("moge_id", "Ruicheng/moge-2-vitl-normal")))
+        return Moge2(str(reglages.get("moge_id", "Ruicheng/moge-2-vitl-normal")), bool(reglages.get("fov_connu", False)))
     if nom in DepthAnythingV2.TAILLES:
         return DepthAnythingV2(nom)
     if nom == "dap":
