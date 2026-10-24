@@ -131,6 +131,19 @@ async function pageClassement(zone) {
     const mixte = new Set(s.modeles.map((m) => m.mode)).size > 1;
     const tableau = (donnees) => h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, ""), ...noms.map((n) => h("th", {}, n)))),
       h("tbody", {}, ...noms.map((a) => h("tr", {}, h("th", {}, a), ...noms.map((b) => { const v = a === b ? null : (donnees[`${a}|${b}`] ?? donnees[`${b}|${a}`]); return h("td", { class: "num" }, a === b ? "·" : nb(v, 2)); })))));
+    const avecVerite = s.modeles.filter((m) => m.absrel_mediane != null);
+    const carteVerite = avecVerite.length ? h("div", { class: "carte defile" }, h("h2", {}, "Erreur contre la profondeur de la maquette"),
+      h("p", { class: "doux" }, "Les images de ce jeu sont des rendus de la maquette 3D : on connaît la distance exacte de chaque pixel. L'erreur est mesurée vue par vue, après avoir ajusté l'échelle (les modèles relatifs ne la donnent pas), sur les pixels que la maquette connaît — ni le ciel ni les bords de l'emprise. C'est l'exactitude sur une image de maquette, qui a moins de texture qu'une photo : elle ne remplace pas le vote sur de vraies photos, et ne se fond pas avec lui."),
+      h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Modèle"),
+        h("th", { class: "num", title: "Écart moyen entre la distance prédite et la vraie, en part de la vraie. Plus c'est bas, mieux c'est." }, "Erreur relative"),
+        h("th", { class: "num", title: "Part des pixels dont la distance est juste à 25 % près." }, "Pixels à 25 %"),
+        h("th", { class: "num", title: "Corrélation avec le relief réel, sans tenir compte de l'échelle. 1 : même relief." }, "Corrélation"),
+        h("th", { class: "num", title: "Modèles métriques : erreur relative sans aucun ajustement." }, "Erreur brute"),
+        h("th", { class: "num", title: "Modèles métriques : |ln| du rapport distance prédite / vraie. 0 : échelle juste ; 0,1 ≈ 10 % d'écart." }, "Écart d'échelle"),
+        h("th", { class: "num" }, "Panoramas"))),
+        h("tbody", {}, ...avecVerite.map((m) => h("tr", {}, h("td", {}, h("strong", {}, m.modele)), h("td", { class: "num" }, nb(m.absrel_mediane, 3)), h("td", { class: "num" }, nb(m.delta1_mediane, 3)),
+          h("td", { class: "num" }, nb(m.r_q_mediane, 3)), h("td", { class: "num" }, m.metrique ? nb(m.absrel_brut_mediane, 3) : "—"), h("td", { class: "num" }, m.metrique ? nb(m.ecart_echelle_mediane, 3) : "—"),
+          h("td", { class: "num" }, m.panoramas_avec_verite)))))) : null;
     const matrice = noms.length > 1 ? tableau(s.accord) : null;
     const matriceGlobale = noms.length > 1 && s.accord_global ? tableau(s.accord_global) : null;
     corps.replaceChildren(
@@ -139,7 +152,8 @@ async function pageClassement(zone) {
         h("p", { class: "doux" }, "Force : une force de plus de 1 point de différence ≈ « presque toujours préféré ». L'intervalle (90 %) vient d'un rééchantillonnage des panoramas : si deux intervalles se recouvrent, on ne peut pas départager les modèles. Colonne « V / É / D » : victoires, égalités, défaites."),
         h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Rang"), h("th", {}, "Modèle"), h("th", {}, "Force [intervalle]"), h("th", { class: "num" }, "V / É / D"),
           ...Object.values(LIB_MESURES).map(([t, aide]) => h("th", { class: "num", title: aide }, t)), h("th", {}, "Licence"), h("th", {}, "Essai"))), h("tbody", {}, ...lignes))),
-      h("div", { class: "carte" }, h("h2", {}, "Ce que le laboratoire mesure seul"), h("p", { class: "doux" }, "Il n'y a pas de profondeur de référence : ces mesures disent la cohérence d'un modèle avec lui-même, pas son exactitude. Un modèle peut être cohérent et se tromper ; il ne peut pas être incohérent et avoir raison partout."),
+      carteVerite,
+      h("div", { class: "carte" }, h("h2", {}, "Ce que le laboratoire mesure seul"), h("p", { class: "doux" }, avecVerite.length ? "Ces mesures-ci ne demandent pas de référence : elles disent la cohérence d'un modèle avec lui-même. Un modèle peut être cohérent et se tromper ; il ne peut pas être incohérent et avoir raison partout." : "Il n'y a pas de profondeur de référence : ces mesures disent la cohérence d'un modèle avec lui-même, pas son exactitude. Un modèle peut être cohérent et se tromper ; il ne peut pas être incohérent et avoir raison partout."),
         mixte ? h("p", { class: "ancien" }, "Attention : l'incohérence n'est pas comparable entre un modèle « panorama » et un modèle « vues ». Le premier voit tout le panorama d'un coup : ses vues se recoupent par construction, il est donc presque toujours « plus cohérent » sans être pour autant plus juste. Comparez l'incohérence au sein d'un même mode, et départagez les modes par le vote.") : null),
       matrice ? h("div", { class: "carte defile" }, h("h2", {}, "Accord entre modèles (sur les détails)"), h("p", { class: "doux" }, "Corrélation des marches, des bords et des objets, vue par vue (médiane), une fois retiré le relief d'ensemble. 1 : mêmes détails ; 0 : aucun rapport. Deux modèles en désaccord ne peuvent pas avoir tous les deux raison : les paires les plus en désaccord sont celles à regarder en priorité."), matrice,
         matriceGlobale ? h("details", {}, h("summary", {}, "Accord global (relief d'ensemble compris)"), h("p", { class: "doux" }, "Presque toujours proche de 1 : toute scène a un sol proche en bas et un fond loin en haut, et tout modèle le sait. Utile seulement pour repérer un modèle franchement faux."), matriceGlobale) : null) : null,

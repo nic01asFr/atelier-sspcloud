@@ -121,6 +121,45 @@ def test_un_modele_de_panorama_est_ramene_aux_memes_vues_et_aussi_coherent_que_l
     assert rb["vues_par_panorama"] == ra["vues_par_panorama"] and rb["incoherence_mediane"] < 0.3  # la même géométrie, vue de deux façons
 
 
+def _ajouter_verite_sol_plat(racine: Racine, hauteur_oeil: float = 1.6) -> None:
+    """Une vérité terrain de sol plat (œil à `hauteur_oeil`) pour chaque panorama du jeu de test ; au-dessus de l'horizon : le ciel."""
+    dossier = racine.dossier_variante("jeu-test")
+    (dossier / "val" / "verite").mkdir(parents=True, exist_ok=True)
+    for pano in (dossier / "val" / "panorama").glob("*.jpg"):
+        with Image.open(pano) as im:
+            largeur, hauteur = im.size
+        lat = (0.5 - (np.arange(hauteur) + 0.5) / hauteur) * np.pi
+        sous = np.sin(-lat) > 1e-3
+        d = np.where(sous, hauteur_oeil / np.maximum(np.sin(-lat), 1e-3), 0.0)[:, None] * np.ones((1, largeur))
+        np.savez_compressed(dossier / "val" / "verite" / f"{pano.stem}.npz", profondeur=d.astype(np.float32),
+                            ciel=np.broadcast_to(~sous[:, None], (hauteur, largeur)).copy(), hors_emprise=np.zeros((hauteur, largeur), bool),
+                            couche=np.zeros((hauteur, largeur), np.int8))
+
+
+def test_un_jeu_a_verite_terrain_donne_l_erreur_de_chaque_modele(client: TestClient, racine: Racine) -> None:
+    _ajouter_verite_sol_plat(racine)
+    a = client.post("/api/essais", json=config("plan")).json()["id"]
+    b = client.post("/api/essais", json=config("contraste")).json()["id"]
+    assert _attendre(client, a)["etat"] == "termine" and _attendre(client, b)["etat"] == "termine"
+    plan = client.get(f"/api/essais/{a}").json()["resultats"]["rapport"]
+    contraste = client.get(f"/api/essais/{b}").json()["resultats"]["rapport"]
+    assert plan["panoramas_avec_verite"] == 2
+    assert plan["absrel_mediane"] < 0.05 and plan["r_q_mediane"] > 0.99 and plan["delta1_mediane"] > 0.95  # le bon relief, à l'échelle près
+    assert abs(plan["ecart_echelle_mediane"] - np.log(2.0 / 1.6)) < 0.03  # le modèle croit l'œil à 2 m : l'échelle brute est fausse de 25 %
+    assert plan["absrel_brut_mediane"] > 0.15
+    assert contraste["absrel_mediane"] is not None and contraste["absrel_mediane"] > plan["absrel_mediane"]
+    assert contraste["ecart_echelle_mediane"] is None  # modèle relatif : pas d'échelle à juger
+    synthese = client.get("/api/profondeur/synthese", params={"jeu": "jeu-test"}).json()
+    assert {m["modele"]: m["panoramas_avec_verite"] for m in synthese["modeles"]} == {"plan": 2, "contraste": 2}
+
+
+def test_sans_verite_terrain_le_rapport_ne_dit_rien_de_l_erreur(client: TestClient) -> None:
+    a = client.post("/api/essais", json=config("plan")).json()["id"]
+    assert _attendre(client, a)["etat"] == "termine"
+    r = client.get(f"/api/essais/{a}").json()["resultats"]["rapport"]
+    assert r["panoramas_avec_verite"] == 0 and r["absrel_mediane"] is None
+
+
 def test_un_reglage_inconnu_ou_un_modele_inconnu_est_refuse(client: TestClient) -> None:
     assert client.post("/api/essais", json=config("plan", fov_typo=1)).status_code == 422
     assert client.post("/api/essais", json=config("inconnu")).status_code == 422
