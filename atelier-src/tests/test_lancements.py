@@ -283,6 +283,18 @@ def test_le_dossier_de_travail_d_un_agent_est_une_cible_valable(reglages: Atelie
         assert refus.status_code == 403
 
 
+def test_un_dossier_hors_des_projets_est_refuse_au_lieu_de_partir_dans_default(reglages: AtelierSettings, tmp_path) -> None:
+    # Constaté le 24/10 : un déclencheur donnait le dossier de l'Assistant ; l'agent
+    # atterrissait en silence dans le projet « default » (sans nom).
+    _projet(reglages, "alpha")
+    ailleurs = tmp_path / "hors-projets"
+    ailleurs.mkdir()
+    with _client(reglages) as client:
+        r = _lance(client, dossier=str(ailleurs))
+        assert r.status_code == 403, r.text
+        assert "hors des projets" in r.text
+
+
 # ── La supervision : le lanceur répond, dans le périmètre du projet ─────────
 
 
