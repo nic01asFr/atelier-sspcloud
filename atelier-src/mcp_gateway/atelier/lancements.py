@@ -512,12 +512,19 @@ class Lanceur:
         return sortie
 
     def reconcilier(self) -> list[str]:
-        """Au démarrage : un lancement « en cours » sans fil qui le joue a été interrompu."""
+        """Au démarrage : un lancement « en cours » ou « en attente » sans fil qui le joue a été interrompu.
+
+        Un lancement en attente d'une autorisation perd sa demande au redémarrage (elle n'est qu'en mémoire) :
+        resté « en attente », il occuperait son projet pour toujours (« une copie à la fois par projet »)."""
         repris = []
         for l in self.tous():
-            if l.etat == EN_COURS and l.id not in self._fils:
+            if l.etat in (EN_COURS, ATTEND) and l.id not in self._fils:
+                attendait = l.etat == ATTEND
                 l.etat = INTERROMPU
-                l.erreur = l.erreur or "l'Atelier a redémarré pendant le tour"
+                l.attend = ""
+                l.erreur = l.erreur or (
+                    "l'Atelier a redémarré pendant l'attente d'une réponse" if attendait else "l'Atelier a redémarré pendant le tour"
+                )
                 l.fini_le = _maintenant()
                 self._ecrire(l)
                 repris.append(l.id)
