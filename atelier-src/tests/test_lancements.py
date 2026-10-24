@@ -302,6 +302,22 @@ def test_un_dossier_hors_des_projets_lance_l_agent_sans_projet_dans_un_sous_doss
         assert not l2.get("branche") and any("branche" in a for a in l2["avertissements"])
 
 
+def test_un_lancement_en_attente_perdu_au_redemarrage_ne_bloque_plus_son_projet(reglages: AtelierSettings) -> None:
+    # Constaté le 24/10 : la demande d'autorisation n'est qu'en mémoire ; un lancement « en attente »
+    # d'avant un redémarrage restait en attente pour toujours et verrouillait le projet.
+    _projet(reglages, "alpha")
+    with _client(reglages) as client:
+        lanceur = client.app.state.lancements  # type: ignore[attr-defined]
+        r = _lance(client, projet="alpha")
+        assert r.status_code == 202, r.text
+        l = lanceur.lire(r.json()["lancement"]["id"])
+        l.etat, l.attend, l.fini_le = "en_attente", "demande-perdue", ""
+        lanceur._ecrire(l)
+        assert l.id in lanceur.reconcilier()
+        apres = lanceur.lire(l.id)
+        assert apres.etat == "interrompu" and not apres.attend and "redémarré" in apres.erreur
+
+
 # ── La supervision : le lanceur répond, dans le périmètre du projet ─────────
 
 
