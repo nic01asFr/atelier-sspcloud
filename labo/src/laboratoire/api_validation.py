@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict
 from laboratoire.donnees.brut import RapportBrut
 from laboratoire.donnees.construction import preparer
 from laboratoire.projet import Racine
+from laboratoire.validation.accord import rapport_accord
 from laboratoire.validation.files import FILES, file_d_images, voisins
 from laboratoire.validation.journal import DecisionRefusee, Journal, nom_valide
 
@@ -110,6 +111,11 @@ def monter_validation(app: FastAPI, racine: Racine, ident: Callable[[str], str],
     @app.get("/api/validation/stats")
     def stats(fichier: str | None = None) -> dict[str, Any]:
         return journal.statistiques(fichier)
+
+    @app.get("/api/validation/accord")
+    def accord() -> dict[str, Any]:
+        """L'accord entre annotateurs : origine contre valideur, et valideur contre valideur (kappa, confusion, accord par classe, rappel moyen humain)."""
+        return rapport_accord(journal.en_vigueur())
 
     @app.get("/api/validation/export")
     def exporter() -> PlainTextResponse:
