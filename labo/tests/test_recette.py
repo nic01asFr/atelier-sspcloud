@@ -104,3 +104,77 @@ def test_l_empreinte_ignore_le_nom_mais_pas_les_parametres() -> None:
 def test_une_recette_inventee_est_refusee(mauvais) -> None:
     with pytest.raises(Exception):
         Recette(**mauvais)
+
+
+def _avec_contenu(image: ImageBrute, contenu: str) -> ImageBrute:
+    from dataclasses import replace
+
+    return replace(image, contenu=contenu)
+
+
+def test_le_regroupement_par_contenu_ne_coupe_pas_une_image_rangee_sous_deux_routes() -> None:
+    images = []
+    for g in range(12):
+        images += [_avec_contenu(_i(f"a{g}{k}", f"g{g}", "droite", n=0), f"c{g}-{k}") for k in range(6)]
+        images += [_avec_contenu(_i(f"b{g}{k}", f"g{g}", "droite", n=2), f"d{g}-{k}") for k in range(6)]
+    # Les routes g1 et g2 portent la même image : par route elles sont séparables, par contenu elles ne le sont plus.
+    images.append(_avec_contenu(_i("copie1", "g1", "droite", n=0), "partagee"))
+    images.append(_avec_contenu(_i("copie2", "g2", "droite", n=0), "partagee"))
+    for graine in range(40):
+        recette = Recette(cote="droite", tache="nombre", regroupement="contenu", reequilibrage={"actif": False}, decoupage={"graine": graine})
+        plan = planifier(images, recette)
+        jeux = {}
+        for l in plan.lignes:
+            jeux.setdefault(l.etiquetee.image.contenu, set()).add(l.jeu)
+        assert all(len(j) == 1 for j in jeux.values()), graine
+        assert "V/g2" not in plan.affectation  # g2 est fusionnée dans g1 : un seul groupe, donc un seul jeu
+    # Par route, g1 et g2 restent deux groupes (le découpage peut donc les séparer) ; par contenu, ce n'en est qu'un.
+    from laboratoire.donnees.recette import _groupes_effectifs, etiqueter
+
+    etiquetees, _ = etiqueter(images, Recette(cote="droite", tache="nombre"))
+    par_route = _groupes_effectifs(etiquetees, "route")
+    par_contenu = _groupes_effectifs(etiquetees, "contenu")
+    c1, c2 = (next(e.image.chemin for e in etiquetees if e.image.chemin.endswith(f"copie{k}.jpeg")) for k in (1, 2))
+    assert par_route[c1] != par_route[c2]
+    assert par_contenu[c1] == par_contenu[c2]
+
+
+def test_le_regroupement_par_enregistrement_garde_une_prise_de_vue_entiere() -> None:
+    from laboratoire.donnees.brut import identifiant_enregistrement
+
+    u = "251470fc-cd59-4c07-b680-27989d2cca12"
+    assert identifiant_enregistrement(f"MEYLAN/11463/{u}") == identifiant_enregistrement(f"MEYLAN/{u}/6486") == u
+    assert identifiant_enregistrement("V/g1/x") == "V/g1/x"  # pas d'identifiant reconnu : le groupe lui-même
+    uuids = [f"{i:08x}-0000-4000-8000-{i:012x}" for i in range(12)]
+    images = []
+    for i, u in enumerate(uuids):
+        for route in ("r1", "r2"):
+            images += [
+                ImageBrute(f"V/{route}/{u}/droite/{k}.jpeg", "V", f"V/{route}/{u}", "droite", k % 3, None, 36, 24, f"{i}-{route}-{k}")
+                for k in range(6)
+            ]
+    plan = planifier(images, Recette(cote="droite", tache="nombre", regroupement="enregistrement", reequilibrage={"actif": False}))
+    par_enregistrement = {}
+    for l in plan.lignes:
+        par_enregistrement.setdefault(l.etiquetee.image.enregistrement, set()).add(l.jeu)
+    assert all(len(j) == 1 for j in par_enregistrement.values())  # une prise de vue ne se coupe pas, même répartie sur deux routes
+
+
+def test_dedoublonner_garde_un_exemplaire_et_ecarte_les_etiquettes_contradictoires() -> None:
+    a = _avec_contenu(_i("a", "g0", "droite", n=0), "x")
+    b = _avec_contenu(_i("b", "g1", "droite", n=0), "x")  # même image, même étiquette : un seul exemplaire
+    c = _avec_contenu(_i("c", "g2", "droite", n=1), "y")
+    d = _avec_contenu(_i("d", "g3", "droite", n=2), "y")  # même image, étiquettes différentes : on ne sait pas laquelle croire
+    e = _i("e", "g4", "droite", n=0)  # contenu inconnu : conservé tel quel
+    recette = Recette(cote="droite", tache="nombre", dedoublonner=True, reequilibrage={"actif": False})
+    plan = planifier([a, b, c, d, e], recette)
+    gardees = {l.etiquetee.image.chemin for l in plan.lignes}
+    assert gardees == {a.chemin, e.chemin}
+    assert plan.ecartes == {"exemplaire en double écarté": 1, "étiquettes contradictoires pour une même image": 2}
+
+
+def test_les_options_ajoutees_ne_changent_pas_l_identite_des_variantes_existantes() -> None:
+    d_origine = Recette(cote="droite", tache="nombre")
+    assert d_origine.empreinte() == Recette(cote="droite", tache="nombre", regroupement="route", dedoublonner=False, taille=None).empreinte()
+    assert d_origine.empreinte() != Recette(cote="droite", tache="nombre", regroupement="contenu").empreinte()
+    assert d_origine.empreinte() != Recette(cote="droite", tache="nombre", taille=64).empreinte()

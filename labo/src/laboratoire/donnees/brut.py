@@ -14,6 +14,8 @@ Un dossier ou un fichier qui ne rentre dans aucun de ces cas n'est ni ignoré ni
 
 from __future__ import annotations
 
+import hashlib
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -27,6 +29,15 @@ EXTENSIONS = {".jpg", ".jpeg", ".png"}
 #    et le côté est la **moitié** de la photo ;
 #  - le « recadrage » 768×512, extrait d'une vue panoramique à 360° : un fichier **différent** par côté, déjà tourné vers ce côté.
 LARGEUR_PHOTO_PLATE = 1500
+_ENREGISTREMENT = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+def identifiant_enregistrement(groupe: str) -> str:
+    """L'identifiant d'enregistrement (la collection Panoramax) d'un groupe « ville/a/b », quel que soit l'ordre de a et b. À défaut, le groupe lui-même."""
+    for partie in groupe.split("/"):
+        if _ENREGISTREMENT.match(partie):
+            return partie
+    return groupe
 
 
 @dataclass(frozen=True)
@@ -39,6 +50,11 @@ class ImageBrute:
     forme: str | None
     largeur: int | None
     hauteur: int | None
+    contenu: str = ""  # empreinte SHA-1 des octets du fichier : deux fichiers de même contenu sont la même image, rangés sous deux noms
+
+    @property
+    def enregistrement(self) -> str:
+        return identifiant_enregistrement(self.groupe)
 
     @property
     def plate(self) -> bool:
@@ -80,7 +96,15 @@ def _taille(chemin: Path) -> tuple[int | None, int | None]:
         return None, None
 
 
-def scanner(dossier: Path, lire_taille: bool = True) -> RapportBrut:
+def _contenu(chemin: Path) -> str:
+    h = hashlib.sha1()
+    with chemin.open("rb") as f:
+        for bloc in iter(lambda: f.read(1 << 20), b""):
+            h.update(bloc)
+    return h.hexdigest()
+
+
+def scanner(dossier: Path, lire_taille: bool = True, lire_contenu: bool = True) -> RapportBrut:
     dossier = Path(dossier)
     rapport = RapportBrut()
     if not dossier.is_dir():
@@ -114,5 +138,6 @@ def scanner(dossier: Path, lire_taille: bool = True) -> RapportBrut:
             rapport.anomalies.append(f"{nom} : dossier de classe inconnu ou profondeur inattendue (« {'/'.join(reste[:-1])} »)")
             continue
         largeur, hauteur = _taille(chemin) if lire_taille else (None, None)
-        rapport.images.append(ImageBrute(nom, ville, f"{ville}/{a}/{b}", cote, n, forme, largeur, hauteur))
+        contenu = _contenu(chemin) if lire_contenu else ""
+        rapport.images.append(ImageBrute(nom, ville, f"{ville}/{a}/{b}", cote, n, forme, largeur, hauteur, contenu))
     return rapport

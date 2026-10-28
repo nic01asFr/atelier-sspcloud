@@ -57,11 +57,24 @@ class Recette(BaseModel):
     decoupage: Decoupage = Field(default_factory=Decoupage)
     reequilibrage: Reequilibrage = Field(default_factory=Reequilibrage)
     corrections: bool = True
+    # Comment se forment les groupes, c'est-à-dire ce qu'on n'a jamais le droit de couper entre train, val et test :
+    #   route          : le dossier « ville/a/b » du brut (comportement d'origine) ;
+    #   contenu        : comme `route`, mais deux dossiers qui portent la même image (mêmes octets) n'en font qu'un : la fuite cachée du 28/10 ;
+    #   enregistrement : une prise de vue (collection Panoramax) entière, fusionnée en plus par le contenu ; impossible quand il y a trop peu d'enregistrements.
+    regroupement: Literal["route", "contenu", "enregistrement"] = "route"
+    # Une image de contenu identique n'est gardée qu'une fois ; si ses étiquettes se contredisent, elle est écartée.
+    dedoublonner: bool = False
+    # Côté, en pixels, de l'image carrée écrite sur disque (réduction explicite, sans recadrage). None : taille d'origine, le modèle s'en charge.
+    taille: int | None = Field(default=None, ge=16, le=2048)
     nom: str = ""
 
     def empreinte(self) -> str:
         d = self.model_dump()
         d.pop("nom", None)
+        # Les options ajoutées après coup n'ont pas d'effet à leur valeur d'origine : elles ne changent pas l'identité des variantes déjà construites.
+        for cle, defaut in (("regroupement", "route"), ("dedoublonner", False), ("taille", None)):
+            if d.get(cle) == defaut:
+                d.pop(cle, None)
         return empreinte(d)
 
 
@@ -134,6 +147,7 @@ class LigneDePlan:
     etiquetee: Etiquetee
     jeu: str
     copie: int  # 0 = l'image elle-même ; k > 0 = k-ième copie de rééquilibrage (train seulement)
+    groupe: str = ""  # le groupe effectif (selon le regroupement de la recette), celui qui n'est jamais coupé
 
 
 @dataclass
@@ -168,14 +182,62 @@ def planifier(
 ) -> Plan:
     """Tout ce que fera la recette, sans écrire une image : sert à l'aperçu immédiat et à la construction."""
     etiquetees, ecartes = etiqueter(images, recette, corrections if recette.corrections else None, validations if recette.corrections else None)
+    if recette.dedoublonner:
+        etiquetees = _dedoublonner(etiquetees, ecartes)
+    groupe_de = _groupes_effectifs(etiquetees, recette.regroupement)
     comptes: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for e in etiquetees:
-        comptes[e.image.groupe][e.classe] += 1
+        comptes[groupe_de[e.image.chemin]][e.classe] += 1
     affectation = decouper_par_groupes(comptes, recette.decoupage.proportions, recette.decoupage.graine)
-    lignes = [LigneDePlan(e, affectation[e.image.groupe], 0) for e in sorted(etiquetees, key=lambda e: e.image.chemin)]
+    lignes = [LigneDePlan(e, affectation[groupe_de[e.image.chemin]], 0, groupe_de[e.image.chemin]) for e in sorted(etiquetees, key=lambda e: e.image.chemin)]
     if recette.reequilibrage.actif:
         lignes += _copies_de_reequilibrage(lignes, recette.reequilibrage.rapport)
     return Plan(lignes, ecartes, affectation)
+
+
+def _dedoublonner(etiquetees: list[Etiquetee], ecartes: dict[str, int]) -> list[Etiquetee]:
+    """Une seule image par contenu. Si deux exemplaires portent des étiquettes différentes, on ne sait pas laquelle croire : on les écarte tous."""
+    par_contenu: dict[str, list[Etiquetee]] = defaultdict(list)
+    sans_contenu: list[Etiquetee] = []
+    for e in etiquetees:
+        (par_contenu[e.image.contenu] if e.image.contenu else sans_contenu).append(e)
+    gardees = list(sans_contenu)
+    for contenu in sorted(par_contenu):
+        exemplaires = sorted(par_contenu[contenu], key=lambda e: e.image.chemin)
+        if len({e.classe for e in exemplaires}) > 1:
+            ecartes["étiquettes contradictoires pour une même image"] = ecartes.get("étiquettes contradictoires pour une même image", 0) + len(exemplaires)
+            continue
+        gardees.append(exemplaires[0])
+        if len(exemplaires) > 1:
+            ecartes["exemplaire en double écarté"] = ecartes.get("exemplaire en double écarté", 0) + len(exemplaires) - 1
+    return gardees
+
+
+def _groupes_effectifs(etiquetees: list[Etiquetee], regroupement: str) -> dict[str, str]:
+    """`chemin d'image → groupe effectif`, selon le regroupement. Les groupes qui partagent une image (mêmes octets) sont fusionnés, sauf pour `route`."""
+    base = {e.image.chemin: (e.image.enregistrement if regroupement == "enregistrement" else e.image.groupe) for e in etiquetees}
+    if regroupement == "route":
+        return base
+    parent: dict[str, str] = {}
+
+    def racine(x: str) -> str:
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    par_contenu: dict[str, list[str]] = defaultdict(list)
+    for e in etiquetees:
+        racine(base[e.image.chemin])
+        if e.image.contenu:
+            par_contenu[e.image.contenu].append(base[e.image.chemin])
+    for groupes in par_contenu.values():
+        for g in groupes[1:]:
+            a, b = racine(groupes[0]), racine(g)
+            if a != b:
+                parent[max(a, b)] = min(a, b)  # le plus petit nom l'emporte : le résultat ne dépend pas de l'ordre des images
+    return {chemin: racine(g) for chemin, g in base.items()}
 
 
 def _copies_de_reequilibrage(lignes: list[LigneDePlan], rapport: float) -> list[LigneDePlan]:
@@ -193,5 +255,5 @@ def _copies_de_reequilibrage(lignes: list[LigneDePlan], rapport: float) -> list[
         manque = cible - len(originales)
         for k in range(manque):
             source = originales[k % len(originales)]
-            copies.append(LigneDePlan(source.etiquetee, "train", k // len(originales) + 1))
+            copies.append(LigneDePlan(source.etiquetee, "train", k // len(originales) + 1, source.groupe))
     return copies

@@ -24,6 +24,8 @@ class Ligne:
     groupe: str
     source: str
     copie: bool = False  # copie de rééquilibrage (train seulement)
+    contenu: str = ""  # empreinte des octets de l'image ; vide = inconnue
+    enregistrement: str = ""  # identifiant d'enregistrement (collection Panoramax) ; vide = inconnu
 
 
 def controler(lignes: Iterable[Ligne], classes_attendues: list[str] | None = None) -> list[dict]:
@@ -50,6 +52,22 @@ def controler(lignes: Iterable[Ligne], classes_attendues: list[str] | None = Non
     fuites_img = sorted(s for s, js in jeux_de_la_source.items() if len(js) > 1)
     if fuites_img:
         ajouter("fuite_image", "bloquant", f"{len(fuites_img)} image(s) se retrouvent dans plusieurs jeux.", images=fuites_img[:20])
+
+    # Fuite cachée : la même image rangée sous deux noms (deux routes, deux « poches ») est une image pour le contrôle de groupe, mais une seule pour le modèle.
+    jeux_du_contenu: dict[str, set[str]] = defaultdict(set)
+    for l in lignes:
+        if l.contenu and not l.copie:
+            jeux_du_contenu[l.contenu].add(l.jeu)
+    fuites_contenu = sorted(c for c, js in jeux_du_contenu.items() if len(js) > 1)
+    if fuites_contenu:
+        ajouter("fuite_contenu", "bloquant", f"{len(fuites_contenu)} image(s) de contenu identique se retrouvent dans plusieurs jeux sous des noms différents : les mesures seraient trop belles.", contenus=fuites_contenu[:20])
+    jeux_de_l_enregistrement: dict[str, set[str]] = defaultdict(set)
+    for l in lignes:
+        if l.enregistrement:
+            jeux_de_l_enregistrement[l.enregistrement].add(l.jeu)
+    partages = sorted(e for e, js in jeux_de_l_enregistrement.items() if len(js) > 1)
+    if partages:
+        ajouter("enregistrement_partage", "avertissement", f"{len(partages)} enregistrement(s) sur {len(jeux_de_l_enregistrement)} ont des images dans plusieurs jeux : des images voisines d'une même prise de vue peuvent se ressembler de part et d'autre.", enregistrements=partages[:20])
 
     toutes = sorted(classes_attendues or {l.classe for l in lignes})
     for j in JEUX:

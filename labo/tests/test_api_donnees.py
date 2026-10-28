@@ -22,7 +22,9 @@ def client(racine: Racine):
             for k in range(6):
                 f = racine.brut / f"V/g{g}/x/droite/{n}/i{k}.jpeg"
                 f.parent.mkdir(parents=True, exist_ok=True)
-                Image.new("RGB", (36, 24), (n * 80, 90, 90)).save(f)
+                im = Image.new("RGB", (36, 24), (n * 80, 90, 90))
+                im.paste((g * 20, k * 40, 7), (0, 0, 16, 16))  # une image distincte : deux images identiques seraient une fuite (contrôle fuite_contenu)
+                im.save(f)
     with TestClient(creer_app(racine, demarrer_travailleur=False)) as c:
         yield c
 

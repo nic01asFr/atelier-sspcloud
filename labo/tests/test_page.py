@@ -109,7 +109,9 @@ def test_creer_une_variante_depuis_la_page_puis_parcourir_ses_images(serveur: st
             for k in range(6):
                 f = racine.brut / f"V/g{g}/x/droite/{n}/i{k}.jpeg"
                 f.parent.mkdir(parents=True, exist_ok=True)
-                Image.new("RGB", (36, 24), (n * 80, 90, 90)).save(f)
+                im = Image.new("RGB", (36, 24), (n * 80, 90, 90))
+                im.paste((g * 20, k * 40, 7), (0, 0, 16, 16))  # une image distincte : deux images identiques seraient une fuite (fuite_contenu)
+                im.save(f)
     erreurs: list[str] = []
     with playwright.sync_playwright() as p:
         navigateur = p.chromium.launch(executable_path=_chromium())
