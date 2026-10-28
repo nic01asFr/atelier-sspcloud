@@ -145,6 +145,11 @@ class Journal:
             "SELECT * FROM decisions d WHERE d.annule_id IS NULL AND NOT EXISTS (SELECT 1 FROM decisions a WHERE a.annule_id=d.id) ORDER BY d.id"
         ).fetchall()
 
+    def en_vigueur(self) -> list[dict[str, Any]]:
+        """Les décisions en vigueur (ni annulées, ni annulations), pour mesurer l'accord entre annotateurs."""
+        with self._verrou:
+            return [dict(r) for r in self._valides()]
+
     def deja_faites(self, validateur: str, fichier: str) -> set[str]:
         with self._verrou:
             return {r["image"] for r in self._valides() if r["validateur"] == validateur and r["fichier"] == fichier}

@@ -65,7 +65,7 @@ Les nouvelles images arrivent par **lots datés** dans le brut (le brut d'origin
 
 - **Fuite** : une image choisie parce que le modèle s'y trompe n'entre **jamais** dans le jeu de test. Un **jeu de référence figé**, validé par deux personnes, ne sert qu'à mesurer ; la validation ne le modifie pas.
 - **Biais** : jamais une file faite uniquement d'erreurs (tirage au hasard mêlé).
-- **Qualité des étiquettes** : on mesure l'accord entre validateurs, pas seulement la vitesse. Une classe où les humains divergent n'a pas de « vérité » à apprendre : on la redéfinit (par exemple en fusionnant « 1 » et « 2 »).
+- **Qualité des étiquettes** : on mesure l'accord entre validateurs, pas seulement la vitesse (protocole, file `accord` et lecture : [`accord-entre-annotateurs.md`](accord-entre-annotateurs.md)). Une classe où les humains divergent n'a pas de « vérité » à apprendre : on la redéfinit (par exemple en fusionnant « 1 » et « 2 »).
 - **Promotion** d'un modèle réentraîné : seulement si le gain dépasse le bruit, par comparaison appariée sur le jeu de référence.
 - **Traçabilité** : chaque modèle dit de quelles validations il vient.
 

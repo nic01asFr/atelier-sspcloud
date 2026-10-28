@@ -11,7 +11,10 @@ from laboratoire.donnees.brut import ImageBrute
 FILES = {
     "audit_classe_1": "Audit de la classe « 1 » : toutes les images « 1 place » et un tirage de « 0 » et de « 2 et plus »",
     "tirage_au_hasard": "Tirage au hasard dans tout le brut (contrôle et étalonnage)",
+    "accord": "Accord entre annotateurs : 150 images tirées par étiquette d'origine (0, 1, 2 et plus), moitié recadrages, moitié photos plates — la même liste pour tous",
 }
+
+PAR_CLASSE_ET_TYPE = 25  # 3 classes × 2 types × 25 = 150 images : de quoi lire un accord par classe à ± 0,2 près, et un kappa à ± 0,1 près
 
 
 def _melangees(chemins: list[str], graine: int) -> list[str]:
@@ -26,6 +29,13 @@ def file_d_images(nom: str, images: list[ImageBrute], graine: int = 11) -> list[
         zero = _melangees([i.chemin for i in images if i.n == 0], graine)[:40]
         plus = _melangees([i.chemin for i in images if i.n is not None and i.n >= 2], graine + 1)[:20]
         return _melangees(un + zero + plus, graine + 2)
+    if nom == "accord":
+        choix: list[str] = []
+        for classe in (lambda n: n == 0, lambda n: n == 1, lambda n: n >= 2):
+            for plate in (False, True):
+                chemins = [i.chemin for i in images if i.n is not None and classe(i.n) and i.plate == plate]
+                choix += _melangees(chemins, graine + 3)[:PAR_CLASSE_ET_TYPE]  # moins d'images disponibles : toutes
+        return _melangees(choix, graine + 4)  # mêlées : l'ordre ne révèle pas l'étiquette d'origine
     if nom == "tirage_au_hasard":
         return _melangees([i.chemin for i in images], graine)[:200]
     raise ValueError(f"file inconnue : {nom!r} (connues : {', '.join(FILES)})")
