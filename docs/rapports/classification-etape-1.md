@@ -1,5 +1,7 @@
 # Classification d'images de stationnement — étape 1 : les huit modèles de la consigne
 
+> **⚠ 28/10/2026 — résultats invalidés en partie.** Un audit a trouvé une fuite de données (des images identiques dans le train et la validation, surtout pour « non panoramique droit »), trois étiquettes corrigées à la main et d'autres limites. Les chiffres de ce document ne doivent plus être cités. Voir [la reprise du 28/10](classification-etape-1-reprise.md).
+
 > 23/10/2026. Ce document dit ce qu'on a fait, comment, ce qu'on a mesuré, et **ce qu'on peut et ne peut pas en conclure**. Les chiffres sont traduits en
 > phrases. Tous les essais sont dans le laboratoire d'essais (registre `labo/labo.db` du pod, essais E0013 à E0028) ; le fonctionnement du laboratoire
 > est décrit dans [`banc-d-essai-ml.md`](../vision/banc-d-essai-ml.md).
