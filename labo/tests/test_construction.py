@@ -156,3 +156,42 @@ def test_un_recadrage_n_est_jamais_rogne_ni_masque(tmp_path: Path) -> None:
     construire(brut, planifier(petites, recette), recette, tmp_path / "v")
     with Image.open(Variante(tmp_path / "v").echantillons("train")[0].fichier) as im:
         assert im.size == (36, 24) and im.getpixel((3, 3))[0] > 0  # ni coupée, ni noircie
+
+
+def test_la_meme_image_sous_deux_noms_dans_deux_jeux_est_une_fuite_de_contenu() -> None:
+    # Constaté le 28/10 : la même photo rangée sous deux routes passe le contrôle de groupe et de source, mais le modèle la voit deux fois.
+    lignes = [
+        Ligne("train", "0", "g1", "g1/x", False, "abc"),
+        Ligne("val", "0", "g2", "g2/x", False, "abc"),
+        Ligne("test", "0", "g3", "g3/x", False, "def"),
+    ]
+    constats = controler(lignes)
+    fuite = next(c for c in constats if c["code"] == "fuite_contenu")
+    assert fuite["gravite"] == "bloquant"
+    # Les copies de rééquilibrage (train seulement) et les contenus inconnus ne comptent pas.
+    assert "fuite_contenu" not in _codes(controler([Ligne("train", "0", "g1", "a", True, "abc"), Ligne("val", "0", "g2", "b", False, "abc")]))
+    assert "fuite_contenu" not in _codes(controler([Ligne("train", "0", "g1", "a"), Ligne("val", "0", "g2", "b")]))
+
+
+def test_un_enregistrement_partage_entre_jeux_est_signale_sans_bloquer() -> None:
+    lignes = [
+        Ligne("train", "0", "g1", "a", False, "1", "uuid-1"),
+        Ligne("val", "0", "g2", "b", False, "2", "uuid-1"),
+        Ligne("test", "0", "g3", "c", False, "3", "uuid-2"),
+    ]
+    constat = next(c for c in controler(lignes) if c["code"] == "enregistrement_partage")
+    assert constat["gravite"] == "avertissement" and constat["enregistrements"] == ["uuid-1"]
+
+
+def test_la_reduction_explicite_garde_toute_l_image_en_carre(tmp_path: Path) -> None:
+    from PIL import Image as PILImage
+
+    brut, images = _brut(tmp_path)
+    recette = Recette(cote="droite", tache="nombre", preparation="masque", taille=24, reequilibrage={"actif": False})
+    plan = planifier(images, recette)
+    construire(brut, plan, recette, tmp_path / "v")
+    fichiers = list((tmp_path / "v").glob("*/*/*.jpg"))
+    assert fichiers
+    for f in fichiers:
+        with PILImage.open(f) as im:
+            assert im.size == (24, 24)

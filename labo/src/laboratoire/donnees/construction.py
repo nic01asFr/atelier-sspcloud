@@ -57,7 +57,10 @@ def _nom_fichier(i: ImageBrute, copie: int) -> str:
 
 
 def lignes_de_controle(plan: Plan) -> list[Ligne]:
-    return [Ligne(l.jeu, l.etiquetee.classe, l.etiquetee.image.groupe, l.etiquetee.image.chemin, l.copie > 0) for l in plan.lignes]
+    return [
+        Ligne(l.jeu, l.etiquetee.classe, l.groupe or l.etiquetee.image.groupe, l.etiquetee.image.chemin, l.copie > 0, l.etiquetee.image.contenu, l.etiquetee.image.enregistrement)
+        for l in plan.lignes
+    ]
 
 
 def construire(
@@ -90,8 +93,11 @@ def construire(
             cible = provisoire / relatif
             cible.parent.mkdir(parents=True, exist_ok=True)
             with Image.open(brut / i.chemin) as im:
-                (preparer(im, i.cote, recette.preparation) if i.plate else im.convert("RGB")).save(cible, "JPEG", quality=QUALITE_JPEG)
-            lignes.append({"fichier": relatif, "jeu": l.jeu, "classe": l.etiquetee.classe, "groupe": i.groupe, "source": i.chemin})
+                prete = preparer(im, i.cote, recette.preparation) if i.plate else im.convert("RGB")
+                if recette.taille:  # réduction explicite : toute l'image, sans le recadrage central que ferait le modèle
+                    prete = prete.resize((recette.taille, recette.taille), Image.LANCZOS)
+                prete.save(cible, "JPEG", quality=QUALITE_JPEG)
+            lignes.append({"fichier": relatif, "jeu": l.jeu, "classe": l.etiquetee.classe, "groupe": l.groupe or i.groupe, "source": i.chemin})
             if progression and (n % 25 == 0 or n == total):
                 progression(n, total)
         with (provisoire / "manifeste.csv").open("w", encoding="utf-8", newline="") as f:
