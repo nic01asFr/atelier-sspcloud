@@ -325,6 +325,7 @@ async function render() {
     else if (section === "panoramas") n = await pagePanoramas(zone, morceaux[1]);
     else if (section === "traitements") n = await pageTraitements(zone);
     else if (section === "donnees") n = await pageDonnees(zone, morceaux[1]);
+    else if (section === "livrable") n = await pageLivrable(zone);
     else zone.replaceChildren(h("div", { class: "carte vide" }, "Page inconnue. ", h("a", { href: "#/essais" }, "Retour aux essais.")));
     if (mon === numero) nettoyage = typeof n === "number" ? () => clearInterval(n) : n;
     else if (typeof n === "number") clearInterval(n);

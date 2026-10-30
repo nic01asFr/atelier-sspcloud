@@ -41,4 +41,5 @@ Toutes les mesures d'un essai (`resultats.json`) portent sur le lot **val**, sau
 
 - **Essais** : la liste, avec le rappel moyen de validation et l'exactitude de chaque essai ;
 - **Un essai** : réglages, courbes d'entraînement, matrice de confusion, rappel et précision par classe, et la comparaison à la réponse triviale ;
-- **Données** : les jeux, leurs effectifs par lot et leurs contrôles.
+- **Données** : les jeux, leurs effectifs par lot et leurs contrôles ;
+- **Livrable** : les modèles retenus avec leurs chiffres, et de quoi les télécharger (chaque fichier, ou tout en une archive zip).

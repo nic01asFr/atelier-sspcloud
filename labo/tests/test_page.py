@@ -354,3 +354,39 @@ def test_commenter_une_zone_sur_une_image_repondre_et_changer_le_statut(racine: 
         srv.should_exit = True
         fil.join(timeout=10)
     assert erreurs == []
+
+
+def test_la_page_livrable_liste_les_modeles_propose_le_zip_et_telecharge_un_fichier(serveur: str, racine: Racine) -> None:
+    import csv
+
+    d = racine.chemin / "livrable"
+    d.mkdir()
+    for groupe in ("panoramique_droite_nombre", "non_panoramique_gauche_nombre"):
+        (d / f"{groupe}.pt").write_bytes(b"modele-" + groupe.encode())
+        (d / f"{groupe}_lots.csv").write_text("fichier,jeu\n", encoding="utf-8")
+    colonnes = ["groupe", "modele", "essai_livre", "jeu_de_donnees", "train", "val", "test", "images_validation", "exactitude", "reponse_triviale",
+                "rappel_moyen", "hasard", "rappel_moyen_3_graines", "ecart_3_graines", "poids_sha256_12"]
+    with (d / "synthese.csv").open("w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(colonnes)
+        w.writerow(["panoramique_droite_nombre", "yolo26n-cls", "E0030", "jeu1", 355, 70, 83, 70, 0.6, 0.614, 0.345, 0.33, 0.352, 0.005, "abc"])
+        w.writerow(["non_panoramique_gauche_nombre", "yolo26s-cls", "E0043", "jeu2", 240, 47, 61, 47, 0.83, 0.745, 0.514, 0.33, 0.533, 0.014, "def"])
+    erreurs: list[str] = []
+    with playwright.sync_playwright() as p:
+        navigateur = p.chromium.launch(executable_path=_chromium())
+        page = navigateur.new_page(accept_downloads=True)
+        page.on("pageerror", lambda e: erreurs.append(str(e)))
+        page.goto(f"{serveur}/#/livrable")
+        page.wait_for_selector("text=Tout télécharger")
+        texte = page.inner_text("main")
+        assert "panoramique droite nombre" in texte and "non panoramique gauche nombre" in texte
+        assert "0,53" in texte and "0,35" in texte and "Le lot de test est scellé" in texte  # les chiffres sont lus, pas devinés
+        assert page.locator("[data-nav=livrable]").get_attribute("aria-current") == "page"
+        with page.expect_download() as dl:
+            page.locator("table a:text-is('modèle')").first.click()
+        assert dl.value.suggested_filename.endswith(".pt")
+        with page.expect_download() as dl:
+            page.click("text=Tout télécharger")
+        assert dl.value.suggested_filename == "livrable.zip"
+        navigateur.close()
+    assert erreurs == []
