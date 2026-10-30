@@ -72,7 +72,7 @@ Matrice : lignes = vraie classe, colonnes = classe prédite. Classes du nombre :
 
 ## 6. Les fichiers
 
-Dossier `livrable/` (archive `livrable.zip`, 52 Mo) sur le pod du projet de classification, `labo/livrable/` :
+**Téléchargement : onglet « Livrable » du laboratoire** (un lien par fichier, et « Tout télécharger » pour l'archive zip de 52 Mo). Accessible à l'administrateur et au relecteur, pas au valideur. Le dossier est constitué par `labo/outils/constituer_livrable.py` ; sur le pod du projet de classification, il est dans `labo/livrable/` :
 
 | Fichier | Contenu |
 |---|---|

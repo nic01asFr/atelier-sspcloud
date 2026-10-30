@@ -30,6 +30,7 @@ from pydantic import BaseModel
 from laboratoire.adaptateurs import adaptateur as obtenir_adaptateur
 from laboratoire.api_commentaires import monter_commentaires
 from laboratoire.api_donnees import monter_donnees
+from laboratoire.api_livrable import monter_livrable
 from laboratoire.api_profondeur import monter_profondeur
 from laboratoire.api_validation import monter_validation
 from laboratoire.commentaires.journal import Commentaires
@@ -355,6 +356,7 @@ def creer_app(
     monter_profondeur(app, racine, registre, votes, ident)
     brut = monter_donnees(app, racine, ident, decisions)
     monter_validation(app, racine, ident, decisions, brut)
+    monter_livrable(app, racine)
 
     @app.get("/api/variantes")
     def variantes() -> list[dict[str, Any]]:
