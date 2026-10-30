@@ -146,3 +146,29 @@ def test_le_script_ecarte_un_resultat_qui_ne_porte_pas_sur_la_validation(tmp_pat
     chemin.write_text(json.dumps(brut), encoding="utf-8")
     with pytest.raises(SystemExit, match="validation"):
         constituer_livrable.constituer(racine, "E0030", "réduction")
+
+
+# -- le carnet d'accompagnement ------------------------------------------------
+
+
+def test_le_carnet_se_rejoue_sur_un_livrable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    pytest.importorskip("pandas")
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    racine = tmp_path / "labo"
+    _projet_de_classification(racine)
+    chemin = racine / "essais" / "E0033" / "resultats.json"
+    brut = json.loads(chemin.read_text(encoding="utf-8"))
+    brut["rapport"]["rappel_moyen"] = 0.75  # cohérent avec la matrice [[2, 0], [1, 1]]
+    chemin.write_text(json.dumps(brut), encoding="utf-8")
+    constituer_livrable.constituer(racine, "E0030", "réduction")
+    carnet = racine / "livrable" / "lire_le_livrable.ipynb"
+    assert carnet.is_file()
+    # le manifeste de la maquette n'a qu'une image par lot : le contrôle de fuite doit passer, et les sorties s'afficher
+    monkeypatch.chdir(racine / "livrable")
+    espace: dict = {"display": lambda *_: None}
+    cellules = json.loads(carnet.read_text(encoding="utf-8"))["cells"]
+    for c in cellules:
+        if c["cell_type"] == "code":
+            exec(compile("".join(c["source"]), "carnet", "exec"), espace)  # noqa: S102
+    assert espace["controle"]["empreinte conforme"].all() and (espace["fuites"]["collections dans 2 lots"] == 0).all()

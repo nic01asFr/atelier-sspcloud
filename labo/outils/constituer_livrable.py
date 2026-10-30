@@ -9,6 +9,7 @@ Le dossier est lu par l'onglet « Livrable » du laboratoire (`/api/livrable`) :
     <groupe>_mesures.json                essai, jeu de données, empreinte du modèle, rappel/précision par classe, confusion, 3 graines, règle de choix
     <groupe>_confusion_validation.csv    la matrice de confusion
     synthese.csv                         une ligne par groupe
+    lire_le_livrable.ipynb               le carnet qui explique et rejoue les mesures (outils/lire_le_livrable.ipynb)
 
 Ne lit que les mesures de **validation** (`resultats.json`) : jamais `test_scelle.json`. Un essai dont le résultat porte sur un autre lot est refusé.
 
@@ -105,6 +106,7 @@ def constituer(racine: Path, depuis: str, motif: str) -> list[list]:
         w = csv.writer(f)
         w.writerow(COLONNES)
         w.writerows(synthese)
+    shutil.copy2(Path(__file__).with_name("lire_le_livrable.ipynb"), sortie / "lire_le_livrable.ipynb")
     return synthese
 
 
