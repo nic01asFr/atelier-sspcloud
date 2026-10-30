@@ -145,6 +145,11 @@
         "networkPolicy": {
           "type": "object",
           "properties": { "enabled": { "type": "boolean", "default": true } }
+        },
+        "containerSecurityContext": {
+          "type": "object",
+          "title": "Contexte de sécurité du conteneur",
+          "description": "Sans élévation de privilèges et sans capabilities par défaut. {} pour tout retirer."
         }
       }
     },

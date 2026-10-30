@@ -37,6 +37,7 @@ from mcp_gateway.atelier.navigateur import (
     declaration_du_pool,
     lanceur_chrome,
     refuser_les_outils_simules,
+    regle_de_lecture_des_secrets,
     regles_de_lecture_du_navigateur,
     stdio_de_la_passerelle,
 )
@@ -222,10 +223,14 @@ def test_websearch_est_refuse_sans_toucher_au_reste(tmp_path: Path) -> None:
     s = _reglages(tmp_path)
     # Les lectures du navigateur sont autorisées d'office en même temps (J-f3).
     lectures = regles_de_lecture_du_navigateur()
-    assert refuser_les_outils_simules({}, s) == {"permissions": {"deny": ["WebSearch"], "allow": lectures}}
+    secrets = regle_de_lecture_des_secrets(s)
+    assert refuser_les_outils_simules({}, s) == {"permissions": {"deny": ["WebSearch", secrets], "allow": lectures}}
     perso = {"permissions": {"deny": ["Bash(rm:*)"], "allow": ["Read"]}, "model": "m"}
     sortie = refuser_les_outils_simules(perso, s)
-    assert sortie["permissions"] == {"deny": ["Bash(rm:*)", "WebSearch"], "allow": ["Read", *lectures]}
+    assert sortie["permissions"] == {
+        "deny": ["Bash(rm:*)", "WebSearch", secrets],
+        "allow": ["Read", *lectures],
+    }
     assert sortie["model"] == "m"
     assert refuser_les_outils_simules(sortie, s) == sortie, "idempotent"
 
@@ -233,8 +238,9 @@ def test_websearch_est_refuse_sans_toucher_au_reste(tmp_path: Path) -> None:
 def test_websearch_natif_retire_seulement_notre_refus(tmp_path: Path) -> None:
     s = _reglages(tmp_path, websearch_natif=True, navigateur=False)
     reglages = {"permissions": {"deny": ["WebSearch", "Bash(rm:*)"]}}
-    assert refuser_les_outils_simules(reglages, s) == {"permissions": {"deny": ["Bash(rm:*)"]}}
-    assert refuser_les_outils_simules({"permissions": {"deny": ["WebSearch"]}}, s) == {}
+    secrets = regle_de_lecture_des_secrets(s)
+    assert refuser_les_outils_simules(reglages, s) == {"permissions": {"deny": ["Bash(rm:*)", secrets]}}
+    assert refuser_les_outils_simules({"permissions": {"deny": ["WebSearch"]}}, s) == {"permissions": {"deny": [secrets]}}
 
 
 def test_chaque_tour_refuse_websearch(tmp_path: Path) -> None:
@@ -243,6 +249,20 @@ def test_chaque_tour_refuse_websearch(tmp_path: Path) -> None:
     arguments = ClaudeHarness(_reglages(tmp_path))._arguments_de_reglages("conv-1", None)  # noqa: SLF001
     reglages = json.loads(arguments[arguments.index("--settings") + 1])
     assert "WebSearch" in reglages["permissions"]["deny"]
+
+
+def test_le_dossier_des_secrets_est_refuse_en_lecture_sur_toutes_les_surfaces(tmp_path: Path) -> None:
+    from mcp_gateway.atelier.harness import ClaudeHarness
+
+    s = _reglages(tmp_path)
+    regle = regle_de_lecture_des_secrets(s)
+    assert regle.startswith("Read(//") and regle.endswith("secrets/**)")
+    # Même avec la recherche native : seul WebSearch se retire, jamais le refus des secrets.
+    natif = _reglages(tmp_path, websearch_natif=True)
+    assert regle in refuser_les_outils_simules({}, natif)["permissions"]["deny"]
+    arguments = ClaudeHarness(s)._arguments_de_reglages("conv-1", None)  # noqa: SLF001
+    reglages = json.loads(arguments[arguments.index("--settings") + 1])
+    assert regle in reglages["permissions"]["deny"]
 
 
 # --- l'état, dans l'interface -------------------------------------------------

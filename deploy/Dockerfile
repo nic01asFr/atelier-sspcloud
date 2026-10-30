@@ -11,7 +11,9 @@ FROM inseefrlab/onyxia-jupyter-python:py3.13.13
 ARG NODE_VERSION=22.23.2
 ARG CODE_SERVER_VERSION=4.135.0
 ARG WIKICHAT_DEPOT=https://github.com/nic01asFr/wikichat.git
-ARG WIKICHAT_REF=main
+# Un commit, pas une branche : le build du jour est celui d'hier. Pour avancer,
+# remplacer le SHA par celui d'un wikichat éprouvé (`--build-arg WIKICHAT_REF=…`).
+ARG WIKICHAT_REF=818e94054338947bfb9db04e2d79bac848cab21a
 ARG GIT_SHA=
 
 USER root
@@ -53,8 +55,12 @@ RUN mkdir -p "$ATELIER_OUTILS/chrome-devtools-mcp" \
       --save-exact "chrome-devtools-mcp@${CHROME_MCP_VERSION}"
 
 # wikichat et ses dépendances.
-RUN git clone -q --depth 1 --branch "$WIKICHAT_REF" "$WIKICHAT_DEPOT" /opt/atelier/wikichat \
+# `git clone --branch` ne prend pas un SHA : on récupère le commit lui-même.
+RUN git init -q /opt/atelier/wikichat \
     && cd /opt/atelier/wikichat \
+    && git remote add origin "$WIKICHAT_DEPOT" \
+    && git fetch -q --depth 1 origin "$WIKICHAT_REF" \
+    && git checkout -q FETCH_HEAD \
     && npm ci --omit=dev --no-audit --no-fund
 ENV WIKICHAT_SRC=/opt/atelier/wikichat
 
