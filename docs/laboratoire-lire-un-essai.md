@@ -43,3 +43,5 @@ Toutes les mesures d'un essai (`resultats.json`) portent sur le lot **val**, sau
 - **Un essai** : réglages, courbes d'entraînement, matrice de confusion, rappel et précision par classe, et la comparaison à la réponse triviale ;
 - **Données** : les jeux, leurs effectifs par lot et leurs contrôles ;
 - **Livrable** : les modèles retenus avec leurs chiffres, et de quoi les télécharger (chaque fichier, ou tout en une archive zip).
+
+Le zip du livrable contient aussi `lire_le_livrable.ipynb` : un carnet Jupyter qui présente les 8 modèles, recalcule leurs mesures depuis les matrices de confusion, contrôle le livrable (empreintes, absence de fuite entre lots) et permet d'essayer un modèle sur ses propres images. Il se rejoue hors du laboratoire (`pandas`, `matplotlib` ; `ultralytics` pour l'essai de modèle).
