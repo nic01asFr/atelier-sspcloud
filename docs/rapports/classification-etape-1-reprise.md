@@ -1,6 +1,7 @@
 # Classification d'images de stationnement — reprise du 28/10 après audit
 
 > 28/10/2026. **Ce document remplace les résultats du [rapport du 23/10](classification-etape-1.md)**, que l'audit ci-dessous a invalidés en partie.
+> Les huit modèles à restituer, avec leurs fichiers et leurs mesures : [`classification-livrable.md`](classification-livrable.md).
 > Tous les chiffres sont des mesures de **validation**. Le jeu de test scellé n'a pas été ouvert (0 consultation).
 
 ## 1. Ce que l'audit a trouvé
