@@ -164,6 +164,7 @@ def test_le_carnet_se_rejoue_sur_un_livrable(tmp_path: Path, monkeypatch: pytest
     constituer_livrable.constituer(racine, "E0030", "réduction")
     carnet = racine / "livrable" / "lire_le_livrable.ipynb"
     assert carnet.is_file()
+    assert "test scellé" in (racine / "livrable" / "LISEZ-MOI.md").read_text(encoding="utf-8").lower()
     # le manifeste de la maquette n'a qu'une image par lot : le contrôle de fuite doit passer, et les sorties s'afficher
     monkeypatch.chdir(racine / "livrable")
     espace: dict = {"display": lambda *_: None}

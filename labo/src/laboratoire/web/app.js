@@ -62,8 +62,8 @@ async function api(chemin, options = {}) {
 
 // ── graphiques (SVG à la main) ────────────────────────────────────────────
 
-function courbes(series, { largeur = 520, hauteur = 190, titre = "" } = {}) {
-  const m = { g: 44, d: 10, h: 10, b: 24 };
+function courbes(series, { largeur = 520, hauteur = 190, titre = "", axeX = "époque", axeY = "valeur de la mesure" } = {}) {
+  const m = { g: 52, d: 10, h: 10, b: 36 };
   const pts = series.flatMap((x) => x.points);
   if (!pts.length) return h("p", { class: "doux" }, "Pas encore de mesure par époque.");
   const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
@@ -74,7 +74,9 @@ function courbes(series, { largeur = 520, hauteur = 190, titre = "" } = {}) {
   const svg = s("svg", { viewBox: `0 0 ${largeur} ${hauteur}`, width: "100%", role: "img", "aria-label": titre });
   svg.append(s("line", { class: "axe", x1: m.g, x2: largeur - m.d, y1: hauteur - m.b, y2: hauteur - m.b }), s("line", { class: "axe", x1: m.g, x2: m.g, y1: m.h, y2: hauteur - m.b }));
   for (const y of [y0, (y0 + y1) / 2, y1]) svg.append(s("text", { x: m.g - 6, y: Y(y) + 4, "text-anchor": "end" }, nb(y, 2)));
-  for (const x of [x0, x1]) svg.append(s("text", { x: X(x), y: hauteur - 6, "text-anchor": "middle" }, String(Math.round(x))));
+  for (const x of [x0, x1]) svg.append(s("text", { x: X(x), y: hauteur - 20, "text-anchor": "middle" }, String(Math.round(x))));
+  svg.append(s("text", { class: "axe-nom", x: (m.g + largeur - m.d) / 2, y: hauteur - 5, "text-anchor": "middle" }, `${axeX} →`));
+  svg.append(s("text", { class: "axe-nom", transform: `translate(10 ${(m.h + hauteur - m.b) / 2}) rotate(-90)`, "text-anchor": "middle" }, `${axeY} →`));
   series.forEach((serie, i) => {
     const couleur = ["var(--course)", "var(--ok)", "var(--alerte)", "var(--mal)"][i % 4];
     svg.append(s("polyline", { class: "serie", stroke: couleur, points: serie.points.map((p) => `${X(p[0])},${Y(p[1])}`).join(" ") }));
@@ -124,20 +126,20 @@ async function pageEssais(zone) {
   const choix = h("select", { "aria-label": "Filtrer par état", onchange: (e) => { filtre = e.target.value; rafraichir(); } },
     h("option", { value: "" }, "Tous les états"), ...Object.entries(LIBELLES).map(([k, v]) => h("option", { value: k }, v)));
   zone.replaceChildren(
-    h("div", { class: "entete" }, h("div", {}, h("h1", {}, "Essais"), h("p", { class: "doux" }, "Le rappel moyen compte chaque classe pour autant, quel que soit son effectif ; le trait gris est la réponse triviale. L'exactitude seule est trompeuse.")),
+    h("div", { class: "entete" }, h("div", {}, h("h1", {}, "Essais"), h("p", { class: "doux" }, "Le rappel moyen compte chaque classe pour autant, quel que soit son effectif ; le trait gris est la réponse triviale. L'exactitude seule est trompeuse. ", h("a", { href: "#/aide" }, "Comment lire ces chiffres ?"))),
       h("div", { class: "actions" }, choix, boutonComparer, h("a", { class: "bouton principal", href: "#/lancer" }, "Lancer un essai"))),
     h("div", { class: "carte defile" }, h("table", {}, h("thead", {}, h("tr", {},
-      h("th", {}, ""), h("th", {}, "Essai"), h("th", {}, "État"), h("th", {}, "Jeu"), h("th", {}, "Modèle"), h("th", { class: "num" }, "Résolution"), h("th", { class: "num" }, "Graine"),
-      h("th", {}, "Rappel moyen (validation)"), h("th", { class: "num" }, "Exactitude"), h("th", {}, "Test"), h("th", { class: "num" }, "Durée"), h("th", {}, "Créé"))), corps)),
+      h("th", {}, ""), h("th", {}, "Essai"), h("th", {}, "État"), h("th", {}, "Jeu"), h("th", {}, "Modèle"), h("th", { class: "num" }, "Résolution"), h("th", { class: "num" }, "Époques"), h("th", { class: "num" }, "Graine"),
+      h("th", { title: "Moyenne des rappels de chaque catégorie, chacune comptant autant. Mesurée sur le lot de validation." }, "Rappel moyen (validation)"), h("th", { class: "num", title: "Part d'images bien classées. Trompeuse si une catégorie domine : comparez-la à la réponse triviale." }, "Exactitude"), h("th", { title: "Le lot de test est scellé : il ne s'ouvre qu'une fois, à la fin. Voir Aide." }, "Test"), h("th", { class: "num" }, "Durée"), h("th", {}, "Créé"))), corps)),
   );
   async function rafraichir() {
     const essais = await api(`/api/essais${filtre ? `?etat=${filtre}` : ""}`);
     boutonComparer.disabled = selection.size < 2 || selection.size > 6;
-    if (!essais.length) { corps.replaceChildren(h("tr", {}, h("td", { colspan: 12, class: "vide" }, "Aucun essai pour l'instant. ", h("a", { href: "#/lancer" }, "Lancer le premier.")))); return; }
+    if (!essais.length) { corps.replaceChildren(h("tr", {}, h("td", { colspan: 13, class: "vide" }, "Aucun essai pour l'instant. ", h("a", { href: "#/lancer" }, "Lancer le premier.")))); return; }
     corps.replaceChildren(...essais.map((e) => h("tr", { "data-cible": `essai:${e.id}` },
       h("td", {}, h("input", { type: "checkbox", "aria-label": `Sélectionner ${e.id}`, checked: selection.has(e.id), onchange: (ev) => { ev.target.checked ? selection.add(e.id) : selection.delete(e.id); boutonComparer.disabled = selection.size < 2 || selection.size > 6; } })),
       h("td", {}, h("a", { href: `#/essais/${e.id}`, class: "mono" }, e.id)), h("td", {}, badge(e.etat)), h("td", { class: "mono" }, e.jeu), h("td", {}, `${e.famille} · ${e.modele}`),
-      h("td", { class: "num" }, e.imgsz), h("td", { class: "num" }, e.graine),
+      h("td", { class: "num" }, e.imgsz), h("td", { class: "num" }, e.config && e.config.methode ? e.config.methode.epochs : "—"), h("td", { class: "num" }, e.graine),
       h("td", {}, e.rappel_moyen_val === null ? "—" : barreValeur(e.rappel_moyen_val, null)), h("td", { class: "num doux" }, e.exactitude_val === null ? "—" : nb(e.exactitude_val, 2)),
       h("td", {}, e.rappel_moyen_test !== null ? nb(e.rappel_moyen_test, 2) : e.etat === "termine" ? h("span", { class: "doux", title: "Scellé : il s'ouvre depuis la page de l'essai, et l'ouverture est comptée." }, "🔒 scellé") : "—"),
       h("td", { class: "num" }, duree(e.debut, e.fin)), h("td", { class: "doux" }, quand(e.cree_le)))));
@@ -162,8 +164,8 @@ function matriceConfusion(rapport) {
     h("tbody", {}, ...rapport.classes.map((c, i) => h("tr", {}, h("th", {}, c), ...rapport.confusion[i].map((v, j) => h("td", { class: i === j ? "diag" : "", style: `background:color-mix(in srgb, ${i === j ? "var(--ok)" : "var(--mal)"} ${Math.round((v / max) * 55)}%, transparent)` }, v)))))));
 }
 
-function tuile(etiquette, valeur, detail) {
-  return h("div", { class: "tuile" }, h("div", { class: "etiquette" }, etiquette), h("div", { class: "valeur" }, valeur), detail ? h("div", { class: "detail" }, detail) : null);
+function tuile(etiquette, valeur, detail, aide) {
+  return h("div", { class: "tuile", title: aide || null }, h("div", { class: "etiquette" }, etiquette, aide ? h("span", { class: "doux" }, " ⓘ") : null), h("div", { class: "valeur" }, valeur), detail ? h("div", { class: "detail" }, detail) : null);
 }
 
 async function pageEssai(zone, id) {
@@ -171,6 +173,7 @@ async function pageEssai(zone, id) {
   const e = d.essai, r = d.resultats;
   const actif = e.etat === "en_cours" || e.etat === "en_file";
   const boutons = [h("a", { class: "bouton", href: "#/essais" }, "← Essais"), h("a", { class: "bouton", href: `#/lancer?depuis=${id}` }, "Rejouer avec…")];
+  if (e.etat === "termine") boutons.push(h("a", { class: "bouton", href: `api/essais/${id}/modele`, download: `${id}.pt`, title: "Les poids du dernier passage (last.pt), celui qui est mesuré." }, "Télécharger le modèle"));
   if (actif) boutons.push(h("button", { class: "danger", onclick: async () => { if (!confirm(`Arrêter ${id} ?`)) return; try { await api(`/api/essais/${id}/arreter`, { methode: "POST" }); avis(`${id} arrêté.`); render(); } catch (x) { avis(x.message, true); } } }, "Arrêter"));
   const zoneTest = h("div", {});
   const entete = h("div", { class: "entete", "data-cible": `essai:${id}` }, h("div", {}, h("h1", {}, `Essai ${id} `, badge(e.etat)), h("p", { class: "doux" }, `${e.famille} · ${e.modele} · résolution ${e.imgsz} · jeu `, h("span", { class: "mono" }, e.jeu), ` · graine ${e.graine} · ${duree(e.debut, e.fin)}`)), h("div", { class: "actions" }, boutons));
@@ -179,8 +182,8 @@ async function pageEssai(zone, id) {
   if (r) {
     const rap = r.rapport, ic = r.intervalle_rappel_moyen, gain = r.gain_sur_trivial.majoritaire;
     contenu.push(h("div", { class: "tuiles", "data-cible": `essai:${id}/indicateurs` },
-      tuile("Rappel moyen (validation)", nb(rap.rappel_moyen, 3), ic && ic.bas !== null ? `intervalle à 95 % : ${nb(ic.bas, 2)} – ${nb(ic.haut, 2)} (${ic.groupes} collections)` : "intervalle impossible : moins de deux collections"),
-      tuile("Gain sur la réponse triviale", gain === null ? "—" : `${gain >= 0 ? "+" : ""}${nb(gain, 3)}`, `toujours « ${r.triviales.majoritaire.classe} » : ${nb(r.triviales.majoritaire.rappel_moyen, 3)} de rappel moyen`),
+      tuile("Rappel moyen (validation)", nb(rap.rappel_moyen, 3), ic && ic.bas !== null ? `intervalle à 95 % : ${nb(ic.bas, 2)} – ${nb(ic.haut, 2)} (${ic.groupes} collections)` : "intervalle impossible : moins de deux collections", "Moyenne des rappels de chaque catégorie, chacune comptant autant. À lire contre le hasard (1 ÷ nombre de catégories)."),
+      tuile("Gain sur la réponse triviale", gain === null ? "—" : `${gain >= 0 ? "+" : ""}${nb(gain, 3)}`, `toujours « ${r.triviales.majoritaire.classe} » : ${nb(r.triviales.majoritaire.rappel_moyen, 3)} de rappel moyen`, "Réponse triviale : répondre toujours la catégorie la plus fréquente. Le gain est l'écart entre ce modèle et cette réponse : s'il est nul ou négatif, le modèle n'apprend rien d'utile."),
       tuile("Exactitude", nb(rap.exactitude, 3), `réponse triviale : ${nb(r.triviales.majoritaire.exactitude, 3)} — flatteuse si une classe domine`),
       tuile("Classes non fiables", rap.classes_non_fiables.length ? rap.classes_non_fiables.join(", ") : "aucune", "moins de 20 images en validation")));
     contenu.push(h("div", { class: "grille" },
@@ -198,7 +201,8 @@ async function pageEssai(zone, id) {
     if (d.test.consultations > 0 && e.rappel_moyen_test !== null) {
       zoneTest.append(h("div", { class: "carte" }, h("h2", {}, `Test déjà ouvert ${d.test.consultations} fois`), h("button", { onclick: ouvrir }, "Relire le test")));
     } else {
-      zoneTest.append(h("div", { class: "carte" }, h("h2", {}, "🔒 Test scellé"), h("p", { class: "doux" }, "Le jeu de test ne sert pas à choisir un réglage ou un modèle : on le regarde une fois, pour confirmer. L'ouverture est comptée."), h("button", { onclick: ouvrir }, "Ouvrir le test")));
+      zoneTest.append(h("div", { class: "carte" }, h("h2", {}, "🔒 Test scellé"), h("p", { class: "doux" }, "Le jeu de test ne sert pas à choisir un réglage ou un modèle : on le regarde une fois, à la fin, quand les choix sont figés. L'ouverture est comptée. ", h("a", { href: "#/aide" }, "Pourquoi ?")),
+        TACHE.role === "admin" ? h("button", { onclick: ouvrir }, "Ouvrir le test") : h("p", { class: "doux" }, "Seul l'administrateur peut l'ouvrir.")));
     }
     async function ouvrir() {
       if (!confirm("Ouvrir le test ? Il ne sert pas à choisir, et cette ouverture sera comptée.")) return;
@@ -324,6 +328,7 @@ async function render() {
     else if (section === "classement") n = await pageClassement(zone);
     else if (section === "panoramas") n = await pagePanoramas(zone, morceaux[1]);
     else if (section === "traitements") n = await pageTraitements(zone);
+    else if (section === "aide") n = await pageAide(zone);
     else if (section === "donnees") n = await pageDonnees(zone, morceaux[1]);
     else if (section === "livrable") n = await pageLivrable(zone);
     else zone.replaceChildren(h("div", { class: "carte vide" }, "Page inconnue. ", h("a", { href: "#/essais" }, "Retour aux essais.")));

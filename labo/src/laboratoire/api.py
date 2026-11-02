@@ -306,6 +306,16 @@ def creer_app(
             },
         }
 
+    @app.get("/api/essais/{essai_id}/modele")
+    def modele(essai_id: str) -> FileResponse:
+        """Les poids mesurés (`last.pt`) d'un essai terminé."""
+        i = ident(essai_id)
+        registre.essai(i)
+        poids = racine.dossier_essai(i) / "poids" / "last.pt"
+        if not poids.is_file() or poids.is_symlink():
+            raise HTTPException(404, "pas de poids pour cet essai")
+        return FileResponse(poids, filename=f"{i}.pt")
+
     @app.get("/api/essais/{essai_id}/journal")
     def journal(essai_id: str, depuis: int = Query(0, ge=0)) -> dict[str, Any]:
         i = ident(essai_id)

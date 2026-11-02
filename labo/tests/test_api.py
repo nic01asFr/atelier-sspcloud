@@ -175,3 +175,15 @@ def test_la_connexion_sans_jeton_configure_ne_demande_rien(racine: Racine) -> No
     with TestClient(creer_app(racine, demarrer_travailleur=False), follow_redirects=False) as c:
         assert c.post("/connexion", content="jeton=x").status_code == 303
         assert "web/app.js" in c.get("/").text
+
+
+def test_le_modele_d_un_essai_se_telecharge(client: TestClient) -> None:
+    ident = client.post("/api/essais", json=CONFIG).json()["id"]
+    _attendre(client, ident)
+    dossier = client.app.state.racine.dossier_essai(ident) / "poids"
+    dossier.mkdir(parents=True, exist_ok=True)
+    (dossier / "last.pt").write_bytes(b"poids")
+    r = client.get(f"/api/essais/{ident}/modele")
+    assert r.status_code == 200 and r.content == b"poids" and ident in r.headers["content-disposition"]
+    (dossier / "last.pt").unlink()
+    assert client.get(f"/api/essais/{ident}/modele").status_code == 404

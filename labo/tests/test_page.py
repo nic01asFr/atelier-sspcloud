@@ -74,6 +74,14 @@ def test_la_page_s_affiche_sans_erreur_et_dit_la_verite(serveur: str) -> None:
         page.wait_for_selector("text=Gain sur la réponse triviale")
         texte = page.inner_text("main")
         assert "Rappel moyen (validation)" in texte and "non fiable" in texte and "Test scellé" in texte
+        assert "Ouvrir le test" in texte and page.locator("a:has-text('Télécharger le modèle')").count() == 1
+        page.goto(f"{serveur}/#/essais")
+        page.wait_for_selector("th:has-text('Époques')")
+        page.goto(f"{serveur}/#/aide")
+        page.wait_for_selector("h1:has-text('Aide')")
+        aide = page.inner_text("main")
+        assert "Pourquoi garder un test scellé" in aide and "Quand on l'ouvre" in aide and "Réponse triviale" in aide
+        assert page.locator("[data-nav=aide]").get_attribute("aria-current") == "page"
         page.goto(f"{serveur}/#/lancer")
         page.wait_for_selector("text=Mettre en file")
         page.goto(f"{serveur}/#/donnees")
