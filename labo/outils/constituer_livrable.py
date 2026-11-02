@@ -10,6 +10,7 @@ Le dossier est lu par l'onglet « Livrable » du laboratoire (`/api/livrable`) :
     <groupe>_confusion_validation.csv    la matrice de confusion
     synthese.csv                         une ligne par groupe
     lire_le_livrable.ipynb               le carnet qui explique et rejoue les mesures (outils/lire_le_livrable.ipynb)
+    LISEZ-MOI.md                         le mode d'emploi : fichiers, lots, test scellé, lecture des chiffres (outils/LISEZ-MOI.md)
 
 Ne lit que les mesures de **validation** (`resultats.json`) : jamais `test_scelle.json`. Un essai dont le résultat porte sur un autre lot est refusé.
 
@@ -106,7 +107,8 @@ def constituer(racine: Path, depuis: str, motif: str) -> list[list]:
         w = csv.writer(f)
         w.writerow(COLONNES)
         w.writerows(synthese)
-    shutil.copy2(Path(__file__).with_name("lire_le_livrable.ipynb"), sortie / "lire_le_livrable.ipynb")
+    for nom in ("lire_le_livrable.ipynb", "LISEZ-MOI.md"):
+        shutil.copy2(Path(__file__).with_name(nom), sortie / nom)
     return synthese
 
 

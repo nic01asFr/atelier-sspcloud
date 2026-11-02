@@ -155,3 +155,7 @@ kbd { font: .8rem var(--mono); padding: .05rem .35rem; border: 1px solid var(--b
 .erp { display: block; width: 100%; height: auto; border-radius: 6px; margin: .5rem 0; }
 .cases { display: grid; gap: .25rem; }
 .case { display: flex; align-items: center; font-weight: 400; }
+
+svg .axe-nom { font-size: 10px; fill: var(--doux); }
+.aide dt { font-weight: 600; margin-top: .8rem; }
+.aide dd { margin: .2rem 0 0 0; }
