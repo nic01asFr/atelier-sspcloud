@@ -1,7 +1,7 @@
 /* Page Aide : comment lire les chiffres du laboratoire, et pourquoi le test reste scellé. Texte fixe, aucune donnée du serveur. */
 "use strict";
 
-const AIDE = [
+const TEXTES_AIDE = [
   ["Les trois lots d'images", [
     ["Entraînement (train)", "Les images sur lesquelles le modèle apprend."],
     ["Validation (val)", "Les images avec lesquelles on compare et on décide : yolo26n ou yolo26s, quelle préparation d'image, quelle variante. On peut les regarder autant de fois qu'on veut. Tous les chiffres affichés partout sont ceux de la validation."],
@@ -39,5 +39,5 @@ const AIDE = [
 function pageAide(zone) {
   zone.replaceChildren(
     h("div", { class: "entete" }, h("div", {}, h("h1", {}, "Aide"), h("p", { class: "doux" }, "Comment lire les chiffres, et pourquoi le lot de test reste scellé."))),
-    h("div", { class: "carte aide" }, ...AIDE.flatMap(([titre, termes]) => [h("h2", {}, titre), h("dl", {}, ...termes.flatMap(([t, d]) => [h("dt", {}, t), h("dd", {}, d)]))])));
+    h("div", { class: "carte aide" }, ...TEXTES_AIDE.flatMap(([titre, termes]) => [h("h2", {}, titre), h("dl", {}, ...termes.flatMap(([t, d]) => [h("dt", {}, t), h("dd", {}, d)]))])));
 }
