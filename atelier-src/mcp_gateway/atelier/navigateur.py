@@ -243,6 +243,17 @@ def plafond_d_onglets() -> int:
 # simple) ou par un connecteur de recherche du pool.
 OUTILS_REFUSES = ("WebSearch",)
 
+
+def regle_de_lecture_des_secrets(settings: AtelierSettings) -> str:
+    """Le refus de lire le dossier des secrets (clé propriétaire, jeton GitHub, clé LLM).
+
+    Ces fichiers sont lus par l'Atelier lui-même, jamais par un agent : ce
+    qu'il lui faut arrive par l'environnement. Un refus l'emporte sur tout
+    mode, bypass compris. Il ne ferme que l'outil `Read` : un `cat` passé par
+    Bash n'est pas couvert, c'est le travail du jeton par conversation (Lot 4).
+    """
+    return f"Read(//{settings.secrets_dir.resolve().as_posix().lstrip('/')}/**)"
+
 # -- J-f3 : les outils du navigateur qui ne font que lire ---------------------
 
 # Autorisés d'office : lister les pages, capturer, lire l'arbre, attendre,
@@ -302,6 +313,7 @@ def refuser_les_outils_simules(reglages: dict[str, Any], settings: AtelierSettin
     """Les règles du navigateur dans des réglages du CLI, pour toutes les surfaces.
 
     - ajoute (ou retire si `websearch_natif`) WebSearch de `permissions.deny` ;
+    - y ajoute toujours le refus de lire le dossier des secrets ;
     - autorise d'office les outils du navigateur qui ne font que lire (J-f3,
       `autoriser_les_lectures_du_navigateur`).
 
@@ -318,6 +330,9 @@ def refuser_les_outils_simules(reglages: dict[str, Any], settings: AtelierSettin
         refus = [r for r in refus if r not in OUTILS_REFUSES]
     else:
         refus += [o for o in OUTILS_REFUSES if o not in refus]
+    secrets = regle_de_lecture_des_secrets(settings)
+    if secrets not in refus:
+        refus.append(secrets)
     if refus:
         permissions["deny"] = refus
     else:

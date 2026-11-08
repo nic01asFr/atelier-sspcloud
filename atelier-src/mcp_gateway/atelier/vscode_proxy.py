@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+import ipaddress
 import logging
 import posixpath
 from typing import Any, Callable
@@ -93,16 +94,26 @@ def _chemin_brut_apres_prefixe(scope: Mapping[str, Any], prefixe: str) -> str:
     return texte
 
 
+# Les plages privées de la RFC 1918 : `172.16.0.0/12` seulement, pas tout `172.*`.
+_RESEAUX_INTERNES = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+
+
+def est_adresse_interne(host: str) -> bool:
+    """Loopback ou plage privée du cluster ; tout ce qui n'est pas une adresse IP est refusé."""
+    try:
+        adresse = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    if isinstance(adresse, ipaddress.IPv6Address) and adresse.ipv4_mapped:
+        adresse = adresse.ipv4_mapped
+    return adresse.is_loopback or any(adresse in reseau for reseau in _RESEAUX_INTERNES)
+
+
 def is_internal_request(request: Request) -> bool:
     """Requêtes depuis le cluster (pods, loopback)."""
     if not request.client:
         return False
-    host = request.client.host
-    if host in {"127.0.0.1", "::1"}:
-        return True
-    if host.startswith("10.") or host.startswith("192.168.") or host.startswith("172."):
-        return True
-    return False
+    return est_adresse_interne(request.client.host)
 
 
 def resolve_vscode_password(settings: AtelierSettings) -> str | None:

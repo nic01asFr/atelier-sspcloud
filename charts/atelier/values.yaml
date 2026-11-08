@@ -54,6 +54,15 @@ git:
 # sort et elle ne se lit plus que dans le Secret.
 security:
   ownerKey: ""
+  # Le contexte du conteneur. Ni `runAsNonRoot` (l'image déclare `USER onyxia`
+  # par son nom : le kubelet ne peut pas vérifier qu'il n'est pas root et
+  # refuse de démarrer), ni `seccompProfile: RuntimeDefault` (Chrome, installé
+  # à l'init, peut en avoir besoin pour son bac à sable) ne sont posés ici ;
+  # à essayer sur un pod avant de les ajouter. `{}` pour tout retirer.
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
   networkPolicy:
     enabled: true
     from:

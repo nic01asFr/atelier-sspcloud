@@ -43,6 +43,7 @@ document le contredit, c'est le document qui a tort, et
 | [`vision/assistant-synthese.md`](vision/assistant-synthese.md), [`vision/assistant-role.md`](vision/assistant-role.md) | l'Assistant : cible et expérience |
 | [`vision/panneau.md`](vision/panneau.md) | le panneau et les bureaux relayés |
 | [`vision/gardiens.md`](vision/gardiens.md) | les gardiens et les réparateurs |
+| [`vision/plan-d-etude-ameliorations.md`](vision/plan-d-etude-ameliorations.md) | les pistes d'amélioration et l'étude prévue pour chacune |
 | [`vision/ecosysteme.md`](vision/ecosysteme.md), [`atelier-hebergement.md`](atelier-hebergement.md) | familles de projets, brouillon, installation et partage (non construits) |
 | [`vision/voix.md`](vision/voix.md) | l'étude de la voix (STT et TTS) |
 

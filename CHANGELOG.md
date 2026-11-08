@@ -13,6 +13,11 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- **Durcissement** : `is_internal_request` n'accepte plus que `172.16.0.0/12` (et non tout `172.*`) ;
+  les agents ne peuvent plus lire le dossier des secrets avec l'outil `Read` (refus posé sur toutes
+  les surfaces) ; wikichat est épinglé sur un commit dans l'image ; le chart pose un contexte de
+  sécurité au conteneur (`security.containerSecurityContext`). Les pistes restantes et leur étude :
+  [`docs/vision/plan-d-etude-ameliorations.md`](docs/vision/plan-d-etude-ameliorations.md).
 - **Des fins qui disent vrai** (registre D-09, D-10, D-11, D-14, D-16, D-21, D-22, D-34, D-35) :
   une conversation dont le tour finit sur une erreur du CLI est « en échec » (elle restait « au
   repos » parce que le processus gardé rend 0), et un agent lancé dans ce cas est « échec », pas
