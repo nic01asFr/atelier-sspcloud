@@ -46,20 +46,27 @@ options de lancement et ses capacités accordées, **pas par une autre technolog
 *Question ouverte* : où vit le dossier d'un agent de l'Atelier qui agit sur plusieurs projets ? Hypothèse : son
 dossier propre, avec une copie de travail sur branche par projet touché, et les commandes de l'Atelier pour le reste.
 
-### 1.1 Les quatre couches
+### 1.1 Vue d'ensemble : tout part de Claude Code
 
 ```
- PERSONNE   interface Atelier : projets, panneau, « À valider », journal, Ma mémoire, page Agents
-    │          seule à décider ce qui engage ; seule à tout voir
- ───┼──────────────────────────────────────────────────────────────────────────────
- ATELIER    identité signée par conversation · profils résolus en couches · gateway MCP
-    │          (outils filtrés à la source) · gardiens (code, 0 jeton) · journal unique
- ───┼──────────────────────────────────────────────────────────────────────────────
- AGENTS     agents code · Assistant · agents de l'Atelier (page Agents)
- ───┼──────────────────────────────────────────────────────────────────────────────
- CLAUDE CODE  réglages managés › projet › session · hooks · MCP · skills · sous-agents
-    ├─ wikichat : mémoire de la personne, messages entre agents, carte des projets
-    └─ Onyxia / SSPCloud : frontière extérieure, mandataire borné par projet
+ PERSONNE   interface de l'Atelier : projets, panneau, « À valider », journal, Ma mémoire, page Agents
+    ▲          (seule à décider ce qui engage)
+    │
+ ┌──┴─ POD ONYXIA · le code de l'Atelier tourne sur Onyxia · volume ~/work ──────────────────────────┐
+ │                                                                                                  │
+ │  ┌─ CLAUDE CODE · chaque agent est une session, dans son dossier ──┐      ┌─ ATELIER ──────────┐   │
+ │  │  agent code        projects/<projet>/   (+ .mcp.json .claude/ .wikichat/)  ◄─ lance, signe │   │
+ │  │  Assistant         wikichat-memory/assistant/…   ──── /mcp ───►  identité · profils · gateway│  │
+ │  │  agent de l'Atelier  dossier propre + capacités accordées      │      │ journal · À valider │   │
+ │  │  règles natives : managés › projet › lancement · hooks · skills│      │ gardiens            │   │
+ │  └──────────────┬─────────────────────────────────────────────────┘      └──────┬──────────────┘   │
+ │        MCP · hooks · .wikichat · identité                          projets déclarés │ mémoire      │
+ │                 ▼                                                                   ▼              │
+ │         wikichat · service local : identité de chaque session, mémoire, messages, carte des projets │
+ └──────────────────────────────────────────────────────────────────────┬───────────────────────────┘
+                                                                        │ mandataire borné par projet
+                                                                        ▼
+                                                      Onyxia / SSPCloud : API, pods dédiés, GPU, services
 ```
 
 Chaque cadre **limite le suivant par la mécanique** : l'agent ne peut modifier ni la couche managée, ni
