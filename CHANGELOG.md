@@ -13,6 +13,11 @@ Les dates sont celles de l'intégration dans le dépôt, en 2026.
 
 ## Version 0.3.0 : publication (non publiée)
 
+- **Le mode shell d'Onyxia reste un geste de la personne** : `onyxia_projet.filtrer_appel` refuse tout
+  argument `mode` autre que `jupyter` (ou absent), pour tous les outils et tous les profils. Le mode
+  `shell` de `session_start` (sspcloud_mcp) ouvre un `kubectl exec` dans un pod sans Jupyter,
+  `atelier-0` compris ; le profil `assistant` transmet les arguments tels quels et l'aurait obtenu dès
+  l'activation de `SHELL_MODE_ENABLED` côté Onyxia. À déployer AVANT d'activer ce réglage.
 - **Durcissement** : `is_internal_request` n'accepte plus que `172.16.0.0/12` (et non tout `172.*`) ;
   les agents ne peuvent plus lire le dossier des secrets avec l'outil `Read` (refus posé sur toutes
   les surfaces) ; wikichat est épinglé sur un commit dans l'image ; le chart pose un contexte de

@@ -289,6 +289,27 @@ def _refuser_le_pilotage_du_cluster(arguments: dict[str, Any]) -> None:
         )
 
 
+def _refuser_le_mode_shell(outil: str, arguments: dict[str, Any]) -> None:
+    """Le mode `shell` d'Onyxia (`session_start`, et `project_bind`/`project_start` qui le transmettent) est refusé.
+
+    Ce mode ouvre un `kubectl exec` dans un pod sans Jupyter, `atelier-0` compris : un shell sur le pod qui garde la
+    clé propriétaire, les secrets et la base de la passerelle. Seule la personne le demande, par son connecteur direct
+    à Onyxia ; aucun modèle ne l'obtient par la passerelle. Le profil `assistant` transmet les arguments tels quels :
+    sans ce refus, l'activation du mode côté Onyxia le lui ouvrirait. Seul `jupyter` (le défaut) ou l'absence de `mode`
+    passe, quel que soit l'outil : toute autre valeur, ou un type inattendu, est refusée plutôt que devinée.
+    """
+    if "mode" not in arguments:
+        return
+    mode = arguments["mode"]
+    if mode is None or (isinstance(mode, str) and mode.strip().lower() == "jupyter"):
+        return
+    raise RefusOnyxia(
+        f"{outil} : le mode {mode!r} n'est pas ouvert par la passerelle de l'Atelier. Un shell dans un pod sans "
+        "Jupyter (atelier-0 compris) est un geste de la personne, par son connecteur direct à Onyxia. "
+        "Pour lire ce pod : workload_status, workload_logs, workload_events."
+    )
+
+
 def filtrer_appel(
     profil: Profil, borne: Borne | None, outil: str, arguments: dict[str, Any] | None
 ) -> dict[str, Any]:
@@ -303,6 +324,7 @@ def filtrer_appel(
             f"{outil} est réservé : seule la personne le fait, dans l'Atelier. "
             "Proposez-le dans « À valider »."
         )
+    _refuser_le_mode_shell(outil, arguments)
     if outil == "exec":
         _refuser_le_pilotage_du_cluster(arguments)
     if profil == "assistant":
