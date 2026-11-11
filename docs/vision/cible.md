@@ -882,6 +882,45 @@ les **tâches planifiées** (états, désactivation après échecs, « attend la
 **À refaire** : un **modèle d'agent déclaratif** ; une **API REST d'agents** (asynchrone, idempotence, signature) ; les **classes de commande** ; dédoublonnage, limite de débit, liste blanche ; **authentification fermée par défaut** ; appairage par code ;
 **secrets par référence** ; isolation par dossier et processus ; messages entrants non fiables. Remarque (*déduit*) : le principe « Zero Database, tout est fichiers » s'accorde avec « un agent = un dossier » de l'Atelier.
 
+### 5 quinquies.1 bis Ce que Colaig v3 contient *(lu par un lecteur, ~15 % des documents et le code principal ; aucun test lu ; rien exécuté)*
+
+```
+ Canaux : Matrix/Tchap · Telegram (long polling) · WebChat WS ──► MessagingProtocol.on_message ──► IncomingMessage ──► MessageHandler
+ HTTP FastAPI : /ask, /workspaces*, /chat*, /health /metrics · MCP streamable /mcp (~23 outils) + jeton
+   ──► ContextResolver (salon → workspace) ──► Analyseur ─► Orchestrateur (boucle d'outils) ─► Synthétiseur
+   ──► stockage « zéro base » : {workspace}/.colaig/{config.yaml, profile/, skills/, prompts/, conversations/, tasks/, indexes/}
+```
+
+- **Il n'y a pas d'entité « agent »** : l'unité est le **workspace** (identité, ACL, stockage, liaisons de salon mêlés ; pas de versionnement, pas de retour arrière).
+  Pipeline fixe Analyseur → Orchestrateur → Synthétiseur ; seuls prompts, température et outils se règlent. *Conclusion pour l'Atelier : un schéma d'agent neuf, à base de dossier.*
+- **Appel de l'extérieur** : un outil MCP `colaig_ask` (synchrone) et `POST /ask` **sans authentification** ; pas de route d'administration d'agents, pas de SSE (`synthesise_stream`
+  existe mais n'est pas câblé), pas de webhook sortant, pas d'idempotence. L'asynchrone passe par des **tâches planifiées** (`TaskDefinition` : once/cron/interval, plafond d'étapes,
+  désactivation après 3 échecs, état `waiting_for_user`).
+- **Authentification** : jetons `colaig_{slug}_{64hex}` **hachés**, portée, expiration, révocation ; OIDC par JWKS ; **mais l'absence de jeton laisse passer**, et l'authentification est
+  désactivée par défaut.
+- **Canaux** : un contrat `MessagingProtocol` (`connect`, `run`, `send`, `send_typing`, `on_message`) et un message normalisé. **Matrix/Tchap est le plus abouti** (connexion, reconnexion, E2E,
+  pièces jointes déchiffrées, audio transcrit, Markdown → HTML Matrix) mais **auto-confiance de tous les appareils**, jeton en clair sur disque, auto-join sur invitation, pas de liste blanche
+  d'expéditeurs, pas de dédoublonnage ni de limite de débit. **Telegram** : long polling fonctionnel, webhook inachevé. WebChat : démonstration, identité auto-déclarée. Slack : non implémenté ;
+  mail, voix : absents ; la « passerelle séparée » (ponts mautrix) est seulement documentée.
+- **« Réflexif »** ne veut **pas** dire auto-amélioration : c'est l'**administration par la conversation** (en message direct, des méta-outils créent un workspace, le lient, changent son
+  prompt, gèrent ses propriétaires). Garde-fous lus : refus par défaut (`can_manage`, message direct seulement, admin global ou propriétaire), garde fine par cible, anti-escalade, liste blanche
+  de champs modifiables, nettoyage du prompt. **Pas de validation humaine, ni journal d'audit, ni versionnement, ni retour arrière.** À côté : auto-spécialisation (facultative, à blanc par défaut,
+  ne remplace jamais un prompt écrit à la main) et mémoire utilisateur.
+- **Connecteurs MCP par workspace** (`tool_policy` all / read_only / explicit, domaines autorisés, plages IP bloquées, portée de session, **limite d'appels par minute**, longueur de résultat) :
+  une bonne source pour la surcharge par connecteur (§ 4.2).
+
+**Failles lues dans Colaig v3** (à vérifier par vous ; **à ne pas reprendre**) : `colaig_link_conversation` et `colaig_update_workspace` **sans contrôle de droit** (tout appelant MCP peut modifier le
+prompt de n'importe quel workspace) ; les routes `POST/PUT /workspaces*` et `/ask` n'appellent jamais le contrôle d'administration ; dans un salon non lié, **n'importe quel membre** peut lier ou créer ;
+secrets en clair dans `clients.yml` et `.env` ; aucun traitement des messages entrants non fiables hors documents.
+
+**Transposable dans l'Atelier** : le contrat d'adaptateur (à enrichir : plateforme toujours renseignée, identifiant de dédoublonnage, agent visé, fil, mentions) ; la séquence de connexion Matrix/Tchap
+**avec une politique explicite à la place de l'auto-confiance des appareils** ; le jeton haché à portée ; le modèle de tâche planifiée comme modèle d'agent planifié ; les garde-fous d'administration
+(refus par défaut, garde par cible, anti-escalade, champs modifiables en liste blanche) ; `url_validator`, `path_validator`, filtre de secrets ; **Colaig comme connecteur MCP** de connaissance rattaché
+(§ 4.5), sans y brancher les canaux. **À refaire** : le pipeline fixe et la pile RAG (ils remplacent la session Claude Code), l'agent-workspace sur un backend de stockage, l'isolation par chemins dans un
+processus partagé, l'appairage, la liste blanche d'expéditeurs, la limite de débit, l'API asynchrone avec SSE et webhooks signés, le coffre de secrets.
+**Pour l'auto-amélioration** (`auto-amelioration.md`) : ne retenir de la v3 que le refus par défaut, la liste blanche de champs, l'écriture à blanc par défaut et le principe de ne jamais écraser un travail
+manuel ; elle n'apporte ni preuve, ni validation humaine, ni retour arrière.
+
 ### 5 quinquies.2 Un agent utilisable par API
 
 *Existant (lu / rapporté)* : `POST /v1/lancements` (route interne pour wikichat et l'exécuteur) ; commandes `atelier_agent_*` ; l'Atelier comme connecteur MCP
