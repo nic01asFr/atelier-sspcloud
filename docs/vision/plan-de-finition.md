@@ -100,22 +100,52 @@ lu), `outils` d'un lancement devient `permissions.allow` verbatim (`lancements.p
 fermée vit côté Pilote, hors de ce dépôt (rapporté). Deux taxonomies coexistent : profils `code` /
 `assistant` et les quatre rôles de l'état des lieux, sans pont (rapporté).
 
+**Le modèle (précisé le 11/11, d'après Nicolas).** Deux familles d'agents, une seule mécanique de
+résolution **en couches**, chaque couche ajustant à l'intérieur du plafond de la précédente :
+
+```
+ famille (code | agent de l'Atelier | assistant | gardien)   plafond fixé par l'Atelier
+   └► profil de base de la famille
+        └► agents code : défauts du projet        agents de l'Atelier : profil propre à l'agent
+             └► agents code : surcharge de session    agents de l'Atelier : capacités accordées
+```
+
+- **Agents code** (conversation de travail d'un projet) : un profil attribuable **au projet** (ses
+  défauts, valables pour tous ses agents code), modifiable **dynamiquement par session** sans toucher
+  aux autres sessions ni aux défauts. Ils agissent dans leur projet ; ailleurs, ils écrivent aux agents
+  de l'autre projet (wikichat).
+- **Agents de l'Atelier** (page Agents) : profils et capacités attribuables et configurables **par
+  agent**, y compris pour agir sur des projets, sur plusieurs, mais par capacités accordées et cadrées,
+  jamais par accès général. Plusieurs formes possibles (planifié, à la demande, gardien, réparateur…).
+- Aujourd'hui (lu) : deux profils par type d'acteur (`code`, `assistant`), pas de profil de projet ;
+  seul le mode de permission a le double niveau projet / conversation ; les agents de la page Agents
+  n'ont qu'une liste `outils` et un budget, sans profil ni capacités.
+- **L'identité d'un agent est la capacité signée par conversation du lot 1** (famille, profil résolu,
+  projet, surcharges, durée). L'agent ne peut ni la forger ni l'élargir.
+
 **Travaux.**
-1. `roles.py` : **une table**, un lecteur. Un rôle = outils, mode de permission, plafonds (tours,
-   jetons, par jour), hooks, accès aux connecteurs, accès à la mémoire. Rattacher explicitement les
-   profils existants aux rôles.
-2. Compiler la table vers les options natives (`--tools`, `--allowedTools`, `--mcp-config` +
+1. `roles.py` : une table des **familles** et de leurs plafonds, un résolveur en couches, un lecteur.
+   Un profil = outils, mode de permission, plafonds (tours, jetons, par jour), hooks, accès aux
+   connecteurs, accès à la mémoire. Rattacher `code` / `assistant` à ce modèle.
+2. **Profil de projet** : un bloc dans `projet.json` (défauts des agents code), éditable par commande
+   *engageante* ; **surcharge de session** : stockée sur la fiche de la conversation, effacée avec
+   elle, journalisée ; elle ne peut qu'ajuster à l'intérieur du plafond du projet.
+3. **Agents de l'Atelier** : profil et capacités par agent, dans la définition d'agent (plus seulement
+   `outils`) ; une capacité sur un projet est un octroi explicite, daté, révocable, dans « À valider »
+   quand il élargit ; l'agent n'agit sur un projet que par les commandes de l'Atelier filtrées par ses
+   capacités.
+4. Compiler le résultat vers les options natives (`--tools`, `--allowedTools`, `--mcp-config` +
    `--strict-mcp-config`, `--max-turns`, `--max-budget-usd`) ; **supprimer** les trois autres sites qui
    recalculent le mode. Les listes de `coherence.py` sont lues à la source.
-3. Plafond de jetons **appliqué** (il est lu et jamais appliqué). Budget imposé côté Atelier aux
+5. Plafond de jetons **appliqué** (il est lu et jamais appliqué). Budget imposé côté Atelier aux
    triggers wikichat (aujourd'hui seulement tours et lancements).
-4. Le croisement est tracé : pour chaque agent, *ce que wikichat sait* × *ce que la gateway ouvre*
+6. Le croisement est tracé : pour chaque agent, *ce que wikichat sait* × *ce que la gateway ouvre*
    apparaît dans la carte et le journal, comparé à `system/init` à chaque tour (pas seulement une fois
    par jour).
-5. Matrice acteur × service (aujourd'hui les connecteurs du pool sont hérités en bloc, D-08,
+7. Matrice acteur × service (aujourd'hui les connecteurs du pool sont hérités en bloc, D-08,
    `mcp_sync.py:367`).
 
-**Preuve.** Tests « instantané » par rôle ; un seul site calcule le mode (grep). **Retour.** La table
+**Preuve.** Tests « instantané » par famille et par couche ; une surcharge de session n'affecte ni une autre session ni les défauts du projet ; une couche ne dépasse jamais le plafond de la précédente ; un seul site calcule le mode (grep). **Retour.** La table
 produit d'abord les valeurs actuelles (aucun changement de comportement), puis on les resserre.
 **Effort** L. **Dépend de** lot 2 pour les hooks.
 
@@ -258,6 +288,8 @@ dans le document concerné, le retour arrière. Rien n'est écrit « fait » san
 | Combien de mémoire à la charge maximale ? | plafonds additionnés > plafond du pod | 8 |
 
 ## 5. Décisions à prendre par Nicolas
+
+0. **Surcharge de session** : peut-elle seulement *restreindre* les défauts du projet, ou aussi *élargir* jusqu'au plafond du projet (avec « À valider ») ? Un agent de l'Atelier peut-il recevoir une capacité sur un projet sans passer par « À valider » quand elle est en lecture seule ? (Recommandation : élargir = engageant, restreindre = libre, lecture seule = réversible.)
 
 1. **Second facteur** pour l'ouverture d'une session « personne » (lot 1) : jeton à part, passkey, ou
    autre ? (Recommandation : une clé de session distincte de celle des agents, retirée de leur
