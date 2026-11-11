@@ -476,12 +476,79 @@ développe le service **propose** le rattachement ; il ne l'accomplit pas.
 
 **5 · La surveillance.** Sonde périodique, états visibles et honnêtes, alerte d'un gardien (contrôle déterministe) quand le service
 ne répond plus ; désactivation et retrait **réversibles**. Le cycle de connexion, d'actualisation et de reconnexion d'un connecteur
-streamable (jeton expiré, session expirée, flux coupé, serveur redémarré) est l'objet d'une étude à part (lot 3 bis).
+streamable (jeton expiré, session expirée, flux coupé, serveur redémarré) est cadré au § 4.6.
 
 **À trancher** : (a) où vit le bloc `mcp` et si un projet peut en exposer plusieurs ; (b) la batterie de tests de conformité : minimale
 (`initialize`, `tools/list`) ou complète ; (c) un bac à sable pour tester les outils d'écriture ; (d) qui peut rattacher, et si un agent
 de l'Atelier peut proposer un rattachement ; (e) un catalogue de services partageables entre personnes ; (f) une montée de version
 automatique ou toujours soumise à accord.
+
+### 4.6 Connexion, actualisation et reconnexion des connecteurs *(étudié le 11/11 ; *rapporté*, `fichier:ligne` à rouvrir avant correction)*
+
+**Constat : aujourd'hui, un connecteur n'est sondé qu'une fois, au démarrage, et sur un geste de la personne ; rien ne tourne en tâche de fond.**
+
+```
+ Démarrage de l'Atelier ──► pool.startup() (UNE fois, séquentiel) : pour chaque serveur
+     désactivé → « disabled » · stdio non lancé par la passerelle → « stdio-local » (jamais connecté)
+     HTTP : streamable (initialize 2025-03-26, puis 2024-11-05) → repli SSE → « connected » | « error: … »
+     401 / 403 → fichier sondes-authentification.json → connecteur RETIRÉ de la distribution
+ Appel d'outil : SSE coupé → une réouverture + un rejeu · streamable → 1 POST, AUCUNE gestion d'erreur · stdio → relance si mort
+ Re-sonde : seulement sur geste humain (/mcp/reprobe, enregistrer un identifiant, activer, modifier, accorder)
+```
+
+**Les trous (rapporté).**
+1. **Jeton amont expiré** : rien ne le détecte ; le streamable reçoit un 401 brut. **Aucun OAuth sortant** dans le dépôt : les jetons amont
+   sont des Bearer statiques, fixés dans le client à la connexion (un nouveau secret n'est pris qu'après une re-sonde). L'OAuth de
+   `oauth.py` est celui de la gateway comme **serveur**, sans `refresh_token`, jetons de 90 jours.
+2. **Session streamable expirée** : `call_tool` ne ré-initialise pas sur 404 ; après un redémarrage du serveur, tout appel échoue jusqu'à
+   une re-sonde manuelle. Côté porte `/mcp`, une session inconnue est acceptée telle quelle au lieu de renvoyer 404, donc Claude Code ne
+   ré-initialise jamais.
+3. **SSE** : réouverture sans `Last-Event-ID`, un seul rejeu, pas de keepalive ; un appel en vol est perdu ou **rejoué** (double effet possible
+   sur un outil d'écriture).
+4. **États mensongers** : « connecté · N outils » reste affiché après une panne (l'état dérive de `tools` en mémoire) ; « local · N outils »
+   ne dit rien du jeton ni du serveur ; 404 et erreurs réseau ne se distinguent pas d'un 401 ; un seul bouton global « relancer la sonde »,
+   pas de « reconnecter » par connecteur, pas d'état « expiré » ni « refusé ».
+5. **Pas de backoff ni de plafond** ; un connecteur lent bloque le démarrage séquentiel.
+6. **`listChanged: true` est annoncé mais jamais émis** (`toolsRevision` est compté, aucune notification n'est envoyée), et la porte `/mcp`
+   n'a ni GET ni flux SSE ; un agent en cours ne voit pas un connecteur ajouté ou retiré avant son prochain tour.
+7. **Un connecteur refusé est retiré des projets**, mais ne revient pas quand le jeton est corrigé sans nouvelle sonde.
+8. **La sonde horaire des gardiens** (`gardiens.md`) **n'existe pas dans le code**.
+
+**La cible.**
+
+```
+ non_configuré ─► connexion ─► connecté ◄─► dégradé
+                                 │  │            │
+              401 + refresh ──► expiré ─► connexion          refusé (401/403 après refresh, ou jeton absent)
+                                 └── hors_ligne (réseau, 5xx, délai) ─► connexion (backoff) ─► …
+```
+
+- **Une machine à états par connecteur**, dans une table de `gateway.db` (qui remplace le fichier `sondes-authentification.json`) :
+  `{état, depuis, cause (code et `WWW-Authenticate` court), prochaine tentative}`. Le badge de l'interface vient de cet état, **jamais** du
+  nombre d'outils.
+- **Actualisation avant expiration** : pour un OAuth amont, `expires_at` et `refresh_token` stockés **par référence** (coffre, § 5 ter) ;
+  rafraîchir à ~80 % de `expires_in`, ou sur un 401 puis rejeu ; jamais de valeur au journal.
+- **Reconnexion** : backoff exponentiel avec gigue (1 s à 5 min), plafond de tentatives (au-delà : `hors_ligne` et sonde lente), **un seul
+  vol par connecteur** (verrou).
+- **Streamable** : sur 404 avec `Mcp-Session-Id`, ré-`initialize` puis rejeu **des seuls outils de lecture** ; une écriture ne se rejoue
+  qu'avec l'accord prévu par sa classe. SSE : reprise avec `Last-Event-ID`, ping périodique.
+- **Sonde de santé** : tâche asynchrone par connecteur, parallèle et bornée (30 s à 5 min selon l'état), écrivant au journal ; le gardien Santé
+  **lit l'état**, il ne sonde pas le réseau lui-même (contrôle déterministe, 0 jeton).
+- **Interface honnête** : « refusé (401) », « expiré, renouvellement en cours », « hors ligne depuis 12 min », « non sondé » pour un connecteur
+  local ; **bouton « reconnecter » par connecteur** ; l'ajout d'un connecteur lance la sonde et montre le résultat.
+- **Propagation aux agents** : émettre `notifications/tools/list_changed` à chaque changement d'état (`toolsRevision` existe déjà), et faire
+  répondre **404 à une session inconnue** pour que Claude Code ré-initialise ; repli : réécrire le `.mcp.json` et signaler au prochain tour.
+  *Par famille* : un agent code (`--strict-mcp-config`, configuration fixée au lancement) voit le changement au tour suivant ; l'Assistant, qui
+  passe par `gateway_call_tool`, le voit tout de suite ; VS Code et le terminal lisent le même `.mcp.json`.
+- **Classes** : `sonder`, `reconnecter` (mêmes hôte et identifiants) et `actualiser` (rafraîchir un jeton sans changer le secret) sont
+  **réversibles** ; changer l'hôte, renouveler ou accorder un secret sont **réservés** (aujourd'hui, accorder est réversible) ; les sondes
+  automatiques ne changent aucune configuration ; seul le **retrait automatique** d'un connecteur refusé est journalisé.
+
+**À trancher** : (a) a-t-on des connecteurs à OAuth sortant (`refresh_token`), ou seulement des Bearer statiques ? (b) état en table
+SQLite ou en fichier ? (c) rejeu automatique limité aux outils de lecture ? (d) un connecteur refusé reste-t-il retiré des projets, ou
+seulement signalé ? (e) fréquence de sonde : 1 h (doc des gardiens) est trop lent, viser 1 à 5 min en bon état avec backoff en panne ;
+(f) implémenter le GET SSE de `/mcp`, ou garder POST seul avec 404 sur session inconnue ? (g) un `refresh_token` pour les jetons de la porte
+(90 jours aujourd'hui) ? (h) **D-23** : wikichat « en échec » est-il un problème de connecteur ou de service ? à vérifier avant de le rattacher.
 
 ## 5. Capacités externes des agents de l'Atelier, et services de communication
 
