@@ -335,7 +335,7 @@ outil amont réservé en dur est `expose_public`) ; `approval` / `elicit` valida
 (classe, arguments imposés cachés, schéma réduit, titre et description français) ; (3) classer tout outil amont
 (table › annotations › regex), **défaut engageante** ; (4) moule de mandataire borné générique ; (5) journal et
 plafonds des appels amont ; (6) appliquer ce que les compositions stockent déjà, et interdire au modèle de valider
-`approval` / `elicit` ; (7) corriger les classes : `atelier_montrer` en réversible, outils Onyxia classés ; (8) **Onyxia à trois niveaux** (`cible.md` § 4.3) : borné par projet par défaut, général cadré pour l'Assistant, accès général configuré explicitement par la personne (octroi daté, révocable, mêmes arguments imposés, classes et journal) ; (9) **liens Onyxia d'un projet** (`cible.md` § 4.4) : pod de développement et service publié ensemble, un seul propriétaire de la commande, cycle de vie classé, `deployer_lancer`, GPU sans préemption silencieuse, mandataire adossé à l'identité signée.
+`approval` / `elicit` ; (7) corriger les classes : `atelier_montrer` en réversible, outils Onyxia classés ; (8) **Onyxia à trois niveaux** (`cible.md` § 4.3) : borné par projet par défaut, général cadré pour l'Assistant, accès général configuré explicitement par la personne (octroi daté, révocable, mêmes arguments imposés, classes et journal) ; (9) **liens Onyxia d'un projet** (`cible.md` § 4.4) : pod de développement et service publié ensemble, un seul propriétaire de la commande, cycle de vie classé, `deployer_lancer`, GPU sans préemption silencieuse, mandataire adossé à l'identité signée ; (10) **services MCP d'un projet** (`cible.md` § 4.5) : gabarit `service-mcp` qui pose un squelette et le contrat des outils, bloc `mcp`, `atelier_mcp_tester` (conformité, reconnexion, sécurité) comme condition du rattachement, source projet pour `atelier_connecteur_ajouter` (engageante, version figée, exposition par profil), sonde et gardien ; (11) cycle de connexion, d'actualisation et de reconnexion des connecteurs streamable (étude en cours).
 **Preuve.** Un connecteur déclaré une fois apparaît dans tous les profils autorisés, jamais dans les autres ; un outil
 inconnu est engageant ; le modèle ne valide pas une approbation. **Effort** L. **Dépend de** lot 3.
 
@@ -366,6 +366,16 @@ bascule et suppression en réservée ; (5) la PR comme support de « À valider 
 `main` ; une PR de gardien apparaît dans « À valider » avec sa CI. **Retour.** Le PAT actuel reste utilisable derrière un
 réglage. **Effort** L. **Dépend de** lots 1 et 3 ; recoupe le lot 5 (brouillon / production).
 **À vérifier d'abord** : si une GitHub App est installable sur SSPCloud, où héberger sa clé, si GitHub peut appeler le pod.
+
+### Lot 3 quinquies · Voix et audio : un service système, des capacités, des formes d'agents
+
+**Constat (rapporté, `cible.md` § 5 quater).** Un service STT/TTS vit sur le pod hors du dépôt, lancé à la main ; l'Atelier n'a ni micro ni lecture ; rien
+pour la page Agents ; `VOICE_TOKEN` est dans l'environnement de tous les agents. **Travaux.** (1) brique système `atelier-voix` sous le
+superviseur, dépôt et remote ; (2) routes `/v1/voix/…` et famille d'outils `voix` par le mandataire, plus de jeton dans l'environnement des
+agents ; (3) classes (transcrire en lecture, dire en réversible, micro ouvert réservé à la personne, parler à un tiers engageante) ;
+(4) consentement de capture par geste dans la page de l'Atelier ; (5) transcriptions non fiables, contamination, plafonds, journal sans contenu ;
+(6) formes d'agents vocaux (briefing, lecture, transcription de réunion vers la mémoire en proposition, alertes). **Preuve.** Un agent ne peut ni
+ouvrir un micro ni lire le jeton ; une transcription ne lance rien ; un plafond coupe. **Effort** L. **Dépend de** lots 1, 2 bis, 3 ter.
 
 ## 3. Ordre et dépendances
 

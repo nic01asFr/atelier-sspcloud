@@ -433,6 +433,56 @@ dossier ? (d) deux outils dédiés pour démarrer et arrêter `deploiement.comma
 (e) préfixe de session propre à l'Atelier ? (f) l'Assistant garde-t-il `project_start`, `service_deploy` et la désinstallation en
 accès libre, ou en engageante ? *(recommandation : engageante)* (g) droits du compte de service du pod : qui les réduit, et comment ?
 
+### 4.5 Créer, tester et rattacher un service MCP, comme on crée un projet Onyxia *(cadré le 11/11, d'après Nicolas)*
+
+**Principe.** On sait structurer les MCP en général et sur Onyxia ; un **service MCP est un projet comme un autre** (gabarit
+`service-mcp`), avec le même cycle, les mêmes classes et les mêmes preuves qu'un projet Onyxia :
+
+| Projet Onyxia (§ 4.4) | Service MCP (cible) |
+|---|---|
+| déclarer le bloc `deploiement` (engageante) | déclarer le bloc `mcp` du projet (engageante) |
+| lier : `project_bind` | rattacher : l'ajouter au registre de la gateway comme connecteur |
+| démarrer, utiliser, arrêter | démarrer (supervisé ou service Onyxia), tester, arrêter |
+| mandataire borné, arguments imposés | surcharge par connecteur : classe par outil, arguments imposés, schéma réduit |
+| journal des appels du mandataire | journal des appels amont et des tests |
+
+*Aujourd'hui (lu / rapporté)* : le gabarit `service-mcp` existe mais ne change que la ligne « Prochaine étape » d'`ETAT.md` ;
+`atelier_connecteur_ajouter` appelle `sonder` après l'ajout et `decrire_connecteur` fait décrire un connecteur par le modèle
+**sans appeler ses outils** ; il n'existe **aucun `source: artefact`** dans le registre : un service MCP écrit par un agent ne
+devient pas un connecteur sans geste manuel (J9).
+
+**1 · La déclaration.** Un bloc `mcp` dans `.atelier/projet.json`, un par service exposé par le projet :
+`{nom, transport: stdio | streamable-http, source: artefact | onyxia | distant, commande, port | url, auth: secret://…, outils
+attendus (le contrat), profils autorisés}`. Les trois sources reprennent ce qui existe : un **processus local supervisé** (pont
+stdio), un **artefact serveur** du projet (adresse locale), un **service Onyxia** (bloc `deploiement.service` + URL). Un service
+distant tiers (URL et secrets) suit la même déclaration, sans code du projet.
+
+**2 · La création.** `atelier_projet_creer(gabarit: service-mcp)` pose un squelette qui fonctionne : serveur MCP minimal, **le
+contrat des outils** (`outils.md` : noms, schémas, classe voulue), `tests/`, l'artefact ou le `deploiement`, et le bloc `mcp`.
+Aujourd'hui le gabarit ne pose rien de tout cela.
+
+**3 · Le test, condition du rattachement.** Une commande `atelier_mcp_tester` rend un rapport avec preuve, par étapes :
+démarrage → `initialize` (protocole, capacités) → `tools/list` **conforme au contrat** → appel de chaque outil en **lecture** avec un
+jeu d'essai (les outils d'écriture ne s'appellent **jamais** sans accord, ou en bac à sable) → authentification (refus sans jeton) →
+**reconnexion** (session expirée, serveur redémarré) → limites (taille, délai) → sécurité (aucun secret en sortie ; contenu rendu
+traité comme non fiable). `sonder` et la description par le modèle en sont les premières étapes déjà là. Classe : lecture ou
+réversible ; **chaque rapport est au journal**.
+
+**4 · Le rattachement.** Il passe par `atelier_connecteur_ajouter` étendu à une **source projet** : commande **engageante**
+(aperçu : outils, classes, profils concernés) ; secrets **par référence** (coffre, § 5 ter) ; **version figée** (un commit du
+service) : une mise à jour redemande un test et un accord. Par défaut le connecteur n'est **exposé à personne** : la personne
+choisit les profils (famille, projet, agent) et les classes par outil, **engageante pour tout outil non classé**. L'agent qui
+développe le service **propose** le rattachement ; il ne l'accomplit pas.
+
+**5 · La surveillance.** Sonde périodique, états visibles et honnêtes, alerte d'un gardien (contrôle déterministe) quand le service
+ne répond plus ; désactivation et retrait **réversibles**. Le cycle de connexion, d'actualisation et de reconnexion d'un connecteur
+streamable (jeton expiré, session expirée, flux coupé, serveur redémarré) est l'objet d'une étude à part (lot 3 bis).
+
+**À trancher** : (a) où vit le bloc `mcp` et si un projet peut en exposer plusieurs ; (b) la batterie de tests de conformité : minimale
+(`initialize`, `tools/list`) ou complète ; (c) un bac à sable pour tester les outils d'écriture ; (d) qui peut rattacher, et si un agent
+de l'Atelier peut proposer un rattachement ; (e) un catalogue de services partageables entre personnes ; (f) une montée de version
+automatique ou toujours soumise à accord.
+
 ## 5. Capacités externes des agents de l'Atelier, et services de communication
 
 *Aujourd'hui (lu)* : aucune intégration de communication externe (ni Tchap/Matrix, ni mail, ni Mattermost, ni
@@ -658,12 +708,82 @@ plafond) ; **réservée** (accorder ou renouveler un secret, changer l'hôte d'u
 7. Portée « famille » : définition, et héritage par rapport à D-08 (8 projets sur 16 héritent de tous les connecteurs).
 8. Rétention du `.jsonl` source de Claude Code : filtrer à l'écriture ?
 
+## 5 quater. Voix et audio, pour l'Atelier et ses agents *(étudié le 11/11 ; *rapporté* ; mesures d'après `voix.md`, non revérifiées)*
+
+### 5 quater.1 Ce qui existe
+
+- **Un service sur le pod, hors de ce dépôt** : projet `nouveau-projet-2`, FastAPI sur `127.0.0.1:18920`, CPU seul, lancé à la main,
+  hors superviseur. STT : faster-whisper `small` (int8) ; TTS : Kokoro-82M, voix `ff_siwis` ; modèles locaux, aucun appel sortant.
+  Routes : `/health`, `/tts`, `/stt`, un flux `WS /audio/stream/{id}`, `/mcp` (outils `dire` et `ecouter`). *Mesuré (26/09)* :
+  2,18 Go résidents, STT environ 1,1 s, TTS 0,4 à 0,8 s, deux STT et un TTS simultanés dépassent 2 s chacun, WER 2,8 % sur 12 phrases
+  synthétisées (aucune voix humaine testée). Le code n'a aucun remote : il n'existe que sur le volume.
+- **Correction** : la prémisse « service sans authentification » est périmée ; un jeton est exigé partout sauf `/health` depuis le
+  24/09 (commit `dc13e80`). Reste exposé : tout processus du pod qui lit `~/work/.secrets/voice_token`, et `VOICE_TOKEN` figure dans
+  `claude-env.sh`, donc dans l'environnement de **tous** les agents.
+- **Côté Atelier : rien.** Aucun `MediaRecorder`, `getUserMedia`, `speechSynthesis` dans `web/js` ; aucune route `/v1/voix` ; seulement
+  un commentaire marquant l'emplacement d'un futur bouton micro. Les canaux sortants se limitent au Web Push vers l'appareil de la
+  personne, fermé aux agents. `docs/vision/voix.md` (lots V0 à V6, décisions V-1 à V-9 en attente) n'est qu'une proposition.
+- **Rien pour la page Agents** : ni entrée ni sortie vocale pour un agent planifié, un gardien ou un réparateur ; pas de classe de
+  commande, de capacité, de plafond ni de budget pour la voix ; pas de consentement de capture ; pas de banc sur voix humaines.
+
+### 5 quater.2 La cible
+
+- **Où.** Une brique système unique `atelier-voix` sous le superviseur (hors du plafond des applications, plafond propre ~3 Go, arrêt
+  après inactivité, préchauffage) ; la voix interactive reste sur CPU ; un pod GPU ne sert qu'aux traitements différés
+  (transcription de réunion longue) via le bail de `gpu-arbitrage.md`.
+- **Accès.** Navigateur : l'origine de l'Atelier (`/v1/voix/…`, session, jeton posé côté serveur). Agents : une famille d'outils `voix` de
+  la gateway **par le mandataire** (pas de connecteur dans le pool, **plus de `VOICE_TOKEN` dans l'environnement**). Un résultat d'outil ne
+  porte jamais d'audio, seulement un chemin et une durée.
+- **Identité.** Capacité portée par l'identité signée ; pour un agent de l'Atelier, une capacité **accordée, datée, révocable**, avec arguments
+  imposés et plafonds.
+- **Classes.** `transcrire` un fichier du projet : **lecture** ; `dire` (synthèse vers un fichier) : **réversible** ; `ecouter` en
+  continu (micro ouvert) : **réservée à la personne, geste d'interface, jamais lancé par un agent** ; `parler` à un tiers ou `appeler` :
+  **engageante** (aperçu du texte et du destinataire, « À valider », jamais d'accord oral) ; administration du service : réservée.
+- **Données.** L'audio brut n'est **jamais conservé** ; la transcription est la seule trace, filtrée comme tout transcript ; l'API Web Speech
+  du navigateur est interdite (le son partirait chez un tiers).
+- **Consentement.** Le micro s'ouvre par un geste de la personne dans la page de l'Atelier, avec indicateur visible, **jamais depuis un cadre
+  du panneau ni une création** ; aucun micro permanent pour un agent.
+- **Injection par la voix.** Toute transcription est une **donnée non fiable** ; un agent qui a transcrit un contenu externe ne déclenche
+  pas d'action engageante dans le même tour (règle de contamination, § 5) ; un enregistrement ne lance jamais un agent, il écrit dans
+  « À valider » ou les événements. Seule la voix de la personne par le micro de l'Atelier a le poids d'une consigne, **sans pouvoir d'accord**.
+- **Plafonds et journal.** Durée par énoncé, par conversation et par jour (ordres de grandeur à régler) ; une conversation vocale à la fois ;
+  budget obligatoire pour un agent planifié. Une ligne de journal par appel (acteur, durée, latence, classe), **jamais le texte ni l'audio**.
+
+### 5 quater.3 Les formes d'agents vocaux de l'Atelier
+
+| Forme | Nature | Capacités accordées | Budget proposé |
+|---|---|---|---|
+| **Briefing parlé** | agent planifié, dossier propre | lire les fiches du jour et les lancements (lecture) ; `dire` vers un fichier ; livraison par notification avec lien, jamais de lecture automatique | 1 passage par jour, 3 000 caractères |
+| **Lecture d'un compte rendu** | bouton « Écouter » de l'interface, ou agent à `dire` réversible sur un fichier du projet | `dire` | 20 000 caractères par jour |
+| **Transcription de réunion vers la mémoire** | agent à capacités sur un dossier d'enregistrements fourni par la personne | `transcrire` (lecture) ; la mémoire **seulement en proposition** (« À valider ») ; sorties non fiables | 60 min d'audio par jour, différé ou GPU |
+| **Alertes parlées des gardiens** | gardien en lecture seule | alertes d'abord textuelles et poussées ; la lecture vocale vient de l'appareil de la personne, jamais d'un haut-parleur du pod | plafond d'alertes par jour |
+| *Dictée vers un projet* | **un geste d'interface, pas un agent** | le texte va au composeur, jamais envoyé seul | — |
+| *Dialogue vocal avec l'Assistant* | **canal de l'Assistant, pas un agent** | aucun outil vocal pour le modèle ; accord par clic | — |
+
+**Liens externes.** Téléphonie ou messagerie vocale (Tchap) : tout reste à construire ; la règle de § 5 s'applique (capacité par
+connecteur, verbe et cible, envoi engageant, attente dans « À valider », liste blanche, plafonds) ; l'audio ne doit pas sortir de SSPCloud,
+ce qui exclut la plupart des services de téléphonie ; une voix de synthèse parlant à un tiers exige de dire qu'il s'agit d'un agent. Une
+**pièce jointe vocale différée** est plus plausible qu'un appel en direct.
+
+### 5 quater.4 À trancher
+
+1. Les décisions V-1 à V-9 de `voix.md` (statut système, dépôt privé, chemin, ordre des lots, GPU).
+2. Retirer `VOICE_TOKEN` de l'environnement des agents dès la première étape ?
+3. Une capacité voix distincte pour les agents de l'Atelier (V5 ne couvre que `code`) ?
+4. Seuils de plafonds : hypothèses à calibrer par la mesure.
+5. Qualité sur voix humaines et accents : aucun banc ; décide d'un modèle plus gros ou d'un GPU.
+6. Le point d'accès LLM de SSPCloud peut-il servir de la transcription (aujourd'hui écarté du catalogue) ?
+7. Lecture automatique des alertes ; mention « voix synthétique » pour tout tiers.
+8. Transcription de réunion : qui consent, où est stockée la transcription ?
+9. Téléphonie : fournisseur hébergé en France, ou rester sur le texte et le vocal différé ?
+10. Ajouter le service voix aux écoutes déclarées des gardiens.
+
 ## 6. Ce que cela change pour le plan
 
 Le plan de finition garde son ordre (identité → garde → rôle unique → états vrais → brouillon/production) et reçoit
 trois lots de plus, décrits dans [`plan-de-finition.md`](plan-de-finition.md) § 2 bis : **lot 1 bis** (verrou de
 conversation et miroir), **lot 3 bis** (registre unique et surcharge par connecteur, classes des outils amont),
-**lot 3 ter** (communication externe, après les lots 1 et 3) **lot 3 quater** (intégration GitHub, § 5 bis) et **lot 2 bis** (coffre de secrets, § 5 ter).
+**lot 3 ter** (communication externe, après les lots 1 et 3) **lot 3 quater** (intégration GitHub, § 5 bis) et **lot 2 bis** (coffre de secrets, § 5 ter) et **lot 3 quinquies** (voix, § 5 quater).
 
 ## 7. Décisions à prendre
 
