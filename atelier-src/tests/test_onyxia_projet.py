@@ -358,6 +358,41 @@ def test_l_assistant_ne_preempte_pas_le_gpu_d_un_autre() -> None:
     assert ox.filtrer_appel("assistant", None, "exec", {"code": "1"}) == {"code": "1"}
 
 
+# ── Le mode shell d'Onyxia : un geste de la personne ────────────────────
+
+
+@pytest.mark.parametrize("outil", ["session_start", "project_bind", "project_start"])
+@pytest.mark.parametrize("mode", ["shell", "SHELL", " Shell ", "bash", "", ["shell"], {"shell": True}, 1, True])
+def test_aucun_modele_n_obtient_le_mode_shell_par_la_passerelle(outil: str, mode: Any) -> None:
+    """`session_start(mode="shell")` ouvre un `kubectl exec` dans un pod sans Jupyter, `atelier-0` compris."""
+    arguments = {"attach_pod": "atelier-0", "mode": mode}
+    with pytest.raises(ox.RefusOnyxia, match="geste de la personne"):
+        ox.filtrer_appel("assistant", None, outil, arguments)
+    # Le refus est le même pour un agent de projet, qui est refusé avant même de regarder l'outil.
+    with pytest.raises(ox.RefusOnyxia, match="geste de la personne"):
+        ox.filtrer_appel("code", _borne(), outil, arguments)
+
+
+def test_le_refus_du_mode_shell_dit_comment_lire_le_pod() -> None:
+    with pytest.raises(ox.RefusOnyxia) as erreur:
+        ox.filtrer_appel("assistant", None, "session_start", {"attach_pod": "atelier-0", "mode": "shell"})
+    for outil in ("workload_status", "workload_logs", "workload_events"):
+        assert outil in str(erreur.value)
+
+
+@pytest.mark.parametrize("arguments", [{"attach_pod": "pod-x"}, {"attach_pod": "pod-x", "mode": "jupyter"},
+                                       {"attach_pod": "pod-x", "mode": " Jupyter "}, {"attach_pod": "pod-x", "mode": None}])
+def test_le_mode_jupyter_et_son_absence_passent_pour_l_assistant(arguments: dict[str, Any]) -> None:
+    assert ox.filtrer_appel("assistant", None, "session_start", arguments) == arguments
+
+
+def test_le_refus_du_mode_shell_ne_touche_pas_les_autres_arguments_de_l_assistant() -> None:
+    arguments = {"session_id": "proj-autre", "code": "1", "lang": "bash"}
+    assert ox.filtrer_appel("assistant", None, "exec", arguments) == arguments
+    # Un argument qui s'appelle autrement n'est pas pris pour le mode.
+    assert ox.filtrer_appel("assistant", None, "exec", {**arguments, "modele": "shell"}) == {**arguments, "modele": "shell"}
+
+
 class OnyxiaGpu(FauxOnyxia):
     """Un GPU qu'on peut déclarer pris : `gpu_switch` échoue alors, et `gpu_release` se note."""
 
