@@ -386,6 +386,15 @@ rotation, journal, quotas, rappels signés) ; (2) **adaptateur de canal commun**
 (6) interface : liaisons de canaux, état, plafonds. **Preuve.** Un message d'un inconnu ne lance rien ; un message de canal ne confirme aucune action ; un webhook non signé ou rejoué est refusé.
 **Effort** L. **Dépend de** lots 1, 2 bis, 3 bis, 3 ter. **Base** : le contrat de canal de Colaig v3 (lu le 11/11, `cible.md` § 5 quinquies.1) ; à trancher d'abord : adaptateurs repris dans une brique `atelier-canaux`, ou Colaig v3 rattaché comme service.
 
+### Lot 3 septies · Les types d'agents de la page Agents, et le cadre conversationnel multicanal (type Colaig)
+
+**Constat (`cible.md` § 5 sexies).** La page Agents ne connaît que des agents déclarés (consigne, budget, liste d'outils) et des gardiens ; Colaig v3 n'a pas d'entité agent et plusieurs de ses entrées
+n'ont pas de contrôle de droit. **Travaux.** (1) un **schéma d'agent** versionné (`agent.yaml` + dossier) commun à tous les types, avec le **type** (planifié, gardien, réparateur, délégué, service par API,
+conversationnel multicanal, externe) ; (2) le **gabarit d'agent conversationnel** : `CLAUDE.md`, `.claude/skills/`, `.mcp.json`, `canaux.yaml`, `connaissance/`, `memoire/`, `taches/` ; (3) une **session par conversation**,
+reprise par identifiant, avec verrou (lot 1 bis) ; (4) la liaison (canal, conversation) → (agent, session), les trois niveaux de confiance, les quotas ; (5) modification de l'agent **versionnée, journalisée, validée
+dans l'interface** ; (6) la page Agents rend ces dimensions éditables ; (7) le type **externe** (Colaig appelé par capacité). **Preuve.** Un agent est recréable à l'identique depuis son dossier ; un message d'un canal ne modifie
+jamais son profil ; chaque entrée (API, MCP, canal) passe par le même contrôle de droit. **Effort** L. **Dépend de** lots 1, 3, 3 sexies.
+
 ## 3. Ordre et dépendances
 
 ```

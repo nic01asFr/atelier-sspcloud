@@ -923,7 +923,7 @@ manuel ; elle n'apporte ni preuve, ni validation humaine, ni retour arrière.
 
 ### 5 quinquies.1 ter Colaig comme modèle d'un agent de l'Atelier *(précisé le 11/11, d'après Nicolas)*
 
-**Colaig est un agent : ce qu'on veut pouvoir configurer pour un agent de l'Atelier.** Son workspace réunit en un seul objet ce que la page Agents doit faire exprimer par
+**Colaig est un agent, et un seul *type* d'agent parmi d'autres (§ 5 sexies) : ce qu'on veut pouvoir configurer pour ce type d'agent de l'Atelier.** Son workspace réunit en un seul objet ce que la page Agents doit faire exprimer par
 un agent. Les dimensions de configuration de Colaig se retrouvent dans le cadre de l'Atelier :
 
 | Dimension configurable (Colaig v3) | Équivalent dans l'agent de l'Atelier | État dans l'Atelier |
@@ -1025,12 +1025,96 @@ Un **contrat unique** pour tout canal, dont la base est le `MessagingProtocol` d
 9. **Telegram** : long polling ou webhook entrant, et **où cet entrant arrive** (l'Ingress n'expose que l'interface et les applications).
 10. Les **réponses** d'un agent dans un salon à plusieurs, et ce qu'un invité voit du contexte du projet ; quotas par défaut par canal et coût en jetons.
 
+## 5 sexies. Les types d'agents de la page Agents, et le cadre « conversationnel multicanal » *(cadré le 11/11, d'après Nicolas)*
+
+**Principe.** La page Agents n'est **pas** Colaig : elle accueille **plusieurs types d'agents**. On s'inspire de Colaig d'une part, et on prévoit d'autre part **un cadre d'agent de type Colaig, optimal pour les mêmes finalités**, mais **adapté à la structure et au fonctionnement de l'Atelier et de Claude Code** (un agent = une session Claude Code dans un dossier).
+
+### 5 sexies.1 Les types d'agents
+
+| Type | Nature | Déclencheur | Canaux | Capacités typiques | Existe |
+|---|---|---|---|---|---|
+| **Planifié / veille** | session Claude Code, dossier propre | horaire ou événement | notification | lecture, rapport ; budget obligatoire, né désactivé | oui (budget, horaire) |
+| **Gardien** | **code sans modèle** | horaire | alertes | contrôles, gestes fermés | oui |
+| **Réparateur** | session sur **branche** d'un projet | une alerte, une proposition | « À valider » | écrire sur sa branche, jamais fusionner | en partie |
+| **Délégué** | session lancée par l'Assistant ou un agent, copie de travail | une demande | « À valider » | périmètre borné du lanceur | oui |
+| **Service par API** | session ou composition appelée par un système extérieur | un appel API | aucun (retour API) | définies par la capacité de l'appelant | cible (§ 5 quinquies.2) |
+| **Conversationnel multicanal** (type Colaig) | session par conversation, dossier d'agent | un message d'un canal lié | Tchap, Telegram, mail, WebChat, voix | dialogue, connaissance, outils par politique, tâches | **cible** (§ 5 sexies.2) |
+| **Externe** | un système tiers (Colaig lui-même) | appel par l'Atelier | les siens | appelé par capacité, retour non fiable | cible (§ 5 quinquies.1 ter) |
+
+Chaque type est **une configuration**, pas un code à part : ils partagent le dossier, la résolution en couches (§ 1.2), le budget, le journal et « À valider ».
+
+### 5 sexies.2 Le cadre conversationnel multicanal : Colaig, adapté à l'Atelier
+
+**Même finalité que Colaig** : un agent à qui l'on parle depuis des messageries, qui a une identité, une connaissance, des outils, une mémoire des personnes, des tâches de fond, et qui se
+règle depuis la conversation. **Autre mécanique** : Colaig a un pipeline fixe et une pile de recherche qui remplacent la session ; ici **la session Claude Code est la boucle d'agent**.
+
+```
+ canal (Tchap, Telegram…) ─► adaptateur (§ 5 quinquies.3) ─► politique : identité ? faut-il répondre ? quota ?
+        │                                                       │
+        │      (canal, conversation) → (agent, session)  ◄── table de liaison, posée par la personne
+        ▼                                                       ▼
+ réponse, accusé, saisie ◄──── session Claude Code de la conversation (reprise par identifiant de session) dans le dossier de l'agent
+                                  │ outils : gateway filtrée par capacités · skills · connaissance · mémoire · tâches
+                                  ▼
+                       journal sans contenu · budget · « À valider » pour ce qui engage
+```
+
+**Le dossier de l'agent** (fichiers versionnés, comme tout agent) :
+
+```
+ agents/<id>/
+ ├─ agent.yaml          déclaration : nom, type « conversationnel », profil, budget, canaux autorisés, visibilité, propriétaire
+ ├─ CLAUDE.md           identité, ton, langue, niveau d'expertise, règles propres   (≈ prompt système et profil de Colaig)
+ ├─ .claude/skills/     savoir-faire déclenchés par leur description                (≈ behaviors)   · commandes `/…` pour les ordres explicites
+ ├─ .claude/settings.json   permissions et hooks de l'agent                          (≈ tool_policy)
+ ├─ .mcp.json           connecteurs choisis dans le registre, par capacité          (≈ mcp_connectors)
+ ├─ canaux.yaml         liaisons : canal, conversation, identités autorisées, niveau de confiance, quotas
+ ├─ connaissance/       documents de l'agent (recherche par wikichat ou un connecteur de connaissance)   (≈ RAG)
+ ├─ memoire/            ce que l'agent retient des personnes, validé comme « Ma mémoire »                (≈ mémoire utilisateur)
+ └─ taches/             tâches de fond de l'agent : horaire, plafond d'étapes, attente de la personne    (≈ tâches planifiées)
+```
+
+**Table de correspondance avec Colaig.**
+
+| Colaig v3 | Cadre Atelier |
+|---|---|
+| workspace (`.colaig/config.yaml`) | dossier de l'agent + `agent.yaml`, **versionné** (Colaig n'a ni historique ni retour arrière) |
+| pipeline Analyseur → Orchestrateur → Synthétiseur | **la boucle de la session Claude Code**, avec ses outils |
+| behaviors par similarité de phrases | **skills** (déclenchés par leur description) et commandes `/` |
+| `tool_policy` : all / read_only / explicit, domaines, débit | **permissions de l'agent** + surcharge par connecteur (§ 4.2) + plafonds de la gateway |
+| RAG sur FAISS | recherche dans `connaissance/` par wikichat ou un connecteur de connaissance ; pas de pile propre |
+| session par `conversation_id` | **une session Claude Code par conversation**, reprise par identifiant ; verrou de conversation (lot 1 bis) |
+| mémoire utilisateur extraite et consolidée | `memoire/` : l'agent **propose**, la personne valide |
+| tâches planifiées (once, cron, interval, `waiting_for_user`) | `taches/` ; attente de la personne → carte dans « À valider » |
+| administration par la conversation (message direct) | **commandes de l'Atelier classées** ; changer le profil ou les capacités = engageant, validé dans l'interface, jamais par le canal |
+| auto-spécialisation du prompt (à blanc par défaut) | modification des fichiers du dossier **sur branche, éprouvée** (`auto-amelioration.md`), jamais directe |
+| jeton haché, portée, révocation | capacité signée (lot 1), clé d'API hachée pour l'extérieur (§ 5 quinquies.2) |
+
+**Ce que le cadre apporte en plus de Colaig** (les trous relevés dans la v3) : une **liaison explicite** des canaux (jamais « n'importe quel membre lie le salon ») ; **trois niveaux de confiance** ; **liste blanche d'expéditeurs** ;
+**dédoublonnage** et **limites de débit** par utilisateur, salon et agent ; **versionnement et retour arrière** de l'agent ; **journal d'audit** de ses modifications ; **aucun accord par message** ; **secrets par référence** (coffre) ;
+**isolation** par dossier et processus ; messages entrants **non fiables** ; **un contrôle de droit sur chaque entrée** (API, MCP, canal, conversation) : le même contrôle, appliqué au même endroit.
+
+**Cycle d'une conversation** : message → politique → reprise de la session de la conversation (ou ouverture) → la session répond avec ses outils → envoi dans le canal (réversible, plafonné) → journal ; les pièces jointes
+deviennent des fichiers du dossier de la conversation (audio : transcrit par le service voix, § 5 quater) ; une conversation inactive s'endort (veille, déjà un mécanisme de l'Atelier) et reprend au message suivant.
+
+**Variantes du même cadre** : un agent d'**accueil** (questions sur un corpus), un **assistant personnel** lié à la seule personne, un **agent d'équipe** dans un salon, un **agent de veille qui écrit dans un salon** (envoi engageant sur liste blanche).
+
+### 5 sexies.3 À trancher
+
+1. **Une session par conversation ou par utilisateur** ? (coût, mémoire, isolation d'un salon à plusieurs.)
+2. **La recherche documentaire** : wikichat suffit-il, ou un connecteur de connaissance dédié (Colaig comme connecteur de connaissance, par exemple) ?
+3. **Où vit un agent conversationnel** : `agents/<id>/` à part, ou un projet de l'Atelier comme les autres ?
+4. **Le coût** d'une session Claude Code par message d'un canal public : plafonds par défaut, et que répond l'agent quand le budget est atteint ?
+5. **Les skills** remplacent-ils bien les behaviors sémantiques (déclenchement par description et non par similarité de phrases) : à vérifier sur le CLI du pod.
+6. **La latence** perçue sur un canal de messagerie (démarrage d'une session) : accusé de saisie immédiat, session chauffée ?
+7. **Visibilité** : un agent public (n'importe qui peut lui écrire) est-il permis, avec quelles limites ?
+
 ## 6. Ce que cela change pour le plan
 
 Le plan de finition garde son ordre (identité → garde → rôle unique → états vrais → brouillon/production) et reçoit
 trois lots de plus, décrits dans [`plan-de-finition.md`](plan-de-finition.md) § 2 bis : **lot 1 bis** (verrou de
 conversation et miroir), **lot 3 bis** (registre unique et surcharge par connecteur, classes des outils amont),
-**lot 3 ter** (communication externe, après les lots 1 et 3) **lot 3 quater** (intégration GitHub, § 5 bis) et **lot 2 bis** (coffre de secrets, § 5 ter) **lot 3 quinquies** (voix, § 5 quater) et **lot 3 sexies** (API d'agents et canaux, § 5 quinquies).
+**lot 3 ter** (communication externe, après les lots 1 et 3) **lot 3 quater** (intégration GitHub, § 5 bis) et **lot 2 bis** (coffre de secrets, § 5 ter) **lot 3 quinquies** (voix, § 5 quater) et **lot 3 sexies** (API d'agents et canaux, § 5 quinquies) et **lot 3 septies** (types d'agents et cadre conversationnel multicanal, § 5 sexies).
 
 ## 7. Décisions à prendre
 
