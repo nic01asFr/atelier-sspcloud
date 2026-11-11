@@ -20,6 +20,33 @@ et SSPCloud en sont la frontière extérieure, cadrée. L'auto-évolution n'est 
 cadre limite le suivant par la mécanique**. D'où l'ordre : étanchéité d'abord, définition unique du
 rôle ensuite, signaux vrais, puis séparation brouillon/production, puis consolidation, puis boucle.
 
+### 0 bis. Tout s'emboîte dans Claude Code *(précisé le 11/11, d'après Nicolas)*
+
+Claude Code est le **substrat** : wikichat s'appuie sur lui, les agents sont ses sessions, la gateway
+est un de ses serveurs MCP, l'Atelier l'habille. Chaque notion de l'Atelier se range sur un
+mécanisme natif ; **on n'écrit du code Atelier que pour ce que le natif ne fait pas** (principe 2 ter
+du registre des défauts). Correspondance de travail, à confirmer sur la version du CLI du pod :
+
+| Notion de l'Atelier | Mécanisme natif sur lequel elle repose | Ce que l'Atelier ajoute |
+|---|---|---|
+| Plafond d'une famille d'agents | réglages **managés** (priorité la plus haute, un `deny` l'emporte) | les écrire, les rendre inaccessibles à l'agent |
+| Défauts du projet (agents code) | `.claude/settings.json` **du projet**, suivi par git | l'édition par commande engageante, le journal |
+| Surcharge de session | options du lancement (`--settings`, `--allowedTools`, `--permission-mode`) | la stocker sur la fiche, la borner au plafond du projet |
+| Profil d'un agent de l'Atelier | définition de **sous-agent** / **plugin** (outils, hooks, skills propres) | le catalogue, les capacités accordées, le budget |
+| Ce que reçoit l'agent | `--mcp-config` + `--strict-mcp-config` ; hook `SessionStart` | la gateway filtre à la source, la carte le prouve |
+| Mémoire de la personne et du projet | fichiers de mémoire (`CLAUDE.md`) + fiches wikichat | « Ma mémoire », le filtre d'origine, la validation |
+| Garde-fous | hooks `PreToolUse` / `PostToolUse` / `Stop`, `permissions.deny` | les scripts, versionnés avec l'Atelier |
+| Savoir-faire répétables | skills et commandes | le kit (`/reprendre`, `/verifier`…) |
+| Fin honnête d'un tour | `terminal_reason`, `permission_denials`, `system/init` | l'état du lancement qui dit vrai |
+| Auto-évolution | tous ces mécanismes sont des **fichiers** | les modifier sur une branche, les éprouver, les promouvoir (`auto-amelioration.md`) |
+
+Conséquences pour les lots : le lot 3 ne crée pas un moteur de rôles parallèle, il **compile** la
+résolution en couches vers les couches de réglages natives ; les lots 1 et 2 consistent à rendre la
+couche haute (managée) et l'identité hors de portée de l'agent ; l'auto-évolution (lot 10) n'agit que
+sur des fichiers versionnés que l'Atelier sait tester. Réserve : la priorité exacte des couches, le
+comportement des sous-agents quand le parent refuse, et l'application des réglages managés en mode
+`-p` sont **à confirmer sur le pod** avant de s'y appuyer (§ 4).
+
 ## 1. État mesuré, pour mémoire
 
 | | Valeur | Niveau |
