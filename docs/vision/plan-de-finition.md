@@ -119,6 +119,23 @@ lecteur en important la fonction). Le périmètre du lanceur accepte `sed 'w …
 réécrire le fichier de hooks. **Retour.** Interrupteur `ATELIER_GARDIENS_HOOKS=0` existant ; version
 managée désactivable par réglage. **Effort** L. **Dépend de** l'essai de l'étape 1.
 
+### Lot 2 bis · Un coffre de secrets : confiés, utilisés, jamais vus *(avec les lots 1 et 2)*
+
+**Constat (rapporté, `cible.md` § 5 ter).** Aucun mécanisme de saisie par référence dans le navigateur ; snapshots, captures,
+console et réseau en lecture autorisée d'office ; valeurs en clair dans `gateway.db` ; clé propriétaire et tous les jetons
+de connecteurs dans l'environnement de chaque agent (`os.environ.copy()`) ; « accorder » copie la valeur ; deux stockages
+parallèles ; filtre de secrets seulement au rendu des transcripts.
+**Travaux.** (1) objet `secret` et références `secret://id` ; chiffrement au repos, clé maître hors du volume ;
+(2) accords *(secret, bénéficiaire, capacité, durée, usages)*, par commande réservée ou « À valider », révocables, usages au
+journal sans valeur ; (3) injection côté serveur par le mandataire ; environnement de l'agent en **liste blanche** ;
+(4) navigateur : `atelier_navigateur_remplir(uid, secret_ref)` (consentement par domaine, refus si l'origine diffère),
+masquage des snapshots, captures, console et réseau, `evaluate_script` encadré ; (5) hooks `PreToolUse` (`env`, `.secrets`,
+`claude-env.sh`) et `PostToolUse` (masquage) ; (6) écrans **Secrets** et **Passerelle** et leurs commandes (`cible.md` § 5 ter.4) ;
+(7) fusionner `server_credentials` et les accords du registre. **Preuve.** Un agent ne peut ni lire une valeur accordée, ni la
+voir dans un snapshot ou une capture ; un usage laisse une ligne au journal. **Retour.** Les références coexistent avec
+l'ancien stockage jusqu'à migration complète. **Effort** L. **Dépend de** lot 1 (capacité courte) ; alimente les lots 3 bis,
+3 ter et 3 quater.
+
 ### Lot 3 · Un rôle, une définition *(le point de croisement wikichat × gateway)*
 
 **Constat.** Un rôle n'est défini nulle part (état des lieux § 2, point 1) : le mode de permission est
@@ -318,7 +335,7 @@ outil amont réservé en dur est `expose_public`) ; `approval` / `elicit` valida
 (classe, arguments imposés cachés, schéma réduit, titre et description français) ; (3) classer tout outil amont
 (table › annotations › regex), **défaut engageante** ; (4) moule de mandataire borné générique ; (5) journal et
 plafonds des appels amont ; (6) appliquer ce que les compositions stockent déjà, et interdire au modèle de valider
-`approval` / `elicit` ; (7) corriger les classes : `atelier_montrer` en réversible, outils Onyxia classés.
+`approval` / `elicit` ; (7) corriger les classes : `atelier_montrer` en réversible, outils Onyxia classés ; (8) **Onyxia à trois niveaux** (`cible.md` § 4.3) : borné par projet par défaut, général cadré pour l'Assistant, accès général configuré explicitement par la personne (octroi daté, révocable, mêmes arguments imposés, classes et journal).
 **Preuve.** Un connecteur déclaré une fois apparaît dans tous les profils autorisés, jamais dans les autres ; un outil
 inconnu est engageant ; le modèle ne valide pas une approbation. **Effort** L. **Dépend de** lot 3.
 

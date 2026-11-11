@@ -150,7 +150,7 @@ engageant.** Tableau cible, d'après ce qui existe et ce qui est posé (proposit
 | Gateway / outils | profil `code` (10 outils) | profil `code` + mandataire Onyxia du projet | `assistant` + méta-outils | liste fermée déclarée | lecture + gestes fermés | liste fermée + connecteur de communication |
 | Navigateur | oui, un Chrome par conversation | oui | lecture | par octroi | non | par octroi |
 | Créations | brouillon, vérifier, démarrer | idem | délègue (ne crée pas) | non | vérification en lecture | non |
-| Onyxia | non | pod / service / GPU si déclaré ; déploiement engageant | par délégation | par octroi | non | par octroi |
+| Onyxia | non (ou général si la personne l'a configuré) | pod / service / GPU si déclaré ; déploiement engageant | **général, cadré par les classes** | par octroi (général si la personne l'a configuré) | non | par octroi |
 | Mémoire | fiches du projet | idem | « Ma mémoire » | non | non | non |
 | Garde (hooks, deny) | socle + secrets refusés | idem | socle + secrets refusés | liste blanche, `dontAsk` | périmètre de la branche | liste blanche + contamination |
 | Budget | plafond du projet | idem | par tour | **obligatoire** (tours, par jour, pause), né désactivé | plafonné, branche `gardien/…` | obligatoire + plafond d'envois |
@@ -356,6 +356,25 @@ copie git figée en lecture seule `prod/<nom>/<n>` ; `donnees/` hors git, sauveg
 7. **Le secret d'un connecteur n'est pas dans l'environnement de l'agent** : il passe par un mandataire (connexion
    indirecte), pas par une connexion directe. Sinon le filtre ne protège rien.
 
+### 4.3 Onyxia : trois niveaux d'accès *(précisé le 11/11, d'après Nicolas)*
+
+Onyxia n'est pas « jamais en accès général » : **l'accès général existe quand la personne le configure explicitement, et
+il reste cadré**. Trois niveaux, du plus étroit au plus large :
+
+| Niveau | Qui | Ce qu'il ouvre | État |
+|---|---|---|---|
+| **Borné par projet** (défaut) | agents code d'un projet qui déclare `deploiement` | le mandataire du projet : session `proj-<slug>` et pod lié imposés, pas de préemption GPU, `expose_public` refusée | *lu* (`onyxia_projet.py`, 81 tests) |
+| **Général, cadré, pour l'Assistant** | l'Assistant | les 24 outils d'Onyxia ; `expose_public` et `unexpose_public` réservées à la personne ; `project_start`, `service_deploy`, désinstallation à classer **engageantes** (question ouverte, `onyxia-projet.md` § 5) | *lu* pour les 24 outils ; classes **cible** |
+| **Général, configuré par la personne** | l'agent, le projet ou la famille qu'elle désigne | un mandataire général au profil choisi : outils, espace de noms, quotas, durée ; journalisé et révocable | **cible**, rien n'existe |
+
+Règles communes : l'accès général est un **octroi explicite de la personne** (jamais un défaut ni une demande d'agent
+acceptée en silence) ; il passe par le même moule de mandataire (§ 4.2, 4) avec **arguments imposés, classes de commande,
+plafonds et journal** ; il est **daté et révocable** ; il se résout dans les couches de profil (§ 1.2) comme n'importe quelle
+capacité. Ce qui est général pour l'Assistant reste cadré par les classes ; ce que la personne élargit pour un autre agent
+l'est par ce qu'elle a écrit dans la configuration.
+*Précaution* (rapportée) : les sessions d'Onyxia sont globales, donc un accès général permet de rattacher `proj-<slug>` ailleurs ;
+le mandataire le détecte aujourd'hui sans le réparer.
+
 ## 5. Capacités externes des agents de l'Atelier, et services de communication
 
 *Aujourd'hui (lu)* : aucune intégration de communication externe (ni Tchap/Matrix, ni mail, ni Mattermost, ni
@@ -481,12 +500,112 @@ depuis ce dépôt.
 6. Le dépôt GitHub est-il **obligatoire** à la création d'un projet, ou garde-t-on `git init` local avec publication différée ?
 7. Source de vérité de la production : l'étiquette poussée ou le worktree local ?
 
+## 5 ter. Les secrets, le navigateur et la gateway configurable *(étudié le 11/11 ; *rapporté* par un lecteur, `fichier:ligne` à rouvrir avant correction)*
+
+**Principe.** Un secret est **confié sans être vu** : l'agent s'en sert, il ne le lit jamais. La valeur est résolue côté serveur
+au moment de l'usage, et l'agent ne manipule qu'une **référence**.
+
+### 5 ter.1 Le modèle actuel
+
+```
+ Personne (UI) ─ PUT /v1/secrets/<nom> ─► ~/work/.secrets/<nom>  (0600, en clair)            accords.py
+        │  atelier_connecteur_accorder (réservée) : lit le fichier et COPIE la valeur dans la config du connecteur
+        ▼
+ gateway.db  (config + table server_credentials : bearer, en-têtes)  EN CLAIR, fichier 0600
+        │  .mcp.json et fichier effectif : seulement des références ${ATELIER_MCP_<SERVICE>_<CLÉ>}
+        ▼
+ ~/work/.secrets/claude-env.sh (0600) : clé propriétaire ATELIER_MCP_KEY + variables du pool + .atelier/env.json des projets
+        ▼  lu par le harnais (chaque tour), ~/.bashrc, code-server, wikichat
+ Agent (Bash) : hérite de TOUTES les variables (harness.py:652-694 : os.environ.copy() + update)
+```
+
+*Lu, et solide* : références déduites sans état (`mcp_secrets.py`) ; fichiers 0600 créés atomiquement ; noms réservés à l'Atelier
+refusés ; valeurs masquées `••••xxxx` en réponse d'API ; écritures journalisées sans valeur ; aucun secret en argument d'une
+commande d'ajout de connecteur ; filtre de transcripts qui remplace les valeurs connues par `<secret:empreinte>`.
+*Documenté seulement* : les identifiants sont en clair dans `gateway.db`, sans chiffrement (`SECURITY.md:146`) ; D-06 (hooks,
+« moyen de demander un accord sans recevoir la valeur ») est une correction **prévue**.
+
+### 5 ter.2 Les fuites possibles
+
+**Navigateur (identifiants confiés à un agent).** *Il n'existe aucun mécanisme de saisie par référence.* Les voies actuelles :
+1. la personne tape l'identifiant dans la conversation → transcript Claude Code, journal wikichat, mémoire (déjà arrivé pour
+   une clé d'API, D-56) ; le filtre ne masque que les valeurs déjà connues ;
+2. l'agent appelle `fill` / `fill_form` / `type_text` avec la valeur en argument → transcript et audit ;
+3. `take_snapshot` après saisie (l'arbre d'accessibilité contient la valeur d'un champ texte, *déduit*), `take_screenshot`
+   (champ non `password`), `evaluate_script`, console et réseau (corps POST, en-têtes `Authorization`, cookies) : **tout
+   est en lecture autorisée d'office** et rejoint le transcript ; `garde_navigation` ne filtre que les URL ;
+4. « Prendre la main » : la personne tape elle-même, **seul chemin sans fuite**, mais l'agent doit attendre ;
+5. le profil Chrome par conversation garde cookies et sessions sur disque ; l'agent, avec Bash et `sudo`, peut les lire (*déduit*).
+
+**Connecteurs.** Valeurs en clair dans `gateway.db` (une copie par accord) ; **la clé propriétaire et tous les jetons de
+connecteurs sont dans l'environnement de chaque agent** (un `env` ou `cat` suffit ; les règles `Read` ne couvrent pas `env`) ;
+« accorder » **copie** la valeur dans la config, ce n'est pas une vraie référence ; changer l'URL d'un connecteur envoie ses
+secrets vers un autre hôte (garde : commande réservée) ; `PUT /catalog/credentials` reçoit encore des valeurs par l'API ;
+deux stockages parallèles (`server_credentials` et les accords du registre) ; le filtre agit au rendu des transcripts, pas
+sur le `.jsonl` source de Claude Code (*déduit*).
+
+### 5 ter.3 La cible
+
+1. **Un coffre.** Objet `secret` : identifiant, libellé, type (mot de passe, jeton, identifiant + mot de passe, TOTP),
+   propriétaire, dates de création, de rotation, d'expiration ; valeur **chiffrée au repos** avec une clé maître hors du
+   volume (ou référence vers un coffre externe) ; `gateway.db` ne porte que des références `secret://id`.
+2. **Un accord** : *(secret, bénéficiaire : famille / projet / session / agent, capacité : « utiliser sur l'hôte H, dans le
+   champ C », durée, nombre d'usages)*. Création par commande **réservée** ou carte « À valider » ; révocation immédiate ;
+   chaque usage au journal (qui, quel secret, quel hôte, résultat), **jamais la valeur**.
+3. **Injection côté serveur.** Le mandataire résout la référence au moment de l'appel amont ; un connecteur local reçoit la
+   valeur dans l'environnement d'un processus enfant, **pas** dans celui de l'agent. L'environnement de l'agent est une
+   **liste blanche** (fin de `os.environ.copy()`), et la clé propriétaire est remplacée par la capacité courte de la
+   conversation (lot 1).
+4. **Navigateur.** Un outil `atelier_navigateur_remplir(uid, secret_ref)` (réversible, consentement une fois par domaine) :
+   le pont tape la valeur par CDP, l'agent ne la voit jamais ; refus si l'origine de la page diffère de l'origine
+   accordée ; la valeur s'ajoute au filtre de masquage. **Masquage** : post-traitement de `take_snapshot`
+   (`<secret:ref>`), flou des champs `password` et des champs remplis par référence dans `take_screenshot`, masquage de la
+   console et du réseau (`Authorization`, `Set-Cookie`, corps contenant la valeur) ; `evaluate_script` et `fill` avec
+   valeur brute interdits ou masqués au retour sur une page portant un secret accordé. TOTP et CAPTCHA : saisie humaine.
+   Une option « saisie par la personne » (Prendre la main) avec bandeau dédié.
+5. **Hygiène par les hooks** : `PreToolUse` refuse `env`, `printenv`, la lecture de `.secrets` et de `claude-env.sh` ;
+   `PostToolUse` masque les sorties qui contiennent une valeur accordée ; le transcript source est filtré.
+
+### 5 ter.4 La gateway, entièrement configurable depuis l'Atelier
+
+*Déjà faisable (lu)* : ajouter, retirer, sonder, activer, accorder, renouveler, modifier un connecteur (interface, API
+`/v1/mcp/servers`, commandes `atelier_connecteur_*`) ; profils et bundles ; compositions (CRUD, promotion, exécution) ;
+épingles d'outils ; import / export du registre ; secrets.
+*Reste dans des fichiers, la base ou le code* : le catalogue d'organisation (YAML) ; les indications d'outils (regex dans
+`tool_hints.py`) ; les profils d'accès natifs ; **les classes de commande hors `atelier_*`** (inexistantes) ; les
+plafonds d'appels amont (introuvables) ; **les arguments imposés** (seul Onyxia a un mandataire borné) ; les deux
+stockages de secrets ; `.atelier/env.json`.
+
+**Cible : deux écrans et leurs commandes.**
+
+| Écran | Contenu | Commandes (classe) |
+|---|---|---|
+| **Secrets** (coffre) | liste, création, rotation, révocation, usages, accords par portée | `atelier_secret_creer` (réservée) ; `_accorder` (réservée ; via « À valider » pour un agent) ; `_revoquer` (réversible) ; `_renouveler` |
+| **Passerelle** | registre unique ; surcharge par connecteur (classe par outil, titre français, arguments imposés, schéma réduit) ; profils par famille, projet, agent ; accès par capacité ; plafonds (appels par minute et par jour) ; journal d'appels amont filtrable | `atelier_passerelle_surcharger` (engageante) ; `_plafonner` (engageante) ; `_profil_modifier` (réversible) ; `_journal` (lecture) |
+
+Classes : **lecture** (lister, journal) ; **réversible** (profil, épingle) ; **engageante** (ajouter un connecteur, surcharge,
+plafond) ; **réservée** (accorder ou renouveler un secret, changer l'hôte d'un connecteur, clé propriétaire).
+
+### 5 ter.5 À trancher
+
+1. **Chiffrement au repos** : où vit la clé maître (secret Kubernetes, KMS, Vault) ? `SECURITY.md` juge que ça n'apporte guère
+   tant que la clé vit sur le même disque.
+2. **Navigateur** : masquer au niveau du pont `chrome-devtools-mcp` (proxy de filtrage) ou fournir un outil maison ?
+   Que faire d'`evaluate_script`, qui peut tout lire ?
+3. **Consentement** : par domaine, par session, ou par usage via « À valider » ? Durée par défaut ?
+4. Supprimer `os.environ.copy()` et la clé propriétaire de l'environnement des agents : calendrier (prérequis : capacité
+   courte par conversation).
+5. Fusionner `server_credentials` et les accords du registre en un seul stockage.
+6. TOTP / 2FA et CAPTCHA : saisie toujours humaine ?
+7. Portée « famille » : définition, et héritage par rapport à D-08 (8 projets sur 16 héritent de tous les connecteurs).
+8. Rétention du `.jsonl` source de Claude Code : filtrer à l'écriture ?
+
 ## 6. Ce que cela change pour le plan
 
 Le plan de finition garde son ordre (identité → garde → rôle unique → états vrais → brouillon/production) et reçoit
 trois lots de plus, décrits dans [`plan-de-finition.md`](plan-de-finition.md) § 2 bis : **lot 1 bis** (verrou de
 conversation et miroir), **lot 3 bis** (registre unique et surcharge par connecteur, classes des outils amont),
-**lot 3 ter** (communication externe, après les lots 1 et 3) et **lot 3 quater** (intégration GitHub, § 5 bis).
+**lot 3 ter** (communication externe, après les lots 1 et 3) **lot 3 quater** (intégration GitHub, § 5 bis) et **lot 2 bis** (coffre de secrets, § 5 ter).
 
 ## 7. Décisions à prendre
 
@@ -508,3 +627,4 @@ conversation et miroir), **lot 3 bis** (registre unique et surcharge par connect
 14. Capacités d'artefact : consenties dès le brouillon ?
 15. Identité signée et capacités : d'abord pour les agents de l'Atelier, ou pour tous ? **Recommandation** : pour tous,
     parce que c'est la même pièce que la fermeture de la clé propriétaire.
+16. **Accès général à Onyxia configuré par la personne** : quelle portée (espace de noms entier, ou liste de ressources), quels quotas, quelle durée par défaut, et pour quelle cible (un agent, un projet, une famille) ?
