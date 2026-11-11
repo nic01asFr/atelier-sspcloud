@@ -845,26 +845,42 @@ ce qui exclut la plupart des services de téléphonie ; une voix de synthèse pa
 9. Téléphonie : fournisseur hébergé en France, ou rester sur le texte et le vocal différé ?
 10. Ajouter le service voix aux écoutes déclarées des gardiens.
 
-## 5 quinquies. Agents utilisables par API de l'extérieur, et canaux de communication (Tchap, Telegram…) *(étudié le 11/11 ; *rapporté*)*
+## 5 quinquies. Agents utilisables par API de l'extérieur, et canaux de communication (Tchap, Telegram…) *(étudié le 11/11, Colaig v3 lu ; *rapporté*)*
 
 **But (Nicolas).** Pouvoir **définir** les agents et **s'en servir en API depuis l'extérieur**, les **brancher dans Tchap** (structure inspirée de Colaig) et
 dans d'autres services de communication **sur standard** (Telegram, etc.), pour en disposer depuis ces canaux.
 
-### 5 quinquies.1 Ce que Colaig apporte, et ne contient pas
+### 5 quinquies.1 Ce que Colaig v3 apporte *(lu le 11/11 : `nic01asFr/Colaig_v3`, un commit du 20/04/2026 ; la copie de juillet 2025 (v0.2) n'avait ni API ni modèle d'agent)*
 
-*Lu* (dépôt `nic01asFr/Colaig`, **un seul commit du 27/07/2025**, « POC / WIP, pas destiné à la production » ; fork de `tchap_bot`) : **aucune trace d'un « colaig v3 »** ;
-c'est la v0.2 d'un bot Matrix. **À ce jour je n'ai pas vu la v3 locale** : si elle vit sur votre machine, elle est à me montrer.
+*Lu* : README, `CLAUDE.md`, `AGENTS.md`, `docs/GATEWAY.md`, `docs/MCP_SESSIONS.md`, `protocols.py`, l'authentification des jetons, les adaptateurs Telegram et Matrix, le routage des
+messages, les ACL, le serveur MCP et les en-têtes du planificateur. *Non lu* : l'orchestrateur, le RAG, le stockage, le validateur OIDC, le provisionneur, le corps de `PHASE6` et d'`ARCHITECTURE.md` ; **les tests
+(≈ 22 800 lignes) n'ont pas été exécutés**, et ils couvrent surtout des simulations.
 
-| Colaig contient | Colaig ne contient pas |
+```
+ Canaux (Matrix/Tchap · Telegram · webchat WS)  ──► MessagingProtocol.on_message → IncomingMessage ──► MessageHandler
+ HTTP : POST /ask · /mcp (MCP streamable) · /workspaces* · /webhooks/storage · /platform*                  │
+                                                                                          ContextResolver : salon → espace
+                                                                                          Analyseur → Orchestrateur → Synthétiseur
+ Monolithe Python 3.11 / FastAPI, 1 conteneur, « Zero Database » : tout est fichiers ({espace}/.colaig/…), multi-clients par config
+```
+
+| Sujet | Ce que fait Colaig v3 |
 |---|---|
-| un **bot Matrix/Tchap** (`matrix-nio`, E2E, session chiffrée) ; une séquence réception → commande ou conversation → réponse | **aucune API HTTP**, aucune clé d'API, aucun modèle d'agent persistant |
-| des **règles de réponse** (`TchapContextResolver`) : message direct → toujours ; salon → seulement si mentionné, puis fil ; fil → si mentionné ou déjà participant | aucun autre canal (ni Telegram, ni Slack) |
-| un **IAM par domaine** (liste Grist, statut « pending » pour un inconnu) | des rôles par espace ; une limite de débit par utilisateur ou salon |
-| un **webhook sortant** (`Bearer` + signature HMAC-SHA256 de la charge) ; dédoublonnage d'événements ; indicateur de saisie ; déchiffrement des pièces jointes | un **webhook entrant fonctionnel** : rien ne sert l'URL annoncée ; jeton sans signature, horodatage ni anti-rejeu |
-| une notion de « comportement » en JSON (intentions, modèles de réponse) | une exécution réelle au-delà de deux types d'action (la doc dépasse le code) |
+| **Agent** | **pas d'entité Agent** ; le plus proche est l'**espace de travail** (`WorkspaceConfig` : consigne, ton, outils, connecteurs MCP, utilisateurs autorisés, conversations liées, visibilité), complété par des fichiers `.colaig/` (identité, comportements, savoir-faire, prompts : documentés, non vérifiés). Le pipeline Analyseur → Orchestrateur → Synthétiseur est **fixe**, pas configurable. |
+| **Appel en API** | l'outil MCP `colaig_ask(question, workspace_id, conversation_id, user_id)` (synchrone) et une trentaine d'autres outils MCP (créer un espace, lier une conversation, jetons, tâches) ; `POST /ask` **sans authentification** ; **pas d'API REST d'agents**, pas de tâche asynchrone ni d'idempotence ; `conversation_id` sert de clé de session persistée. |
+| **Asynchrone** | tâches planifiées en JSON (une fois, cron, intervalle ; `max_steps`, désactivation après trois échecs, état « attend la personne »). |
+| **Canaux** | un contrat `MessagingProtocol` (`connect`, `run`, `send`, `send_typing`, `on_message`) et un message normalisé `IncomingMessage` (utilisateur, conversation, corps, type DM / privé / public, identifiant, horodatage, réponse, plateforme, pièces jointes). **Matrix / Tchap** : assez abouti (jeton persistant, E2E, auto-join, mention requise hors message direct, filtre des messages de plus de 5 min, audio vers Whisper). **Telegram** : long polling fonctionnel, **webhook inachevé** (aucune route de réception). **Webchat** : expérimental, identité auto-déclarée. Slack, Teams, mail, voix : absents. **Pas d'appairage** : la liaison se fait par la commande « colaig lier ». Ni liste blanche d'expéditeurs, ni dédoublonnage, ni limite de débit par canal. |
+| **Jetons** | `colaig_{slug}_{64 hex}`, **haché** (SHA-256), expiration 365 j, portée (tout ou un espace), rôle admin, révocation par suppression ; OIDC par JWKS ; **auth désactivée par défaut**, `user_id` alors déclaratif et usurpable. |
+| **Signature** | HMAC-SHA256 avec clé primaire et secondaire, comparaison en temps constant, mais **seulement pour le webhook de stockage** ; rien pour Telegram. |
+| **Messages entrants** | **aucun traitement dédié** de l'injection ni confirmation avant action ; protections pour les champs de config, l'anti-SSRF, la troncature des résultats d'outils, le filtre de secrets dans les journaux. |
+| **Trous** | « colaig lier » permet à **n'importe quel membre** d'un salon non lié de l'attacher à n'importe quel espace existant ; secrets **en clair** dans `clients.yml` ; une instance partagée entre clients, isolation par chemins. |
+| **Claude Code** | Colaig est **serveur et client MCP** (FastMCP) ; pas de session d'agent ; `AGENTS.md` décrit une équipe de développeurs-agents, pas des agents d'exécution. |
 
-*Sensible, à ne pas reproduire* : jetons passés en variables d'environnement et dans les journaux ; fichier de session committé avec un sel statique ;
-`ignore_unverified_devices=True` ; isolation « logique » par chemins WebDAV avec un seul compte de service ; texte entrant injecté tel quel dans un LLM.
+**À reprendre comme patron** : le contrat `MessagingProtocol` + `IncomingMessage` (à enrichir : identité signée, identifiant de dédoublonnage, plateforme toujours renseignée, agent visé) ; « un canal = un adaptateur » et le mappage salon → espace ;
+le **jeton auto-localisant haché** avec portée et révocation, et la configuration MCP générée ; la validation HMAC à deux clés ; la politique de plateforme, l'anti-SSRF, la troncature, le filtre de secrets ; la séquence Matrix / Tchap ;
+les **tâches planifiées** (états, désactivation après échecs, « attend la personne ») comme modèle d'agent planifié ; `conversation_id` comme clé de session.
+**À refaire** : un **modèle d'agent déclaratif** ; une **API REST d'agents** (asynchrone, idempotence, signature) ; les **classes de commande** ; dédoublonnage, limite de débit, liste blanche ; **authentification fermée par défaut** ; appairage par code ;
+**secrets par référence** ; isolation par dossier et processus ; messages entrants non fiables. Remarque (*déduit*) : le principe « Zero Database, tout est fichiers » s'accorde avec « un agent = un dossier » de l'Atelier.
 
 ### 5 quinquies.2 Un agent utilisable par API
 
@@ -890,7 +906,7 @@ distant (8 verbes de conduite, clé propriétaire, « agents publiés » L3 non 
 
 ### 5 quinquies.3 Un adaptateur de canal commun
 
-Un **contrat unique** pour tout canal, déduit de ce que fait Colaig de façon implicite :
+Un **contrat unique** pour tout canal, dont la base est le `MessagingProtocol` de Colaig v3 (`connect`, `run`, `send`, `send_typing`, `on_message`, message normalisé `IncomingMessage`), enrichi de l'identité signée, d'un identifiant de dédoublonnage, de l'agent visé et d'une limite de débit :
 
 ```
  canal externe ─► receive/normaliser ─► policy (identité ? faut-il répondre ?) ─► route (canal, conversation) → (agent, session)
@@ -900,38 +916,46 @@ Un **contrat unique** pour tout canal, déduit de ce que fait Colaig de façon i
                   dédoublonnage · limite de débit par utilisateur / salon / agent · journal sans contenu
 ```
 
-- **Implémentations** : **Tchap / Matrix** (reprendre de Colaig les règles message direct / mention / fil, le dédoublonnage, l'indicateur de saisie, le déchiffrement des
-  pièces jointes, l'IAM par domaine) ; **Telegram** (Bot API) ; **mail** ; **webhook générique** entrant et sortant signé. Un adaptateur est un **service MCP / pont** rattaché
+- **Implémentations** : **Tchap / Matrix** (reprendre de Colaig v3 la séquence de connexion, l'E2E, l'auto-join, les règles message direct / mention / fil, le filtre des vieux messages, le déchiffrement des
+  pièces jointes, et ajouter le dédoublonnage et la liste blanche qui lui manquent) ; **Telegram** (Bot API) ; **mail** ; **webhook générique** entrant et sortant signé. Un adaptateur est un **service MCP / pont** rattaché
   comme un connecteur (§ 4.5), déclaré au registre, avec ses **secrets dans le coffre** (§ 5 ter), supervisé comme une brique système.
 - **Un canal lié, pas un canal ouvert.** La personne **associe explicitement** (canal, conversation) à un agent ; sinon rien ne passe. Trois niveaux de confiance :
   **la personne liée** (identité vérifiée par appariement), **des invités autorisés** (liste blanche), **les inconnus** (rien, ou file d'attente d'appariement).
 - **Un message de canal est l'entrée d'une conversation, à autorité limitée** : il **ne donne jamais d'accord** (la règle existe pour la voix : « aucun accord ne se donne à la voix »),
   n'exécute ni commande réservée ni engageante sans carte « À valider » **dans l'interface** ; le texte d'un tiers dans un salon est **non fiable** (§ 5, contamination).
 - **Classes de l'envoi** : *répondre dans le canal lié* = réversible, plafonné ; *écrire ailleurs*, *inviter*, *créer un salon* = engageante ou réservée (§ 5.2).
-- **Sécurité** (à rebours des défauts de Colaig) : jetons **hors dépôt et hors journaux** ; webhook entrant **signé, horodaté, anti-rejeu**, jeton retrouvé par table indexée ;
+- **Sécurité** (à rebours des défauts de Colaig v3 : auth ouverte par défaut, « lier » sans contrôle, secrets en clair, pas de traitement de l'injection) : jetons **hors dépôt et hors journaux** ; webhook entrant **signé, horodaté, anti-rejeu**, jeton retrouvé par table indexée ;
   chiffrement de bout en bout à traiter **explicitement** (un bot ne lit pas un salon chiffré sans gestion de clés ; vérification des appareils) ; **isolation réelle** par dossier
   et processus, pas par chemins partagés ; aucun lancement d'agent par un message d'un inconnu.
 
-### 5 quinquies.4 Du bot Matrix à la v3 dans le cadre de l'Atelier
+### 5 quinquies.4 De Colaig v3 à l'Atelier
 
-| Colaig | Atelier |
+| Colaig v3 | Atelier |
 |---|---|
-| comportement JSON, `.albert/behavior` | consignes et réglages du **dossier de l'agent** (`CLAUDE.md`, `.claude/`), profil et capacités accordées |
-| espace WebDAV d'un salon | **dossier** de l'agent ou du projet |
-| IAM Grist par domaine | **liste blanche d'identités** dans la liaison de canal, par agent |
-| commandes `!…` | commandes de canal limitées, qui se traduisent en commandes de l'Atelier classées |
-| webhooks | webhooks **signés** (standard), entrants et sortants |
+| espace de travail (`config.yaml`, `.colaig/`) | **dossier** de l'agent ou du projet : consignes, réglages, profil et capacités |
+| `colaig_ask` (MCP, synchrone) | `POST /v1/agents/{id}/messages`, asynchrone, avec clé d'idempotence |
+| jetons `colaig_*` hachés, portée, révocation | clés d'API **par capacité**, mêmes principes, plus journal et quotas |
+| `user_ids` d'un espace | **liste blanche d'identités** dans la liaison de canal, par agent |
+| « colaig lier » dans un salon | **appairage par code**, saisi dans l'interface par la personne ; jamais par un membre du salon |
+| planificateur de tâches | **agents planifiés** de l'Atelier (budget obligatoire, nés désactivés) |
+| pipeline Analyseur → Orchestrateur → Synthétiseur | **la session Claude Code** de l'agent, dans son dossier |
+| Colaig comme serveur MCP | un **connecteur** rattachable (§ 4.5) : base de connaissance ou RAG pour les agents de l'Atelier |
+
+**Deux façons de s'en servir, à choisir** : (a) **reprendre le contrat et les adaptateurs** Matrix / Tchap et Telegram dans une brique `atelier-canaux` de l'Atelier, qui tient l'identité, les classes et les secrets ;
+(b) **rattacher Colaig v3** comme connecteur MCP de connaissance et garder ses canaux à part. *Recommandation* : (a) pour les canaux, parce que l'Atelier doit contrôler qui peut parler à quel agent ; (b) pour le RAG, si son usage est utile.
 
 ### 5 quinquies.5 À trancher
 
-1. **Où est « colaig v3 »** : le dépôt local, à me montrer ; ce que la v3 apporte au-delà de la v0.2.
-2. Un message d'une **personne liée** peut-il lancer un agent planifié, ou seulement converser avec un agent déjà actif ?
-3. **Tchap** : serveur Matrix, compte bot, **chiffrement de bout en bout** et vérification des appareils ; où héberger le pont ?
-4. Le standard d'API d'agent : seulement l'API de l'Atelier, ou aussi un point d'accès compatible avec les API de conversation usuelles ?
-5. **Appairage** d'une personne à un canal : code à usage unique saisi dans l'interface ?
-6. Les **réponses** d'un agent dans un salon à plusieurs : à qui s'adressent-elles, et que voit un invité du contexte du projet ?
-7. Quotas par défaut (messages par minute, par jour) et coût en jetons par canal.
-8. Telegram : long polling ou webhook entrant, et **où cet entrant arrive** (l'Ingress n'expose que l'interface et les applications).
+1. **Colaig v3 : source d'adaptateurs, ou service rattaché ?** (recommandation : adaptateurs repris pour les canaux, connecteur pour la connaissance).
+2. Reprend-on l'**espace de travail** comme modèle d'agent, ou un schéma d'agent neuf (**recommandation : neuf**, un dossier) ?
+3. **Une passerelle séparée** (comme `GATEWAY.md`) ou des adaptateurs dans le même service ?
+4. **Tchap** : un bot par agent ou un bot unique qui route par salon ? Serveur Matrix, compte bot, E2E et vérification des appareils (la v3 « auto-trust » les appareils) ?
+5. Un message d'une **personne liée** peut-il lancer un agent planifié, ou seulement converser avec un agent déjà actif ?
+6. **Appairage** par code à usage unique : confirmé ?
+7. Politique des messages non fiables : liste blanche d'expéditeurs, confirmation (dans l'interface) pour toute action engageante.
+8. Le standard d'API d'agent : l'API de l'Atelier seulement, ou aussi un point d'accès compatible avec les API de conversation usuelles ?
+9. **Telegram** : long polling ou webhook entrant, et **où cet entrant arrive** (l'Ingress n'expose que l'interface et les applications).
+10. Les **réponses** d'un agent dans un salon à plusieurs, et ce qu'un invité voit du contexte du projet ; quotas par défaut par canal et coût en jetons.
 
 ## 6. Ce que cela change pour le plan
 

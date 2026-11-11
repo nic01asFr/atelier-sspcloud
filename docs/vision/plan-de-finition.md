@@ -379,13 +379,12 @@ ouvrir un micro ni lire le jeton ; une transcription ne lance rien ; un plafond 
 
 ### Lot 3 sexies · API d'agents depuis l'extérieur et canaux de communication (Tchap, Telegram…)
 
-**Constat (rapporté, `cible.md` § 5 quinquies).** Aucune API d'agent pour un appelant extérieur à capacité limitée ; aucun canal de communication ; Colaig (copie de juillet 2025) est un bot
-Matrix sans API HTTP ni v3. **Travaux.** (1) API d'agents (lister, définir, activer, envoyer un message, suivre, interrompre), commandes de l'Atelier ouvertes par capacité (clé hachée, portée,
+**Constat (rapporté, `cible.md` § 5 quinquies).** Aucune API d'agent pour un appelant extérieur à capacité limitée ; aucun canal de communication ; Colaig v3 (lu) apporte un contrat de canal, des adaptateurs Matrix et Telegram et des jetons hachés, mais ni modèle d'agent, ni API REST d'agents, ni classes de commande. **Travaux.** (1) API d'agents (lister, définir, activer, envoyer un message, suivre, interrompre), commandes de l'Atelier ouvertes par capacité (clé hachée, portée,
 rotation, journal, quotas, rappels signés) ; (2) **adaptateur de canal commun** (recevoir et normaliser, politique, route canal → agent, envoi, accusé, dédoublonnage, débit) ;
 (3) adaptateur **Tchap / Matrix** (règles message direct, mention, fil ; IAM par domaine ; pièces jointes ; E2E traité explicitement), **Telegram**, **webhook générique signé** ;
 (4) canal **lié** par la personne (appairage), trois niveaux de confiance, message de canal = entrée à autorité limitée, jamais d'accord ; (5) secrets dans le coffre, isolation par dossier ;
 (6) interface : liaisons de canaux, état, plafonds. **Preuve.** Un message d'un inconnu ne lance rien ; un message de canal ne confirme aucune action ; un webhook non signé ou rejoué est refusé.
-**Effort** L. **Dépend de** lots 1, 2 bis, 3 bis, 3 ter. **À obtenir d'abord** : la v3 locale de Colaig.
+**Effort** L. **Dépend de** lots 1, 2 bis, 3 bis, 3 ter. **Base** : le contrat de canal de Colaig v3 (lu le 11/11, `cible.md` § 5 quinquies.1) ; à trancher d'abord : adaptateurs repris dans une brique `atelier-canaux`, ou Colaig v3 rattaché comme service.
 
 ## 3. Ordre et dépendances
 
