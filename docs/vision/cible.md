@@ -921,6 +921,35 @@ processus partagé, l'appairage, la liste blanche d'expéditeurs, la limite de d
 **Pour l'auto-amélioration** (`auto-amelioration.md`) : ne retenir de la v3 que le refus par défaut, la liste blanche de champs, l'écriture à blanc par défaut et le principe de ne jamais écraser un travail
 manuel ; elle n'apporte ni preuve, ni validation humaine, ni retour arrière.
 
+### 5 quinquies.1 ter Colaig comme modèle d'un agent de l'Atelier *(précisé le 11/11, d'après Nicolas)*
+
+**Colaig est un agent : ce qu'on veut pouvoir configurer pour un agent de l'Atelier.** Son workspace réunit en un seul objet ce que la page Agents doit faire exprimer par
+un agent. Les dimensions de configuration de Colaig se retrouvent dans le cadre de l'Atelier :
+
+| Dimension configurable (Colaig v3) | Équivalent dans l'agent de l'Atelier | État dans l'Atelier |
+|---|---|---|
+| identité, prompt système, ton, langue, niveau d'expertise | `CLAUDE.md` et consignes du **dossier de l'agent** | existe (fichiers) ; pas de gabarit d'agent |
+| *behaviors* déclenchés par des phrases, *skills* | **skills et sous-agents** (`.claude/`) | absents (kit en spec) |
+| `tools_enabled`, `tool_policy` des connecteurs (all / read_only / explicit), domaines, débit | **capacités accordées** et surcharge par connecteur (§ 4.2) | cible |
+| `mcp_connectors` du workspace | connecteurs **sélectionnés** dans le registre (§ 4.2) | partiel (choix par projet) |
+| liaison à des salons et canaux, utilisateurs autorisés | **liaisons de canal** (§ 5 quinquies.3), liste blanche d'identités | cible |
+| tâches planifiées (cron, plafond d'étapes, attente de la personne) | **agent planifié** : horaire, budget, `waiting_for_user` → « À valider » | existe (budget, horaire) |
+| propriétaires, accès public ou privé | propriétaire = la personne ; **visibilité** par capacité | cible |
+| mémoire utilisateur, espace documentaire | mémoire du dossier, wikichat | existe |
+| administration par la conversation (en message direct) | commandes de l'Atelier classées, **validation dans « À valider »** | existe (commandes), à ouvrir aux canaux |
+
+**Ce que cela change dans le cadre.** Un agent de l'Atelier est défini par **un dossier et une configuration versionnée** qui expriment ces neuf dimensions ; la page Agents les rend
+éditables. **Colaig en est le cahier des charges fonctionnel**, pas une dépendance : sa v3 sert de liste de ce qu'on veut pouvoir régler.
+
+**Deux façons de l'avoir dans l'Atelier, qui ne s'excluent pas.**
+1. **Agent externe** : Colaig reste son propre système (pipeline Analyseur → Orchestrateur → Synthétiseur et RAG), et l'Atelier l'appelle comme un agent distant (outil MCP `colaig_ask`,
+   ou son API) avec une **capacité accordée** ; c'est une **troisième famille** dans les couches de profil (§ 1.2), « agent externe » : l'Atelier ne contrôle ni sa session ni son profil, seulement ce
+   qu'il lui envoie et ce qu'il reçoit, **non fiable**. Ses envois vers l'extérieur passent par sa propre configuration, hors du cadre de l'Atelier.
+2. **Agent natif de même forme** : on réexprime la configuration de Colaig comme un agent de l'Atelier (session Claude Code dans un dossier), ses canaux Tchap et Telegram devenant des liaisons de
+   canal de l'Atelier. Dans ce cas la règle « un agent = une session Claude Code » reste entière.
+
+*Recommandation* : commencer par **1** (peu coûteux, utile tout de suite, sans toucher à Colaig), et construire **2** à mesure que l'adaptateur de canal et le schéma d'agent existent.
+
 ### 5 quinquies.2 Un agent utilisable par API
 
 *Existant (lu / rapporté)* : `POST /v1/lancements` (route interne pour wikichat et l'exécuteur) ; commandes `atelier_agent_*` ; l'Atelier comme connecteur MCP
