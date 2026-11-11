@@ -101,6 +101,59 @@ un budget ; l'identité vient d'un en-tête `X-Atelier-Conversation` que l'agent
 6. Il conclut : un hook de fin vérifie ; « fini » veut dire **livré**, sinon « bloqué » ou « échoué » avec motif.
 7. **Journal unique** (acteur, preuve, inverse). La mémoire apprend de la personne, pas des messages d'application.
 
+### 1.4 Tirer parti du natif au maximum, puis un cadre local, puis des services configurables *(précisé le 11/11, d'après Nicolas)*
+
+Trois étages, dans cet ordre, et **chacun s'appuie sur le précédent** :
+
+1. **Le fonctionnement de Claude Code, exploité au maximum.** On ne code dans l'Atelier que ce que le natif ne fait pas.
+2. **Un cadre local wikichat, lui-même bâti sur Claude Code** : ses agents sont des sessions Claude Code (lancements
+   `claude -p`, reprise par identifiant de session, MCP, hooks) ; il ajoute la coordination, la mémoire et la carte des
+   projets, pas une autre mécanique d'agent. *(Lu : les déclencheurs, routines et `spawn_session` de wikichat relancent
+   des sessions Claude Code ; le code de wikichat lui-même est hors de ce dépôt, donc non relu.)*
+3. **Des services de base, avec des configurations par cas** : navigateur, créations, Onyxia, mémoire, gateway… Chacun a
+   une configuration par défaut selon le cas d'usage, et des options pour la resserrer ou l'élargir dans le plafond.
+
+**Inventaire des mécanismes natifs à exploiter** (à confirmer sur la version du CLI du pod avant de s'y appuyer) :
+
+| Mécanisme natif | Ce qu'on en tire | État dans l'Atelier |
+|---|---|---|
+| Réglages **managés** | plafond non contournable, `deny` qui l'emporte | **absent** |
+| `permissions` allow / deny / ask, modes (`dontAsk`, `acceptEdits`…) | profil d'un rôle | calculé à plusieurs endroits ; `dontAsk` remplacé par `default` (lu) |
+| `--permission-prompt-tool` | le pont vers « À valider » | **utilisé** (lu) |
+| `--mcp-config` + `--strict-mcp-config` | exactement les outils du profil | **utilisé** pour l'app ; `.mcp.json` pour VS Code et terminal (rapporté) |
+| `--settings`, `--resume`, `--session-id` | surcharge de session, reprise, miroir | **utilisés** (lu) |
+| `--max-turns` | plafond de tours | utilisé pour les agents déclarés (lu) |
+| `--max-budget-usd` | plafond de coût | **absent** |
+| Hooks `PreToolUse` | garde (`garde_bash`, `garde_navigation`) | **utilisés**, posés dans le fichier utilisateur (modifiable par l'agent) |
+| Hooks `PostToolUse`, `Stop`, `SubagentStop` | masquage, fin qui dit vrai | **absents** |
+| Hook `SessionStart` | contexte de départ réel de l'agent | traces dans `project_context.py` et `assistant.py` ; usage à confirmer |
+| `system/init`, `terminal_reason`, `permission_denials` | preuve de ce que l'agent a reçu, état de fin | `system/init` lu par la cohérence (1 fois par jour) ; les deux autres **non lus** pour l'état |
+| `CLAUDE.md` et imports `@` | consigne et contexte par couches | **utilisés** (socle, projet, contexte généré) |
+| Skills, commandes, sous-agents (`.claude/…`) | savoir-faire à la demande, agents à outils réduits | **absents** (le kit est de la spec) |
+| Plugins (`--plugin-dir`) | un rôle = un paquet de skills, sous-agents, hooks, commandes | **absents** |
+
+**Services de base : configuration par cas.** Un *cas* est un type d'usage ; un *préréglage* donne la configuration par
+défaut de chaque service pour ce cas. **Resserrer est libre ; élargir (jusqu'au plafond de la famille) est
+engageant.** Tableau cible, d'après ce qui existe et ce qui est posé (proposition) :
+
+| Service | A · agent code, projet simple | B · agent code, projet Onyxia | C · Assistant | D · agent planifié (veille) | E · gardien / réparateur | F · agent à communication externe |
+|---|---|---|---|---|---|---|
+| Dossier | projet | projet | dossier de l'Assistant | dossier propre | copie de travail sur branche | dossier propre |
+| wikichat | limité à son projet ; messages vers les autres projets | idem | vue globale, Pilote | ses fils seulement | une note | ses fils seulement |
+| Gateway / outils | profil `code` (10 outils) | profil `code` + mandataire Onyxia du projet | `assistant` + méta-outils | liste fermée déclarée | lecture + gestes fermés | liste fermée + connecteur de communication |
+| Navigateur | oui, un Chrome par conversation | oui | lecture | par octroi | non | par octroi |
+| Créations | brouillon, vérifier, démarrer | idem | délègue (ne crée pas) | non | vérification en lecture | non |
+| Onyxia | non | pod / service / GPU si déclaré ; déploiement engageant | par délégation | par octroi | non | par octroi |
+| Mémoire | fiches du projet | idem | « Ma mémoire » | non | non | non |
+| Garde (hooks, deny) | socle + secrets refusés | idem | socle + secrets refusés | liste blanche, `dontAsk` | périmètre de la branche | liste blanche + contamination |
+| Budget | plafond du projet | idem | par tour | **obligatoire** (tours, par jour, pause), né désactivé | plafonné, branche `gardien/…` | obligatoire + plafond d'envois |
+| Envoi externe | non | non | non | non | non | capacité par (connecteur, verbe, cible), « À valider » |
+
+Un préréglage est **un fichier** (profil de projet, définition d'agent), donc versionné, comparable et testable ;
+l'Atelier le compile vers les mécanismes ci-dessus. *Aujourd'hui (lu)* : seuls les cas A et C existent comme profils
+(`code`, `assistant`) ; B n'est qu'un bloc `deploiement` ; D est une liste d'outils et un budget ; E et F n'ont pas de
+préréglage.
+
 ## 2. Le miroir app / VS Code / terminal
 
 *Principe cible : trois fenêtres sur **une seule session Claude Code**.* Le transcript `.jsonl` du CLI est la seule

@@ -20,7 +20,7 @@ et SSPCloud en sont la frontière extérieure, cadrée. L'auto-évolution n'est 
 cadre limite le suivant par la mécanique**. D'où l'ordre : étanchéité d'abord, définition unique du
 rôle ensuite, signaux vrais, puis séparation brouillon/production, puis consolidation, puis boucle.
 
-### 0 bis. Tout s'emboîte dans Claude Code *(précisé le 11/11, d'après Nicolas)*
+### 0 bis. Tout s'emboîte dans Claude Code (inventaire et préréglages par cas : [`cible.md`](cible.md) § 1.4) *(précisé le 11/11, d'après Nicolas)*
 
 Claude Code est le **substrat** : wikichat s'appuie sur lui, les agents sont ses sessions, la gateway
 est un de ses serveurs MCP, l'Atelier l'habille. Chaque notion de l'Atelier se range sur un
