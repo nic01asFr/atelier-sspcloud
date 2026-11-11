@@ -375,6 +375,64 @@ l'est par ce qu'elle a écrit dans la configuration.
 *Précaution* (rapportée) : les sessions d'Onyxia sont globales, donc un accès général permet de rattacher `proj-<slug>` ailleurs ;
 le mandataire le détecte aujourd'hui sans le réparer.
 
+### 4.4 Les structures Onyxia liables à un projet, pour la partie code *(cadré le 11/11 ; base : `onyxia-projet.md`, `commandes/structure.py`, rapporté pour le reste)*
+
+**Principe.** Un projet lie à Onyxia **par un seul endroit** : le bloc `deploiement` de `.atelier/projet.json` (schéma strict).
+Ce bloc **borne ce qu'Onyxia donne aux agents code du projet** : c'est le mandataire du projet (§ 4.3, niveau « borné »),
+jamais Onyxia en direct. Le lien se déclare par une commande **engageante** (aperçu, jeton, accord de la personne), se retire
+par `retirer: true`, et « Annuler » remet l'état d'avant.
+
+**Ce qu'un projet peut lier (existant, lu).**
+
+| Structure | Déclaration | Sessions Onyxia imposées | Ce que reçoit l'agent code |
+|---|---|---|---|
+| **Pod de développement** | `pod` (+ `namespace`) | `proj-<slug>` (pod CPU) | `exec`, `job_poll`, `read_file`, `write_file`, `list_files`, `session_status`, `project_bind` |
+| **Service** | `service` : chemin d'un `<nom>.service.yml` | `proj-<slug>` | `service_status`, `service_deploy`, `service_stop`, `service_warm`, `service_provision` ; `yaml_path` imposé |
+| **GPU** | `gpu: true` (avec un pod, un service, ou **seul**) | `proj-<slug>-gpu` (pod GPU, nom court au-delà de 23 caractères, D-72) | `gpu_switch` (projet imposé, **sans préemption**), `gpu_release`, `gpu_status` ; les outils d'exécution prennent `cible` (cpu ou gpu) |
+| **Commande et port** | `commande`, `port` | — | annoncés dans les consignes du serveur |
+
+Règles de validité : `pod` **ou** `service`, pas les deux ; sinon `gpu: true` seul ; un champ inconnu, un nom Kubernetes invalide ou
+un port hors 1-65535 sont refusés ; un projet dont le slug dépasse ~32 caractères n'a que son pod GPU.
+
+**Ce que le cadre cible ajoute.**
+
+1. **Un lien nommé par rôle**, pour permettre le **pod de développement et le service publié ensemble** (aujourd'hui : l'un ou
+   l'autre) : deux entrées nommées dans le bloc (`dev`, `publie`), chacune avec sa session imposée ; le GPU reste un attribut.
+2. **Un seul propriétaire de la commande de démarrage** : `artefact.json` pour un artefact local, `deploiement` pour Onyxia ; un
+   champ `cible: local | pod | service` dit lequel s'applique (aujourd'hui, deux champs `commande` coexistent).
+3. **Un cycle de vie classé**, chaque étape ayant sa classe de commande :
+
+   | Étape | Outils | Classe cible |
+   |---|---|---|
+   | déclarer, lier | `atelier_projet_deployer_declarer`, `project_bind` | engageante (existe) |
+   | lire l'état | `session_status`, `service_status`, `gpu_status`, `list_files`, `read_file`, `job_poll` | lecture |
+   | travailler dans le pod | `exec`, `write_file` | réversible, **borné au pod** |
+   | réchauffer, libérer | `service_warm`, `gpu_release` | réversible |
+   | démarrer ce qui engage le quota | `project_start`, `service_deploy`, `service_provision`, `gpu_switch` | **engageante** |
+   | arrêter, désinstaller | `service_stop`, `session_stop(uninstall)` | engageante / **réservée** pour la désinstallation |
+   | exposer au public | `expose_public`, `unexpose_public` | **réservée** (existe) |
+
+4. **Un geste de déploiement enchaîné** : `atelier_projet_deployer_lancer` fait `service_scaffold` → `service_provision` →
+   `service_deploy` après **un seul** accord ; le gabarit `ml-gpu` pose le squelette de `<nom>.service.yml` et le bloc
+   `deploiement` à la création.
+5. **GPU** : l'agent code **ne préempte pas** le GPU d'un autre projet ; pour obtenir un GPU occupé, une demande dans « À valider »
+   (ou une file ou un bail : décision), jamais une préemption silencieuse ; chaque acquisition et libération est journalisée.
+6. **Le droit du pod n'est pas la borne** : `exec` donne un shell dans le pod, avec ce que son compte de service peut faire
+   (Kubernetes, S3). Cible : droits du compte de service **réduits au projet**, secrets par le coffre (§ 5 ter), jamais en dur.
+7. **Les fichiers** : `push_repo` et `pull_artifact` (refusés au profil code) pourraient s'ouvrir **bornés au dossier du projet**.
+8. **L'identité** : le mandataire du projet s'appuie sur l'**identité signée** de la conversation (lot 1), plus sur la clé
+   propriétaire, qui ouvre aujourd'hui les deux portes (`/mcp` et `/mcp/onyxia`).
+9. **Les sessions d'Onyxia étant globales**, le mandataire **répare** une session détachée au lieu de seulement la refuser ;
+   préfixe de session propre à l'Atelier (aujourd'hui `proj-<slug>` ; le pod de l'Atelier utilise déjà `proj-claude-code`).
+10. **L'état visible** : la carte du projet montre le pod (actif ou non), le service, le slot GPU et leurs coûts, lus par les
+    outils de lecture ; chaque appel du mandataire laisse une ligne au journal.
+
+**À trancher** (reprend les points ouverts de `onyxia-projet.md` § 7) : (a) le pod et le service ensemble, avec deux entrées
+nommées ? (b) préemption du GPU : demande dans « À valider », file, ou bail ? (c) ouvrir `push_repo` et `pull_artifact` bornés au
+dossier ? (d) deux outils dédiés pour démarrer et arrêter `deploiement.commande` en tâche de fond (aujourd'hui par `exec`) ?
+(e) préfixe de session propre à l'Atelier ? (f) l'Assistant garde-t-il `project_start`, `service_deploy` et la désinstallation en
+accès libre, ou en engageante ? *(recommandation : engageante)* (g) droits du compte de service du pod : qui les réduit, et comment ?
+
 ## 5. Capacités externes des agents de l'Atelier, et services de communication
 
 *Aujourd'hui (lu)* : aucune intégration de communication externe (ni Tchap/Matrix, ni mail, ni Mattermost, ni

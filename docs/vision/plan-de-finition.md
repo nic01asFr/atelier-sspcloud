@@ -335,7 +335,7 @@ outil amont réservé en dur est `expose_public`) ; `approval` / `elicit` valida
 (classe, arguments imposés cachés, schéma réduit, titre et description français) ; (3) classer tout outil amont
 (table › annotations › regex), **défaut engageante** ; (4) moule de mandataire borné générique ; (5) journal et
 plafonds des appels amont ; (6) appliquer ce que les compositions stockent déjà, et interdire au modèle de valider
-`approval` / `elicit` ; (7) corriger les classes : `atelier_montrer` en réversible, outils Onyxia classés ; (8) **Onyxia à trois niveaux** (`cible.md` § 4.3) : borné par projet par défaut, général cadré pour l'Assistant, accès général configuré explicitement par la personne (octroi daté, révocable, mêmes arguments imposés, classes et journal).
+`approval` / `elicit` ; (7) corriger les classes : `atelier_montrer` en réversible, outils Onyxia classés ; (8) **Onyxia à trois niveaux** (`cible.md` § 4.3) : borné par projet par défaut, général cadré pour l'Assistant, accès général configuré explicitement par la personne (octroi daté, révocable, mêmes arguments imposés, classes et journal) ; (9) **liens Onyxia d'un projet** (`cible.md` § 4.4) : pod de développement et service publié ensemble, un seul propriétaire de la commande, cycle de vie classé, `deployer_lancer`, GPU sans préemption silencieuse, mandataire adossé à l'identité signée.
 **Preuve.** Un connecteur déclaré une fois apparaît dans tous les profils autorisés, jamais dans les autres ; un outil
 inconnu est engageant ; le modèle ne valide pas une approbation. **Effort** L. **Dépend de** lot 3.
 
