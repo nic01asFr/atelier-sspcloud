@@ -288,6 +288,52 @@ scénarios rejoués) peuvent commencer dès que le lot 4 fournit des états vrai
 promotion, voie automatique) exigent les lots 1 à 3 : une boucle qui agit avec un agent capable de se
 faire passer pour la personne n'est pas un cadre.
 
+## 2 bis. Lots ajoutés par la cible ([`cible.md`](cible.md))
+
+### Lot 1 bis · Le miroir app / VS Code / terminal : un seul écrivain *(avec le lot 1)*
+
+**Principe.** Un agent est un dossier + une session Claude Code (`cible.md` § 1.0) ; l'app, VS Code et le terminal
+sont trois fenêtres sur la même session. Le transcript `.jsonl` du CLI est la seule vérité.
+**Constat (rapporté, `fichier:ligne` dans `cible.md` § 2.3).** Aucun verrou entre surfaces (le verrou des tours est
+un `threading.Lock` du seul processus de l'Atelier) ; le processus de l'app gardé 10 min ignore les écritures de
+VS Code ; la synchro du home copie par date, fichier entier ; la marque `sdk-cli` n'est corrigée qu'au passage de
+main ; `absorber_le_cli` écrit la fiche sans verrou ; deux chemins de configuration MCP ; l'identité est un
+en-tête auto-déclaré.
+**Travaux.** (1) verrou de conversation `verrous/<cli_id>.lock` (pid, surface, horodatage), pris à l'envoi, au
+passage de main et par l'enveloppeur, péremption par `/proc/<pid>` ; (2) taille / mtime du transcript dans
+l'empreinte du processus gardé ; (3) plus de copie par date pour `projects/` ; (4) `cli` posé à la naissance ;
+(5) fiche versionnée ou verrouillée ; (6) un seul fichier de configuration effectif lu par les trois surfaces,
+égalité testée à chaque ouverture ; (7) consigne d'ouverture supprimée après succès ; (8) `atelier-entetes-mcp`
+devient le `headersHelper` de l'identité signée (renouvellement à chaque connexion).
+**Preuve.** Tests : deux écrivains sur un même `.jsonl` ; un tour de l'app après un message VS Code avec processus
+gardé ; une consigne d'ouverture qui échoue. **Retour.** Verrou désactivable par réglage. **Effort** M-L.
+
+### Lot 3 bis · Gateway : un registre, une surcharge par connecteur, des classes pour tout outil
+
+**Constat (rapporté).** Trois sources de connecteurs (catalogue YAML vide, registre SQLite, `mcp_registry.py`) plus le
+choix par projet ; une « variante » ne fait que figer des valeurs ; la classe ne couvre que les `atelier_*` (le seul
+outil amont réservé en dur est `expose_public`) ; `approval` / `elicit` validables par le modèle ; `timeout_seconds`,
+`wait_until`, `ttl_seconds`, `allowed_roles` stockés sans être appliqués ; un seul mandataire borné (Onyxia).
+**Travaux.** (1) registre unique déclaratif, le projet n'en est qu'une sélection ; (2) *overlay* par connecteur
+(classe, arguments imposés cachés, schéma réduit, titre et description français) ; (3) classer tout outil amont
+(table › annotations › regex), **défaut engageante** ; (4) moule de mandataire borné générique ; (5) journal et
+plafonds des appels amont ; (6) appliquer ce que les compositions stockent déjà, et interdire au modèle de valider
+`approval` / `elicit` ; (7) corriger les classes : `atelier_montrer` en réversible, outils Onyxia classés.
+**Preuve.** Un connecteur déclaré une fois apparaît dans tous les profils autorisés, jamais dans les autres ; un outil
+inconnu est engageant ; le modèle ne valide pas une approbation. **Effort** L. **Dépend de** lot 3.
+
+### Lot 3 ter · Communication externe (Tchap et autres), après les lots 1 et 3
+
+**Précondition.** Identité signée (lot 1) et mandataire générique (lot 3 bis) : sans eux, le secret reste dans
+l'environnement de l'agent et le filtre ne protège rien.
+**Travaux.** (1) connecteur déclaré dans le registre, capacité par *(connecteur, verbe, cible)* ; (2) tout envoi
+engageant : aperçu, filtre de secrets, « À valider », plafonds, journal ; (3) lecture = donnée non fiable, enveloppée ;
+(4) **contamination** : après lecture de contenu externe, pas d'action engageante dans le même tour sans nouvelle
+confirmation ; (5) entrant : un message externe écrit dans « À valider » ou les événements, il ne lance jamais un agent
+directement ; (6) v1 : envoi par un agent planifié sans personne = attente dans « À valider » ou interdit.
+**À vérifier d'abord** : serveur Matrix de Tchap, compte bot, chiffrement de bout en bout, hébergement du serveur MCP.
+**Effort** L.
+
 ## 3. Ordre et dépendances
 
 ```
