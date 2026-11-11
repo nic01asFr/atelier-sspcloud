@@ -138,7 +138,7 @@ engageant.** Tableau cible, d'après ce qui existe et ce qui est posé (proposit
 
 | Service | A · agent code, projet simple | B · agent code, projet Onyxia | C · Assistant | D · agent planifié (veille) | E · gardien / réparateur | F · agent à communication externe |
 |---|---|---|---|---|---|---|
-| Dossier | projet | projet | dossier de l'Assistant | dossier propre | copie de travail sur branche | dossier propre |
+| Dossier | projet | projet | `wikichat-memory/assistant/sessions/<id>/` | dossier propre | copie de travail sur branche | dossier propre |
 | wikichat | limité à son projet ; messages vers les autres projets | idem | vue globale, Pilote | ses fils seulement | une note | ses fils seulement |
 | Gateway / outils | profil `code` (10 outils) | profil `code` + mandataire Onyxia du projet | `assistant` + méta-outils | liste fermée déclarée | lecture + gestes fermés | liste fermée + connecteur de communication |
 | Navigateur | oui, un Chrome par conversation | oui | lecture | par octroi | non | par octroi |
@@ -153,6 +153,49 @@ Un préréglage est **un fichier** (profil de projet, définition d'agent), donc
 l'Atelier le compile vers les mécanismes ci-dessus. *Aujourd'hui (lu)* : seuls les cas A et C existent comme profils
 (`code`, `assistant`) ; B n'est qu'un bloc `deploiement` ; D est une liste d'outils et un budget ; E et F n'ont pas de
 préréglage.
+
+### 1.5 wikichat : identité par session, espace par dossier, lien local *(précisé le 11/11, d'après Nicolas)*
+
+wikichat est un **service local** bâti sur le fonctionnement de Claude Code. Il relie l'ensemble comme support cohérent
+de l'Atelier : mémoire de la personne et plateforme globale.
+
+- **Chaque session Claude Code, comme agent, a une identité wikichat.** *Lu* : le harnais pose `WIKICHAT_AGENT`
+  (`harness.py:706`), et l'Atelier passe aussi `WIKICHAT_PROJET` et `WIKICHAT_PROFIL` (rapporté). Cette identité est la clé
+  par laquelle wikichat sait qui parle, de quel projet, avec quel profil.
+- **wikichat est disponible par défaut pour tous les agents d'un espace, d'un dossier, d'un projet** (par la
+  configuration MCP du dossier). **Chaque session peut être particulière dans le cadre que permet la configuration de son
+  dossier** : même mécanique de couches que le profil (§ 1.2), pas une exception.
+- **Les assistants vivent dans le dossier wikichat.** *Lu* : le dossier de l'Assistant est `~/work/wikichat-memory`
+  (`assistant.py:8`) ; chaque conversation a son dossier de travail `assistant/sessions/<id>/` ; Claude Code lit les
+  `CLAUDE.md` du dossier **et de ses parents**, donc le `CLAUDE.md` de la racine vaut pour toutes les conversations, dans
+  l'Atelier, VS Code et le terminal. L'accès à la mémoire wikichat est ainsi **par défaut, par le seul fonctionnement de
+  Claude Code**. Le contexte passe par des imports `@` (relus après compaction, sans la coupe à 10 000 caractères du
+  contexte d'un hook) ; le hook de wikichat ne porte que le delta.
+- **Les projets code sont des dossiers au niveau wikichat.** *Lu* : « un projet de l'Atelier et un projet wikichat sont la
+  même chose : un dossier de travail, ses agents, sa mémoire » (`wikichat_projects.py`) ; l'Atelier déclare chaque projet à
+  wikichat (`declare_project`), silencieusement si wikichat est absent. Le `.wikichat/` du dossier est l'état du
+  coordinateur, dérivé, jamais une source.
+- **wikichat fait le lien** par les `.wikichat` et par les capacités et supports qu'il propose à ses clients locaux : un
+  agent d'un projet joint les agents d'un autre, retrouve la mémoire de la personne, voit la carte de la plateforme
+  selon son profil.
+- **Onyxia.** Le service permet d'accéder au code de l'Atelier, qui tourne lui aussi sur Onyxia. Les outils MCP Onyxia,
+  définis par défaut, sont donc **configurés pour cadrer ce fonctionnement dans Onyxia**, et les capacités Onyxia suivent
+  le même mécanisme que tout le reste : le préréglage du cas (§ 1.4), le mandataire borné du projet (§ 4), l'octroi pour
+  un agent de l'Atelier.
+- **Des indications contextuelles, finement appropriées au cas.** L'Atelier fournit à chaque agent un contexte
+  d'ensemble par couches : `.atelier/contexte.md` généré à chaque tour pour un projet (lu), la carte et « À valider » pour
+  l'Assistant (lu, `assistant.py`). Cible : la même couche pour tous, choisie par le préréglage du cas, et **auto-
+  apprenante** : ces fichiers de contexte et de consigne sont ce que la boucle d'amélioration ajuste, éprouve et promeut
+  ([`auto-amelioration.md`](auto-amelioration.md)), nourrie par « Ma mémoire ». L'apprentissage n'est donc pas un
+  mécanisme à part : ce sont des fichiers versionnés, comme le reste.
+
+**Ce que cela impose.**
+- L'identité wikichat étant posée par une variable d'environnement, **un agent pourrait la changer**. Cible : elle est
+  **dérivée de l'identité signée** (§ 1.2) par le pont qui relie l'agent à wikichat, et non déclarée par l'agent
+  (*déduit* ; le pont stdio qui identifie les agents est décrit dans `wikichat_mcp.py`, non relu en détail).
+- *À vérifier avant de s'y appuyer* : la routine de nuit de wikichat et son filtre de profil (hors de ce dépôt), la
+  persistance du store après redémarrage (D-53, trois documents se contredisent), et que `WIKICHAT_PROJET` /
+  `WIKICHAT_PROFIL` sont bien posés sur toutes les surfaces (app, VS Code, terminal).
 
 ## 2. Le miroir app / VS Code / terminal
 
