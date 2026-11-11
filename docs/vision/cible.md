@@ -1099,6 +1099,51 @@ deviennent des fichiers du dossier de la conversation (audio : transcrit par le 
 
 **Variantes du même cadre** : un agent d'**accueil** (questions sur un corpus), un **assistant personnel** lié à la seule personne, un **agent d'équipe** dans un salon, un **agent de veille qui écrit dans un salon** (envoi engageant sur liste blanche).
 
+### 5 sexies.2 bis Ce que Colaig fait mieux qu'une session brute, et comment le reproduire par le natif *(lu en profondeur le 11/11 ; rapporté)*
+
+Le tour de Colaig : message → (audio : transcription) → résolution du workspace (message direct : espace personnel ; salon non lié : mode limité) → *si une tâche attend la personne, sa réponse est
+injectée dans la tâche* → historique sémantique, **trame vivante** (phase du dialogue et ancres), mémoire utilisateur → « Analyse… » → boucle d'outils (5 itérations au plus, dernier tour sans outil) →
+« Rédaction… » → réponse sourcée, **citations vérifiées**, secrets masqués → envoi → trame, historique et extraction de mémoire mis à jour.
+
+| Ce que Colaig fait finement | Reproduction native dans l'Atelier |
+|---|---|
+| **retour d'état au fil de l'eau**, formaté par canal (statut, « écrit… », longueur et format du canal) | accusé immédiat par l'adaptateur ; hook `PreToolUse` qui poste « je consulte X » ; consigne de format du canal dans le `CLAUDE.md` de la liaison |
+| **réponse sourcée vérifiée** : citations `[fichier]`, audit des citations inexistantes, note « aucun document pertinent, connaissances générales » | skill « réponse sourcée » + hook `Stop` qui vérifie que chaque citation correspond à un fichier lu |
+| documents = **données non fiables** (délimiteurs), secrets masqués en sortie | règle du `CLAUDE.md` + hook de sortie (`PostToolUse` / filtre) |
+| **temps et rythme** : « il y a 5 min », concision selon l'heure | hook `UserPromptSubmit` qui injecte date et heure |
+| **trame vivante** : phase du dialogue et ancres (document, décision, contrainte) pour ne pas re-chercher | un fichier `fil.md` du dossier de la conversation, réécrit en fin de tour, relu au début |
+| **mémoire utilisateur en trois rythmes** : lecture avant, extraction après, consolidation périodique (500 faits au plus) | `memoire/` du dossier ; **sous-agent de consolidation planifié** ; l'agent propose, la personne valide |
+| **chargement paresseux des skills** (3 ou 5 au plus, économie annoncée ~6 000 jetons par requête) | **natif** : les descriptions de skills de Claude Code |
+| **filtrage des outils** par intention, phase et droits avant le modèle | permissions et `allowedTools` par skill ; gateway filtrée par capacités |
+| **tâches longues** : plan persistant, sous-agents par étape, `pause_and_ask_user`, heartbeat, désactivation après 3 échecs, livraison par canal ou document | sous-agents + tâches planifiées + dossier de session ; la pause devient une carte « À valider » |
+| **réponse à une tâche en attente** injectée dans la tâche | la session reprend par identifiant ; la réponse de la personne liée est l'entrée de la reprise |
+| dégradation gracieuse à chaque étape | principe : répondre quand même, en signalant ce qui manque |
+
+**Ce qui ne se transpose pas** : les trois rôles et trois modèles du pipeline, le JSON d'intention, les embeddings FAISS pour behaviors, skills et historique, les objets de transport entre agents
+(`ContextCard`, `PreExecutionCard`), la sélection par similarité cosinus. La session Claude Code est déjà la boucle : **on garde les effets (état, sources, plafonds), pas la mécanique**.
+
+**Les leçons de Colaig (ce qui n'a pas abouti, à ne pas répéter).** Le flux de réponse et l'exécuteur non bloquant sont conçus mais **non branchés** : le tour reste synchrone, un message long bloque l'attente ;
+le type « clarification » est défini sans mécanique ; le **quota atteint** n'est pas dit à la personne (message d'erreur générique) ; **pas d'oubli ni de purge** (RGPD : suppression manuelle de fichiers), pas de
+commande « oublie ceci » ; **seul l'audio** est traité comme pièce jointe ; le garde « ignorer les tours en trop » a dû être ajouté pour tenir le budget d'itérations ; pas de budget de contexte mesuré en jetons ;
+les tâches ne reprennent que par identifiant d'utilisateur.
+
+**Garanties de conversation à exiger d'un agent conversationnel de l'Atelier.**
+
+1. **Accusé immédiat** (moins de 2 s), distinct de la réponse ; un message par étape longue ; « écrit… » tant que le tour dure.
+2. **Reformuler en une phrase** ce qui a été compris si la demande est ambiguë, et poser **une** question de clarification plutôt que deviner.
+3. **Sources** : toute affirmation tirée d'un fichier le cite ; une citation inexistante est interdite (hook) ; si rien n'est trouvé, le dire et distinguer les connaissances générales.
+4. **Confirmation avant toute action qui engage** (écriture, envoi, tâche récurrente) : carte « À valider » ; en tâche de fond, pause et question explicite avec reprise tracée.
+5. **Fil** : état persistant par conversation (phase, décisions, documents établis), pour ne pas re-chercher ni répéter ; réponse à un message d'un fil = lien explicite.
+6. **Ton et langue** : français par défaut, adaptés au canal (longueur, tableaux, format) et à l'heure ; identité et ton déclarés dans le dossier.
+7. **Mémoire explicite** : dire ce qui est retenu (« je retiens que… »), pouvoir **lister, corriger, oublier à la demande** ; rétention annoncée (ce que Colaig ne fait pas).
+8. **Limites annoncées** : plafond d'étapes, quota restant, temps estimé ; « quota atteint » lisible, jamais une erreur générique ; échec d'une tâche notifié avec sa cause courte, désactivation après N échecs.
+9. **Liaison explicite** : message direct = espace personnel ; salon = lié par la personne ; salon public = mode limité ; droits accordés listés ; seul le propriétaire reprend ou valide une tâche.
+10. **Données non fiables et secrets** : documents et pièces jointes sont des données ; secrets masqués en sortie ; audio transcrit avec mention de la transcription.
+11. **Dégradation gracieuse** : mémoire ou index indisponibles, répondre quand même en le signalant.
+
+*Contrainte héritée des principes de Colaig* : **souveraineté** (modèle uniquement souverain) et **aucune base propre** (tout est fichiers). Dans l'Atelier, le modèle passe déjà par le relais vers le point d'accès de SSPCloud ;
+un agent destiné à l'administration doit le garantir **par configuration d'agent** (modèle imposé), et tout reste fichiers dans le dossier.
+
 ### 5 sexies.3 À trancher
 
 1. **Une session par conversation ou par utilisateur** ? (coût, mémoire, isolation d'un salon à plusieurs.)

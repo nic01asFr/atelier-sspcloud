@@ -392,7 +392,7 @@ rotation, journal, quotas, rappels signés) ; (2) **adaptateur de canal commun**
 n'ont pas de contrôle de droit. **Travaux.** (1) un **schéma d'agent** versionné (`agent.yaml` + dossier) commun à tous les types, avec le **type** (planifié, gardien, réparateur, délégué, service par API,
 conversationnel multicanal, externe) ; (2) le **gabarit d'agent conversationnel** : `CLAUDE.md`, `.claude/skills/`, `.mcp.json`, `canaux.yaml`, `connaissance/`, `memoire/`, `taches/` ; (3) une **session par conversation**,
 reprise par identifiant, avec verrou (lot 1 bis) ; (4) la liaison (canal, conversation) → (agent, session), les trois niveaux de confiance, les quotas ; (5) modification de l'agent **versionnée, journalisée, validée
-dans l'interface** ; (6) la page Agents rend ces dimensions éditables ; (7) le type **externe** (Colaig appelé par capacité). **Preuve.** Un agent est recréable à l'identique depuis son dossier ; un message d'un canal ne modifie
+dans l'interface** ; (6) la page Agents rend ces dimensions éditables ; (7) le type **externe** (Colaig appelé par capacité) ; (8) les **onze garanties de conversation** (`cible.md` § 5 sexies.2 bis) en hooks et skills : accusé immédiat, citations vérifiées par un hook de fin, `fil.md`, mémoire consultable et oubliable, quota lisible, dégradation gracieuse. **Preuve.** Un agent est recréable à l'identique depuis son dossier ; un message d'un canal ne modifie
 jamais son profil ; chaque entrée (API, MCP, canal) passe par le même contrôle de droit. **Effort** L. **Dépend de** lots 1, 3, 3 sexies.
 
 ## 3. Ordre et dépendances
