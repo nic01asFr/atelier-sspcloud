@@ -334,6 +334,22 @@ directement ; (6) v1 : envoi par un agent planifié sans personne = attente dans
 **À vérifier d'abord** : serveur Matrix de Tchap, compte bot, chiffrement de bout en bout, hébergement du serveur MCP.
 **Effort** L.
 
+### Lot 3 quater · Intégration GitHub : un projet, un dépôt, une identité par famille
+
+**Constat (rapporté, `cible.md` § 5 bis).** Un PAT unique et global par pod, lisible par tout agent avec Bash ; un agent code
+pousse où il veut ; aucune PR ni CI dans l'interface ; fusion locale jamais poussée ; connecteur GitHub MCP hérité par 8
+projets sur 16.
+**Travaux.** (1) un projet = un `origin` privé, lié à la création, marqué dans `projet.json` ; (2) identité GitHub par
+famille (GitHub App pour les agents de l'Atelier, pas de jeton propre pour les agents code, jeton de la personne pour ses
+gestes) ; (3) le secret hors de portée des agents (avec le lot 1) ; (4) classes de commande : clone et statut en lecture,
+commit et push `agent/*` et PR en réversible, push inconnu, fusion et création de dépôt en engageante, étiquette `prod/…`,
+bascule et suppression en réservée ; (5) la PR comme support de « À valider », la CI lue comme preuve au journal ;
+(6) commits d'agent distinguables (trailer) ; (7) l'interface montre branche, retard, PR, CI, version en production ;
+(8) retirer le connecteur GitHub MCP de l'héritage par défaut. **Preuve.** Un agent ne peut ni lire le jeton ni pousser sur
+`main` ; une PR de gardien apparaît dans « À valider » avec sa CI. **Retour.** Le PAT actuel reste utilisable derrière un
+réglage. **Effort** L. **Dépend de** lots 1 et 3 ; recoupe le lot 5 (brouillon / production).
+**À vérifier d'abord** : si une GitHub App est installable sur SSPCloud, où héberger sa clé, si GitHub peut appeler le pod.
+
 ## 3. Ordre et dépendances
 
 ```

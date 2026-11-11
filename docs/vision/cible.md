@@ -398,12 +398,95 @@ plafonds: {envois_par_jour: 20, par_salon: 5/h, taille_max}
 lit pas les salons chiffrés sans gestion de clés) et l'hébergement du serveur MCP Matrix ne sont pas vérifiables
 depuis ce dépôt.
 
+## 5 bis. GitHub et les projets *(étudié le 11/11 ; tout est *rapporté* par un lecteur, `fichier:ligne` à rouvrir avant correction)*
+
+### 5 bis.1 Ce qui existe
+
+```
+ Chart / secret Helm (git.token) ──► pod ──► ~/work/.secrets/github_token   (0600, UN seul PAT par pod)
+                                                       │  lu à chaque usage par :
+        ├─ l'Atelier : GIT_ASKPASS (git_repos.py:549-575), API github.com (github_compte._get)
+        ├─ un credential helper GLOBAL github.com/https (git_repos.py:577-603) : tout `git push/clone`
+        │   d'un agent code, du terminal, de VS Code
+        ├─ les gardiens G1 : `gh api`, sinon l'API avec le même fichier (commun.py:374-398)
+        └─ les connecteurs MCP qui ont reçu le secret (renouvelé à la reconnexion, api.py:947)
+ Agents : la variable ATELIER_GITHUB_TOKEN est retirée de leur environnement (harness.py:655, commit d61c7b1) ;
+          le fichier reste lisible par tout processus du pod.
+```
+
+| Geste | Qui le fait aujourd'hui |
+|---|---|
+| Cloner | la personne (Réglages › « Ouvrir comme projet »), l'Assistant (`atelier_projet_depuis_github`, réversible), un agent code (`git clone` via le helper) |
+| Créer un projet | `git init -b main` + un premier commit, **sans remote** ; un projet cloné garde `origin` sans secret |
+| Commiter | l'Atelier (`add -A`, `--no-verify`) et les agents |
+| Pousser | un agent code **pousse où il veut** avec le PAT (aucun garde-fou trouvé hors copies sur branche) ; la personne publie (`atelier_projet_publier`, réservée, dépôt privé par défaut, refuse un secret dans l'historique) |
+| Ouvrir une PR, fusionner côté GitHub | **personne** : aucune route, aucune commande, rien dans l'interface |
+| Fusion locale | `atelier_reparation_fusionner` : `git merge --no-ff` dans la base locale, **jamais poussée**, réservée à la personne |
+| Agents lancés sur branche | copie `git worktree` ; branches `agent/` et `gardien/` ; crochets `reference-transaction` et `pre-push`, `pushInsteadOf` ; base vérifiée en fin de tour ; proposition déposée dans « À valider » (le code se dit « une garde, pas une prison ») |
+| CI | seul le gardien G1 lit les runs de `main` (un dépôt listé à la main) ; ni statut de CI, ni PR, ni branche distante dans l'interface |
+
+### 5 bis.2 Les trous
+
+1. **Un PAT unique et global par pod** ; un jeton classique est accepté avec un simple avertissement (`github_compte.py:178`) ; la portée n'est pas vérifiée.
+2. **Tout agent avec Bash lit le fichier** (`cat ~/work/.secrets/github_token`) : retirer la variable ne retire que la copie périmée. D-54 et D-55 (sudo) restent ouverts.
+3. **Push hors périmètre** : hors copie sur branche, rien n'empêche de pousser sur `main` ou sur un dépôt tiers où le jeton a le droit d'écrire, car le helper répond pour tout `github.com`.
+4. **Divergence copie / dépôt** : pas de `fetch` ni de `pull`, `add -A` et `--no-verify`, et la fusion locale n'est jamais poussée : une perte du volume perd les fusions non publiées (déduit).
+5. **Ni PR ni CI dans l'interface** ; l'état d'un dépôt se réduit à branche, commits en attente, remote.
+6. **Le connecteur GitHub MCP** est un second canal hors des gardes git, hérité par 8 projets sur 16 (D-08).
+7. **Les gardiens** utilisent `gh api` d'abord : une seconde identité non gérée (déduit).
+8. **Les commits d'agent** ne se distinguent pas (identité de la personne ou `atelier@localhost` ; un trailer `Agent:` est évoqué en doc, non vérifié).
+9. **Documenté, non codé** : crochets pre-commit / pre-push de secrets « de chaque projet », pousser sur `agent/*`, `pull` d'un dépôt ouvert, étiquettes `prod/<nom>/<n>`, bloc `github` de `projet.json`.
+
+### 5 bis.3 La cible
+
+- **Un projet = un dépôt = un `origin` GitHub privé**, créé ou lié à la création du projet, marqué dans
+  `.atelier/projet.json` avec sa branche de base. La vérité de ce qui est fusionné est **sur GitHub**.
+- **Une identité GitHub par famille**, jamais un PAT global lisible par tous :
+  - *agents de l'Atelier* : **GitHub App** installée sur les dépôts choisis, jetons d'installation d'une heure obtenus
+    par le serveur de l'Atelier, jamais par l'agent ; droits minimaux (Contents en écriture limité aux branches
+    `agent/*` et `gardien/*` par règle de protection, Pull requests en écriture, Checks et Actions en lecture) ;
+  - *agents code* : **pas de jeton propre** ; ils commitent, et c'est l'Atelier (ou un mandataire local limité à la
+    branche de la conversation signée) qui pousse ; à défaut, un jeton fine-grained par dépôt ;
+  - *la personne* : son propre jeton, pour les seuls gestes qu'elle fait seule.
+- **Le secret n'est pas lisible par l'agent** (propriétaire distinct ou service local, plus de `sudo`, environnement en
+  liste blanche) ; `git` passe par un proxy ou un helper qui vérifie la branche de l'identité signée.
+- **Des branches protégées côté GitHub** : même si un agent contourne les crochets, GitHub refuse le push sur `main`.
+- **Classes de commande** :
+
+| Geste | Classe |
+|---|---|
+| clone, fetch, statut de dépôt, lecture de PR et de CI | lecture |
+| commit sur la branche de la conversation, push `agent/*`, ouverture et commentaire de PR | réversible |
+| push d'une branche inconnue, fusion d'une PR en `main`, création de dépôt | **engageante** (la personne valide) |
+| étiquette `prod/<nom>/<n>`, bascule de production, suppression de branche ou de dépôt, rotation du jeton | **réservée** |
+
+- **La PR est le support de « À valider »** : la carte reprend l'avant / après actuel, pointe vers la PR et sa CI ;
+  fusionner, c'est fusionner la PR (par la personne), plus un `git merge` local.
+- **La CI est une preuve au journal** : le statut de checks du commit proposé est lu et inscrit avec la commande ;
+  G1 s'étend à toutes les branches de proposition et aux PR.
+- **Lien avec la promotion** : l'étiquette `prod/<nom>/<n>` se crée sur le commit de `main` après PR verte et accord
+  de la personne ; la production se reconstruit depuis GitHub.
+- **Interface** : par projet, branche, retard et avance, PR ouvertes, dernier run de CI, version en production.
+- **Les commits d'agent se distinguent** : trailer `Agent:` / `Conversation:` (prévu dans `structure-projet.md`) ou compte bot.
+- **Le connecteur GitHub MCP** quitte l'héritage par défaut dès que les commandes natives le remplacent (D-08).
+
+### 5 bis.4 À trancher
+
+1. **GitHub App ou jeton fine-grained par dépôt ?** Contraintes SSPCloud à vérifier : héberger la clé privée de l'App
+   hors de portée des agents, et savoir si GitHub peut appeler le pod (webhooks) ou seulement l'inverse.
+2. Les agents code **poussent-ils eux-mêmes** (sur leur branche), ou l'Atelier pousse-t-il à leur place ?
+3. Le jeton de la personne reste-t-il sur le pod ? Si oui, comment le rendre illisible aux agents ?
+4. L'Atelier **impose-t-il** la protection de branche à la liaison, ou la recommande-t-il seulement ?
+5. Fusion : PR GitHub seulement, ou aussi la fusion locale pour les projets sans remote ?
+6. Le dépôt GitHub est-il **obligatoire** à la création d'un projet, ou garde-t-on `git init` local avec publication différée ?
+7. Source de vérité de la production : l'étiquette poussée ou le worktree local ?
+
 ## 6. Ce que cela change pour le plan
 
 Le plan de finition garde son ordre (identité → garde → rôle unique → états vrais → brouillon/production) et reçoit
 trois lots de plus, décrits dans [`plan-de-finition.md`](plan-de-finition.md) § 2 bis : **lot 1 bis** (verrou de
 conversation et miroir), **lot 3 bis** (registre unique et surcharge par connecteur, classes des outils amont),
-**lot 3 ter** (communication externe, après les lots 1 et 3).
+**lot 3 ter** (communication externe, après les lots 1 et 3) et **lot 3 quater** (intégration GitHub, § 5 bis).
 
 ## 7. Décisions à prendre
 
