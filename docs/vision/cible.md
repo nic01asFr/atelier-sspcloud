@@ -845,12 +845,100 @@ ce qui exclut la plupart des services de téléphonie ; une voix de synthèse pa
 9. Téléphonie : fournisseur hébergé en France, ou rester sur le texte et le vocal différé ?
 10. Ajouter le service voix aux écoutes déclarées des gardiens.
 
+## 5 quinquies. Agents utilisables par API de l'extérieur, et canaux de communication (Tchap, Telegram…) *(étudié le 11/11 ; *rapporté*)*
+
+**But (Nicolas).** Pouvoir **définir** les agents et **s'en servir en API depuis l'extérieur**, les **brancher dans Tchap** (structure inspirée de Colaig) et
+dans d'autres services de communication **sur standard** (Telegram, etc.), pour en disposer depuis ces canaux.
+
+### 5 quinquies.1 Ce que Colaig apporte, et ne contient pas
+
+*Lu* (dépôt `nic01asFr/Colaig`, **un seul commit du 27/07/2025**, « POC / WIP, pas destiné à la production » ; fork de `tchap_bot`) : **aucune trace d'un « colaig v3 »** ;
+c'est la v0.2 d'un bot Matrix. **À ce jour je n'ai pas vu la v3 locale** : si elle vit sur votre machine, elle est à me montrer.
+
+| Colaig contient | Colaig ne contient pas |
+|---|---|
+| un **bot Matrix/Tchap** (`matrix-nio`, E2E, session chiffrée) ; une séquence réception → commande ou conversation → réponse | **aucune API HTTP**, aucune clé d'API, aucun modèle d'agent persistant |
+| des **règles de réponse** (`TchapContextResolver`) : message direct → toujours ; salon → seulement si mentionné, puis fil ; fil → si mentionné ou déjà participant | aucun autre canal (ni Telegram, ni Slack) |
+| un **IAM par domaine** (liste Grist, statut « pending » pour un inconnu) | des rôles par espace ; une limite de débit par utilisateur ou salon |
+| un **webhook sortant** (`Bearer` + signature HMAC-SHA256 de la charge) ; dédoublonnage d'événements ; indicateur de saisie ; déchiffrement des pièces jointes | un **webhook entrant fonctionnel** : rien ne sert l'URL annoncée ; jeton sans signature, horodatage ni anti-rejeu |
+| une notion de « comportement » en JSON (intentions, modèles de réponse) | une exécution réelle au-delà de deux types d'action (la doc dépasse le code) |
+
+*Sensible, à ne pas reproduire* : jetons passés en variables d'environnement et dans les journaux ; fichier de session committé avec un sel statique ;
+`ignore_unverified_devices=True` ; isolation « logique » par chemins WebDAV avec un seul compte de service ; texte entrant injecté tel quel dans un LLM.
+
+### 5 quinquies.2 Un agent utilisable par API
+
+*Existant (lu / rapporté)* : `POST /v1/lancements` (route interne pour wikichat et l'exécuteur) ; commandes `atelier_agent_*` ; l'Atelier comme connecteur MCP
+distant (8 verbes de conduite, clé propriétaire, « agents publiés » L3 non commencés) ; rien d'un appelant extérieur à capacité limitée.
+
+**Cible.** Une **API d'agents** de l'Atelier, qui est la même chose que ses commandes, ouverte à un appelant extérieur par capacité :
+
+| Fonction | Route (proposition) | Classe |
+|---|---|---|
+| lister, lire la définition d'un agent | `GET /v1/agents`, `GET /v1/agents/{id}` | lecture |
+| définir, modifier (profil, capacités, budget) | `POST` / `PATCH /v1/agents/{id}` | réversible pour restreindre ; **engageante** pour élargir |
+| activer un agent | `POST /v1/agents/{id}/activer` | **réservée** à la personne |
+| s'en servir : lui envoyer un message | `POST /v1/agents/{id}/messages` (clé d'idempotence ; réponse asynchrone) | réversible, plafonné |
+| suivre : état, flux | `GET /v1/agents/{id}/lancements/{n}`, flux SSE, rappel signé | lecture |
+| interrompre | `POST …/interrompre` | réversible |
+
+- **Un agent = un dossier et une session Claude Code** ; sa définition est un fichier du dossier (profil, capacités, canaux autorisés) plus ses consignes, **versionnée** ;
+  l'API la lit et l'écrit par les commandes de l'Atelier, jamais en direct.
+- **Authentification par capacité** : clé d'API **hachée**, **portée par agent ou par projet**, durée, rotation, révocation, journal d'usage ; comparaison en temps constant ;
+  jamais la clé propriétaire. Quotas par appelant et par agent. **Webhooks de rappel signés** (HMAC, horodatage, anti-rejeu).
+- **Standards** : HTTP/JSON, SSE, MCP distant pour les agents publiés ; option à trancher : un point d'accès compatible avec les API de conversation usuelles.
+
+### 5 quinquies.3 Un adaptateur de canal commun
+
+Un **contrat unique** pour tout canal, déduit de ce que fait Colaig de façon implicite :
+
+```
+ canal externe ─► receive/normaliser ─► policy (identité ? faut-il répondre ?) ─► route (canal, conversation) → (agent, session)
+                   {canal, id_événement, conversation, fil, expéditeur,                                   │
+                    texte, pièces jointes, mentions, direct?}                                              ▼
+ canal externe ◄─ send (texte, fichier, fil) ◄─ accusé (saisie, réaction) ◄──────── la session Claude Code de l'agent
+                  dédoublonnage · limite de débit par utilisateur / salon / agent · journal sans contenu
+```
+
+- **Implémentations** : **Tchap / Matrix** (reprendre de Colaig les règles message direct / mention / fil, le dédoublonnage, l'indicateur de saisie, le déchiffrement des
+  pièces jointes, l'IAM par domaine) ; **Telegram** (Bot API) ; **mail** ; **webhook générique** entrant et sortant signé. Un adaptateur est un **service MCP / pont** rattaché
+  comme un connecteur (§ 4.5), déclaré au registre, avec ses **secrets dans le coffre** (§ 5 ter), supervisé comme une brique système.
+- **Un canal lié, pas un canal ouvert.** La personne **associe explicitement** (canal, conversation) à un agent ; sinon rien ne passe. Trois niveaux de confiance :
+  **la personne liée** (identité vérifiée par appariement), **des invités autorisés** (liste blanche), **les inconnus** (rien, ou file d'attente d'appariement).
+- **Un message de canal est l'entrée d'une conversation, à autorité limitée** : il **ne donne jamais d'accord** (la règle existe pour la voix : « aucun accord ne se donne à la voix »),
+  n'exécute ni commande réservée ni engageante sans carte « À valider » **dans l'interface** ; le texte d'un tiers dans un salon est **non fiable** (§ 5, contamination).
+- **Classes de l'envoi** : *répondre dans le canal lié* = réversible, plafonné ; *écrire ailleurs*, *inviter*, *créer un salon* = engageante ou réservée (§ 5.2).
+- **Sécurité** (à rebours des défauts de Colaig) : jetons **hors dépôt et hors journaux** ; webhook entrant **signé, horodaté, anti-rejeu**, jeton retrouvé par table indexée ;
+  chiffrement de bout en bout à traiter **explicitement** (un bot ne lit pas un salon chiffré sans gestion de clés ; vérification des appareils) ; **isolation réelle** par dossier
+  et processus, pas par chemins partagés ; aucun lancement d'agent par un message d'un inconnu.
+
+### 5 quinquies.4 Du bot Matrix à la v3 dans le cadre de l'Atelier
+
+| Colaig | Atelier |
+|---|---|
+| comportement JSON, `.albert/behavior` | consignes et réglages du **dossier de l'agent** (`CLAUDE.md`, `.claude/`), profil et capacités accordées |
+| espace WebDAV d'un salon | **dossier** de l'agent ou du projet |
+| IAM Grist par domaine | **liste blanche d'identités** dans la liaison de canal, par agent |
+| commandes `!…` | commandes de canal limitées, qui se traduisent en commandes de l'Atelier classées |
+| webhooks | webhooks **signés** (standard), entrants et sortants |
+
+### 5 quinquies.5 À trancher
+
+1. **Où est « colaig v3 »** : le dépôt local, à me montrer ; ce que la v3 apporte au-delà de la v0.2.
+2. Un message d'une **personne liée** peut-il lancer un agent planifié, ou seulement converser avec un agent déjà actif ?
+3. **Tchap** : serveur Matrix, compte bot, **chiffrement de bout en bout** et vérification des appareils ; où héberger le pont ?
+4. Le standard d'API d'agent : seulement l'API de l'Atelier, ou aussi un point d'accès compatible avec les API de conversation usuelles ?
+5. **Appairage** d'une personne à un canal : code à usage unique saisi dans l'interface ?
+6. Les **réponses** d'un agent dans un salon à plusieurs : à qui s'adressent-elles, et que voit un invité du contexte du projet ?
+7. Quotas par défaut (messages par minute, par jour) et coût en jetons par canal.
+8. Telegram : long polling ou webhook entrant, et **où cet entrant arrive** (l'Ingress n'expose que l'interface et les applications).
+
 ## 6. Ce que cela change pour le plan
 
 Le plan de finition garde son ordre (identité → garde → rôle unique → états vrais → brouillon/production) et reçoit
 trois lots de plus, décrits dans [`plan-de-finition.md`](plan-de-finition.md) § 2 bis : **lot 1 bis** (verrou de
 conversation et miroir), **lot 3 bis** (registre unique et surcharge par connecteur, classes des outils amont),
-**lot 3 ter** (communication externe, après les lots 1 et 3) **lot 3 quater** (intégration GitHub, § 5 bis) et **lot 2 bis** (coffre de secrets, § 5 ter) et **lot 3 quinquies** (voix, § 5 quater).
+**lot 3 ter** (communication externe, après les lots 1 et 3) **lot 3 quater** (intégration GitHub, § 5 bis) et **lot 2 bis** (coffre de secrets, § 5 ter) **lot 3 quinquies** (voix, § 5 quater) et **lot 3 sexies** (API d'agents et canaux, § 5 quinquies).
 
 ## 7. Décisions à prendre
 
